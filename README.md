@@ -2,6 +2,10 @@
 
 Simple procedural programming language, statically typed and compiled to JVM bytecode
 
+## Warning ⚠️
+
+⚠️ This version of the language (0.1) is no longer maintained. The compiler has known bugs, in particular regarding the order in which operands are evaluated. See other branches of this repo for more recent versions of the language.
+
 ## Example project
 
 A sudoku solver: https://github.com/ValentinAebi/Rattlesnake-sudoku-solver
