@@ -11,12 +11,11 @@ import lang.Types.PrimitiveTypeShape.*
 
 /**
  * Lowering replaces (this list may not be complete):
- *  - `>`, `>=` ---> reversed
- *  - `x <= y` ---> `(x < y) || (x == y)`
+ *  - `x > y` ---> `!(x <= y)`
+ *  - `x >= y ---> !(x < y)`
  *  - `x != y` ---> `!(x == y)`
- *  - `VarModif`: `x += y` ---> `x = x + y`
+ *  - `x += y` ---> `x = x + y`
  *  - `for` ---> `while`
- *  - `-x` ---> `0 - x`
  *  - `!x` ---> `when x then false else true`
  *  - `x && y` ---> `when x then y else false`
  *  - `x || y` ---> `when x then true else y`
@@ -198,22 +197,14 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
         val loweredRhs = lower(binaryOp.rhs)
         binaryOp.operator match {
           
-          // x <= y ---> x <= y || x == y
-          case LessOrEq => lower(BinaryOp(
-            BinaryOp(loweredLhs, LessThan, loweredRhs).setType(BoolType),
-            Or,
-            BinaryOp(loweredLhs, Equality, loweredRhs).setType(BoolType)
-          ))
-          
-          // x > y ---> y < x  (and similar with >=)
-          case GreaterThan => lower(BinaryOp(loweredRhs, LessThan, loweredLhs))
-          case GreaterOrEq => lower(BinaryOp(loweredRhs, LessOrEq, loweredLhs))
+          // x > y ---> !(x <= y)
+          case GreaterThan => lower(negatedBool(BinaryOp(loweredLhs, LessOrEq, loweredRhs)))
+
+          // x >= y ---> !(x < y)
+          case GreaterOrEq => lower(negatedBool(BinaryOp(loweredLhs, LessThan, loweredRhs)))
           
           // x != y ---> !(x == y)
-          case Inequality =>
-            lower(UnaryOp(ExclamationMark,
-              BinaryOp(loweredLhs, Equality, loweredRhs).setType(BoolType)
-            ).setType(BoolType))
+          case Inequality => lower(negatedBool(BinaryOp(loweredLhs, Equality, loweredRhs)))
             
           // x && y ---> when x then y else false
           case And =>
@@ -325,6 +316,8 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
     loweredCapDescr.setResolvedDescrOpt(captureDescrTree.getResolvedDescrOpt)
     loweredCapDescr
   }
+
+  private def negatedBool(expr: Expr): Expr = UnaryOp(ExclamationMark, expr.setType(BoolType)).setType(BoolType)
 
   private def propagatePosition[A <: Ast](pos: Option[Position], maxDepth: Int = 2)(ast: A): A = {
     if (maxDepth > 0 && ast.getPosition.isEmpty){

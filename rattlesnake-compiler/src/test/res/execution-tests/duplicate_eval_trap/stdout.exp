@@ -1,0 +1,24 @@
+foo: 0
+foo: 4
+yes
+foo: 0
+foo: 4
+no
+bar: 1.0
+bar: -1.0
+yes
+bar: 1.0
+bar: -1.0
+no
+foo: 0
+foo: 4
+yes
+foo: 0
+foo: 4
+no
+bar: 1.0
+bar: -1.0
+yes
+bar: 1.0
+bar: -1.0
+no

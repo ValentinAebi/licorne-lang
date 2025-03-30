@@ -621,9 +621,9 @@ final class Backend[V <: ClassVisitor](
           mv.visitLabel(trueLabel)
           mv.visitInsn(Opcodes.ICONST_1)
           mv.visitLabel(endLabel)
-        } else if (operator == LessThan && tpe == IntType) {
+        } else if ((operator == LessThan || operator == LessOrEq) && tpe == IntType) {
           /*
-           *   if_icmplt trueLabel  (goto trueLabel if lhs < rhs)
+           *   if_icmplt/e trueLabel  (goto trueLabel if lhs <(=) rhs)
            *   push false
            *   goto endLabel
            * trueLabel:
@@ -632,15 +632,16 @@ final class Backend[V <: ClassVisitor](
            */
           val trueLabel = new Label()
           val endLabel = new Label()
-          mv.visitJumpInsn(Opcodes.IF_ICMPLT, trueLabel)
+          val cmpInsn = if operator == LessThan then Opcodes.IF_ICMPLT else Opcodes.IF_ICMPLE
+          mv.visitJumpInsn(cmpInsn, trueLabel)
           mv.visitInsn(Opcodes.ICONST_0)
           mv.visitJumpInsn(Opcodes.GOTO, endLabel)
           mv.visitLabel(trueLabel)
           mv.visitInsn(Opcodes.ICONST_1)
           mv.visitLabel(endLabel)
-        } else if (operator == LessThan && tpe == DoubleType) {
+        } else if ((operator == LessThan || operator == LessOrEq) && tpe == DoubleType) {
           /*
-           *   dcmpg  (returns -1 if lhs < rhs)
+           *   dcmpg  (returns -1 if lhs < rhs, 0 if lhs == rhs)
            *   if < 0 goto trueLabel
            *   push false
            *   goto endLabel
@@ -651,7 +652,8 @@ final class Backend[V <: ClassVisitor](
           mv.visitInsn(Opcodes.DCMPG)
           val trueLabel = new Label()
           val endLabel = new Label()
-          mv.visitJumpInsn(Opcodes.IFLT, trueLabel)
+          val cmpInsn = if operator == LessThan then Opcodes.IFLT else Opcodes.IFLE
+          mv.visitJumpInsn(cmpInsn, trueLabel)
           mv.visitInsn(Opcodes.ICONST_0)
           mv.visitJumpInsn(Opcodes.GOTO, endLabel)
           mv.visitLabel(trueLabel)
