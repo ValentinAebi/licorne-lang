@@ -4,7 +4,7 @@ import compiler.analysisctx.AnalysisContext
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.reporting.Errors.{ErrorReporter, Warning}
 import compiler.reporting.{Errors, Position}
-import compiler.typechecker.TypeCheckingContext.{LocalInfo, LocalUsesCollector}
+import compiler.typechecker.TypeCheckingContext.{ConstantInfo, IdInfo, LocalInfo, LocalUsesCollector}
 import identifiers.{FunOrVarId, SpecialFields, TypeIdentifier}
 import lang.*
 import lang.Capturables.{ConcreteCapturable, IdPath, Path, RootCapability}
@@ -76,12 +76,11 @@ final case class TypeCheckingContext private(
 
   def getLocalOnly(name: FunOrVarId): Option[LocalInfo] = locals.get(name)
 
-  def getLocalOrConst(name: FunOrVarId): Option[LocalInfo] = {
+  def getLocalOrConst(name: FunOrVarId): Option[IdInfo] = {
     getLocalOnly(name).orElse(
       analysisContext.constants
         .get(name)
-        // defPos and declHasTypeAnnot are never used for constants, as long as constants can only be of primitive types
-        .map(tpe => LocalInfo(name, tpe, isReassignable = false, defPos = None, declHasTypeAnnot = false))
+        .map(tpe => ConstantInfo(name, tpe))
     )
   }
 
@@ -179,6 +178,11 @@ object TypeCheckingContext {
     new TypeCheckingContext(analysisContext, mutable.Map.empty, meTypeId,
       meCaptureDescr, currFunIdOpt, insideEnclosure, currentRestriction)
   }
+  
+  sealed trait IdInfo {
+    val name: FunOrVarId
+    val tpe: Type
+  }
 
   final case class LocalInfo private(
                                       name: FunOrVarId,
@@ -187,7 +191,7 @@ object TypeCheckingContext {
                                       defPos: Option[Position],
                                       declHasTypeAnnot: Boolean,
                                       usesCollector: LocalUsesCollector
-                                    ) {
+                                    ) extends IdInfo {
     def copy(
               name: FunOrVarId = name,
               tpe: Type = tpe,
@@ -199,6 +203,8 @@ object TypeCheckingContext {
       LocalInfo(name, tpe, isReassignable, defPos, declHasTypeAnnot, usesCollector)
     }
   }
+  
+  final case class ConstantInfo(name: FunOrVarId, tpe: Type) extends IdInfo
 
   object LocalInfo {
     def apply(

@@ -13,7 +13,7 @@ import compiler.typechecker.ExprPosition.{Captured, Executable}
 import compiler.typechecker.ShapeAnnotPosition.{InTypeTest, InsideCapturingType, OutsideCapturingType}
 import compiler.typechecker.SubcaptureRelation.isCoveredBy
 import compiler.typechecker.SubtypeRelation.subtypeOf
-import compiler.typechecker.TypeCheckingContext.LocalInfo
+import compiler.typechecker.TypeCheckingContext.{ConstantInfo, LocalInfo}
 import identifiers.*
 import lang.*
 import lang.Capturables.*
@@ -542,6 +542,9 @@ final class TypeChecker(errorReporter: ErrorReporter)
             reportError(s"unknown: $name", varRef.getPosition)
           case Some(localInfo: LocalInfo) =>
             localInfo.tpe
+          case Some(constInfo: ConstantInfo) =>
+            varRef.markAsRefToConst()
+            constInfo.tpe
 
       case MeRef() =>
         tcCtx.meType

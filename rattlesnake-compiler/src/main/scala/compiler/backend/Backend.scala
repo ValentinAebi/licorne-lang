@@ -61,18 +61,16 @@ final class Backend[V <: ClassVisitor](
     } else {
       val modulesAndPackagesBuilder = List.newBuilder[TypeDefTree]
       val structsBuilder = List.newBuilder[StructDef]
-      val constsBuilder = List.newBuilder[ConstDef]
       for src <- sources; df <- src.defs do {
         df match
           case modOrPkg: ModuleOrPackageDefTree => modulesAndPackagesBuilder.addOne(modOrPkg)
           case structDef: StructDef => structsBuilder.addOne(structDef)
-          case constDef: ConstDef => constsBuilder.addOne(constDef)
+          case constDef: ConstDef => shouldNotHappen()
       }
 
-      // sort the structs so that no class is loaded before its super-interfaces
       val modulesAndPackages = modulesAndPackagesBuilder.result()
+      // sort the structs so that no class is loaded before its super-interfaces
       val structs = sortStructs(structsBuilder.result())
-      val consts = constsBuilder.result()
 
       // create output directory if it does not already exist
       val outputDirPath = outputDirBase.resolve("out")
@@ -88,11 +86,6 @@ final class Backend[V <: ClassVisitor](
 
       generateTypes(modulesAndPackages, outputDirPath, mainClassNames)
       generateTypes(structs, outputDirPath, mainClassNames)
-
-      if (consts.nonEmpty) {
-        val constantsFilePath = outputDirPath.resolve(mode.withExtension(ClassesAndDirectoriesNames.constantsClassName))
-        generateConstantsFile(consts, constantsFilePath)
-      }
 
       if (mode.generateRuntime) {
         copyJar(runtimeDirPath, "rattlesnake-runtime", outputDirPath)
@@ -142,24 +135,6 @@ final class Backend[V <: ClassVisitor](
       sortedList.addOne(curr.structName -> curr)
     }
     sortedList.toList.map(_._2)
-  }
-
-  private def generateConstantsFile(consts: List[ConstDef], constantsFilePath: Path)
-                                   (using AnalysisContext): Unit = {
-    val ccv: V = mode.createVisitor(constantsFilePath)
-    addSourceName(ccv, "<auto-gen-constants-file>")
-    ccv.visit(javaVersionCode, ACC_PUBLIC, ClassesAndDirectoriesNames.constantsClassName, null, objectTypeStr, null)
-    for const <- consts do {
-      ccv.visitField(
-        ACC_PUBLIC | ACC_STATIC | ACC_FINAL,
-        const.constName.stringId,
-        descriptorForType(const.value.getTypeShape),
-        null,
-        const.value.value
-      )
-    }
-    ccv.visitEnd()
-    mode.terminate(ccv, constantsFilePath, errorReporter)
   }
 
   private def generateModuleOrPackageFile(modOrPkg: ModuleOrPackageDefTree, path: Path)(using ctx: AnalysisContext): Boolean = {
@@ -449,17 +424,9 @@ final class Backend[V <: ClassVisitor](
         RuntimeMethod.NewRegion.generateCall(mv)
 
       case varRef@VariableRef(name) => {
-        ctx.getLocal(name) match
-          case Some((tpe, localIdx)) =>
-            val opCode = opcodeFor(tpe.shape, Opcodes.ILOAD, Opcodes.ALOAD)
-            mv.visitVarInsn(opCode, localIdx)
-          case None =>
-            mv.visitFieldInsn(
-              Opcodes.GETSTATIC,
-              ClassesAndDirectoriesNames.constantsClassName,
-              name.stringId,
-              descriptorForType(varRef.getTypeShape)
-            )
+        val (tpe, localIdx) = ctx.getLocal(name).get
+        val opCode = opcodeFor(tpe.shape, Opcodes.ILOAD, Opcodes.ALOAD)
+        mv.visitVarInsn(opCode, localIdx)
       }
 
       case MeRef() =>
@@ -698,7 +665,7 @@ final class Backend[V <: ClassVisitor](
           // x = ...
           case VariableRef(name) =>
             generateCode(rhs, ctx)
-            val (varType, varIdx) = ctx.getLocal(name).get // cannot be a constant since it is an assignment
+            val (varType, varIdx) = ctx.getLocal(name).get
             val opcode = opcodeFor(varType.shape, Opcodes.ISTORE, Opcodes.ASTORE)
             mv.visitVarInsn(opcode, varIdx)
 
@@ -881,7 +848,6 @@ final class Backend[V <: ClassVisitor](
   private def generateSmartCasts(smartCasts: Map[FunOrVarId, Types.Type], ctx: CodeGenerationContext)
                                 (using mv: MethodVisitor): Unit = {
     for (varId, destType) <- smartCasts do {
-      // typechecker has already checked that varId is not a constant
       val (originType, varIdx) = ctx.getLocal(varId).get
       mv.visitIntInsn(Opcodes.ALOAD, varIdx)
       mv.visitTypeInsn(Opcodes.CHECKCAST, internalNameOf(destType.shape)(using ctx.analysisContext))

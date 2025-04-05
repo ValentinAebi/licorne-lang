@@ -12,6 +12,5 @@
 
 - Make lowering phase less aggressive (this produces overcomplicated bytecode)
 - Add an optimizer
-- Inline constants at compile-time instead of storing them in a separate class
 
 

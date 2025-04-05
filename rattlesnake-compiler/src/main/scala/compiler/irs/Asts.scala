@@ -248,6 +248,8 @@ object Asts {
         case Some(tpe) => tpe
         case None => throw new NoSuchElementException(s"type missing in $this")
     }
+    
+    def freshCopyWithoutPos: Literal
   }
 
   sealed trait NumericLiteral extends Literal
@@ -259,6 +261,8 @@ object Asts {
    */
   final case class IntLit(value: Int) extends NumericLiteral {
     override def getTypeOpt: Option[TypeShape] = Some(IntType)
+    
+    override def freshCopyWithoutPos: Literal = IntLit(value)
   }
 
   /**
@@ -266,6 +270,8 @@ object Asts {
    */
   final case class DoubleLit(value: Double) extends NumericLiteral {
     override def getTypeOpt: Option[TypeShape] = Some(DoubleType)
+
+    override def freshCopyWithoutPos: Literal = DoubleLit(value)
   }
 
   /**
@@ -273,6 +279,8 @@ object Asts {
    */
   final case class CharLit(value: Char) extends NonNumericLiteral {
     override def getTypeOpt: Option[TypeShape] = Some(CharType)
+
+    override def freshCopyWithoutPos: Literal = CharLit(value)
   }
 
   /**
@@ -280,6 +288,8 @@ object Asts {
    */
   final case class BoolLit(value: Boolean) extends NonNumericLiteral {
     override def getTypeOpt: Option[TypeShape] = Some(BoolType)
+
+    override def freshCopyWithoutPos: Literal = BoolLit(value)
   }
 
   /**
@@ -287,6 +297,8 @@ object Asts {
    */
   final case class StringLit(value: String) extends NonNumericLiteral {
     override def getTypeOpt: Option[TypeShape] = Some(StringType)
+
+    override def freshCopyWithoutPos: Literal = StringLit(value)
   }
 
   final case class RegionCreation() extends Expr {
@@ -299,6 +311,14 @@ object Asts {
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
    */
   final case class VariableRef(name: FunOrVarId) extends Expr {
+    private var _isRefToConst: Boolean = false
+    
+    def markAsRefToConst(): Unit = {
+      _isRefToConst = true
+    }
+    
+    def isRefToConst: Boolean = _isRefToConst
+    
     override def children: List[Ast] = Nil
   }
 
@@ -638,6 +658,8 @@ object Asts {
     }
     
     def getOpt: Option[A] = valueOpt
+
+    override def toString: String = valueOpt.getOrElse("<empty>").toString
   }
 
 }
