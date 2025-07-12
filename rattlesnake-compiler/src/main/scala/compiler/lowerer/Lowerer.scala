@@ -10,6 +10,7 @@ import lang.Types
 import lang.Types.*
 import lang.Types.PrimitiveTypeShape.*
 
+// TODO propagate constants and evaluate constant expressions
 /**
  * Lowering replaces (this list may not be complete):
  *  - `x > y` ---> `!(x <= y)`
@@ -21,7 +22,11 @@ import lang.Types.PrimitiveTypeShape.*
  *  - `x && y` ---> `when x then y else false`
  *  - `x || y` ---> `when x then true else y`
  *  - `[x_1, ... , x_n]` ---> `val $0 = arr Int[n]; $0[0] = x_1; ... ; $0[n-1] = x_n; $0`
- *  - references to constants with their value
+ *  - references to constants ---> their value
+ *
+ * Simple optimizations:
+ *  - `when true then x else y` ---> `x` (same for false and for if)
+ *  - `when x then true else false` ---> `x`
  */
 final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[Source], AnalysisContext)] {
   private val uniqueIdGenerator = new UniqueIdGenerator()
@@ -33,7 +38,7 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
     loweredSources.foreach(_.assertAllTypesAreSet())
     (loweredSources, analysisContext)
   }
-  
+
   private def createCtx(sources: List[Source]): LoweringContext = {
     val constantsBuilder = Map.newBuilder[FunOrVarId, Literal]
     for src <- sources do {
@@ -125,8 +130,8 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
     VarAssig(loweredLhs, BinaryOp(loweredLhs, op, loweredRhs).setType(lhs.getType))
   }
 
-  private def lower(ifThenElse: IfThenElse)(using LoweringContext): IfThenElse = propagatePosition(ifThenElse.getPosition) {
-    val lowered = IfThenElse(
+  private def lower(ifThenElse: IfThenElse)(using LoweringContext): Statement = propagatePosition(ifThenElse.getPosition) {
+    val loweredIte = IfThenElse(
       lower(ifThenElse.cond),
       lower(ifThenElse.thenBr),
       ifThenElse.elseBrOpt.map(lower).orElse {
@@ -135,8 +140,14 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
         else None
       }
     )
-    lowered.setSmartCasts(ifThenElse.getSmartCasts)
-    lowered
+    loweredIte.setSmartCasts(ifThenElse.getSmartCasts)
+    loweredIte match {
+      case IfThenElse(BoolLit(true), loweredThenBr, _) =>
+        loweredThenBr
+      case IfThenElse(BoolLit(false), _, loweredElseBrOpt) =>
+        loweredElseBrOpt.getOrElse(Block(List.empty))
+      case _ => loweredIte
+    }
   }
 
   private def lower(whileLoop: WhileLoop)(using LoweringContext): WhileLoop = propagatePosition(whileLoop.getPosition) {
@@ -202,13 +213,16 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
         binaryOp.operator match {
           
           // x > y ---> !(x <= y)
-          case GreaterThan => lower(negatedBool(BinaryOp(loweredLhs, LessOrEq, loweredRhs)))
+          case GreaterThan =>
+            lower(negatedBool(BinaryOp(loweredLhs, LessOrEq, loweredRhs)))
 
           // x >= y ---> !(x < y)
-          case GreaterOrEq => lower(negatedBool(BinaryOp(loweredLhs, LessThan, loweredRhs)))
+          case GreaterOrEq =>
+            lower(negatedBool(BinaryOp(loweredLhs, LessThan, loweredRhs)))
           
           // x != y ---> !(x == y)
-          case Inequality => lower(negatedBool(BinaryOp(loweredLhs, Equality, loweredRhs)))
+          case Inequality =>
+            lower(negatedBool(BinaryOp(loweredLhs, Equality, loweredRhs)))
             
           // x && y ---> when x then y else false
           case And =>
@@ -217,7 +231,8 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
             lower(ternary)
           
           // x || y ---> when x then true else y
-          case Or => lower(Ternary(loweredLhs, BoolLit(true), loweredRhs))
+          case Or =>
+            lower(Ternary(loweredLhs, BoolLit(true), loweredRhs))
           
           // nothing to lower at top-level, only perform recursive calls
           case _ => BinaryOp(loweredLhs, binaryOp.operator, loweredRhs)
@@ -237,10 +252,15 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
           lower(Sequence(List(ifStat), thenBr))
         }
       }
-      case ternary@Ternary(cond, thenBr, elseBr) =>
-        val loweredTernary = Ternary(lower(cond), lower(thenBr), lower(elseBr))
+      case ternary@Ternary(cond, initThenBr, initElseBr) =>
+        val loweredTernary = Ternary(lower(cond), lower(initThenBr), lower(initElseBr))
         loweredTernary.setSmartCasts(ternary.getSmartCasts)
-        loweredTernary
+        loweredTernary match {
+          case Ternary(BoolLit(constCond), loweredThenBr, loweredElseBr) =>
+            if constCond then loweredThenBr else loweredElseBr
+          case Ternary(loweredCond, BoolLit(true), BoolLit(false)) => loweredCond
+          case _ => loweredTernary
+        }
       case Cast(expr, tpe) => Cast(lower(expr), tpe)
       case TypeTest(expr, tpe) => TypeTest(lower(expr), tpe)
       case Sequence(stats, expr) => Sequence(stats.map(lower), lower(expr))
