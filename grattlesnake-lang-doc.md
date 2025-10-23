@@ -1,5 +1,6 @@
 # The Grattlesnake programming language
 
+**This documentation was written for a previous version of the language and is not up-to-date.**
 
 ## Language modes
 

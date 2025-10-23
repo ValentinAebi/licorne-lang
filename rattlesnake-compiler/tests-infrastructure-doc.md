@@ -1,5 +1,6 @@
 # Tests system
 
+**This documentation was written for a previous version of the compiler and might be out-of-date.**
 
 ## Analyzer tests
 

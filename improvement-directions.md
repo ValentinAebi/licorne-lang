@@ -1,5 +1,7 @@
 # Improvement directions
 
+**This documentation was written for a previous version of the compiler and is not up-to-date.**
+
 ## Language features
 
 - Support for closures and heap-allocated variables

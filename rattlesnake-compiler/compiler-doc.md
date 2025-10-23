@@ -1,5 +1,7 @@
 # Compiler documentation
 
+**This documentation was written for a previous version of the compiler and is not up-to-date.**
+
 ## Compiler stages
 
 1. Frontend (lexer + parser): runs separately on each source file and creates the AST
