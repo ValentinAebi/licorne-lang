@@ -7,14 +7,12 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecker.SubtypeRelation.subtypeOf
 import compiler.typechecker.TypeCheckingContext
-import identifiers.SpecialFields.regFieldId
-import identifiers.{FunOrVarId, SpecialFields, TypeIdentifier}
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Capturables.*
-import lang.CaptureDescriptors.{CaptureDescriptor, CaptureSet, Mark}
-import lang.LanguageMode.*
+import lang.CaptureDescriptors.CaptureSet
 import lang.Types.*
-import lang.Types.PrimitiveTypeShape.{NothingType, RegionType, VoidType}
+import lang.Types.PrimitiveTypeShape.{NothingType, VoidType}
 
 import scala.collection.mutable
 
@@ -26,37 +24,33 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
         id = device.typeName,
         importedPackages = mutable.LinkedHashSet.empty,
         importedDevices = mutable.LinkedHashSet.empty,
-        functions = device.api.functions,
-        languageMode = OcapEnabled
+        functions = device.api.functions
       ), None)
     })
   private val structs: mutable.Map[TypeIdentifier, (StructSignature, Option[Position])] = mutable.Map.empty
   private val constants: mutable.Map[FunOrVarId, Type] = mutable.Map.empty
 
-  def addModule(moduleDef: ModuleDef)(using langMode: LanguageMode): Unit = {
+  def addModule(moduleDef: ModuleDef): Unit = {
     val moduleName = moduleDef.moduleName
     if (checkTypeNotAlreadyDefined(moduleName, moduleDef.getPosition)) {
       val (importedModules, importedPackages, importedDevices) = analyzeImports(moduleDef)
       val functions = extractFunctions(moduleDef)
-      val moduleSig = ModuleSignature(moduleName, importedModules, importedPackages, importedDevices, functions, langMode)
+      val moduleSig = ModuleSignature(moduleName, importedModules, importedPackages, importedDevices, functions)
       modules.put(moduleName, moduleSig)
     }
   }
 
-  def addPackage(packageDef: PackageDef)(using langMode: LanguageMode, imports: Map[TypeIdentifier, ModuleImports]): Unit = {
+  def addPackage(packageDef: PackageDef)(using imports: Map[TypeIdentifier, ModuleImports]): Unit = {
     val packageName = packageDef.packageName
     if (checkTypeNotAlreadyDefined(packageName, packageDef.getPosition)) {
       val functions = extractFunctions(packageDef)
-      val (implicitlyImportedPackages, implicitlyImportedDevices) =
-        if langMode.isOcapEnabled
-        then trackPackagesAndDevices(packageDef)
-        else (mutable.LinkedHashSet.empty[TypeIdentifier], mutable.LinkedHashSet.empty[Device])
-      val sig = PackageSignature(packageName, implicitlyImportedPackages, implicitlyImportedDevices, functions, langMode)
+      val (implicitlyImportedPackages, implicitlyImportedDevices) = trackPackagesAndDevices(packageDef)
+      val sig = PackageSignature(packageName, implicitlyImportedPackages, implicitlyImportedDevices, functions)
       packages.put(packageName, (sig, packageDef.getPosition))
     }
   }
 
-  def addStruct(structDef: StructDef)(using langMode: LanguageMode): Unit = {
+  def addStruct(structDef: StructDef): Unit = {
     val name = structDef.structName
     if (checkTypeNotAlreadyDefined(name, structDef.getPosition)) {
       val fieldsMap = buildStructFieldsMap(structDef)
@@ -64,8 +58,7 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
         if structDef.isAbstract
         then Some(mutable.LinkedHashSet.empty[TypeIdentifier])
         else None
-      val sig = StructSignature(name, structDef.isShallowMutable, fieldsMap, structDef.directSupertypes,
-        directSubtypesOpt, langMode)
+      val sig = StructSignature(name, fieldsMap, structDef.directSupertypes, directSubtypesOpt)
       structs.put(name, (sig, structDef.getPosition))
     }
   }
@@ -93,7 +86,7 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
     builtCtx
   }
 
-  private def extractFunctions(modOrMkg: ModuleOrPackageDefTree)(using LanguageMode): Map[FunOrVarId, FunctionSignature] = {
+  private def extractFunctions(modOrMkg: ModuleOrPackageDefTree): Map[FunOrVarId, FunctionSignature] = {
     val functions = mutable.Map.empty[FunOrVarId, FunctionSignature]
     for funDef <- modOrMkg.functions do {
       val name = funDef.funName
@@ -108,62 +101,57 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
     functions.toMap
   }
 
-  private def computeFunctionSig(funDef: FunDef)(using languageMode: LanguageMode): FunctionSignature = {
+  private def computeFunctionSig(funDef: FunDef): FunctionSignature = {
     val argsTypesB = List.newBuilder[(Option[FunOrVarId], Type)]
     for (Param(paramNameOpt, tpe, isReassignable) <- funDef.params) {
       argsTypesB.addOne(paramNameOpt, computeType(tpe, idsAreFields = false))
     }
     val retType = funDef.optRetType.map(computeType(_, idsAreFields = false)).getOrElse(VoidType)
-    FunctionSignature(funDef.funName, argsTypesB.result(), retType, funDef.visibility, languageMode)
+    FunctionSignature(funDef.funName, argsTypesB.result(), retType, funDef.visibility)
   }
 
-  private def computeType(typeTree: TypeTree, idsAreFields: Boolean)(using langMode: LanguageMode): Type = {
-    val rawtype = typeTree match {
+  private def computeType(typeTree: TypeTree, idsAreFields: Boolean): Type = {
+    typeTree match {
       case CapturingTypeTree(typeShapeTree, captureDescr) =>
         CapturingType(computeTypeShape(typeShapeTree, idsAreFields), computeCaptureDescr(captureDescr, idsAreFields))
       case typeShapeTree: TypeShapeTree =>
         computeTypeShape(typeShapeTree, idsAreFields)
       case WrapperTypeTree(tpe) => tpe
     }
-    rawtype.maybeMarked(langMode)
   }
 
   private def computeTypeShape(typeShapeTree: TypeShapeTree, idsAreFields: Boolean)
-                              (using langMode: LanguageMode): TypeShape = typeShapeTree match {
+                              : TypeShape = typeShapeTree match {
     case ArrayTypeShapeTree(elemType) => ArrayTypeShape(computeType(elemType, idsAreFields))
     case castTargetTypeShapeTree: CastTargetTypeShapeTree => computeCastTargetTypeShape(castTargetTypeShapeTree)
   }
 
   private def computeCastTargetTypeShape(castTargetTypeShapeTree: CastTargetTypeShapeTree)
-                                        (using langMode: LanguageMode): CastTargetTypeShape = {
+                                        : CastTargetTypeShape = {
     castTargetTypeShapeTree match
       case PrimitiveTypeShapeTree(primitiveType) => primitiveType
       case NamedTypeShapeTree(name) => NamedTypeShape(name)
   }
 
-  private def computeCaptureDescr(cdTree: CaptureDescrTree, idsAreFields: Boolean)
-                                 (using langMode: LanguageMode): CaptureDescriptor = cdTree match {
+  private def computeCaptureDescr(cdTree: CaptureSetTree, idsAreFields: Boolean): CaptureSet = cdTree match {
     case ExplicitCaptureSetTree(capturedExpressions) =>
       // checks that the expression is indeed capturable are delayed to the type-checker
       CaptureSet(capturedExpressions.flatMap(mkCapturableOrFailSilently(_, idsAreFields)).toSet)
     case ImplicitRootCaptureSetTree() =>
       CaptureSet.singletonOfRoot
-    case MarkTree() =>
-      Mark
   }
 
-  private def analyzeImports(moduleDef: ModuleDef)(using langMode: LanguageMode) = {
+  private def analyzeImports(moduleDef: ModuleDef) = {
     val importsMap = new mutable.LinkedHashMap[FunOrVarId, Type]()
     val packagesSet = new mutable.LinkedHashSet[TypeIdentifier]()
     val devicesSet = new mutable.LinkedHashSet[Device]()
     moduleDef.imports.foreach {
       case ParamImport(instanceId, moduleType) =>
         importsMap.put(instanceId, computeType(moduleType, idsAreFields = true))
-      case PackageImport(packageId, _) if langMode.isOcapEnabled =>
+      case PackageImport(packageId) =>
         packagesSet.add(packageId)
-      case DeviceImport(device) if langMode.isOcapEnabled =>
+      case DeviceImport(device) =>
         devicesSet.add(device)
-      case _ => ()
     }
     (importsMap, packagesSet, devicesSet)
   }
@@ -176,7 +164,7 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
         packages.add(packageName)
       case DeviceRef(device) =>
         devices.add(device)
-      case StructOrModuleInstantiation(regionOpt, typeId, args) =>
+      case StructOrModuleInstantiation(typeId, args) =>
         imports.get(typeId).foreach { modImport =>
           packages.addAll(modImport.packages)
           devices.addAll(modImport.devices)
@@ -187,27 +175,21 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
   }
 
   private def buildStructFieldsMap(structDef: StructDef)
-                                  (using langMode: LanguageMode): mutable.LinkedHashMap[FunOrVarId, FieldInfo] = {
+                                  : mutable.LinkedHashMap[FunOrVarId, FieldInfo] = {
     val fieldsMap = new mutable.LinkedHashMap[FunOrVarId, FieldInfo]()
     for param <- structDef.fields do {
       param.paramNameOpt match {
         case None =>
           reportError("struct fields must be named", param.getPosition)
-        case Some(paramName) if paramName == regFieldId =>
-          reportError(s"field id $regFieldId is reserved for the region in " +
-            "which the structure is allocated", param.getPosition)
         case Some(paramName) =>
           val tpe = computeType(param.tpe, idsAreFields = true)
           if (checkIsNotVoidOrNothing(tpe, param.getPosition)) {
             if (!fieldsMap.contains(paramName)) {
               // the presence of duplicate fields will be reported by the type-checker
-              fieldsMap.put(paramName, FieldInfo(tpe, param.isReassignable, langMode))
+              fieldsMap.put(paramName, FieldInfo(tpe, param.isReassignable))
             }
           }
       }
-    }
-    if (structDef.isShallowMutable && langMode.isOcapEnabled) {
-      fieldsMap.put(regFieldId, FieldInfo(RegionType ^ CaptureSet.singletonOfRoot, isReassignable = false, langMode))
     }
     fieldsMap
   }
@@ -262,9 +244,6 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
           } else {
             directSupertypeSig.directSubtypesOpt.foreach(_.add(structId))
           }
-          if (!structSig.isShallowMutable && directSupertypeSig.isShallowMutable) {
-            reportError(s"immutable $structId cannot be a subtype of mutable $directSupertypeId", structDefPosOpt)
-          }
           if (directSupertypeSig.isAbstract) {
             // TODO carefully check what happens here
             // i.e. what elements each field is allowed to capture (fields of the super-/subtype)
@@ -315,7 +294,7 @@ final class AnalysisContextBuilder(errorReporter: ErrorReporter) {
     findCycle(builtPackagesMap.keys.toSeq.sortBy(_.stringId),
       tid =>
         builtPackagesMap.get(tid).toList.flatMap(_.importedPackages)
-        .filter(imp => builtPackagesMap.get(imp).exists(_.languageMode.isOcapEnabled))
+        .filter(imp => builtPackagesMap.contains(imp))
     ).foreach { cycle =>
       val posOpt = packages.get(cycle.head).flatMap(_._2)
       reportError("ocap packages do not compose in an ocap-compliant manner: cyclic dependency found that involves " +

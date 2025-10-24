@@ -10,7 +10,7 @@ object ModuleImports {
   
   def fromModuleDef(moduleDef: ModuleDef): ModuleImports = ModuleImports(
     moduleDef.imports.flatMap {
-      case PackageImport(packageId, _) => Some(packageId)
+      case PackageImport(packageId) => Some(packageId)
       case _ => None
     },
     moduleDef.imports.flatMap {

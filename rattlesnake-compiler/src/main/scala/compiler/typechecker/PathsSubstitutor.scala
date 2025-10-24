@@ -27,7 +27,7 @@ final class PathsSubstitutor(tcCtx: TypeCheckingContext, er: ErrorReporter) {
     }
   }
 
-  def subst(capturable: Capturable, posOpt: Option[Position]): CaptureDescriptor = capturable match {
+  def subst(capturable: Capturable, posOpt: Option[Position]): CaptureSet = capturable match {
     case path: Capturables.Path =>
       subst(path).map(CaptureSet(_))
         .getOrElse(tcCtx.lookup(path).captureDescriptor)
@@ -46,9 +46,8 @@ final class PathsSubstitutor(tcCtx: TypeCheckingContext, er: ErrorReporter) {
     case UndefinedTypeShape => UndefinedTypeShape
   }
 
-  def subst(captureDescriptor: CaptureDescriptor, posOpt: Option[Position]): CaptureDescriptor = captureDescriptor match {
-    case Mark => Mark
-    case CaptureSet(set) => set.foldLeft(CaptureDescriptors.emptyCaptureSet) {
+  def subst(cs: CaptureSet, posOpt: Option[Position]): CaptureSet = {
+    cs.set.foldLeft(CaptureDescriptors.emptyCaptureSet) {
       (cd, capturable) => cd.union(subst(capturable, posOpt))
     }
   }

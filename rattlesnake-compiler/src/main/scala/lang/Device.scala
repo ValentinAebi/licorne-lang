@@ -2,7 +2,6 @@ package lang
 
 import identifiers.{FunOrVarId, NormalTypeId, TypeIdentifier}
 import lang.CaptureDescriptors.CaptureSet
-import lang.LanguageMode.OcapEnabled
 import lang.Types.{NamedTypeShape, Type}
 import lang.Visibility.Public
 
@@ -22,7 +21,7 @@ object Device {
     def functions: Map[FunOrVarId, FunctionSignature]
     
     protected def sig(name: FunOrVarId, args: List[(Option[FunOrVarId], Type)], retType: Type): (FunOrVarId, FunctionSignature) = {
-      name -> FunctionSignature(name, args, retType, Public, OcapEnabled)
+      name -> FunctionSignature(name, args, retType, Public)
     }
   }
   

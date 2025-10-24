@@ -340,7 +340,7 @@ final class Backend[V <: ClassVisitor](
     constructorVisitor.visitVarInsn(Opcodes.ALOAD, 0)
     constructorVisitor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", ConstructorFunId.stringId, "()V", false)
     var varIdx = 1
-    for ((fldName, fldInfo) <- typeSig.regularParams) do {
+    for ((fldName, fldInfo) <- typeSig.params) do {
       val tpe = fldInfo.tpe
       val descr = descriptorForType(tpe.shape)
       constructorVisitor.visitVarInsn(Opcodes.ALOAD, 0)
@@ -420,9 +420,6 @@ final class Backend[V <: ClassVisitor](
       case BoolLit(value) => mv.visitLdcInsn(if value then 1 else 0)
       case StringLit(value) => mv.visitLdcInsn(value)
 
-      case regionCreation: RegionCreation =>
-        RuntimeMethod.NewRegion.generateCall(mv)
-
       case varRef@VariableRef(name) => {
         val (tpe, localIdx) = ctx.getLocal(name).get
         val opCode = opcodeFor(tpe.shape, Opcodes.ILOAD, Opcodes.ALOAD)
@@ -498,9 +495,8 @@ final class Backend[V <: ClassVisitor](
           mv.visitLabel(afterCheckLabel)
         }
 
-      case arrayInit@ArrayInit(regionOpt, elemTypeTree, size) =>
+      case arrayInit@ArrayInit(elemTypeTree, size) =>
         val elemType = elemTypeTree.getResolvedType
-        regionOpt.foreach(generateCode(_, ctx))
         generateCode(size, ctx)
         elemType.shape match {
           case _: (PrimitiveTypeShape.StringType.type | NamedTypeShape | ArrayTypeShape | UnionTypeShape) =>
@@ -510,13 +506,8 @@ final class Backend[V <: ClassVisitor](
             mv.visitIntInsn(Opcodes.NEWARRAY, elemTypeCode)
           case Types.UndefinedTypeShape => shouldNotHappen()
         }
-        regionOpt.foreach { _ =>
-          mv.visitInsn(Opcodes.DUP_X1)
-          mv.visitInsn(Opcodes.SWAP)
-          RuntimeMethod.SaveObjectInRegion.generateCall(mv)
-        }
 
-      case StructOrModuleInstantiation(regionOpt, tid, args) =>
+      case StructOrModuleInstantiation(tid, args) =>
         val constructorSig = ctx.resolveTypeAs[ConstructibleSig](tid).get.voidInitMethodSig
         val constructorDescr = descriptorForFunc(constructorSig)
         mv.visitTypeInsn(Opcodes.NEW, tid.stringId)
@@ -525,11 +516,6 @@ final class Backend[V <: ClassVisitor](
           generateCode(arg, ctx)
         }
         mv.visitMethodInsn(Opcodes.INVOKESPECIAL, tid.stringId, ConstructorFunId.stringId, constructorDescr, false)
-        regionOpt.foreach { region =>
-          mv.visitInsn(Opcodes.DUP)
-          generateCode(region, ctx)
-          RuntimeMethod.SaveObjectInRegion.generateCall(mv)
-        }
 
       case UnaryOp(operator, operand) =>
         generateCode(operand, ctx)
@@ -542,7 +528,6 @@ final class Backend[V <: ClassVisitor](
             mv.visitInsn(Opcodes.ARRAYLENGTH)
           case Len if operand.getTypeShape == StringType =>
             mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, stringTypeStr, "length", "()I", false)
-          case Sharp => ()
           case _ => throw new AssertionError(s"unexpected $operator in code generation")
         }
 
@@ -642,9 +627,6 @@ final class Backend[V <: ClassVisitor](
           mv.visitInsn(opcode)
         }
       }
-
-      case Select(lhs, SpecialFields.regFieldId) =>
-        shouldNotHappen()
 
       case Select(lhs, selected) =>
         generateCode(lhs, ctx)
@@ -780,24 +762,6 @@ final class Backend[V <: ClassVisitor](
         mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/RuntimeException",
           ConstructorFunId.stringId, s"(L$stringTypeStr;)V", false)
         mv.visitInsn(Opcodes.ATHROW)
-
-      case RestrictedStat(capabilities, body) =>
-        generateCode(body, ctx)
-
-      case EnclosedStat(ExplicitCaptureSetTree(capturedExpressions), body) =>
-        RuntimeMethod.StartPreparingEnvir.generateCall(mv)
-        capturedExpressions.foreach {
-          case DeviceRef(Device.Console) =>
-            RuntimeMethod.AllowConsole.generateCall(mv)
-          case DeviceRef(Device.FileSystem) =>
-            RuntimeMethod.AllowFilesystem.generateCall(mv)
-          case capExpr =>
-            generateCode(capExpr, ctx)
-            RuntimeMethod.AllowRegion.generateCall(mv)
-        }
-        RuntimeMethod.PushEnvir.generateCall(mv)
-        generateCode(body, ctx)
-        RuntimeMethod.PopEnvir.generateCall(mv)
 
 
       case other => throw new AssertionError(s"unexpected in backend: ${other.getClass}")

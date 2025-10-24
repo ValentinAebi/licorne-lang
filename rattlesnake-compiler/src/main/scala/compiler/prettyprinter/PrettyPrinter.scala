@@ -3,7 +3,6 @@ package compiler.prettyprinter
 import compiler.irs.Asts.*
 import compiler.pipeline.CompilerStep
 import lang.Keyword.*
-import lang.LanguageMode.OcapDisabled
 import lang.{Keyword, Operator, Visibility}
 
 final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boolean = false) extends CompilerStep[Ast, String] {
@@ -17,15 +16,8 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
   private def addAst(ast: Ast)(implicit pps: PrettyPrintString): Unit = {
     ast match {
 
-      case Source(defs, languageMode) =>
+      case Source(defs) =>
         pps.newLine()
-        if (languageMode == OcapDisabled){
-          pps
-            .add("#")
-            .add(Nocap.str)
-            .add(";")
-            .newLine()
-        }
         for df <- defs do {
           pps.newLine()
           addAst(df)
@@ -99,12 +91,7 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
         }
         addAst(body)
 
-      case StructDef(structName, isShallowMutable, fields, directSupertypes, isAbstract) =>
-        if (isShallowMutable){
-          pps
-            .add(Mut.str)
-            .addSpace()
-        }
+      case StructDef(structName, fields, directSupertypes, isAbstract) =>
         pps
           .add(if isAbstract then Datatype.str else Struct.str)
           .addSpace()
@@ -153,10 +140,7 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
           .add(": ")
         addAst(paramTypeTree)
 
-      case PackageImport(packageId, isMarked) =>
-        if (isMarked){
-          pps.add("#")
-        }
+      case PackageImport(packageId) =>
         pps
           .add(Package.str)
           .addSpace()
@@ -167,9 +151,6 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
           .add(Keyword.Device.str)
           .addSpace()
           .add(device.keyword.str)
-
-      case RegionCreation() =>
-        pps.add(NewReg.str)
 
       case localDef@LocalDef(valName, optTypeTree, rhsOpt, isReassignable) =>
         pps
@@ -233,34 +214,21 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
         addAst(arg)
         pps.add("]")
 
-      case ArrayInit(regionOpt, elemTypeTree, size) =>
+      case ArrayInit(elemTypeTree, size) =>
         pps.add(Arr.str)
-        regionOpt.foreach { region =>
-          pps.add("@")
-          addAst(region)
-        }
         pps.addSpace()
         addAst(elemTypeTree)
         pps.add("[")
         addAst(size)
         pps.add("]")
 
-      case FilledArrayInit(arrayElems, regionOpt) =>
+      case FilledArrayInit(arrayElems) =>
         addParenthList(arrayElems, parenth = ("[", "]"))
-        regionOpt.foreach { region =>
-          pps.add("@")
-          addAst(region)
-        }
 
-      case StructOrModuleInstantiation(regionOpt, structName, args) =>
+      case StructOrModuleInstantiation(structName, args) =>
         pps
           .add(New.str)
           .addSpace()
-        regionOpt.foreach { region =>
-          pps.add("@")
-          addAst(region)
-          pps.addSpace()
-        }
         pps.add(structName)
         addParenthList(args)
 
@@ -412,20 +380,6 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
           .addSpace()
         addAst(msg)
 
-      case RestrictedStat(capSetTree, body) =>
-        pps
-          .add(Restricted.str)
-          .addSpace()
-        addAst(capSetTree)
-        addAst(body)
-
-      case EnclosedStat(capSetTree, body) =>
-        pps
-          .add(Enclosed.str)
-          .addSpace()
-        addAst(capSetTree)
-        addAst(body)
-
       case CapturingTypeTree(ArrayTypeShapeTree(elemType), captureDescr) =>
         addArrayTypeTree(elemType, Some(captureDescr))
 
@@ -451,13 +405,10 @@ final class PrettyPrinter(indentGranularity: Int = 2, displayAllParentheses: Boo
 
       case ImplicitRootCaptureSetTree() => ()
 
-      case MarkTree() =>
-        pps.add("#")
-
     }
   }
 
-  private def addArrayTypeTree(elemTypeTree: TypeTree, arrayCdTreeOpt: Option[CaptureDescrTree])
+  private def addArrayTypeTree(elemTypeTree: TypeTree, arrayCdTreeOpt: Option[CaptureSetTree])
                               (implicit pps: PrettyPrintString): Unit = {
     pps.add(Arr.str)
     arrayCdTreeOpt.foreach { arrayCdTree =>

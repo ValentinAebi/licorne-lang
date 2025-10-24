@@ -5,12 +5,12 @@ import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.reporting.Errors.{ErrorReporter, Warning}
 import compiler.reporting.{Errors, Position}
 import compiler.typechecker.TypeCheckingContext.{ConstantInfo, IdInfo, LocalInfo, LocalUsesCollector}
-import identifiers.{FunOrVarId, SpecialFields, TypeIdentifier}
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Capturables.{ConcreteCapturable, IdPath, Path, RootCapability}
 import lang.CaptureDescriptors.*
 import lang.Types.*
-import lang.Types.PrimitiveTypeShape.{NothingType, RegionType, VoidType}
+import lang.Types.PrimitiveTypeShape.{NothingType, VoidType}
 
 import scala.collection.mutable
 
@@ -21,7 +21,7 @@ final case class TypeCheckingContext private(
                                               analysisContext: AnalysisContext,
                                               private val locals: mutable.Map[FunOrVarId, LocalInfo] = mutable.Map.empty,
                                               meTypeId: TypeIdentifier,
-                                              meCaptureDescr: CaptureDescriptor,
+                                              meCaptureDescr: CaptureSet,
                                               currentFunIdOpt: Option[FunOrVarId],
                                               insideEnclosure: Boolean,
                                               currentRestriction: CaptureSet
@@ -51,7 +51,6 @@ final case class TypeCheckingContext private(
    *
    * @param name                  name of the local
    * @param tpe                   type of the local
-   * @param isReassignable        whether it is allowed or not to assign a new value to this local (`val` vs `var`)
    * @param duplicateVarCallback  to be called if the name is already used by another local
    * @param forbiddenTypeCallback to be called if the local has a type that is not acceptable for a local
    */
@@ -84,18 +83,7 @@ final case class TypeCheckingContext private(
     )
   }
 
-  def isUninhabitedForSureWhenNoCaptureDescr(shape: TypeShape): Boolean = shape match {
-    case RegionType => true
-    case NamedTypeShape(typeName) =>
-      resolveTypeAs[StructSignature](typeName) match {
-        case Some(structSig) => structSig.isShallowMutable
-        case None => false
-      }
-    case _ => false
-  }
-
   def neverNeedsCapDescr(shape: TypeShape): Boolean = shape match {
-    case RegionType => false
     case shape: PrimitiveTypeShape => true
     case _ => false
   }
@@ -121,18 +109,6 @@ final case class TypeCheckingContext private(
         .getOrElse(UndefinedTypeShape)
     case Capturables.CapDevice(device) =>
       device.tpe
-  }
-
-  def isProper(tpe: Type): Boolean = isProper(tpe.captureDescriptor)
-
-  def isProper(cd: CaptureDescriptor): Boolean = cd match {
-    case Mark => false
-    case CaptureSet(set) => set.forall {
-      case RootCapability => true
-      case concr: ConcreteCapturable =>
-        val tpe = lookup(concr)
-        isProper(tpe)
-    }
   }
 
   def isCurrentFunc(owner: TypeIdentifier, funId: FunOrVarId): Boolean = {
@@ -170,7 +146,7 @@ object TypeCheckingContext {
   def apply(
              analysisContext: AnalysisContext,
              meTypeId: TypeIdentifier,
-             meCaptureDescr: CaptureDescriptor,
+             meCaptureDescr: CaptureSet,
              currFunIdOpt: Option[FunOrVarId],
              insideEnclosure: Boolean,
              currentRestriction: CaptureSet

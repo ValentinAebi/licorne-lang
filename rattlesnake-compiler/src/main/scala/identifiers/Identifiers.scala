@@ -26,10 +26,6 @@ case object ConstructorFunId extends FunOrVarId {
   override def stringId: String = "<init>"
 }
 
-object SpecialFields {
-  val regFieldId: FunOrVarId = NormalFunOrVarId("reg")
-}
-
 object BackendGeneratedVarId {
   def apply(varIdx: Int): BackendGeneratedVarId = new BackendGeneratedVarId(varIdx.toString)
 }

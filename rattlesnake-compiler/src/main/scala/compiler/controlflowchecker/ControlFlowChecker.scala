@@ -7,7 +7,7 @@ import compiler.pipeline.CompilationStep.PathsChecking
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import lang.CaptureDescriptors.CaptureSet
-import lang.Types.PrimitiveTypeShape.{NothingType, RegionType, VoidType}
+import lang.Types.PrimitiveTypeShape.{NothingType, VoidType}
 
 
 final class ControlFlowChecker(er: ErrorReporter) extends CompilerStep[(List[Source], AnalysisContext), (List[Source], AnalysisContext)] {
@@ -106,12 +106,6 @@ final class ControlFlowChecker(er: ErrorReporter) extends CompilerStep[(List[Sou
         .terminated()
     case PanicStat(msg) =>
       analyzeExpr(inState, msg).terminated()
-    case RestrictedStat(ExplicitCaptureSetTree(capturedExpressions), body) =>
-      val s = analyzeExpressions(inState, capturedExpressions)
-      analyzeStat(s, body)
-    case EnclosedStat(ExplicitCaptureSetTree(capturedExpressions), body) =>
-      val s = analyzeExpressions(inState, capturedExpressions)
-      analyzeStat(s, body)
   }
 
   private def maybeCaseCoveringCond(cond: Expr, initState: State)
@@ -123,7 +117,6 @@ final class ControlFlowChecker(er: ErrorReporter) extends CompilerStep[(List[Sou
 
   private def analyzeExpr(inState: State, expr: Expr)(using ctx: ControlFlowCheckingContext): State = expr match {
     case literal: Literal => inState
-    case regionCreation: RegionCreation => inState
     case varRef: VariableRef =>
       inState.checkIsInitialized(varRef, er)
       inState
@@ -137,12 +130,12 @@ final class ControlFlowChecker(er: ErrorReporter) extends CompilerStep[(List[Sou
       else preCallState
     case Indexing(indexed, arg) =>
       analyzeExpressions(inState, indexed, arg)
-    case ArrayInit(regionOpt, elemType, size) =>
-      analyzeExpressions(inState, regionOpt.toList :+ size)
-    case FilledArrayInit(regionOpt, arrayElems) =>
-      analyzeExpressions(inState, regionOpt ++ arrayElems)
-    case StructOrModuleInstantiation(regionOpt, typeId, args) =>
-      analyzeExpressions(inState, regionOpt ++ args)
+    case ArrayInit(elemType, size) =>
+      analyzeExpr(inState, size)
+    case FilledArrayInit(arrayElems) =>
+      analyzeExpressions(inState, arrayElems)
+    case StructOrModuleInstantiation(typeId, args) =>
+      analyzeExpressions(inState, args)
     case UnaryOp(operator, operand) =>
       analyzeExpr(inState, operand)
     case BinaryOp(lhs, operator, rhs) =>

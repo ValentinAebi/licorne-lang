@@ -29,7 +29,6 @@ object TypesConverter {
       case PrimitiveTypeShape.DoubleType => DOUBLE_TYPE.toSome
       case PrimitiveTypeShape.CharType => CHAR_TYPE.toSome
       case PrimitiveTypeShape.BoolType => BOOLEAN_TYPE.toSome
-      case PrimitiveTypeShape.RegionType => INT_TYPE.toSome
       case PrimitiveTypeShape.VoidType => VOID_TYPE.toSome
       case PrimitiveTypeShape.NothingType => VOID_TYPE.toSome
       case _: (PrimitiveTypeShape.StringType.type | NamedTypeShape | ArrayTypeShape | UnionTypeShape) => None
@@ -42,7 +41,6 @@ object TypesConverter {
       case PrimitiveTypeShape.DoubleType => Opcodes.T_DOUBLE.toSome
       case PrimitiveTypeShape.CharType => Opcodes.T_CHAR.toSome
       case PrimitiveTypeShape.BoolType => Opcodes.T_BOOLEAN.toSome
-      case PrimitiveTypeShape.RegionType => Opcodes.T_INT.toSome
       case _ => None
   }
 
@@ -52,7 +50,6 @@ object TypesConverter {
       case PrimitiveTypeShape.DoubleType => "D"
       case PrimitiveTypeShape.CharType => "C"
       case PrimitiveTypeShape.BoolType => "Z"
-      case PrimitiveTypeShape.RegionType => "I"
       case PrimitiveTypeShape.StringType => "java/lang/String"
       case PrimitiveTypeShape.VoidType => "V"
       case PrimitiveTypeShape.NothingType => "V"

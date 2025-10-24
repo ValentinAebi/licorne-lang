@@ -10,17 +10,12 @@ object Types {
 
   sealed trait Type {
     def shape: TypeShape
-    def captureDescriptor: CaptureDescriptor
-
-    def maybeMarked(languageMode: LanguageMode): Type = {
-      if languageMode.isOcapDisabled && this.shape.mayCapture then this.shape ^ Mark
-      else this
-    }
+    def captureDescriptor: CaptureSet
     
     def isPure: Boolean = captureDescriptor.isEmpty
   }
 
-  final case class CapturingType private[CapturingType](shape: TypeShape, captureDescriptor: CaptureDescriptor) extends Type {
+  final case class CapturingType private[CapturingType](shape: TypeShape, captureDescriptor: CaptureSet) extends Type {
     require(!captureDescriptor.isEmpty)
 
     override def toString: String =
@@ -30,18 +25,16 @@ object Types {
   }
   
   object CapturingType {
-    def apply(shape: Types.TypeShape, descriptor: CaptureDescriptor): Type = {
-      if descriptor.isEmpty || (descriptor == Mark && !shape.mayCapture)
-      then shape
-      else new CapturingType(shape, descriptor)
+    def apply(shape: Types.TypeShape, descriptor: CaptureSet): Type = {
+      if descriptor.isEmpty then shape else new CapturingType(shape, descriptor)
     }
   }
 
   sealed trait TypeShape extends Type {
     override def shape: TypeShape = this
-    override def captureDescriptor: CaptureDescriptor = CaptureSet.empty
-    @targetName("capturing") infix def ^(cd: CaptureDescriptor): Type = CapturingType(this, cd)
-    @targetName("maybeCapturing") infix def ^(cdOpt: Option[CaptureDescriptor]): Type =
+    override def captureDescriptor: CaptureSet = CaptureSet.empty
+    @targetName("capturing") infix def ^(cd: CaptureSet): Type = CapturingType(this, cd)
+    @targetName("maybeCapturing") infix def ^(cdOpt: Option[CaptureSet]): Type =
       cdOpt.map(CapturingType(this, _)).getOrElse(this)
     def mayCapture: Boolean
     private[Types] def toStringCapturing(capDescrStr: String): String = s"$toString^$capDescrStr"
@@ -55,7 +48,6 @@ object Types {
     case CharType extends PrimitiveTypeShape("Char", false)
     case BoolType extends PrimitiveTypeShape("Bool", false)
     case StringType extends PrimitiveTypeShape("String", false)
-    case RegionType extends PrimitiveTypeShape("Region", true)
 
     case VoidType extends PrimitiveTypeShape("Void", false)
     case NothingType extends PrimitiveTypeShape("Nothing", false)

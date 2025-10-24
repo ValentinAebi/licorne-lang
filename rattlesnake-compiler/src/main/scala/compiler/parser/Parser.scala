@@ -11,8 +11,7 @@ import compiler.reporting.{Errors, Position}
 import identifiers.*
 import lang.*
 import lang.Capturables.*
-import lang.Keyword.{Enclosed, *}
-import lang.LanguageMode.{OcapDisabled, OcapEnabled}
+import lang.Keyword.*
 import lang.Operator.*
 import lang.Types.{ArrayTypeShape, NamedTypeShape, TypeShape}
 
@@ -80,7 +79,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val greaterThan = op(GreaterThan).ignored
   private val at = op(At).ignored
 
-  private val unaryOperator = op(Minus, ExclamationMark, Len, Sharp)
+  private val unaryOperator = op(Minus, ExclamationMark, Len)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
 
   private val endl = treeParser("<endl>") {
@@ -92,9 +91,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   // ---------- Syntax description -----------------------------------------------------------------------
 
   private lazy val source: FinalTreeParser[Source] = {
-    opt(op(Sharp) ::: kw(Nocap) ::: semicolon) ::: repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map {
-      case nocapOpt ^: defs => Source(defs, if nocapOpt.isDefined then OcapDisabled else OcapEnabled)
-    }
+    repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
   } setName "source"
 
   private lazy val topLevelDef: P[TopLevelDef] = moduleDef OR packageDef OR structDef OR constDef
@@ -131,10 +128,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "moduleImport"
 
   private lazy val packageImport = {
-    opt(op(Sharp)) ::: kw(Package).ignored ::: highName map {
-      case optSharp ^: pkgId =>
-        PackageImport(pkgId, optSharp.isDefined)
-    }
+    kw(Package).ignored ::: highName map (PackageImport(_))
   } setName "packageImport"
 
   private lazy val deviceImport = kw(Keyword.Device).ignored ::: device map {
@@ -151,10 +145,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "param"
 
   private lazy val structDef = {
-    opt(kw(Mut)) ::: (kw(Struct) OR kw(Datatype)) ::: highName ::: opt(colon ::: repeatWithSep(highName, comma))
+    (kw(Struct) OR kw(Datatype)) ::: highName ::: opt(colon ::: repeatWithSep(highName, comma))
       ::: opt(openBrace ::: repeatWithSep(param, comma) ::: closeBrace) map {
-      case optMut ^: structOrDatatype ^: name ^: supertypesOpt ^: fieldsOpt =>
-        StructDef(name, optMut.isDefined, fieldsOpt.getOrElse(Nil), supertypesOpt.getOrElse(Seq.empty), structOrDatatype == Datatype)
+      case structOrDatatype ^: name ^: supertypesOpt ^: fieldsOpt =>
+        StructDef(name, fieldsOpt.getOrElse(Nil), supertypesOpt.getOrElse(Seq.empty), structOrDatatype == Datatype)
     }
   } setName "structDef"
 
@@ -196,12 +190,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     pkgRef OR deviceRef OR path
   } setName "capturableExpr"
 
-  private lazy val hatAndImplicitRootCapOrMark = recursive {
-    op(Hat) ::: opt(op(Sharp)) map {
-      case hat ^: None => ImplicitRootCaptureSetTree()
-      case hat ^: Some(_) => MarkTree()
-    }
-  } setName "hatAndImplicitRootCapOrMark"
+  private lazy val hatAndImplicitRootCap = recursive {
+    op(Hat) map (_ => ImplicitRootCaptureSetTree())
+  } setName "hatAndImplicitRootCap"
 
   private lazy val explicitCaptureSetTree = recursive {
     openBrace ::: repeatWithSep(expr, comma) ::: closeBrace map {
@@ -215,8 +206,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "hatAndExplicitCaptureSetTree"
   
-  private lazy val hatAndCaptureDescr: P[CaptureDescrTree] = recursive {
-    hatAndImplicitRootCapOrMark OR hatAndExplicitCaptureSetTree
+  private lazy val hatAndCaptureDescr: P[CaptureSetTree] = recursive {
+    hatAndImplicitRootCap OR hatAndExplicitCaptureSetTree
   } setName "hatAndCaptureDescr"
   
   private lazy val primOrNamedShape = highName map { typeName =>
@@ -277,7 +268,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "noBinopExpr"
 
   private lazy val binopArg = recursive {
-    (noBinopExpr OR arrayInit OR structOrModuleInstantiation OR regionCreation)
+    (noBinopExpr OR arrayInit OR structOrModuleInstantiation)
       ::: opt((kw(As) OR kw(Is)) ::: primOrNamedShape
     ) map {
       case expression ^: None => expression
@@ -326,29 +317,25 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "parenthesizedExpr"
 
   private lazy val arrayInit = recursive {
-    kw(Arr).ignored ::: opt(at ::: expr) ::: typeTree ::: openingBracket ::: expr ::: closingBracket map {
-      case regionOpt ^: elemType ^: size =>
-        ArrayInit(regionOpt, elemType, size)
+    kw(Arr).ignored ::: typeTree ::: openingBracket ::: expr ::: closingBracket map {
+      case elemType ^: size =>
+        ArrayInit(elemType, size)
     }
   } setName "arrayInit"
 
   private lazy val filledArrayInit = recursive {
-    openingBracket ::: repeatWithSep(expr, comma) ::: closingBracket ::: opt(op(At).ignored ::: expr) map {
-      case arrElems ^: regionOpt => FilledArrayInit(arrElems, regionOpt)
-    }
+    openingBracket ::: repeatWithSep(expr, comma) ::: closingBracket map (FilledArrayInit(_))
   } setName "filledArrayInit"
 
   private lazy val structOrModuleInstantiation = recursive {
-    kw(New).ignored ::: opt(at ::: expr) ::: highName ::: openParenth ::: repeatWithSep(expr, comma) ::: closeParenth map {
-      case optReg ^: tid ^: args => StructOrModuleInstantiation(optReg, tid, args)
+    kw(New).ignored ::: highName ::: openParenth ::: repeatWithSep(expr, comma) ::: closeParenth map {
+      case tid ^: args => StructOrModuleInstantiation(tid, args)
     }
   } setName "structOrModuleInstantiation"
 
-  private lazy val regionCreation = kw(NewReg) map (_ => RegionCreation()) setName "regionCreation"
-
   private lazy val stat: P[Statement] = {
     exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR
-      returnStat OR panicStat OR restrictedStat OR enclosedStat
+      returnStat OR panicStat
   } setName "stat"
 
   private lazy val valDef = {
@@ -395,18 +382,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val panicStat = {
     kw(Panic).ignored ::: expr map PanicStat.apply
   } setName "panicStat"
-  
-  private lazy val restrictedStat = {
-    kw(Restricted).ignored ::: explicitCaptureSetTree ::: block map {
-      case cs ^: body => RestrictedStat(cs, body)
-    }
-  } setName "restrictedStat"
-
-  private lazy val enclosedStat = {
-    kw(Enclosed).ignored ::: explicitCaptureSetTree ::: block map {
-      case cs ^: body => EnclosedStat(cs, body)
-    }
-  } setName "enclosedStat"
 
 
   override def apply(input: (List[PositionedToken], String)): Source = {

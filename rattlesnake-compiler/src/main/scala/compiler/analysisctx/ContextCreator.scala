@@ -25,11 +25,11 @@ final class ContextCreator(errorReporter: ErrorReporter)
       for df <- src.defs do {
         df match
           case moduleDef: ModuleDef =>
-            ctxBuilder.addModule(moduleDef)(using src.languageMode)
+            ctxBuilder.addModule(moduleDef)
           case packageDef: PackageDef =>
-            ctxBuilder.addPackage(packageDef)(using src.languageMode)
+            ctxBuilder.addPackage(packageDef)
           case structDef: StructDef =>
-            ctxBuilder.addStruct(structDef)(using src.languageMode)
+            ctxBuilder.addStruct(structDef)
           case constDef: ConstDef =>
             ctxBuilder.addConstant(constDef)
       }

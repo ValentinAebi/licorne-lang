@@ -7,10 +7,6 @@ import scala.collection.mutable
 
 object SubcaptureRelation {
 
-  extension (l: CaptureDescriptor) def subcaptureOf(r: CaptureDescriptor)(using ctx: TypeCheckingContext): Boolean = {
-    SubcapturingComputer(ctx).isSubcapture(l, r)
-  }
-
   extension (l: CaptureSet) def subcaptureOf(r: CaptureSet)(using ctx: TypeCheckingContext): Boolean = {
     SubcapturingComputer(ctx).isSubcapture(l, r)
   }
@@ -24,18 +20,6 @@ object SubcaptureRelation {
    */
   private class SubcapturingComputer(private val ctx: TypeCheckingContext) {
     private val stackedRequests = mutable.Set.empty[(Capturable, CaptureSet)]
-
-    def isSubcapture(l: CaptureDescriptor, r: CaptureDescriptor): Boolean = {
-      (l, r) match {
-        case (Mark, Mark) => true
-        case (lcs: CaptureSet, rcs: CaptureSet) =>
-          isSubcapture(lcs, rcs)
-        // obscuring
-        case (Mark, r) if r.coversRoot =>
-          ctx.insideEnclosure
-        case _ => false
-      }
-    }
     
     def isSubcapture(l: CaptureSet, r: CaptureSet): Boolean = {
       l.set.forall(isCovered(_, r))

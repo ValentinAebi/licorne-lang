@@ -4,42 +4,18 @@ import lang.Capturables.*
 
 object CaptureDescriptors {
 
-  sealed trait CaptureDescriptor {
-
-    def coversRoot: Boolean
-
-    def isEmpty: Boolean
-
-    def union(that: CaptureDescriptor): CaptureDescriptor = (this, that) match {
-      case (thisCs: CaptureSet, thatCs: CaptureSet) => thisCs.union(thatCs)
-      case _ => Mark
-    }
-
-    def union(thatOpt: Option[CaptureDescriptor]): CaptureDescriptor =
-      thatOpt.map(this.union).getOrElse(this)
-
-    def mapSet(f: Set[Capturable] => Set[Capturable]): CaptureDescriptor = this match {
-      case Mark => Mark
-      case CaptureSet(set) => CaptureSet(f(set))
-    }
-
-  }
-
-  case object Mark extends CaptureDescriptor {
-    override def coversRoot: Boolean = false
-
-    override def isEmpty: Boolean = false
-
-    override def toString: String = Operator.Sharp.str
-  }
-
-  final case class CaptureSet(set: Set[Capturable]) extends CaptureDescriptor {
-    override def coversRoot: Boolean = set.contains(RootCapability)
+  final case class CaptureSet(set: Set[Capturable]) {
+    def coversRoot: Boolean = set.contains(RootCapability)
 
     def augmentedWith(c: Capturable): CaptureSet = CaptureSet(set + c)
     def union(that: CaptureSet): CaptureSet = CaptureSet(this.set ++ that.set)
 
-    override def isEmpty: Boolean = set.isEmpty
+    def union(thatOpt: Option[CaptureSet]): CaptureSet =
+      thatOpt.map(this.union).getOrElse(this)
+
+    def isEmpty: Boolean = set.isEmpty
+
+    def mapSet(f: Set[Capturable] => Set[Capturable]): CaptureSet = CaptureSet(f(set))
 
     override def toString: String =
       set.toList
@@ -57,11 +33,11 @@ object CaptureDescriptors {
 
   }
 
-  def unionOf(captureDescriptors: Iterable[CaptureDescriptor]): CaptureDescriptor = {
-    captureDescriptors.foldLeft[CaptureDescriptor](CaptureSet.empty)(_.union(_))
+  def unionOf(captureDescriptors: Iterable[CaptureSet]): CaptureSet = {
+    captureDescriptors.foldLeft[CaptureSet](CaptureSet.empty)(_.union(_))
   }
 
-  val emptyCaptureSet: CaptureDescriptor = CaptureSet.empty
-  val singletonSetOfRoot: CaptureDescriptor = CaptureSet.singletonOfRoot
+  val emptyCaptureSet: CaptureSet = CaptureSet.empty
+  val singletonSetOfRoot: CaptureSet = CaptureSet.singletonOfRoot
 
 }

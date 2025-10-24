@@ -51,10 +51,7 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
   }
 
   private def lower(src: Source)(using LoweringContext): Source = propagatePosition(src.getPosition) {
-    Source(
-      src.defs.filterNot(_.isInstanceOf[ConstDef]).map(lower),
-      src.languageMode
-    ).setName(src.getName)
+    Source(src.defs.filterNot(_.isInstanceOf[ConstDef]).map(lower)).setName(src.getName)
   }
 
   private def lower(block: Block)(using LoweringContext): Block = propagatePosition(block.getPosition) {
@@ -77,7 +74,6 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
   private def lower(structDef: StructDef)(using LoweringContext): StructDef = propagatePosition(structDef.getPosition) {
     StructDef(
       structDef.structName,
-      structDef.isShallowMutable,
       structDef.fields.map(lower),
       structDef.directSupertypes,
       structDef.isAbstract
@@ -173,7 +169,6 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
   private def lower(expr: Expr)(using ctx: LoweringContext): Expr = propagatePosition(expr.getPosition) {
     val lowered = expr match {
       case literal: Literal => literal
-      case regionCreation: RegionCreation => regionCreation
       case varRef@VariableRef(name) if varRef.isRefToConst => ctx.literalFor(name)
       case varRef: VariableRef => varRef
       case meRef: MeRef => meRef
@@ -181,18 +176,18 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
       case deviceRef: DeviceRef => deviceRef
       case call: Call => lower(call)
       case indexing: Indexing => Indexing(lower(indexing.indexed), lower(indexing.arg))
-      case arrayInit: ArrayInit => ArrayInit(arrayInit.regionOpt.map(lower), lower(arrayInit.elemType), lower(arrayInit.size))
+      case arrayInit: ArrayInit => ArrayInit(lower(arrayInit.elemType), lower(arrayInit.size))
       case instantiation: StructOrModuleInstantiation =>
-        StructOrModuleInstantiation(instantiation.regionOpt.map(lower), instantiation.typeId, instantiation.args.map(lower))
+        StructOrModuleInstantiation(instantiation.typeId, instantiation.args.map(lower))
       
       // [x_1, ... , x_n] ---> explicit assignments
-      case filledArrayInit@FilledArrayInit(arrayElems, regionOpt) =>
+      case filledArrayInit@FilledArrayInit(arrayElems) =>
         val arrayType = filledArrayInit.getType
         val arrayShape = arrayType.shape.asInstanceOf[ArrayTypeShape]
         val elemType = arrayShape.elemType
         val arrValId = uniqueIdGenerator.next()
         val arrValRef = VariableRef(arrValId).setType(arrayType)
-        val arrInit = ArrayInit(regionOpt, WrapperTypeTree(elemType), IntLit(arrayElems.size)).setType(arrayType)
+        val arrInit = ArrayInit(WrapperTypeTree(elemType), IntLit(arrayElems.size)).setType(arrayType)
         val arrayValDefinition = LocalDef(arrValId, Some(WrapperTypeTree(arrayType)), Some(arrInit), isReassignable = false)
         arrayValDefinition.setVarType(arrayType)
         val arrElemAssigStats = arrayElems.map(lower).zipWithIndex.map {
@@ -291,8 +286,6 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
       case forLoop: ForLoop => lower(forLoop)
       case returnStat: ReturnStat => lower(returnStat)
       case panicStat: PanicStat => lower(panicStat)
-      case restrictedStat: RestrictedStat => lower(restrictedStat)
-      case enclosedStat: EnclosedStat => lower(enclosedStat)
   }
 
   private def lower(topLevelDef: TopLevelDef)(using LoweringContext): TopLevelDef = propagatePosition(topLevelDef.getPosition) {
@@ -301,14 +294,6 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
       case packageDef: PackageDef => lower(packageDef)
       case structDef: StructDef => lower(structDef)
       case constDef: ConstDef => throw AssertionError("unexpected constant in lowering")
-  }
-  
-  private def lower(restrictedStat: RestrictedStat)(using LoweringContext): RestrictedStat = propagatePosition(restrictedStat.getPosition) {
-    RestrictedStat(lower(restrictedStat.captureSet), lower(restrictedStat.body))
-  }
-  
-  private def lower(enclosedStat: EnclosedStat)(using LoweringContext): EnclosedStat = propagatePosition(enclosedStat.getPosition) {
-    EnclosedStat(lower(enclosedStat.captureSet), lower(enclosedStat.body))
   }
   
   private def lower(tpe: TypeTree)(using LoweringContext): TypeTree = tpe match {
@@ -330,12 +315,11 @@ final class Lowerer extends CompilerStep[(List[Source], AnalysisContext), (List[
     lowered
   }
 
-  private def lower(captureDescrTree: CaptureDescrTree)(using LoweringContext): CaptureDescrTree = propagatePosition(captureDescrTree.getPosition) {
+  private def lower(captureDescrTree: CaptureSetTree)(using LoweringContext): CaptureSetTree = propagatePosition(captureDescrTree.getPosition) {
     val loweredCapDescr = captureDescrTree match {
       case ExplicitCaptureSetTree(capturedExpressions) =>
         ExplicitCaptureSetTree(capturedExpressions.map(lower))
       case implicitRootCaptureSetTree: ImplicitRootCaptureSetTree => implicitRootCaptureSetTree
-      case markTree: MarkTree => markTree
     }
     loweredCapDescr.setResolvedDescrOpt(captureDescrTree.getResolvedDescrOpt)
     loweredCapDescr

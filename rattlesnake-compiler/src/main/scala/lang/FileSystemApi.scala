@@ -1,7 +1,6 @@
 package lang
 
 import identifiers.{FunOrVarId, NormalFunOrVarId}
-import lang.LanguageMode.OcapEnabled
 import lang.Types.PrimitiveTypeShape.{BoolType, IntType, StringType, VoidType}
 
 object FileSystemApi extends Device.DeviceApi {

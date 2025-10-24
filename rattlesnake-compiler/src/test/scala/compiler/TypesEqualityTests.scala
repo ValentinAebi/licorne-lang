@@ -2,7 +2,7 @@ package compiler
 
 import identifiers.{NormalFunOrVarId, NormalTypeId}
 import lang.Capturables.IdPath
-import lang.CaptureDescriptors.{CaptureSet, Mark}
+import lang.CaptureDescriptors.CaptureSet
 import lang.Types.PrimitiveTypeShape.{BoolType, DoubleType, IntType}
 import lang.Types.{ArrayTypeShape, NamedTypeShape, Type}
 import org.junit.Assert.{assertTrue, fail}
@@ -43,8 +43,6 @@ class TypesEqualityTests {
       ArrayTypeShape(IntType),
       ArrayTypeShape(IntType) ^ CaptureSet.empty,
       ArrayTypeShape(IntType) ^ CaptureSet.singletonOfRoot,
-      ArrayTypeShape(IntType) ^ Mark,
-      ArrayTypeShape(IntType) ^ Mark,
       ArrayTypeShape(DoubleType)
     )
     for t1 <- types; t2 <- types do {
