@@ -24,7 +24,7 @@ object Capturables {
   }
 
   case object MePath extends RootPath {
-    override def toString: String = Keyword.Me.str
+    override def toString: String = Keyword.This.str
   }
 
   final case class SelectPath(directRoot: Path, fld: FunOrVarId) extends Path {

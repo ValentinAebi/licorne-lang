@@ -1,6 +1,5 @@
 package compiler.backend
 
-import compiler.analysisctx.AnalysisContext
 import compiler.backend.DescriptorsCreator.descriptorForType
 import identifiers.TypeIdentifier
 import lang.Types.*
@@ -31,7 +30,7 @@ object TypesConverter {
       case PrimitiveTypeShape.BoolType => BOOLEAN_TYPE.toSome
       case PrimitiveTypeShape.VoidType => VOID_TYPE.toSome
       case PrimitiveTypeShape.NothingType => VOID_TYPE.toSome
-      case _: (PrimitiveTypeShape.StringType.type | NamedTypeShape | ArrayTypeShape | UnionTypeShape) => None
+      case _: (PrimitiveTypeShape.StringType.type | NamedTypeShape) => None
       case Types.UndefinedTypeShape => assert(false)
   }
 
@@ -44,7 +43,7 @@ object TypesConverter {
       case _ => None
   }
 
-  def internalNameOf(tpe: Types.TypeShape)(using ctx: AnalysisContext): String = {
+  def internalNameOf(tpe: Types.TypeShape)(using typeResolver: TypeIdentifier => TypeSignature): String = {
     tpe match
       case PrimitiveTypeShape.IntType => "I"
       case PrimitiveTypeShape.DoubleType => "D"
@@ -53,9 +52,8 @@ object TypesConverter {
       case PrimitiveTypeShape.StringType => "java/lang/String"
       case PrimitiveTypeShape.VoidType => "V"
       case PrimitiveTypeShape.NothingType => "V"
-      case NamedTypeShape(typeName) if !ctx.resolveType(typeName).get.isAbstract => s"$typeName"
-      case ArrayTypeShape(elemType) => s"[${descriptorForType(elemType.shape)}"
-      case NamedTypeShape(_) | UnionTypeShape(_) => "java/lang/Object"
+      case NamedTypeShape(typeName) if !typeResolver(typeName).isAbstract => s"$typeName"
+      case NamedTypeShape(_) => "java/lang/Object"
       case UndefinedTypeShape => assert(false)
   }
 

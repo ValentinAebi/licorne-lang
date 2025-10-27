@@ -18,8 +18,8 @@ enum TypeConversion(val from: PrimitiveTypeShape, val to: PrimitiveTypeShape) {
 
 object TypeConversion {
   
-  def conversionFor(from: Type, to: Type): Option[TypeConversion] = {
-    TypeConversion.values.find(conv => conv.from.shape == from && conv.to == to.shape)
+  def conversionFor(from: TypeShape, to: TypeShape): Option[TypeConversion] = {
+    TypeConversion.values.find(conv => conv.from == from && conv.to == to)
   }
   
 }

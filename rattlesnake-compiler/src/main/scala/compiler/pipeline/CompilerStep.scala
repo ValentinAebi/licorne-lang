@@ -1,7 +1,7 @@
 package compiler.pipeline
 
 
-trait CompilerStep[In, Out] {
+trait CompilerStep[-In, +Out] {
   thisStep =>
 
   def apply(input: In): Out

@@ -10,10 +10,8 @@ import compiler.reporting.Errors.{ErrorReporter, Fatal}
 import compiler.reporting.{Errors, Position}
 import identifiers.*
 import lang.*
-import lang.Capturables.*
 import lang.Keyword.*
 import lang.Operator.*
-import lang.Types.{ArrayTypeShape, NamedTypeShape, TypeShape}
 
 import scala.compiletime.uninitialized
 
@@ -82,10 +80,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val unaryOperator = op(Minus, ExclamationMark, Len)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
 
-  private val endl = treeParser("<endl>") {
-    case EndlToken => ()
-  }
-
   private val semicolon = op(Semicolon).ignored
 
   // ---------- Syntax description -----------------------------------------------------------------------
@@ -94,23 +88,25 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
   } setName "source"
 
-  private lazy val topLevelDef: P[TopLevelDef] = moduleDef OR packageDef OR structDef OR constDef
+  private lazy val topLevelDef: P[TopLevelDef] = classDef OR packageDef OR structDef
 
   private lazy val packageDef: P[PackageDef] = {
-    kw(Package).ignored ::: highName ::: openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace map {
-      case packageName ^: functions =>
-        PackageDef(packageName, functions)
+    kw(Package).ignored ::: highName
+      ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
+      ::: openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace map {
+      case packageName ^: importedPackagesOpt ^: functions =>
+        PackageDef(packageName, importedPackagesOpt.getOrElse(Nil), functions)
     }
   } setName "packageDef"
 
-  private lazy val moduleDef: P[ModuleDef] = {
+  private lazy val classDef: P[ClassDef] = {
     kw(Module).ignored ::: highName
-      ::: openParenth ::: repeatWithSep(importTree, comma) ::: closeParenth
+      ::: openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth
       ::: openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace map {
       case moduleName ^: imports ^: functions =>
-        ModuleDef(moduleName, imports, functions)
+        ClassDef(moduleName, imports, functions)
     }
-  } setName "moduleDef"
+  } setName "classDef"
 
   private lazy val funDef = {
     opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: openParenth ::: repeatWithSep(param, comma) ::: closeParenth
@@ -123,9 +119,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "funDef"
 
-  private lazy val moduleImport = lowName ::: colon ::: typeTree map {
-    case paramId ^: paramType => ParamImport(paramId, paramType)
-  } setName "moduleImport"
+  private lazy val classField = opt(kw(Val) OR kw(Var)) ::: lowName ::: colon ::: typeTree map {
+    case valOrVar ^: paramId ^: paramType => ClassField(paramId, paramType, isReassignable = valOrVar == Keyword.Var)
+  } setName "classField"
 
   private lazy val packageImport = {
     kw(Package).ignored ::: highName map (PackageImport(_))
@@ -135,7 +131,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     device => DeviceImport(device)
   } setName "deviceImport"
 
-  private lazy val importTree = moduleImport OR packageImport OR deviceImport
+  private lazy val classParamTree = classField OR packageImport OR deviceImport
 
   private lazy val param = {
     opt(kw(Var)) ::: opt(lowName ::: colon) ::: typeTree map {
@@ -164,14 +160,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     possiblyNegativeNumericLiteralValue OR nonNumericLiteralValue
   } setName "constExprLiteralValue"
 
-  private lazy val constDef = {
-    kw(Const).ignored ::: lowName ::: opt(colon ::: typeTree) ::: assig ::: constExprLiteralValue map {
-      case name ^: tpeOpt ^: value => ConstDef(name, tpeOpt, value)
-    }
-  } setName "constDef"
-
   private lazy val noParenthType = recursive {
-    primOrNamedType OR arrayType
+    primOrNamedType ::: opt(kw(With).ignored ::: expr) map {
+      case baseType ^: predicateOpt => predicateOpt match {
+        case Some(predicate) => RefinedTypeTree(baseType, predicate)
+        case None => baseType
+      }
+    }
   } setName "noParenthType"
 
   private lazy val typeTree: P[TypeTree] = recursive {
@@ -181,13 +176,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val varRef = lowName map (VariableRef(_))
   
   private lazy val path = recursive {
-    (me OR varRef) ::: repeat(dot ::: lowName) map {
+    (thisRef OR varRef) ::: repeat(dot ::: lowName) map {
       case root ^: selects => selects.foldLeft[Expr](root)(Select(_, _))
     }
   } setName "path"
 
   private lazy val capturableExpr = recursive {
-    pkgRef OR deviceRef OR path
+    pkgRef OR path
   } setName "capturableExpr"
 
   private lazy val hatAndImplicitRootCap = recursive {
@@ -218,12 +213,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val primOrNamedType = primOrNamedShape ::: opt(hatAndCaptureDescr) map {
     case shape ^: cdOpt => shape ^ cdOpt
   } setName "primOrNamedType"
-
-  private lazy val arrayType = recursive {
-    kw(Arr).ignored ::: opt(hatAndCaptureDescr) ::: typeTree map {
-      case cdOpt ^: tp => ArrayTypeShapeTree(tp) ^ cdOpt
-    }
-  } setName "arrayType"
 
   private lazy val device = kw(lang.Device.kwToDevice.keys.toSeq *) map {
     deviceKw => lang.Device.kwToDevice.apply(deviceKw)
@@ -286,11 +275,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     openingBracket ::: expr ::: closingBracket
   } setName "indexing"
 
-  private lazy val me = kw(Me) map (_ => MeRef())
+  private lazy val thisRef = kw(This) map (_ => ThisRef())
 
   private lazy val pkgRef = highName map (PackageRef(_))
-
-  private lazy val deviceRef = device map (DeviceRef(_))
 
   private lazy val varRefOrNonPrefixedCall = lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList) map {
     case name ^: Some(exclMarkOpt ^: args) => Call(None, name, args, exclMarkOpt.isDefined)
@@ -298,7 +285,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "varRefOrNonPrefixedCall"
 
   private lazy val atomicExpr = recursive {
-    varRefOrNonPrefixedCall OR me OR pkgRef OR deviceRef OR literalValue OR filledArrayInit OR parenthesizedExpr
+    varRefOrNonPrefixedCall OR thisRef OR pkgRef OR literalValue OR filledArrayInit OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {

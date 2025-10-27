@@ -3,7 +3,7 @@ package lang
 import identifiers.{FunOrVarId, NormalFunOrVarId}
 import lang.Types.PrimitiveTypeShape.{BoolType, IntType, StringType, VoidType}
 
-object FileSystemApi extends Device.DeviceApi {
+object FileSystemApi extends PredefApi {
 
   val openR: FunOrVarId = NormalFunOrVarId("openR")
   val openW: FunOrVarId = NormalFunOrVarId("openW")
@@ -16,14 +16,14 @@ object FileSystemApi extends Device.DeviceApi {
 
 
   override def functions: Map[FunOrVarId, FunctionSignature] = Map(
-    sig(openR, List(None -> StringType), IntType),
-    sig(openW, List(None -> StringType), IntType),
-    sig(openA, List(None -> StringType), IntType),
-    sig(write, List(None -> IntType, None -> StringType), VoidType),
-    sig(read, List(None -> IntType), IntType),
-    sig(close, List(None -> IntType), VoidType),
-    sig(createDir, List(None -> StringType), BoolType),
-    sig(delete, List(None -> StringType), BoolType)
+    sig(openR, List(None -> StringType.toType), IntType.toType),
+    sig(openW, List(None -> StringType.toType), IntType.toType),
+    sig(openA, List(None -> StringType.toType), IntType.toType),
+    sig(write, List(None -> IntType.toType, None -> StringType.toType), VoidType.toType),
+    sig(read, List(None -> IntType.toType), IntType.toType),
+    sig(close, List(None -> IntType.toType), VoidType.toType),
+    sig(createDir, List(None -> StringType.toType), BoolType.toType),
+    sig(delete, List(None -> StringType.toType), BoolType.toType)
   )
   
 }

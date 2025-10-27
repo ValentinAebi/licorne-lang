@@ -1,7 +1,6 @@
 package compiler.backend
 
-import compiler.analysisctx.AnalysisContext
-import identifiers.FunOrVarId
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Types.{PrimitiveTypeShape, Type, TypeShape}
 
@@ -10,7 +9,7 @@ object DescriptorsCreator {
   /**
    * @return JVM descriptor for [[tpe]]
    */
-  def descriptorForType(tpe: TypeShape)(using ctx: AnalysisContext): String = {
+  def descriptorForType(tpe: TypeShape)(using typeResolver: TypeIdentifier => TypeSignature): String = {
     tpe match
       case PrimitiveTypeShape.IntType => "I"
       case PrimitiveTypeShape.DoubleType => "D"
@@ -19,20 +18,19 @@ object DescriptorsCreator {
       case PrimitiveTypeShape.StringType => "Ljava/lang/String;"
       case PrimitiveTypeShape.VoidType => "V"
       case PrimitiveTypeShape.NothingType => "V"
-      case Types.NamedTypeShape(typeName) if !ctx.resolveType(typeName).get.isAbstract => s"L$typeName;"
-      case Types.NamedTypeShape(_) | Types.UnionTypeShape(_) => "Ljava/lang/Object;"
-      case Types.ArrayTypeShape(elemType) => s"[${descriptorForType(elemType.shape)}"
+      case Types.NamedTypeShape(typeName) if !typeResolver(typeName).isAbstract => s"L$typeName;"
+      case Types.NamedTypeShape(_) => "Ljava/lang/Object;"
       case Types.UndefinedTypeShape => assert(false)
   }
 
   /**
    * @return JVM descriptor for [[funSig]]
    */
-  def descriptorForFunc(argTypes: List[(Option[FunOrVarId], Type)], retType: Type)(using AnalysisContext): String = {
+  def descriptorForFunc(argTypes: List[(Option[FunOrVarId], Type)], retType: Type)(using typeResolver: TypeIdentifier => TypeSignature): String = {
     argTypes.map((_, tpe) => descriptorForType(tpe.shape)).mkString("(", "", ")") ++ descriptorForType(retType.shape)
   }
   
-  def descriptorForFunc(funSig: FunctionSignature)(using AnalysisContext): String =
+  def descriptorForFunc(funSig: FunctionSignature)(using typeResolver: TypeIdentifier => TypeSignature): String =
     descriptorForFunc(funSig.args, funSig.retType)
 
 }

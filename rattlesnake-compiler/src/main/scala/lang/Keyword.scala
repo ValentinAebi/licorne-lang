@@ -15,7 +15,6 @@ enum Keyword(val str: String) {
   case If extends Keyword("if")
   case Is extends Keyword("is")
   case Main extends Keyword("main")
-  case Me extends Keyword("me")
   case Module extends Keyword("module")
   case New extends Keyword("new")
   case NewReg extends Keyword("newreg")
@@ -26,9 +25,11 @@ enum Keyword(val str: String) {
   case Return extends Keyword("return")
   case Struct extends Keyword("struct")
   case Then extends Keyword("then")
+  case This extends Keyword("this")
   case Val extends Keyword("val")
   case Var extends Keyword("var")
   case When extends Keyword("when")
+  case With extends Keyword("with")
   case While extends Keyword("while")
 
   override def toString: String = str

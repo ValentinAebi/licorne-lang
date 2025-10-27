@@ -21,63 +21,11 @@ object Asts {
     export positionMemo.getOpt as getPosition
 
     def children: List[Ast]
-
-    final def collect[T](f: Ast => T): List[T] = {
-      f(this) :: children.flatMap(_.collect(f))
-    }
-
-    /**
-     * Crashes the compiler if at least 1 expression in the AST has no type (i.e. `expr.getTypeOpt.isEmpty`)
-     */
-    final def assertAllTypesAreSet(): Unit = {
-      collect {
-        case expr: Expr => assert(expr.getTypeOpt.isDefined, s"no type set for $expr")
-        case _ => ()
-      }
-    }
   }
 
   sealed abstract class Statement extends Ast
 
-  sealed abstract class Expr extends Statement {
-    private val typeMemo = new Memo[Type]
-
-    /**
-     * Set the type that has been inferred for this expression
-     *
-     * WARNING: since subclasses are allowed to override [[getTypeOpt]], setting a type might have no effect
-     */
-    def setTypeOpt(tpe: Option[Type]): Expr = {
-      typeMemo.setOpt(tpe)
-      this
-    }
-
-    /**
-     * See [[setTypeOpt]]
-     */
-    final def setType(tpe: Type): Expr = {
-      setTypeOpt(Some(tpe))
-    }
-
-    /**
-     * @return the type that has been inferred for this expression
-     *
-     *         WARNING: might be overriden by subclasses if they are able to infer their type from the types of their children
-     */
-    def getTypeOpt: Option[Type] = typeMemo.getOpt
-
-    /**
-     * See [[getTypeOpt]]
-     */
-    def getType: Type = {
-      getTypeOpt match
-        case Some(tpe) => tpe
-        case None => throw new NoSuchElementException(s"type missing in $this")
-    }
-    
-    def getTypeShape: TypeShape = getType.shape
-
-  }
+  sealed abstract class Expr extends Statement
 
   /**
    * Code source (most of the time a file)
@@ -117,13 +65,13 @@ object Asts {
     def isAbstract: Boolean
   }
 
-  sealed trait ModuleOrPackageDefTree extends TypeDefTree {
+  sealed trait ClassOrPackageDefTree extends TypeDefTree {
     def functions: List[FunDef]
 
     def isPackage: Boolean
   }
 
-  final case class PackageDef(packageName: TypeIdentifier, functions: List[FunDef]) extends ModuleOrPackageDefTree {
+  final case class PackageDef(packageName: TypeIdentifier, importedPackages: List[TypeIdentifier], functions: List[FunDef]) extends ClassOrPackageDefTree {
     override def name: TypeIdentifier = packageName
 
     override def directSupertypes: Seq[TypeIdentifier] = Nil
@@ -135,33 +83,33 @@ object Asts {
     override def isPackage: Boolean = true
   }
 
-  final case class ModuleDef(
-                              moduleName: TypeIdentifier,
-                              imports: List[Import],
-                              functions: List[FunDef]
-                            ) extends ModuleOrPackageDefTree {
-    override def name: TypeIdentifier = moduleName
+  final case class ClassDef(
+                             className: TypeIdentifier,
+                             params: List[ClassParam],
+                             functions: List[FunDef]
+                            ) extends ClassOrPackageDefTree {
+    override def name: TypeIdentifier = className
 
     override def directSupertypes: Seq[TypeIdentifier] = Nil
 
     override def isAbstract: Boolean = false
 
-    override def children: List[Ast] = imports ++ functions
+    override def children: List[Ast] = params ++ functions
 
     override def isPackage: Boolean = false
   }
 
-  sealed trait Import extends Ast
+  sealed trait ClassParam extends Ast
 
-  final case class ParamImport(paramId: FunOrVarId, paramType: TypeTree) extends Import {
+  final case class ClassField(paramId: FunOrVarId, paramType: TypeTree, isReassignable: Boolean) extends ClassParam {
     override def children: List[Ast] = List(paramType)
   }
 
-  final case class PackageImport(packageId: TypeIdentifier) extends Import {
+  final case class PackageImport(packageId: TypeIdentifier) extends ClassParam {
     override def children: List[Ast] = Nil
   }
 
-  final case class DeviceImport(device: Device) extends Import {
+  final case class DeviceImport(device: Device) extends ClassParam {
     override def children: List[Ast] = Nil
   }
 
@@ -185,12 +133,6 @@ object Asts {
    */
   final case class FunDef(funName: FunOrVarId, params: List[Param], optRetType: Option[TypeTree], body: Block,
                           visibility: Visibility, isMain: Boolean) extends Ast {
-    private val signatureMemo = new Memo[FunctionSignature]
-    
-    export signatureMemo.setOpt as setSignatureOpt
-    export signatureMemo.set as setSignature
-    export signatureMemo.getOpt as getSignatureOpt
-
     override def children: List[Ast] = params ++ optRetType.toList :+ body
   }
 
@@ -206,13 +148,6 @@ object Asts {
   }
 
   /**
-   * Constant definition
-   */
-  final case class ConstDef(constName: FunOrVarId, tpeOpt: Option[TypeTree], value: Literal) extends TopLevelDef {
-    override def children: List[Ast] = tpeOpt.toList :+ value
-  }
-
-  /**
    * `val` or `var` definition
    *
    * @param isReassignable `true` if `var`, `false` if `val`
@@ -223,13 +158,6 @@ object Asts {
                              rhsOpt: Option[Expr],
                              isReassignable: Boolean
                            ) extends Statement {
-
-    private val varTypeMemo = new Memo[Type]
-    
-    export varTypeMemo.setOpt as setVarTypeOpt
-    export varTypeMemo.set as setVarType
-    export varTypeMemo.getOpt as getVarTypeOpt
-
     val keyword: Keyword = if isReassignable then Keyword.Var else Keyword.Val
 
     override def children: List[Ast] = optTypeAnnot.toList ++ rhsOpt
@@ -240,15 +168,13 @@ object Asts {
 
     final override def children: List[Ast] = Nil
 
-    override def getTypeOpt: Option[Type]
+    def getTypeShapeOpt: Option[TypeShape]
 
-    final override def getType: Type = {
-      getTypeOpt match
-        case Some(tpe) => tpe
+    final def getTypeShape: TypeShape = {
+      getTypeShapeOpt match
+        case Some(shape) => shape
         case None => throw new NoSuchElementException(s"type missing in $this")
     }
-    
-    def freshCopyWithoutPos: Literal
   }
 
   sealed trait NumericLiteral extends Literal
@@ -259,63 +185,45 @@ object Asts {
    * Integer literal
    */
   final case class IntLit(value: Int) extends NumericLiteral {
-    override def getTypeOpt: Option[TypeShape] = Some(IntType)
-    
-    override def freshCopyWithoutPos: Literal = IntLit(value)
+    override def getTypeShapeOpt: Option[TypeShape] = Some(IntType)
   }
 
   /**
    * Double literal
    */
   final case class DoubleLit(value: Double) extends NumericLiteral {
-    override def getTypeOpt: Option[TypeShape] = Some(DoubleType)
-
-    override def freshCopyWithoutPos: Literal = DoubleLit(value)
+    override def getTypeShapeOpt: Option[TypeShape] = Some(DoubleType)
   }
 
   /**
    * Char literal
    */
   final case class CharLit(value: Char) extends NonNumericLiteral {
-    override def getTypeOpt: Option[TypeShape] = Some(CharType)
-
-    override def freshCopyWithoutPos: Literal = CharLit(value)
+    override def getTypeShapeOpt: Option[TypeShape] = Some(CharType)
   }
 
   /**
    * Bool (boolean) literal
    */
   final case class BoolLit(value: Boolean) extends NonNumericLiteral {
-    override def getTypeOpt: Option[TypeShape] = Some(BoolType)
-
-    override def freshCopyWithoutPos: Literal = BoolLit(value)
+    override def getTypeShapeOpt: Option[TypeShape] = Some(BoolType)
   }
 
   /**
    * String literal
    */
   final case class StringLit(value: String) extends NonNumericLiteral {
-    override def getTypeOpt: Option[TypeShape] = Some(StringType)
-
-    override def freshCopyWithoutPos: Literal = StringLit(value)
+    override def getTypeShapeOpt: Option[TypeShape] = Some(StringType)
   }
 
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
    */
   final case class VariableRef(name: FunOrVarId) extends Expr {
-    private var _isRefToConst: Boolean = false
-    
-    def markAsRefToConst(): Unit = {
-      _isRefToConst = true
-    }
-    
-    def isRefToConst: Boolean = _isRefToConst
-    
     override def children: List[Ast] = Nil
   }
 
-  final case class MeRef() extends Expr {
+  final case class ThisRef() extends Expr {
     override def children: List[Ast] = Nil
   }
 
@@ -323,23 +231,10 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  final case class DeviceRef(device: Device) extends Expr {
-    override def children: List[Ast] = Nil
-  }
-
   /**
    * Function call: `callee(args)`
    */
   final case class Call(receiverOpt: Option[Expr], function: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends Expr {
-    private val signatureMemo = new Memo[FunctionSignature]
-    private val meTypeMemo = new Memo[Type]
-    
-    export signatureMemo.setOpt as setResolvedSigOpt
-    export signatureMemo.set as setResolvedSig
-    export signatureMemo.getOpt as getSignatureOpt
-    export meTypeMemo.set as cacheMeType
-    export meTypeMemo.getOpt as getMeTypeOpt
-
     override def children: List[Ast] = receiverOpt.toList ++ args
   }
 
@@ -378,12 +273,7 @@ object Asts {
   /**
    * Binary operator
    */
-  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends Expr with SmartCastsAware {
-
-    override def cond: Expr = lhs
-
-    override def thenBr: Statement = rhs
-
+  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends Expr {
     override def children: List[Ast] = List(lhs, rhs)
   }
 
@@ -522,35 +412,20 @@ object Asts {
    */
   final case class Sequence(stats: List[Statement], expr: Expr) extends Expr {
     override def children: List[Ast] = stats :+ expr
-
-    override def getTypeOpt: Option[Type] = expr.getTypeOpt
   }
 
   sealed trait TypeTree extends Ast {
-    def getResolvedTypeOpt: Option[Type]
-    def getResolvedType: Type = getResolvedTypeOpt.get
+    def withRefinement(predicate: Expr): RefinedTypeTree = RefinedTypeTree(this, predicate)
   }
   
-  final case class CapturingTypeTree(
-                                      typeShapeTree: TypeShapeTree,
-                                      captureDescr: CaptureSetTree
-                                    ) extends TypeTree {
-    def getResolvedTypeOpt: Option[Type] = {
-      for {
-        shape <- typeShapeTree.getResolvedTypeOpt
-        capDescr <- captureDescr.getResolvedDescrOpt
-      } yield CapturingType(shape, capDescr)
-    }
-
+  final case class RefinedTypeTree(baseType: TypeTree, predicate: Expr) extends TypeTree {
+    override def children: List[Ast] = List(baseType, predicate)
+  }
+  
+  final case class CapturingTypeTree(typeShapeTree: TypeShapeTree, captureDescr: CaptureSetTree) extends TypeTree {
     override def children: List[Ast] = List(typeShapeTree, captureDescr)
   }
-  
-  final case class WrapperTypeTree(tpe: Type) extends TypeTree {
-    override def getResolvedTypeOpt: Option[Type] = Some(tpe)
 
-    override def children: List[Ast] = Nil
-  }
-  
   sealed trait TypeShapeTree extends TypeTree {
     
     @targetName("capturing") infix def ^(capDescr: CaptureSetTree): CapturingTypeTree =
@@ -561,41 +436,19 @@ object Asts {
         this ^ capDescr
       }.getOrElse(this)
     
-    override def getResolvedTypeOpt: Option[TypeShape]
-    
   }
   
-  sealed abstract class CastTargetTypeShapeTree extends TypeShapeTree {
-    override def getResolvedTypeOpt: Option[CastTargetTypeShape]
-  }
+  sealed abstract class CastTargetTypeShapeTree extends TypeShapeTree
 
   final case class PrimitiveTypeShapeTree(primitiveType: PrimitiveTypeShape) extends CastTargetTypeShapeTree {
-    override def getResolvedTypeOpt: Option[CastTargetTypeShape] = Some(primitiveType)
-
     override def children: List[Ast] = Nil
   }
 
   final case class NamedTypeShapeTree(name: TypeIdentifier) extends CastTargetTypeShapeTree {
-    override def getResolvedTypeOpt: Option[CastTargetTypeShape] = Some(NamedTypeShape(name))
-
     override def children: List[Ast] = Nil
   }
 
-  final case class ArrayTypeShapeTree(elemType: TypeTree) extends TypeShapeTree {
-    override def getResolvedTypeOpt: Option[TypeShape] = {
-      elemType.getResolvedTypeOpt.map(ArrayTypeShape(_))
-    }
-
-    override def children: List[Ast] = List(elemType)
-  }
-
-  sealed abstract class CaptureSetTree extends Ast {
-    private val descrMemo = new Memo[CaptureSet]
-    
-    export descrMemo.setOpt as setResolvedDescrOpt
-    export descrMemo.set as setResolvedDescr
-    export descrMemo.getOpt as getResolvedDescrOpt
-  }
+  sealed abstract class CaptureSetTree extends Ast
 
   final case class ExplicitCaptureSetTree(capturedExpressions: List[Expr]) extends CaptureSetTree {
     override def children: List[Ast] = capturedExpressions
@@ -605,21 +458,7 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  trait SmartCastsAware extends Ast {
-    private var smartCasts: Map[FunOrVarId, Type] = Map.empty
-
-    def cond: Expr
-
-    def thenBr: Statement
-
-    def setSmartCasts(smartcasts: Map[FunOrVarId, Type]): Unit = {
-      this.smartCasts = smartcasts
-    }
-
-    def getSmartCasts: Map[FunOrVarId, Type] = smartCasts
-  }
-
-  trait Conditional extends SmartCastsAware {
+  trait Conditional {
     def cond: Expr
 
     def thenBr: Statement
@@ -627,6 +466,7 @@ object Asts {
     def elseBrOpt: Option[Statement]
   }
   
+  // TODO inline the Memo object into Ast
   private class Memo[A] {
     private var valueOpt: Option[A] = None
     

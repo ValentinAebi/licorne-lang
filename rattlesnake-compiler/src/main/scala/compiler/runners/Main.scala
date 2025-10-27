@@ -109,9 +109,7 @@ object Main {
         cmd match {
           case "run" => (Run(argsMap), files)
           case "compile" => (Compile(argsMap), files)
-          case "format" => (Format(argsMap), files)
           case "typecheck" => (TypeCheck(argsMap), files)
-          case "lower" => (Lower(argsMap), files)
           case _ => error(s"unknown command: $cmd")
         }
       }
@@ -238,54 +236,12 @@ object Main {
   }
 
   /**
-   * Format command (format a file)
-   */
-  private case class Format(argsMap: MutArgsMap) extends Action {
-    override def run(sources: List[SourceCodeProvider]): Unit = {
-      if (sources.size != 1) {
-        error("format command requires exactly 1 input file")
-      }
-      val formatter = TasksPipelines.formatter(
-        getOutDirBaseArg(argsMap),
-        getOutputNameArg(sources, argsMap, Path.of(sources.head.name).getFileName.toString),
-        getIndentGranularityArg(argsMap),
-        quest => yesNoQuestion(quest),
-        getPrintAllParenthesesArg(argsMap)
-      )
-      reportUnknownArgsIfAny(argsMap)
-      formatter.apply(sources.head)
-      succeed()
-    }
-  }
-
-  /**
    * Typecheck command (typecheck a file)
    */
   private case class TypeCheck(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       reportUnknownArgsIfAny(argsMap)
       TasksPipelines.typeChecker().apply(sources)
-      succeed()
-    }
-  }
-
-  /**
-   * Lower command (show the file after lowering)
-   */
-  private case class Lower(argsMap: MutArgsMap) extends Action {
-    override def run(sources: List[SourceCodeProvider]): Unit = {
-      if (sources.size != 1) {
-        error("lower command requires exactly 1 input file")
-      }
-      val lowerer = TasksPipelines.lowerer(
-        getOutDirBaseArg(argsMap),
-        getOutputNameArg(sources, argsMap, Path.of(sources.head.name).getFileName.toString),
-        getIndentGranularityArg(argsMap),
-        quest => yesNoQuestion(quest),
-        getPrintAllParenthesesArg(argsMap)
-      )
-      reportUnknownArgsIfAny(argsMap)
-      lowerer.apply(sources.head)
       succeed()
     }
   }
@@ -326,19 +282,7 @@ object Main {
          | args: -out-dir=...: required, directory where to write the output file
          |       -java-version=...: optional, can be '$java8Tag', '$java11Tag' or '$java17Tag' (default is '$java8Tag')
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
-         |format: reformat file
-         | args: -out-dir=...: required, directory where to write the output file
-         |       -out-file=...: optional, output file name (by default same as input)
-         |       -indent=...: optional, indent granularity (2 by default)
-         |       -all-parenth: flag indicating that all parentheses should be displayed in expressions,
-         |                     regardless of the priority of operations (takes no value)
          |typecheck: parse and typecheck the program
-         |lower: show the file after lowering
-         | args: -out-dir=...: required, directory where to write the output file
-         |       -out-file=...: optional, output file name (by default same as input)
-         |       -indent=...: optional, indent granularity (2 by default)
-         |       -all-parenth: flag indicating that all parentheses should be displayed in expressions,
-         |                     regardless of the priority of operations (takes no value)
          |help: displays help (this)
          |""".stripMargin)
   }
