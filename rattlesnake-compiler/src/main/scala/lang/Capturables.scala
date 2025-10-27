@@ -1,8 +1,6 @@
 package lang
 
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Device
-import lang.Types.Type
 
 object Capturables {
 
@@ -23,7 +21,7 @@ object Capturables {
     override def toString: String = id.stringId
   }
 
-  case object MePath extends RootPath {
+  case object ThisPath extends RootPath {
     override def toString: String = Keyword.This.str
   }
 
@@ -36,10 +34,6 @@ object Capturables {
 
   final case class CapPackage(pkgName: TypeIdentifier) extends ConcreteCapturable, GlobalCapturable {
     override def toString: String = pkgName.stringId
-  }
-
-  final case class CapDevice(device: Device) extends ConcreteCapturable, GlobalCapturable {
-    override def toString: String = device.toString
   }
 
   case object RootCapability extends GlobalCapturable {

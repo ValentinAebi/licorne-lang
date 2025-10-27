@@ -52,8 +52,8 @@ object TypesConverter {
       case PrimitiveTypeShape.StringType => "java/lang/String"
       case PrimitiveTypeShape.VoidType => "V"
       case PrimitiveTypeShape.NothingType => "V"
-      case NamedTypeShape(typeName) if !typeResolver(typeName).isAbstract => s"$typeName"
-      case NamedTypeShape(_) => "java/lang/Object"
+      case NamedTypeShape(typeName, _) if !typeResolver(typeName).isAbstract => s"$typeName"
+      case _: Types.NamedTypeShape => "java/lang/Object"
       case UndefinedTypeShape => assert(false)
   }
 

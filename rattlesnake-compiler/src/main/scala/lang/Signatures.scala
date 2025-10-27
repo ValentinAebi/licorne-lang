@@ -8,10 +8,17 @@ import scala.collection.mutable
 
 final case class FunctionSignature(
                                     name: FunOrVarId,
-                                    args: List[(Option[FunOrVarId], Type)],
+                                    typeParams: List[TypeIdentifier],
+                                    args: mutable.LinkedHashMap[FunOrVarId, Type],
                                     retType: Type,
                                     visibility: Visibility
                                   )
+
+final case class TypeAliasSignature(
+                                     id: TypeIdentifier,
+                                     typeParams: List[TypeIdentifier],
+                                     params: mutable.LinkedHashMap[FunOrVarId, TypeIdentifier]
+                                   )
 
 sealed trait TypeSignature {
   def id: TypeIdentifier
@@ -41,9 +48,9 @@ sealed trait ImporterSig extends TypeSignature {
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
-                                 paramImports: mutable.LinkedHashMap[FunOrVarId, FieldInfo],
+                                 typeParams: List[TypeIdentifier],
+                                 paramImports: mutable.LinkedHashMap[FunOrVarId, ClassFieldInfo],
                                  importedPackages: mutable.LinkedHashSet[TypeIdentifier],
-                                 importedDevices: mutable.LinkedHashSet[Device],
                                  functions: Map[FunOrVarId, FunctionSignature]
                                )
   extends TypeSignature, ConstructibleSig, UserConstructibleSig, ImporterSig, SelectableSig, FunctionsProviderSig {
@@ -51,10 +58,12 @@ final case class ClassSignature(
   override def isAbstract: Boolean = false
 }
 
+final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
+
 final case class PackageSignature(
                                    id: TypeIdentifier,
+                                   typeParams: List[TypeIdentifier],
                                    importedPackages: mutable.LinkedHashSet[TypeIdentifier],
-                                   importedDevices: mutable.LinkedHashSet[Device],
                                    functions: Map[FunOrVarId, FunctionSignature]
                                  ) extends TypeSignature, ConstructibleSig, ImporterSig, FunctionsProviderSig {
   override def isAbstract: Boolean = false
@@ -62,12 +71,11 @@ final case class PackageSignature(
 
 final case class StructSignature(
                                   id: TypeIdentifier,
-                                  fields: mutable.LinkedHashMap[FunOrVarId, FieldInfo],
+                                  typeParams: List[TypeIdentifier],
+                                  fields: mutable.LinkedHashMap[FunOrVarId, Type],
                                   directSupertypes: Seq[TypeIdentifier],
                                   directSubtypesOpt: Option[mutable.LinkedHashSet[TypeIdentifier]]
                                 )
   extends TypeSignature, ConstructibleSig, UserConstructibleSig, SelectableSig {
   override def isAbstract: Boolean = directSubtypesOpt.isDefined
 }
-
-final case class FieldInfo(tpe: Type, isReassignable: Boolean)

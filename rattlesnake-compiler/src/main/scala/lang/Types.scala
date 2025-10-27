@@ -10,6 +10,7 @@ object Types {
   final case class Type(shape: TypeShape, cs: CaptureSet, refinementOpt: Option[Formula])
 
   sealed trait TypeShape {
+    def typeParams: List[Type]
     def toType: Type = Type(this, CaptureSet.empty, None)
   }
 
@@ -23,6 +24,8 @@ object Types {
     case VoidType extends PrimitiveTypeShape("Void")
     case NothingType extends PrimitiveTypeShape("Nothing")
 
+    override def typeParams: List[Type] = List.empty
+
     override def toString: String = str
   }
 
@@ -30,7 +33,7 @@ object Types {
     PrimitiveTypeShape.values.find(_.str == name.stringId)
   }
 
-  final case class NamedTypeShape(typeName: TypeIdentifier) extends TypeShape {
+  final case class NamedTypeShape(typeName: TypeIdentifier, typeParams: List[Type]) extends TypeShape {
     override def toString: String = typeName.stringId
   }
 
@@ -38,6 +41,7 @@ object Types {
    * Type of a malformed/incorrect expression
    */
   case object UndefinedTypeShape extends TypeShape {
+    override def typeParams: List[Type] = List.empty
     override def toString: String = "[undefined type]"
   }
 

@@ -1,6 +1,5 @@
 package compiler.gennames
 
-import lang.Device
 
 object ClassesAndDirectoriesNames {
 

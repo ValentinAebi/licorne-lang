@@ -1,13 +1,10 @@
 package lang
 
 enum Keyword(val str: String) {
-  case Arr extends Keyword("arr")
   case As extends Keyword("as")
   case Cap extends Keyword("cap")
-  case Console extends Keyword("console")
   case Const extends Keyword("const")
   case Datatype extends Keyword("datatype")
-  case Device extends Keyword("device")
   case Else extends Keyword("else")
   case Fn extends Keyword("fn")
   case For extends Keyword("for")
@@ -17,8 +14,6 @@ enum Keyword(val str: String) {
   case Main extends Keyword("main")
   case Module extends Keyword("module")
   case New extends Keyword("new")
-  case NewReg extends Keyword("newreg")
-  case Nocap extends Keyword("nocap")
   case Package extends Keyword("package")
   case Panic extends Keyword("panic")
   case Private extends Keyword("private")
@@ -26,6 +21,7 @@ enum Keyword(val str: String) {
   case Struct extends Keyword("struct")
   case Then extends Keyword("then")
   case This extends Keyword("this")
+  case Typealias extends Keyword("typealias")
   case Val extends Keyword("val")
   case Var extends Keyword("var")
   case When extends Keyword("when")

@@ -34,7 +34,7 @@ object TasksPipelines {
   def typeChecker(er: ErrorReporter = defaultErrorReporter,
                   okReporter: String => Unit = println): CompilerStep[List[SourceCodeProvider], Unit] = {
     MultiStep(frontend(er))
-      .andThen(MissingCompiler) // TODO
+      .andThen(MissingCompiler(er)) // TODO
   }
 
   private def compilerImpl[V <: ClassVisitor](outputDirectoryPath: Path,
@@ -43,14 +43,14 @@ object TasksPipelines {
                                               agentDirPath: Path,
                                               er: ErrorReporter) = {
     MultiStep(frontend(er))
-      .andThen(MissingCompiler)   // TODO
+      .andThen(MissingCompiler(er)) // TODO
   }
 
-  private object MissingCompiler extends CompilerStep[Any, Nothing] {
+  private final class MissingCompiler(er: ErrorReporter) extends CompilerStep[Any, Nothing] {
     override def apply(input: Any): Nothing = {
-      println("Missing compiler. Last representation of the program before exiting is:")
+      println("Missing compiler. Last representation of the program before exiting was:")
       println(caseClassesFormat(input.toString))
-      throw NotImplementedError("Compiler not yet implemented")
+      er.displayErrorsAndTerminate()
     }
   }
 
@@ -72,6 +72,7 @@ object TasksPipelines {
           mkNewLine()
         case ')' =>
           indentLevel -= 1
+          mkNewLine()
           sb.append(c)
         case ',' =>
           sb.append(c)
@@ -81,16 +82,41 @@ object TasksPipelines {
       }
     }
 
-    val linesIter = raw.lines().iterator()
-    while (linesIter.hasNext){
-      for (c <- linesIter.next()){
+    var i = 0
+    while (i < raw.length) {
+      val c = raw.charAt(i)
+      if (c == '(') {
+        val closingParenthIdx = findClosingParenthesis(raw, i + 1, 20)
+        if (closingParenthIdx >= 0){
+          sb.append(raw.substring(i, closingParenthIdx + 1))
+          i += closingParenthIdx - i
+        } else {
+          addChar('(')
+        }
+      } else {
         addChar(c)
       }
-      if (linesIter.hasNext){
-        mkNewLine()
-      }
+      i += 1
     }
     sb.toString()
+  }
+
+  private def findClosingParenthesis(str: String, start: Int, maxLen: Int): Int = {
+    var i = start
+    var balance = 1
+    while (i < start + maxLen){
+      val c = str.charAt(i)
+      if (c == '('){
+        balance += 1
+      } else if (c == ')'){
+        balance -= 1
+      }
+      if (balance == 0){
+        return i
+      }
+      i += 1
+    }
+    -1
   }
 
   private def frontend(er: ErrorReporter): CompilerStep[SourceCodeProvider, Asts.Source] = {
