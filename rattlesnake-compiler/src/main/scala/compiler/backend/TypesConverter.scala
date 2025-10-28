@@ -4,7 +4,7 @@ import compiler.backend.DescriptorsCreator.descriptorForType
 import identifiers.TypeIdentifier
 import lang.Types.*
 import lang.Types.PrimitiveTypeShape.DoubleType
-import lang.{StructSignature, TypeSignature, Types}
+import lang.{StructSignature, RuntimeTypeSignature, Types}
 import org.objectweb.asm
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Opcodes.*
@@ -43,7 +43,7 @@ object TypesConverter {
       case _ => None
   }
 
-  def internalNameOf(tpe: Types.TypeShape)(using typeResolver: TypeIdentifier => TypeSignature): String = {
+  def internalNameOf(tpe: Types.TypeShape)(using typeResolver: TypeIdentifier => RuntimeTypeSignature): String = {
     tpe match
       case PrimitiveTypeShape.IntType => "I"
       case PrimitiveTypeShape.DoubleType => "D"
@@ -52,7 +52,7 @@ object TypesConverter {
       case PrimitiveTypeShape.StringType => "java/lang/String"
       case PrimitiveTypeShape.VoidType => "V"
       case PrimitiveTypeShape.NothingType => "V"
-      case NamedTypeShape(typeName, _) if !typeResolver(typeName).isAbstract => s"$typeName"
+      case NamedTypeShape(typeName, _, _) if !typeResolver(typeName).isAbstract => s"$typeName"
       case _: Types.NamedTypeShape => "java/lang/Object"
       case UndefinedTypeShape => assert(false)
   }

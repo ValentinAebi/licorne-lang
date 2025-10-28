@@ -3,7 +3,7 @@ package compiler.parser
 import compiler.irs.Asts.*
 import compiler.irs.Tokens.*
 import compiler.parser.ParseTree.^:
-import compiler.parser.TreeParsers.*
+import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter, Fatal}
@@ -90,38 +90,61 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
   } setName "source"
 
-  private lazy val topLevelDef: P[TopLevelDef] = classDef OR packageDef OR structDef OR typeAliasDef
+  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR packageDef OR classDef OR datatypeDef OR structDef OR typeAliasDef
 
-  private lazy val packageDef: P[PackageDef] = {
-    kw(Package).ignored ::: highName ::: typeParamsListOpt
-      ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
-      ::: openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace map {
-      case packageName ^: typeParams ^: importedPackagesOpt ^: functions =>
-        PackageDef(packageName, typeParams, importedPackagesOpt.getOrElse(Nil), functions)
+  private lazy val interfaceDef: P[InterfaceDef] = {
+    kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: superTypesListOpt ::: methodsListOpt map {
+      case id ^: typeParams ^: supertypes ^: functions =>
+        InterfaceDef(id, typeParams, functions, supertypes)
     }
-  } setName "packageDef"
+  } setName "interfaceDef"
 
   private lazy val classDef: P[ClassDef] = {
-    kw(Module).ignored ::: highName ::: typeParamsListOpt
-      ::: openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth
-      ::: openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace map {
-      case moduleName ^: typeParams ^: imports ^: functions =>
-        ClassDef(moduleName, typeParams, imports, functions)
+    kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
+      ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
+      ::: superTypesListOpt ::: methodsListOpt map {
+      case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
+        ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
     }
   } setName "classDef"
 
+  private lazy val packageDef: P[PackageDef] = {
+    kw(Package).ignored ::: highName
+      ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
+      ::: superTypesListOpt ::: methodsListOpt map {
+      case packageName ^: importedPackagesOpt ^: supertypes ^: functions =>
+        PackageDef(packageName, importedPackagesOpt.getOrElse(Nil), functions, supertypes)
+    }
+  } setName "packageDef"
+
+  private lazy val datatypeDef = {
+    kw(Datatype).ignored ::: highName ::: superTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
+      case id ^: supertypes ^: typeParams => DatatypeDef(id, typeParams, supertypes)
+    }
+  } setName "datatypeDef"
+
+  private lazy val structDef = {
+    kw(Struct).ignored ::: highName ::: superTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
+      ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
+      case name ^: supertypes ^: typeParams ^: fieldsOpt =>
+        StructDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
+    }
+  } setName "structDef"
+
   private lazy val typeAliasDef: P[TypeAliasDef] = {
-    kw(Typealias).ignored ::: highName ::: typeParamsListOpt ::: repeatWithSep(structOrTypeAliasParam, comma) ::: assig ::: typeTree ::: semicolon map {
-      case typeName ^: typeParams ^: params ^: rhs => TypeAliasDef(typeName, typeParams, params, rhs)
+    kw(Typealias).ignored ::: highName ::: typeParamsWithoutVarianceListOpt
+      ::: opt(openParenth ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeParenth)
+      ::: assig ::: typeTree ::: semicolon map {
+      case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs)
     }
   } setName "typeAliasDef"
 
   private lazy val funDef = {
-    opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsListOpt
+    opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funOrClassParam, comma) ::: closeParenth
-      ::: opt(-> ::: typeTree) ::: block map {
-      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: body =>
-        FunDef(funName, typeParams, params, optRetType, body,
+      ::: opt(-> ::: typeTree) ::: opt(block) map {
+      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOpt =>
+        FunDef(funName, typeParams, params, optRetType, bodyOpt,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           isMain = optModif.contains(Main)
         )
@@ -147,13 +170,19 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "structOrTypeAliasParam"
 
-  private lazy val structDef = {
-    (kw(Struct) OR kw(Datatype)) ::: highName ::: opt(colon ::: repeatWithSep(highName, comma))
-      ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
-      case structOrDatatype ^: name ^: supertypesOpt ^: fieldsOpt =>
-        StructDef(name, fieldsOpt.getOrElse(Nil), supertypesOpt.getOrElse(Seq.empty), structOrDatatype == Datatype)
+  private lazy val methodsListOpt = {
+    opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {
+      case None => List.empty
+      case Some(methods) => methods
     }
-  } setName "structDef"
+  } setName "methodsListOpt"
+
+  private lazy val superTypesListOpt = {
+    opt(colon ::: repeatWithSepNonZero(primOrNamedShape, comma)) map {
+      case None => List.empty
+      case Some(supertypes) => supertypes
+    }
+  } setName "superTypesListOpt"
 
   private lazy val possiblyNegativeNumericLiteralValue: FinalTreeParser[NumericLiteral] = {
     (numericLiteralValue OR (op(Minus) ::: numericLiteralValue)) map {
@@ -213,13 +242,14 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "hatAndCaptureDescr"
 
   private lazy val primOrNamedShape: AnyTreeParser[TypeShapeTree] = recursive {
-    highName ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron) map {
-      case baseTypeName ^: typeParamsOpt =>
+    highName ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron)
+      ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
+      case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeShapeTree(_))
         if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
           errorReporter.push(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
         }
-        primTypeOpt.getOrElse(NamedTypeShapeTree(baseTypeName, typeParamsOpt.getOrElse(Nil)))
+        primTypeOpt.getOrElse(NamedTypeShapeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
     }
   } setName "primOrNamedShape"
 
@@ -280,9 +310,22 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     openParenth ::: repeatWithSep(expr, comma) ::: closeParenth
   } setName "parenthArgsList"
 
-  private lazy val typeParamsListOpt = recursive {
-    opt(openChevron ::: repeatWithSep(highName, comma) ::: closeChevron) map (_.getOrElse(List.empty))
-  } setName "typeParamsListOpt"
+  private lazy val typeParamsWithoutVarianceListOpt = recursive {
+    opt(openChevron ::: repeatWithSepNonZero(highName, comma) ::: closeChevron) map (_.getOrElse(List.empty))
+  } setName "typeParamsWithoutVarianceListOpt"
+
+  private lazy val typeParamsPossiblyWithVarianceListOpt = recursive {
+    opt(openChevron ::: repeatWithSepNonZero(typeParam, comma) ::: closeChevron) map (_.getOrElse(List.empty))
+  } setName "typeParamsPossiblyWithVarianceListOpt"
+
+  private lazy val typeParam = opt(op(Plus, Minus)) ::: highName map {
+    case varianceSymbolOpt ^: typeParamName => TypeParam(typeParamName,
+      varianceSymbolOpt match {
+        case Some(Plus) => Variance.Covariant
+        case Some(Minus) => Variance.Contravariant
+        case None => Variance.Invariant
+      })
+  } setName "typeParam"
 
   private lazy val indexing = recursive {
     openBracket ::: expr ::: closeBracket

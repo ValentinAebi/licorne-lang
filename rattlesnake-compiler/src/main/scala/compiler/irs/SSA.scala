@@ -3,7 +3,7 @@ package compiler.irs
 import compiler.irs.Asts.{Ast, TypeTree}
 import identifiers.TypeIdentifier
 import lang.FunctionSignature
-import lang.Predicates.*
+import lang.Values.*
 import lang.Types.TypeShape
 
 object SSA {

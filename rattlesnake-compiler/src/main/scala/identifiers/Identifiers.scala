@@ -1,5 +1,7 @@
 package identifiers
 
+import lang.Keyword
+
 sealed trait Identifier {
 
   def stringId: String
@@ -18,6 +20,6 @@ case object ConstructorFunId extends FunOrVarId {
   override def stringId: String = "<init>"
 }
 
-case object MeVarId extends FunOrVarId {
-  override def stringId: String = "me"
+case object ThisId extends FunOrVarId {
+  override def stringId: String = Keyword.This.toString
 }

@@ -8,13 +8,15 @@ import lang.Types.PrimitiveTypeShape.*
 
 import scala.annotation.targetName
 
+// TODO check lists of children (all node types)
+
 object Asts {
 
   sealed abstract class Ast {
     // Positions are propagated by the TreeParser
     // Each AST is assigned the position of its leftmost token (by the map method of TreeParser)
     private val positionMemo = new OptionalAttribute[Position]
-    
+
     export positionMemo.setOpt as setPosition
     export positionMemo.set as setPosition
     export positionMemo.getOpt as getPosition
@@ -58,56 +60,92 @@ object Asts {
   sealed abstract class TopLevelDef extends Ast
 
   sealed trait TypeDefTree extends TopLevelDef {
-    def name: TypeIdentifier
+    def id: TypeIdentifier
 
-    def directSupertypes: Seq[TypeIdentifier]
-
-    def isAbstract: Boolean
+    def directSupertypes: Seq[TypeShapeTree]
   }
 
-  sealed trait ClassOrPackageDefTree extends TypeDefTree {
-    def functions: List[FunDef]
+  final case class InterfaceDef(
+                                 id: TypeIdentifier,
+                                 typeParams: List[TypeParam],
+                                 functions: List[FunDef],
+                                 directSupertypes: List[TypeShapeTree]
+                               ) extends TypeDefTree {
+    override def children: List[Ast] = functions ++ directSupertypes
   }
 
   final case class PackageDef(
-                               packageName: TypeIdentifier,
-                               typeParams: List[TypeIdentifier],
+                               id: TypeIdentifier,
                                importedPackages: List[TypeIdentifier],
-                               functions: List[FunDef]
-                             ) extends ClassOrPackageDefTree {
-    override def name: TypeIdentifier = packageName
-
-    override def directSupertypes: Seq[TypeIdentifier] = Nil
-
-    override def isAbstract: Boolean = false
-
-    override def children: List[Ast] = functions
+                               functions: List[FunDef],
+                               directSupertypes: List[TypeShapeTree]
+                             ) extends TypeDefTree {
+    override def children: List[Ast] = functions ++ directSupertypes
   }
 
   final case class ClassDef(
-                             className: TypeIdentifier,
-                             typeParams: List[TypeIdentifier],
+                             id: TypeIdentifier,
+                             typeParams: List[TypeParam],
                              params: List[ClassParam],
-                             functions: List[FunDef]
-                            ) extends ClassOrPackageDefTree {
-    override def name: TypeIdentifier = className
+                             functions: List[FunDef],
+                             directSupertypes: List[TypeShapeTree]
+                           ) extends TypeDefTree {
+    override def children: List[Ast] = typeParams ++ params ++ functions ++ directSupertypes
+  }
 
-    override def directSupertypes: Seq[TypeIdentifier] = Nil
+  final case class DatatypeDef(
+                                id: TypeIdentifier,
+                                typeParams: List[TypeParam],
+                                directSupertypes: List[TypeShapeTree]
+                              ) extends TypeDefTree {
+    override def children: List[Ast] = typeParams ++ directSupertypes
+  }
 
-    override def isAbstract: Boolean = false
+  /**
+   * Structure (`struct`) or datatype definition
+   */
+  final case class StructDef(
+                              id: TypeIdentifier,
+                              typeParams: List[TypeParam],
+                              fields: List[StructParam],
+                              directSupertypes: List[TypeShapeTree]
+                            ) extends TypeDefTree {
+    override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
+  }
 
-    override def children: List[Ast] = params ++ functions
+  /**
+   * Function definition
+   */
+  final case class FunDef(id: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
+                          visibility: Visibility, isMain: Boolean) extends Ast {
+    override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
+  }
+
+  final case class TypeAliasDef(typeName: TypeIdentifier, typeParams: List[TypeIdentifier], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+    override def children: List[Ast] = params :+ rhs
   }
 
   sealed trait ClassParam extends Ast
-  sealed trait FunctionParam extends Ast
-  sealed trait StructParam extends Ast
-  sealed trait TypeAliasParam extends Ast
+
+  sealed trait FunctionParam extends Ast {
+    val paramId: FunOrVarId
+    val paramTypeTree: TypeTree
+  }
+
+  sealed trait StructParam extends Ast {
+    val paramId: FunOrVarId
+    val paramTypeTree: TypeTree
+  }
+
+  sealed trait TypeAliasParam extends Ast {
+    val paramId: FunOrVarId
+    val paramTypeTree: TypeTree
+  }
 
   final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, FunctionParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
-  
+
   final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, StructParam, FunctionParam, TypeAliasParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
@@ -116,30 +154,8 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  /**
-   * Structure (`struct`) or datatype definition
-   */
-  final case class StructDef(
-                              structName: TypeIdentifier,
-                              fields: List[StructParam],
-                              directSupertypes: Seq[TypeIdentifier],
-                              isAbstract: Boolean
-                            ) extends TypeDefTree {
-    override def name: TypeIdentifier = structName
-
-    override def children: List[Ast] = fields
-  }
-
-  /**
-   * Function definition
-   */
-  final case class FunDef(funName: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], body: Block,
-                          visibility: Visibility, isMain: Boolean) extends Ast {
-    override def children: List[Ast] = params ++ optRetType.toList :+ body
-  }
-  
-  final case class TypeAliasDef(typeName: TypeIdentifier, typeParams: List[TypeIdentifier], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
-    override def children: List[Ast] = params :+ rhs
+  final case class TypeParam(id: TypeIdentifier, variance: Variance) extends Ast {
+    override def children: List[Ast] = Nil
   }
 
   /**
@@ -229,7 +245,7 @@ object Asts {
   /**
    * Function call: `callee(args)`
    */
-  final case class Call(receiverOpt: Option[Expr], function: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends Expr {
+  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends Expr {
     override def children: List[Ast] = receiverOpt.toList ++ args
   }
 
@@ -281,6 +297,7 @@ object Asts {
 
   sealed abstract class Assignment extends Statement {
     def rhs: Expr
+
     def lhs: Expr
   }
 
@@ -396,32 +413,32 @@ object Asts {
   sealed trait TypeTree extends Ast {
     def withRefinement(predicate: Expr): RefinedTypeTree = RefinedTypeTree(this, predicate)
   }
-  
+
   final case class RefinedTypeTree(baseType: TypeTree, predicate: Expr) extends TypeTree {
     override def children: List[Ast] = List(baseType, predicate)
   }
-  
+
   final case class CapturingTypeTree(typeShapeTree: TypeShapeTree, captureDescr: CaptureSetTree) extends TypeTree {
     override def children: List[Ast] = List(typeShapeTree, captureDescr)
   }
 
   sealed trait TypeShapeTree extends TypeTree {
-    
+
     @targetName("capturing") infix def ^(capDescr: CaptureSetTree): CapturingTypeTree =
       CapturingTypeTree(this, capDescr)
-      
+
     @targetName("maybeCapturing") infix def ^(capDescrOpt: Option[CaptureSetTree]): TypeTree =
       capDescrOpt.map { capDescr =>
         this ^ capDescr
       }.getOrElse(this)
-    
+
   }
 
   final case class PrimitiveTypeShapeTree(primitiveType: PrimitiveTypeShape) extends TypeShapeTree {
     override def children: List[Ast] = Nil
   }
 
-  final case class NamedTypeShapeTree(name: TypeIdentifier, typeParams: List[TypeTree]) extends TypeShapeTree {
+  final case class NamedTypeShapeTree(name: TypeIdentifier, typeParams: List[TypeTree], params: List[Expr]) extends TypeShapeTree {
     override def children: List[Ast] = typeParams
   }
 
@@ -442,18 +459,18 @@ object Asts {
 
     def elseBrOpt: Option[Statement]
   }
-  
+
   private[Asts] class OptionalAttribute[A] {
     private var valueOpt: Option[A] = None
-    
+
     def setOpt(valueOpt: Option[A]): Unit = {
       this.valueOpt = valueOpt
     }
-    
+
     def set(value: A): Unit = {
       setOpt(Some(value))
     }
-    
+
     def getOpt: Option[A] = valueOpt
 
     override def toString: String = valueOpt.getOrElse("<empty>").toString

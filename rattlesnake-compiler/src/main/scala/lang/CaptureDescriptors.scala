@@ -1,6 +1,6 @@
 package lang
 
-import lang.Capturables.*
+import lang.Values.{Capturable, RootCapability}
 
 object CaptureDescriptors {
 

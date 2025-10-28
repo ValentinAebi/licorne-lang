@@ -2,7 +2,7 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.CaptureDescriptors.*
-import lang.Predicates.Formula
+import lang.Values.{Formula, Value}
 
 
 object Types {
@@ -33,7 +33,7 @@ object Types {
     PrimitiveTypeShape.values.find(_.str == name.stringId)
   }
 
-  final case class NamedTypeShape(typeName: TypeIdentifier, typeParams: List[Type]) extends TypeShape {
+  final case class NamedTypeShape(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula]) extends TypeShape {
     override def toString: String = typeName.stringId
   }
 

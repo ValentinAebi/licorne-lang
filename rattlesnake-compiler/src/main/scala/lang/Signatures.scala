@@ -1,7 +1,7 @@
 package lang
 
 import identifiers.*
-import lang.Capturables.*
+import lang.Values.Value
 import lang.Types.Type
 
 import scala.collection.mutable
@@ -9,51 +9,55 @@ import scala.collection.mutable
 final case class FunctionSignature(
                                     name: FunOrVarId,
                                     typeParams: List[TypeIdentifier],
-                                    args: mutable.LinkedHashMap[FunOrVarId, Type],
+                                    params: mutable.LinkedHashMap[Value, Type],
                                     retType: Type,
                                     visibility: Visibility
                                   )
+
+sealed trait TypeSignature {
+  def id: TypeIdentifier
+}
 
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[TypeIdentifier],
                                      params: mutable.LinkedHashMap[FunOrVarId, TypeIdentifier]
-                                   )
+                                   ) extends TypeSignature
 
-sealed trait TypeSignature {
-  def id: TypeIdentifier
-
+sealed trait RuntimeTypeSignature extends TypeSignature {
   def isAbstract: Boolean
 }
 
-sealed trait FunctionsProviderSig extends TypeSignature {
+sealed trait FunctionsProviderSig extends RuntimeTypeSignature {
   def functions: Map[FunOrVarId, FunctionSignature]
 }
 
-sealed trait ConstructibleSig extends TypeSignature {
+sealed trait ConstructibleSig extends RuntimeTypeSignature {
 
 }
 
-sealed trait UserConstructibleSig extends TypeSignature {
+sealed trait UserConstructibleSig extends RuntimeTypeSignature {
+  this: ConstructibleSig =>
+  
+  def typeParams: List[(TypeIdentifier, Variance)]
+}
+
+sealed trait SelectableSig extends RuntimeTypeSignature {
   this: ConstructibleSig =>
 }
 
-sealed trait SelectableSig extends TypeSignature {
-  this: ConstructibleSig =>
-}
-
-sealed trait ImporterSig extends TypeSignature {
+sealed trait ImporterSig extends RuntimeTypeSignature {
 
 }
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
-                                 typeParams: List[TypeIdentifier],
+                                 typeParams: List[(TypeIdentifier, Variance)],
                                  paramImports: mutable.LinkedHashMap[FunOrVarId, ClassFieldInfo],
                                  importedPackages: mutable.LinkedHashSet[TypeIdentifier],
                                  functions: Map[FunOrVarId, FunctionSignature]
                                )
-  extends TypeSignature, ConstructibleSig, UserConstructibleSig, ImporterSig, SelectableSig, FunctionsProviderSig {
+  extends RuntimeTypeSignature, ConstructibleSig, UserConstructibleSig, ImporterSig, SelectableSig, FunctionsProviderSig {
 
   override def isAbstract: Boolean = false
 }
@@ -62,20 +66,19 @@ final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
 final case class PackageSignature(
                                    id: TypeIdentifier,
-                                   typeParams: List[TypeIdentifier],
                                    importedPackages: mutable.LinkedHashSet[TypeIdentifier],
                                    functions: Map[FunOrVarId, FunctionSignature]
-                                 ) extends TypeSignature, ConstructibleSig, ImporterSig, FunctionsProviderSig {
+                                 ) extends RuntimeTypeSignature, ConstructibleSig, ImporterSig, FunctionsProviderSig {
   override def isAbstract: Boolean = false
 }
 
 final case class StructSignature(
                                   id: TypeIdentifier,
-                                  typeParams: List[TypeIdentifier],
+                                  typeParams: List[(TypeIdentifier, Variance)],
                                   fields: mutable.LinkedHashMap[FunOrVarId, Type],
                                   directSupertypes: Seq[TypeIdentifier],
                                   directSubtypesOpt: Option[mutable.LinkedHashSet[TypeIdentifier]]
                                 )
-  extends TypeSignature, ConstructibleSig, UserConstructibleSig, SelectableSig {
+  extends RuntimeTypeSignature, ConstructibleSig, UserConstructibleSig, SelectableSig {
   override def isAbstract: Boolean = directSubtypesOpt.isDefined
 }

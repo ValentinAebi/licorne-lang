@@ -2,13 +2,12 @@ package lang
 
 import identifiers.FunOrVarId
 
-object Predicates {
+object Values {
 
   sealed trait Formula
+  sealed trait Capturable
 
-  final class Value(srcIdOpt: Option[FunOrVarId], val uid: Long) extends Formula {
-    override def toString: String = s"${srcIdOpt.getOrElse(Keyword.Val.toString)}#$uid"
-  }
+  final class Value(uid: Long) extends Formula, Capturable
 
   case object True extends Formula
   case object False extends Formula
@@ -31,7 +30,9 @@ object Predicates {
   final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula
   final case class Equal(lhs: Formula, rhs: Formula) extends Formula
 
-  final case class Call(receiver: Formula, args: List[Formula]) extends Formula
-  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula
+  final case class Call(receiver: Formula, funId: FunOrVarId, args: List[Formula]) extends Formula, Capturable
+  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
+
+  case object RootCapability extends Capturable
 
 }

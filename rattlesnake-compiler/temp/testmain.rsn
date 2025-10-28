@@ -1,10 +1,6 @@
 
-typealias Index<T> = T with 0 <= it && it < T.size();
-
 package TestMain {
 
-    fn arrayAccess(xs: IntArray, i: Int with 0 <= it && it < xs.length) -> Int {
-       return xs[i];
-    }
+
 
 }
