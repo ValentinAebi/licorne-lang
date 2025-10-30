@@ -1,6 +1,6 @@
 
-typealias Length = Int with it >= 0
-typealias Idx(seq: Sequence<Any^>) = Int with 0 <= it && it < seq.length()
+typealias Length = Int with this >= 0
+typealias Idx(seq: Sequence<Any>) = Int with 0 <= this && this < seq.length()
 
 interface Sequence<+T> {
     fn length() -> Length

@@ -4,12 +4,12 @@ import compiler.irs.Asts.*
 import compiler.pipeline.CompilationStep.ContextCreation
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
-import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesGenerator}
+import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.{ConstructorFunId, FunOrVarId, ThisId, TypeIdentifier}
 import lang.Field.{ReassignableField, StableField}
-import lang.{ClassSignature, DatatypeSignature, Field, FunctionSignature, InterfaceSignature, ObjectSignature, StructSignature, TypeAliasSignature, Variance}
 import lang.Types.{PrimitiveTypeShape, Type}
 import lang.Values.Value
+import lang.*
 
 import scala.collection.mutable
 
@@ -71,11 +71,16 @@ final class ContextCreator(er: ErrorReporter) extends CompilerStep[List[Source],
               datatypeSubtypes.getOrElseUpdate(superT, mutable.LinkedHashSet.empty).addOne(id)
             }
           case df@TypeAliasDef(typeName, typeParams, params, rhs) =>
+            val thisValue = valuesGen.newTypeAliasParam(typeName, ThisId)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, Value)]
+            val paramsCtx = LocalValuesContext(thisValue, globalValuesContext)
             params.foreach {
-              case SimpleParam(paramId, paramTypeTree) => ???
+              case SimpleParam(paramId, paramTypeTree) =>
+                val paramValue = valuesGen.newTypeAliasParam(typeName, paramId)
+                typeAliasParams(paramId) = (paramsCtx.mkType(paramTypeTree), paramValue)
+                paramsCtx(paramId) = paramValue
             }
-            val sig = TypeAliasSignature(typeName, typeParams.convert, typeAliasParams)
+            val sig = TypeAliasSignature(typeName, typeParams.convert, thisValue, typeAliasParams)
             ctxBuilder.saveSignature(sig, df.getPosition)
         }
         for (df@DatatypeDef(id, typeParams, directSupertypes) <- datatypeDefs){

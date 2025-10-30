@@ -7,7 +7,13 @@ import lang.Values.Formula
 
 object Types {
 
-  final case class Type(shape: TypeShape, cs: CaptureSet, refinementOpt: Option[Formula])
+  final case class Type(shape: TypeShape, cs: CaptureSet, refinementOpt: Option[Formula]) {
+    override def toString: String = {
+      val csDescr = if cs.isEmpty then "" else s"^${cs.toString}"
+      val refinementDescr = refinementOpt.map(r => s" with $r").getOrElse("")
+      shape.toString + csDescr + refinementDescr
+    }
+  }
 
   sealed trait TypeShape {
     def typeParams: List[Type]
@@ -34,7 +40,11 @@ object Types {
   }
 
   final case class NamedTypeShape(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula]) extends TypeShape {
-    override def toString: String = typeName.stringId
+    override def toString: String = {
+      val typeParamsDescr = if typeParams.isEmpty then "" else typeParams.mkString("<", ",", ">")
+      val paramsDescr = if params.isEmpty then "" else params.mkString("(", ",", ")")
+      typeName.toString + typeParamsDescr + paramsDescr
+    }
   }
 
   /**

@@ -11,8 +11,10 @@ import scala.collection.mutable
 
 final case class AnalysisContext(
                                   globalValuesContext: GlobalValuesContext,
+                                  interfaces: Map[TypeIdentifier, InterfaceSignature],
                                   classes: Map[TypeIdentifier, ClassSignature],
-                                  packages: Map[TypeIdentifier, ObjectSignature],
+                                  objects: Map[TypeIdentifier, ObjectSignature],
+                                  datatypes: Map[TypeIdentifier, DatatypeSignature],
                                   structs: Map[TypeIdentifier, StructSignature],
                                   typeAliases: Map[TypeIdentifier, TypeAliasSignature]
                                 )
@@ -33,22 +35,28 @@ object AnalysisContext {
     }
 
     def build(): AnalysisContext = {
+      val interfacesB = Map.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = Map.newBuilder[TypeIdentifier, ObjectSignature]
+      val datatypes = Map.newBuilder[TypeIdentifier, DatatypeSignature]
       val structsB = Map.newBuilder[TypeIdentifier, StructSignature]
       val typeAliasesB = Map.newBuilder[TypeIdentifier, TypeAliasSignature]
       for ((id, sig) <- signatures) {
         sig match {
-          case sig: ClassSignature => classesB.addOne((id, sig))
-          case sig: ObjectSignature => packagesB.addOne((id, sig))
-          case sig: StructSignature => structsB.addOne((id, sig))
-          case sig: TypeAliasSignature => typeAliasesB.addOne((id, sig))
+          case sig: InterfaceSignature => interfacesB.addOne(id, sig)
+          case sig: ClassSignature => classesB.addOne(id, sig)
+          case sig: ObjectSignature => packagesB.addOne(id, sig)
+          case sig: DatatypeSignature => datatypes.addOne(id, sig)
+          case sig: StructSignature => structsB.addOne(id, sig)
+          case sig: TypeAliasSignature => typeAliasesB.addOne(id, sig)
         }
       }
       AnalysisContext(
         globalValuesContext,
+        interfacesB.result(),
         classesB.result(),
         packagesB.result(),
+        datatypes.result(),
         structsB.result(),
         typeAliasesB.result()
       )

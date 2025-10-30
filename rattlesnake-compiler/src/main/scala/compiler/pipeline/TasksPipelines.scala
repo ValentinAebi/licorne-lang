@@ -1,5 +1,6 @@
 package compiler.pipeline
 
+import compiler.analysisctx.ContextCreator
 import compiler.io.SourceCodeProvider
 import compiler.irs.Asts
 import compiler.lexer.Lexer
@@ -40,6 +41,7 @@ object TasksPipelines {
                            agentDirPath: Path,
                            er: ErrorReporter) = {
     MultiStep(frontend(er))
+      .andThen(ContextCreator(er))
       .andThen(MissingCompiler(er)) // TODO
   }
 

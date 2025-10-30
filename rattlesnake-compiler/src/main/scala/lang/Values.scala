@@ -7,7 +7,9 @@ object Values {
   sealed trait Formula
   sealed trait Capturable
 
-  final class Value(uid: Long) extends Formula, Capturable
+  final class Value(uid: Long) extends Formula, Capturable {
+    override def toString: String = "$" + uid
+  }
 
   case object True extends Formula
   case object False extends Formula

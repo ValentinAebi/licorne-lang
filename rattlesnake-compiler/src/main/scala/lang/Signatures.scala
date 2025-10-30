@@ -22,6 +22,7 @@ sealed trait TypeSignature {
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[(TypeIdentifier, Variance)],
+                                     thisValue: Value,
                                      params: mutable.LinkedHashMap[FunOrVarId, (Type, Value)]
                                    ) extends TypeSignature
 
