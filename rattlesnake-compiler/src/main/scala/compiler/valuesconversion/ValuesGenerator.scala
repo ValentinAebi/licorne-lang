@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.irs.Asts.Ast
-import compiler.valuesconversion.ValueKind.{FunParamKind, LocalKind, PackageKind, UndefinedKind}
+import compiler.valuesconversion.ValueKind.{FunParamKind, LocalKind, ObjectKind, UndefinedKind}
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Values.Value
 
@@ -14,8 +14,8 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
     globalValuesContext.saveDebugInfo(value, FunParamKind(funOwnerId, funId, paramId))
   }
 
-  def newPackage(packageId: TypeIdentifier): Value = newValue { value =>
-    globalValuesContext.saveDebugInfo(value, PackageKind(packageId))
+  def newObject(objectId: TypeIdentifier): Value = newValue { value =>
+    globalValuesContext.saveDebugInfo(value, ObjectKind(objectId))
   }
 
   def newLocal(localId: FunOrVarId, astNode: Ast): Value = newValue { value =>
@@ -31,7 +31,7 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
 
 enum ValueKind {
   case FunParamKind(funOwnerId: TypeIdentifier, funId: FunOrVarId, paramId: FunOrVarId)
-  case PackageKind(pkgName: TypeIdentifier)
+  case ObjectKind(objectName: TypeIdentifier)
   case LocalKind(localId: FunOrVarId, introducingAstNode: Ast)
   case UndefinedKind(astNode: Ast)
 }

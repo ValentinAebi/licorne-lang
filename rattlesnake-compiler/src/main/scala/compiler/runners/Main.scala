@@ -1,11 +1,8 @@
 package compiler.runners
 
-import compiler.gennames.ClassesAndDirectoriesNames.*
-import compiler.gennames.FileExtensions
 import compiler.gennames.FileExtensions.rattlesnake as rattlesnakeExt
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
-import org.objectweb.asm.Opcodes.{V11, V17, V1_8}
 
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import scala.annotation.tailrec
@@ -14,15 +11,6 @@ import scala.collection.mutable
 object Main {
 
   private val cmdLineExitCode = -22
-
-  private val java8Tag = "java8"
-  private val java11Tag = "java11"
-  private val java17Tag = "java17"
-  private val knownJavaVersions = Map(
-    java8Tag -> V1_8,
-    java11Tag -> V11,
-    java17Tag -> V17
-  )
 
   private type MutArgsMap = mutable.Map[String, Option[String]]
 
@@ -135,10 +123,6 @@ object Main {
     }
   }
 
-  private def parseJavaVersion(str: String): Int = {
-    knownJavaVersions.getOrElse(str, error(s"unknown java version, known are only ${knownJavaVersions.mkString(", ")}"))
-  }
-
   private def getValuedArg(argName: String, argsMap: MutArgsMap, optDefault: Option[String] = None): String = {
     argsMap.remove(argName).getOrElse(optDefault).getOrElse(error(s"missing required argument: $argName"))
   }
@@ -157,10 +141,6 @@ object Main {
 
   private def getOutDirBaseArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
-  }
-
-  private def getJavaVersionArg(argsMap: MutArgsMap): Int = {
-    parseJavaVersion(getValuedArg("java-version", argsMap, Some(java8Tag)))
   }
   
   private def getRuntimeDirArg(argsMap: MutArgsMap): Path = {
@@ -201,9 +181,8 @@ object Main {
   private case class Run(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBasePath = getOutDirBaseArg(argsMap)
-      val javaVersion = getJavaVersionArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, javaVersion, runtimeDir, runtimeDir)
+      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -226,9 +205,8 @@ object Main {
   private case class Compile(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBase = getOutDirBaseArg(argsMap)
-      val javaVersion = getJavaVersionArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, javaVersion, runtimeDir, runtimeDir)
+      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir)
       reportUnknownArgsIfAny(argsMap)
       val cnt = compiler.apply(sources).size
       succeed(s"wrote $cnt file(s)")
@@ -275,12 +253,10 @@ object Main {
          |
          |run: compile and run the program
          | args: -out-dir=...: required, directory where to write the output file
-         |       -java-version=...: optional, can be '$java8Tag', '$java11Tag' or '$java17Tag' (default is '$java8Tag')
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
-         |       -java-version=...: optional, can be '$java8Tag', '$java11Tag' or '$java17Tag' (default is '$java8Tag')
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |typecheck: parse and typecheck the program
          |help: displays help (this)

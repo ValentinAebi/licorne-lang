@@ -34,7 +34,7 @@ object SSA {
   sealed trait FunctionsContainer {
     def methods: List[Function]
   }
-  final case class Package(pkgId: TypeIdentifier, methods: List[Function]) extends FunctionsContainer
+  final case class Object(objectId: TypeIdentifier, methods: List[Function]) extends FunctionsContainer
   final case class Class(classId: TypeIdentifier, fields: List[Field], methods: List[Function]) extends FunctionsContainer
 
   final case class Field(name: String, tpe: TypeTree)

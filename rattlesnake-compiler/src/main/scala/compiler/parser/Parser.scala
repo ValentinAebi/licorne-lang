@@ -90,10 +90,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
   } setName "source"
 
-  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR packageDef OR classDef OR datatypeDef OR structDef OR typeAliasDef
+  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR structDef OR typeAliasDef
 
   private lazy val interfaceDef: P[InterfaceDef] = {
-    kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: superTypesListOpt ::: methodsListOpt map {
+    kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: complexSuperTypesListOpt ::: methodsListOpt map {
       case id ^: typeParams ^: supertypes ^: functions =>
         InterfaceDef(id, typeParams, functions, supertypes)
     }
@@ -102,29 +102,29 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val classDef: P[ClassDef] = {
     kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
-      ::: superTypesListOpt ::: methodsListOpt map {
+      ::: complexSuperTypesListOpt ::: methodsListOpt map {
       case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
         ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
     }
   } setName "classDef"
 
-  private lazy val packageDef: P[PackageDef] = {
-    kw(Package).ignored ::: highName
+  private lazy val objectDef: P[ObjectDef] = {
+    kw(Object).ignored ::: highName
       ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
-      ::: superTypesListOpt ::: methodsListOpt map {
-      case packageName ^: importedPackagesOpt ^: supertypes ^: functions =>
-        PackageDef(packageName, importedPackagesOpt.getOrElse(Nil), functions, supertypes)
+      ::: complexSuperTypesListOpt ::: methodsListOpt map {
+      case objectName ^: importedPackagesOpt ^: supertypes ^: functions =>
+        ObjectDef(objectName, importedPackagesOpt.getOrElse(Nil), functions, supertypes)
     }
-  } setName "packageDef"
+  } setName "objectDef"
 
   private lazy val datatypeDef = {
-    kw(Datatype).ignored ::: highName ::: superTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
+    kw(Datatype).ignored ::: highName ::: simpleSuperTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
       case id ^: supertypes ^: typeParams => DatatypeDef(id, typeParams, supertypes)
     }
   } setName "datatypeDef"
 
   private lazy val structDef = {
-    kw(Struct).ignored ::: highName ::: superTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
+    kw(Struct).ignored ::: highName ::: simpleSuperTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
       case name ^: supertypes ^: typeParams ^: fieldsOpt =>
         StructDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
@@ -132,9 +132,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "structDef"
 
   private lazy val typeAliasDef: P[TypeAliasDef] = {
-    kw(Typealias).ignored ::: highName ::: typeParamsWithoutVarianceListOpt
+    kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeParenth)
-      ::: assig ::: typeTree ::: semicolon map {
+      ::: assig ::: typeTree map {
       case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs)
     }
   } setName "typeAliasDef"
@@ -152,7 +152,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "funDef"
 
   private lazy val packageImport = {
-    kw(Package).ignored ::: highName map (PackageImport(_))
+    kw(Object).ignored ::: highName map (ObjectImport(_))
   } setName "packageImport"
 
   private lazy val classParamTree = funOrClassParam OR packageImport
@@ -177,12 +177,19 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "methodsListOpt"
 
-  private lazy val superTypesListOpt = {
+  private lazy val complexSuperTypesListOpt = {
     opt(colon ::: repeatWithSepNonZero(primOrNamedShape, comma)) map {
       case None => List.empty
       case Some(supertypes) => supertypes
     }
-  } setName "superTypesListOpt"
+  } setName "complexSuperTypesListOpt"
+  
+  private lazy val simpleSuperTypesListOpt = {
+    opt(colon ::: repeatWithSepNonZero(highName, comma)) map {
+      case None => List.empty
+      case Some(supertypes) => supertypes
+    }
+  } setName "simpleSuperTypesListOpt"
 
   private lazy val possiblyNegativeNumericLiteralValue: FinalTreeParser[NumericLiteral] = {
     (numericLiteralValue OR (op(Minus) ::: numericLiteralValue)) map {
@@ -218,7 +225,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "path"
 
   private lazy val capturableExpr = recursive {
-    pkgRef OR path
+    objectRef OR path
   } setName "capturableExpr"
 
   private lazy val hatAndImplicitRootCap = recursive {
@@ -323,6 +330,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       varianceSymbolOpt match {
         case Some(Plus) => Variance.Covariant
         case Some(Minus) => Variance.Contravariant
+        case Some(_) => assert(false)
         case None => Variance.Invariant
       })
   } setName "typeParam"
@@ -333,7 +341,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
 
-  private lazy val pkgRef = highName map (PackageRef(_))
+  private lazy val objectRef = highName map (ObjectRef(_))
 
   private lazy val varRefOrNonPrefixedCall = lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList) map {
     case name ^: Some(exclMarkOpt ^: args) => Call(None, name, args, exclMarkOpt.isDefined)
@@ -341,7 +349,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "varRefOrNonPrefixedCall"
 
   private lazy val atomicExpr = recursive {
-    varRefOrNonPrefixedCall OR thisRef OR pkgRef OR literalValue OR filledArrayInit OR parenthesizedExpr
+    varRefOrNonPrefixedCall OR thisRef OR objectRef OR literalValue OR filledArrayInit OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
@@ -364,10 +372,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "filledArrayInit"
 
   private lazy val structOrModuleInstantiation = recursive {
-    kw(New).ignored ::: highName ::: openParenth ::: repeatWithSep(expr, comma) ::: closeParenth map {
-      case tid ^: args => StructOrModuleInstantiation(tid, args)
+    kw(New).ignored ::: highName ::: openBrace ::: repeatWithSep(fieldInitializer, comma) ::: closeBrace map {
+      case tid ^: initializers => StructOrClassInstantiation(tid, initializers)
     }
   } setName "structOrModuleInstantiation"
+  
+  private lazy val fieldInitializer = recursive {
+    lowName ::: opt(assig ::: expr) map {
+      case fieldName ^: Some(rhs) => FullFieldInitializer(fieldName, rhs)
+      case fieldName ^: None => ShorthandFieldInitializer(fieldName)
+    }
+  } setName "fieldInitializer"
 
   private lazy val stat: P[Statement] = {
     exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR

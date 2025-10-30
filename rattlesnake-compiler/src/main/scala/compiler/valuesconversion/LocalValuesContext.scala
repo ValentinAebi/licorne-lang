@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.irs.Asts
 import compiler.irs.Asts.{CaptureSetTree, Expr, TypeShapeTree, TypeTree}
-import identifiers.FunOrVarId
+import identifiers.{FunOrVarId, ThisId}
 import lang.CaptureDescriptors.CaptureSet
 import lang.Types.{NamedTypeShape, Type, TypeShape}
 import lang.Values.*
@@ -10,12 +10,22 @@ import lang.Values.*
 import scala.collection.mutable
 
 final class LocalValuesContext(val thisValue: Value, val globalCtx: GlobalValuesContext) {
-  private val regularValues = mutable.Map.empty[FunOrVarId, Value]
+  private val regularValues = mutable.Map[FunOrVarId, Value](ThisId -> thisValue)
   
+  export globalCtx.{valuesGen, resolveObject}
+
+  def copied: LocalValuesContext = {
+    val newCtx = LocalValuesContext(thisValue, globalCtx)
+    for ((id, value) <- regularValues) {
+      newCtx(id) = value
+    }
+    newCtx
+  }
+
   def update(id: FunOrVarId, value: Value): Unit = {
     regularValues(id) = value
   }
-  
+
   def valueOf(id: FunOrVarId): Option[Value] = regularValues.get(id)
 
   def mkType(typeTree: TypeTree): Type = {
@@ -52,12 +62,12 @@ final class LocalValuesContext(val thisValue: Value, val globalCtx: GlobalValues
     case Asts.StringLit(value) => StringConstant(value)
     case Asts.VariableRef(name) => valueOf(name).getOrElse(globalCtx.valuesGen.newUndefined(expr))
     case Asts.ThisRef() => thisValue
-    case Asts.PackageRef(pkgName) => globalCtx.resolvePackage(pkgName)
+    case Asts.ObjectRef(objectName) => globalCtx.resolveObject(objectName)
     case Asts.Call(receiverOpt, funId, args, isTailrec) =>
       Call(receiverOpt.map(mkFormula).getOrElse(thisValue), funId, args.map(mkFormula))
     case Asts.Indexing(indexed, arg) => ???
     case Asts.Select(lhs, selected) => Select(mkFormula(lhs), selected)
     case _ => globalCtx.valuesGen.newUndefined(expr)
   }
-  
+
 }

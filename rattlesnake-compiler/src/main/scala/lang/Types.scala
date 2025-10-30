@@ -2,7 +2,7 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.CaptureDescriptors.*
-import lang.Values.{Formula, Value}
+import lang.Values.Formula
 
 
 object Types {

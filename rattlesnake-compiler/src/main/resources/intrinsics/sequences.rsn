@@ -1,6 +1,6 @@
 
-typealias Length = Int with it >= 0;
-typealias Idx(seq: Sequence<Any^>) = Int with 0 <= it && it < seq.length();
+typealias Length = Int with it >= 0
+typealias Idx(seq: Sequence<Any^>) = Int with 0 <= it && it < seq.length()
 
 interface Sequence<+T> {
     fn length() -> Length
@@ -8,7 +8,13 @@ interface Sequence<+T> {
 }
 
 class Array<T> : Sequence<T> {
-    fn length() -> Length
-    fn get(idx: Idx<T>(this)) -> T
-    fn update(idx: Idx<T>(this), value: T) -> Void
+    fn length() -> Length {
+        // compiled to ARRAYLENGTH
+    }
+    fn get(idx: Idx<T>(this)) -> T {
+        // compiled to xALOAD
+    }
+    fn update(idx: Idx<T>(this), value: T) -> Void {
+        // compiled to xASTORE
+    }
 }

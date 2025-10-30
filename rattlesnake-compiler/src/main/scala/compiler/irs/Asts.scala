@@ -61,8 +61,17 @@ object Asts {
 
   sealed trait TypeDefTree extends TopLevelDef {
     def id: TypeIdentifier
-
-    def directSupertypes: Seq[TypeShapeTree]
+    
+    def description: String
+  }
+  
+  sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
+    def functions: List[FunDef]
+    def directSupertypes: List[TypeShapeTree]
+  }
+  
+  sealed trait UnencapsulatedTypeDefTree extends TypeDefTree {
+    def directSupertypes: List[TypeIdentifier]
   }
 
   final case class InterfaceDef(
@@ -70,16 +79,20 @@ object Asts {
                                  typeParams: List[TypeParam],
                                  functions: List[FunDef],
                                  directSupertypes: List[TypeShapeTree]
-                               ) extends TypeDefTree {
+                               ) extends EncapsulatedTypeDefTree {
+    override def description: String = s"interface $id"
+
     override def children: List[Ast] = functions ++ directSupertypes
   }
 
-  final case class PackageDef(
-                               id: TypeIdentifier,
-                               importedPackages: List[TypeIdentifier],
-                               functions: List[FunDef],
-                               directSupertypes: List[TypeShapeTree]
-                             ) extends TypeDefTree {
+  final case class ObjectDef(
+                              id: TypeIdentifier,
+                              importedObjects: List[TypeIdentifier],
+                              functions: List[FunDef],
+                              directSupertypes: List[TypeShapeTree]
+                            ) extends EncapsulatedTypeDefTree {
+    override def description: String = s"object $id"
+
     override def children: List[Ast] = functions ++ directSupertypes
   }
 
@@ -89,16 +102,20 @@ object Asts {
                              params: List[ClassParam],
                              functions: List[FunDef],
                              directSupertypes: List[TypeShapeTree]
-                           ) extends TypeDefTree {
+                           ) extends EncapsulatedTypeDefTree {
+    override def description: String = s"class $id"
+
     override def children: List[Ast] = typeParams ++ params ++ functions ++ directSupertypes
   }
 
   final case class DatatypeDef(
                                 id: TypeIdentifier,
                                 typeParams: List[TypeParam],
-                                directSupertypes: List[TypeShapeTree]
-                              ) extends TypeDefTree {
-    override def children: List[Ast] = typeParams ++ directSupertypes
+                                directSupertypes: List[TypeIdentifier]
+                              ) extends UnencapsulatedTypeDefTree {
+    override def description: String = s"datatype $id"
+
+    override def children: List[Ast] = typeParams
   }
 
   /**
@@ -108,9 +125,11 @@ object Asts {
                               id: TypeIdentifier,
                               typeParams: List[TypeParam],
                               fields: List[StructParam],
-                              directSupertypes: List[TypeShapeTree]
-                            ) extends TypeDefTree {
-    override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
+                              directSupertypes: List[TypeIdentifier]
+                            ) extends UnencapsulatedTypeDefTree {
+    override def description: String = s"struct $id"
+
+    override def children: List[Ast] = typeParams ++ fields
   }
 
   /**
@@ -121,7 +140,7 @@ object Asts {
     override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
   }
 
-  final case class TypeAliasDef(typeName: TypeIdentifier, typeParams: List[TypeIdentifier], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+  final case class TypeAliasDef(typeName: TypeIdentifier, typeParams: List[TypeParam], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
     override def children: List[Ast] = params :+ rhs
   }
 
@@ -150,7 +169,7 @@ object Asts {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class PackageImport(packageId: TypeIdentifier) extends ClassParam {
+  final case class ObjectImport(objectId: TypeIdentifier) extends ClassParam {
     override def children: List[Ast] = Nil
   }
 
@@ -238,7 +257,7 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  final case class PackageRef(pkgName: TypeIdentifier) extends Expr {
+  final case class ObjectRef(objectName: TypeIdentifier) extends Expr {
     override def children: List[Ast] = Nil
   }
 
@@ -270,8 +289,20 @@ object Asts {
     override def children: List[Ast] = arrayElems
   }
 
-  final case class StructOrModuleInstantiation(typeId: TypeIdentifier, args: List[Expr]) extends Expr {
-    override def children: List[Ast] = args
+  final case class StructOrClassInstantiation(typeId: TypeIdentifier, initializers: List[FieldInitializer]) extends Expr {
+    override def children: List[Ast] = initializers
+  }
+  
+  sealed abstract class FieldInitializer extends Ast {
+    val fieldName: FunOrVarId
+  }
+  
+  final case class FullFieldInitializer(fieldName: FunOrVarId, rhs: Expr) extends FieldInitializer {
+    override def children: List[Ast] = List(rhs)
+  }
+  
+  final case class ShorthandFieldInitializer(fieldName: FunOrVarId) extends FieldInitializer {
+    override def children: List[Ast] = Nil
   }
 
   /**

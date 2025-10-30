@@ -1,15 +1,16 @@
 package lang
 
 import identifiers.*
+import lang.Field.StableField
 import lang.Values.Value
-import lang.Types.Type
+import lang.Types.{Type, TypeShape}
 
 import scala.collection.mutable
 
 final case class FunctionSignature(
                                     name: FunOrVarId,
                                     typeParams: List[TypeIdentifier],
-                                    params: mutable.LinkedHashMap[Value, Type],
+                                    paramsInclThis: mutable.LinkedHashMap[Value, Type],
                                     retType: Type,
                                     visibility: Visibility
                                   )
@@ -20,65 +21,81 @@ sealed trait TypeSignature {
 
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
-                                     typeParams: List[TypeIdentifier],
-                                     params: mutable.LinkedHashMap[FunOrVarId, TypeIdentifier]
+                                     typeParams: List[(TypeIdentifier, Variance)],
+                                     params: mutable.LinkedHashMap[FunOrVarId, (Type, Value)]
                                    ) extends TypeSignature
 
-sealed trait RuntimeTypeSignature extends TypeSignature {
-  def isAbstract: Boolean
-}
+sealed trait RuntimeTypeSignature extends TypeSignature
 
-sealed trait FunctionsProviderSig extends RuntimeTypeSignature {
+sealed trait ConcreteTypeSignature extends RuntimeTypeSignature
+
+sealed trait Encapsulated {
+  this: RuntimeTypeSignature =>
+
   def functions: Map[FunOrVarId, FunctionSignature]
+
+  def directSupertypes: List[TypeShape]
 }
 
-sealed trait ConstructibleSig extends RuntimeTypeSignature {
+sealed trait Unencapsulated {
+  this: RuntimeTypeSignature =>
 
+  def directSupertypes: List[TypeIdentifier]
 }
 
-sealed trait UserConstructibleSig extends RuntimeTypeSignature {
-  this: ConstructibleSig =>
-  
+sealed trait TypeParametric extends RuntimeTypeSignature {
+  this: TypeSignature =>
+
   def typeParams: List[(TypeIdentifier, Variance)]
 }
 
-sealed trait SelectableSig extends RuntimeTypeSignature {
-  this: ConstructibleSig =>
-}
-
-sealed trait ImporterSig extends RuntimeTypeSignature {
-
-}
+final case class InterfaceSignature(
+                                     id: TypeIdentifier,
+                                     typeParams: List[(TypeIdentifier, Variance)],
+                                     functions: Map[FunOrVarId, FunctionSignature],
+                                     directSupertypes: List[TypeShape]
+                                   )
+  extends RuntimeTypeSignature, TypeParametric, Encapsulated
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[(TypeIdentifier, Variance)],
-                                 paramImports: mutable.LinkedHashMap[FunOrVarId, ClassFieldInfo],
-                                 importedPackages: mutable.LinkedHashSet[TypeIdentifier],
-                                 functions: Map[FunOrVarId, FunctionSignature]
+                                 fields: mutable.LinkedHashMap[FunOrVarId, Field],
+                                 importedObjects: mutable.LinkedHashSet[Value],
+                                 functions: Map[FunOrVarId, FunctionSignature],
+                                 directSupertypes: List[TypeShape]
                                )
-  extends RuntimeTypeSignature, ConstructibleSig, UserConstructibleSig, ImporterSig, SelectableSig, FunctionsProviderSig {
-
-  override def isAbstract: Boolean = false
-}
+  extends RuntimeTypeSignature, ConcreteTypeSignature, TypeParametric, Encapsulated
 
 final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
-final case class PackageSignature(
-                                   id: TypeIdentifier,
-                                   importedPackages: mutable.LinkedHashSet[TypeIdentifier],
-                                   functions: Map[FunOrVarId, FunctionSignature]
-                                 ) extends RuntimeTypeSignature, ConstructibleSig, ImporterSig, FunctionsProviderSig {
-  override def isAbstract: Boolean = false
-}
+final case class ObjectSignature(
+                                  id: TypeIdentifier,
+                                  importedObjects: mutable.LinkedHashSet[Value],
+                                  functions: Map[FunOrVarId, FunctionSignature],
+                                  directSupertypes: List[TypeShape]
+                                )
+  extends RuntimeTypeSignature, ConcreteTypeSignature, Encapsulated
+
+final case class DatatypeSignature(
+                                    id: TypeIdentifier,
+                                    typeParams: List[(TypeIdentifier, Variance)],
+                                    directSupertypes: List[TypeIdentifier],
+                                    directSubtypes: mutable.LinkedHashSet[TypeIdentifier]
+                                  )
+  extends RuntimeTypeSignature, Unencapsulated, TypeParametric
 
 final case class StructSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[(TypeIdentifier, Variance)],
-                                  fields: mutable.LinkedHashMap[FunOrVarId, Type],
-                                  directSupertypes: Seq[TypeIdentifier],
-                                  directSubtypesOpt: Option[mutable.LinkedHashSet[TypeIdentifier]]
+                                  fields: mutable.LinkedHashMap[FunOrVarId, StableField],
+                                  directSupertypes: List[TypeIdentifier]
                                 )
-  extends RuntimeTypeSignature, ConstructibleSig, UserConstructibleSig, SelectableSig {
-  override def isAbstract: Boolean = directSubtypesOpt.isDefined
+  extends RuntimeTypeSignature, ConcreteTypeSignature, Unencapsulated, TypeParametric
+
+enum Field {
+  case ReassignableField(tpe: Type)
+  case StableField(tpe: Type, value: Value)
+
+  def tpe: Type
 }

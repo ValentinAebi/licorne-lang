@@ -1,12 +1,11 @@
 package compiler.pipeline
 
-import compiler.io.{SourceCodeProvider, StringWriter}
+import compiler.io.SourceCodeProvider
 import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import identifiers.TypeIdentifier
-import org.objectweb.asm.ClassVisitor
 
 import java.nio.file.Path
 
@@ -20,12 +19,11 @@ object TasksPipelines {
    */
   def compiler(
                 outputDirectoryPath: Path,
-                javaVersionCode: Int,
                 runtimeDirPath: Path,
                 agentDirPath: Path,
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
-    compilerImpl(outputDirectoryPath, javaVersionCode, runtimeDirPath, agentDirPath, er)
+    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, er)
   }
 
   /**
@@ -37,11 +35,10 @@ object TasksPipelines {
       .andThen(MissingCompiler(er)) // TODO
   }
 
-  private def compilerImpl[V <: ClassVisitor](outputDirectoryPath: Path,
-                                              javaVersionCode: Int,
-                                              runtimeDirPath: Path,
-                                              agentDirPath: Path,
-                                              er: ErrorReporter) = {
+  private def compilerImpl(outputDirectoryPath: Path,
+                           runtimeDirPath: Path,
+                           agentDirPath: Path,
+                           er: ErrorReporter) = {
     MultiStep(frontend(er))
       .andThen(MissingCompiler(er)) // TODO
   }
@@ -87,7 +84,7 @@ object TasksPipelines {
       val c = raw.charAt(i)
       if (c == '(') {
         val closingParenthIdx = findClosingParenthesis(raw, i + 1, 20)
-        if (closingParenthIdx >= 0){
+        if (closingParenthIdx >= 0) {
           sb.append(raw.substring(i, closingParenthIdx + 1))
           i += closingParenthIdx - i
         } else {
@@ -104,14 +101,14 @@ object TasksPipelines {
   private def findClosingParenthesis(str: String, start: Int, maxLen: Int): Int = {
     var i = start
     var balance = 1
-    while (i < start + maxLen){
+    while (i < start + maxLen) {
       val c = str.charAt(i)
-      if (c == '('){
+      if (c == '(') {
         balance += 1
-      } else if (c == ')'){
+      } else if (c == ')') {
         balance -= 1
       }
-      if (balance == 0){
+      if (balance == 0) {
         return i
       }
       i += 1

@@ -3,16 +3,16 @@ package compiler.analysisctx
 import compiler.pipeline.CompilationStep.ContextCreation
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.valuesconversion.{GlobalValuesContext, ValuesGenerator}
+import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
-import lang.{ClassSignature, ConstructibleSig, FunctionsProviderSig, ImporterSig, PackageSignature, RuntimeTypeSignature, SelectableSig, StructSignature, TypeAliasSignature, TypeSignature, UserConstructibleSig}
+import lang.*
 
 import scala.collection.mutable
 
 final case class AnalysisContext(
                                   globalValuesContext: GlobalValuesContext,
                                   classes: Map[TypeIdentifier, ClassSignature],
-                                  packages: Map[TypeIdentifier, PackageSignature],
+                                  packages: Map[TypeIdentifier, ObjectSignature],
                                   structs: Map[TypeIdentifier, StructSignature],
                                   typeAliases: Map[TypeIdentifier, TypeAliasSignature]
                                 )
@@ -34,13 +34,13 @@ object AnalysisContext {
 
     def build(): AnalysisContext = {
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]
-      val packagesB = Map.newBuilder[TypeIdentifier, PackageSignature]
+      val packagesB = Map.newBuilder[TypeIdentifier, ObjectSignature]
       val structsB = Map.newBuilder[TypeIdentifier, StructSignature]
       val typeAliasesB = Map.newBuilder[TypeIdentifier, TypeAliasSignature]
       for ((id, sig) <- signatures) {
         sig match {
           case sig: ClassSignature => classesB.addOne((id, sig))
-          case sig: PackageSignature => packagesB.addOne((id, sig))
+          case sig: ObjectSignature => packagesB.addOne((id, sig))
           case sig: StructSignature => structsB.addOne((id, sig))
           case sig: TypeAliasSignature => typeAliasesB.addOne((id, sig))
         }
