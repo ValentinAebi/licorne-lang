@@ -8,7 +8,8 @@ import lang.Types.{Type, TypeShape}
 import scala.collection.mutable
 
 final case class FunctionSignature(
-                                    name: FunOrVarId,
+                                    ownerName: TypeIdentifier,
+                                    functionName: FunOrVarId,
                                     typeParams: List[TypeIdentifier],
                                     paramsInclThis: mutable.LinkedHashMap[Value, Type],
                                     retType: Type,

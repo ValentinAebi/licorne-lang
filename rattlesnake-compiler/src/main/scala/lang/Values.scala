@@ -23,6 +23,7 @@ object Values {
   final case class Times(lhs: Formula, rhs: Formula) extends Formula
   final case class Div(lhs: Formula, rhs: Formula) extends Formula
   final case class Rem(lhs: Formula, rhs: Formula) extends Formula
+  final case class Neg(negated: Formula) extends Formula
 
   final case class And(lhs: Formula, rhs: Formula) extends Formula
   final case class Or(lhs: Formula, rhs: Formula) extends Formula
@@ -36,5 +37,7 @@ object Values {
   final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
 
   case object RootCapability extends Capturable
+  
+  def formulaIsPure(formula: Formula): Boolean = ???
 
 }

@@ -1,11 +1,11 @@
 package compiler.pipeline
 
-import compiler.analysisctx.ContextCreator
 import compiler.io.SourceCodeProvider
 import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
+import compiler.ssagen.SSAGenerator
 import identifiers.TypeIdentifier
 
 import java.nio.file.Path
@@ -41,7 +41,7 @@ object TasksPipelines {
                            agentDirPath: Path,
                            er: ErrorReporter) = {
     MultiStep(frontend(er))
-      .andThen(ContextCreator(er))
+      .andThen(SSAGenerator(er))
       .andThen(MissingCompiler(er)) // TODO
   }
 

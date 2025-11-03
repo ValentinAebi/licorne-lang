@@ -7,7 +7,7 @@ import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter, Fatal}
-import compiler.reporting.{Errors, Position}
+import compiler.reporting.Position
 import identifiers.*
 import lang.*
 import lang.Keyword.*
@@ -79,7 +79,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val greaterThan = op(GreaterThan).ignored
   private val at = op(At).ignored
 
-  private val unaryOperator = op(Minus, ExclamationMark, Len)
+  private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
 
   private val semicolon = op(Semicolon).ignored
@@ -119,7 +119,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val datatypeDef = {
     kw(Datatype).ignored ::: highName ::: simpleSuperTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
-      case id ^: supertypes ^: typeParams => DatatypeDef(id, typeParams, supertypes)
+      case id ^: supertypes ^: typeParams => DataTypeDef(id, typeParams, supertypes)
     }
   } setName "datatypeDef"
 
@@ -271,17 +271,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "block"
 
   private lazy val exprOrAssig = recursive {
-    expr ::: opt(assignmentOperator ::: expr) map {
+    expr ::: opt(opt(colon ::: typeTree) ::: assignmentOperator ::: expr) map {
       case singleExpr ^: None => singleExpr
-      case lhs ^: Some(Assig ^: rhs) => VarAssig(lhs, rhs)
-      case lhs ^: Some(op ^: rhs) => VarModif(lhs, rhs, Operators.assigOperators.apply(op))
+      case lhs ^: Some(optTypeAnnot ^: Assig ^: rhs) => VarAssig(lhs, optTypeAnnot, rhs)
+      case lhs ^: Some(optTypeAnnot ^: op ^: rhs) => VarModif(lhs, optTypeAnnot, rhs, Operators.assigOperators.apply(op))
     }
   } setName "exprOrAssig"
 
   private lazy val assignmentStat = recursive {
-    expr ::: assignmentOperator ::: expr map {
-      case lhs ^: Assig ^: rhs => VarAssig(lhs, rhs)
-      case lhs ^: operator ^: rhs => VarModif(lhs, rhs, Operators.assigOperators.apply(operator))
+    expr ::: opt(colon ::: typeTree) ::: assignmentOperator ::: expr map {
+      case lhs ^: optTypeAnnot ^: Assig ^: rhs => VarAssig(lhs, optTypeAnnot, rhs)
+      case lhs ^: optTypeAnnot ^: operator ^: rhs => VarModif(lhs, optTypeAnnot, rhs, Operators.assigOperators.apply(operator))
     }
   } setName "assignmentStat"
 
@@ -391,13 +391,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val valDef = {
     kw(Val).ignored ::: lowName ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
-      case valName ^: optType ^: rhsOpt => LocalDef(valName, optType, rhsOpt, isReassignable = false)
+      case valName ^: optType ^: rhsOpt => LocalDef(valName, optType, rhsOpt, ReassigStatus.Val)
     }
   } setName "valDef"
 
   private lazy val varDef = {
     kw(Var).ignored ::: lowName ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
-      case varName ^: optType ^: rhsOpt => LocalDef(varName, optType, rhsOpt, isReassignable = true)
+      case varName ^: optType ^: rhsOpt => LocalDef(varName, optType, rhsOpt, ReassigStatus.Var)
     }
   } setName "varDef"
 

@@ -1,6 +1,6 @@
 package compiler.analysisctx
 
-import compiler.pipeline.CompilationStep.ContextCreation
+import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.GlobalValuesContext
@@ -21,14 +21,14 @@ final case class AnalysisContext(
 
 object AnalysisContext {
 
-  private[analysisctx] final class Builder(er: ErrorReporter) {
+  final class Builder(er: ErrorReporter) {
     private val signatures = mutable.Map.empty[TypeIdentifier, TypeSignature]
 
     val globalValuesContext: GlobalValuesContext = GlobalValuesContext()
 
     def saveSignature(sig: TypeSignature, posOpt: Option[Position]): Unit = {
       if (signatures.contains(sig.id)) {
-        er.push(Err(ContextCreation, s"redefinition of type ${sig.id}", posOpt))
+        er.push(Err(SSAGeneration, s"redefinition of type ${sig.id}", posOpt))
       } else {
         signatures(sig.id) = sig
       }

@@ -8,7 +8,6 @@ import lang.Types.PrimitiveTypeShape.*
 
 import scala.annotation.targetName
 
-// TODO check lists of children (all node types)
 
 object Asts {
 
@@ -21,7 +20,7 @@ object Asts {
     export positionMemo.set as setPosition
     export positionMemo.getOpt as getPosition
 
-    // TODO test all implementations of children
+    // TODO check all implementations of children
     def children: List[Ast]
   }
 
@@ -108,7 +107,7 @@ object Asts {
     override def children: List[Ast] = typeParams ++ params ++ functions ++ directSupertypes
   }
 
-  final case class DatatypeDef(
+  final case class DataTypeDef(
                                 id: TypeIdentifier,
                                 typeParams: List[TypeParam],
                                 directSupertypes: List[TypeIdentifier]
@@ -176,24 +175,19 @@ object Asts {
   final case class TypeParam(id: TypeIdentifier, variance: Variance) extends Ast {
     override def children: List[Ast] = Nil
   }
-
-  /**
-   * `val` or `var` definition
-   *
-   * @param isReassignable `true` if `var`, `false` if `val`
-   */
+  
   final case class LocalDef(
                              localName: FunOrVarId,
                              optTypeAnnot: Option[TypeTree],
                              rhsOpt: Option[Expr],
-                             isReassignable: Boolean
+                             reassigStatus: ReassigStatus
                            ) extends Statement {
-    val keyword: Keyword = if isReassignable then Keyword.Var else Keyword.Val
-
     override def children: List[Ast] = optTypeAnnot.toList ++ rhsOpt
   }
 
-  sealed abstract class Literal extends Expr {
+  sealed abstract class FormulaExpr extends Expr
+
+  sealed abstract class Literal extends FormulaExpr {
     val value: Any
 
     final override def children: List[Ast] = Nil
@@ -249,37 +243,30 @@ object Asts {
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
    */
-  final case class VariableRef(name: FunOrVarId) extends Expr {
+  final case class VariableRef(name: FunOrVarId) extends FormulaExpr {
     override def children: List[Ast] = Nil
   }
 
-  final case class ThisRef() extends Expr {
+  final case class ThisRef() extends FormulaExpr {
     override def children: List[Ast] = Nil
   }
 
-  final case class ObjectRef(objectName: TypeIdentifier) extends Expr {
+  final case class ObjectRef(objectName: TypeIdentifier) extends FormulaExpr {
     override def children: List[Ast] = Nil
   }
 
   /**
    * Function call: `callee(args)`
    */
-  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends Expr {
+  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends FormulaExpr {
     override def children: List[Ast] = receiverOpt.toList ++ args
   }
 
   /**
    * Array indexing: `indexed[arg]`
    */
-  final case class Indexing(indexed: Expr, arg: Expr) extends Expr {
+  final case class Indexing(indexed: Expr, arg: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(indexed, arg)
-  }
-
-  /**
-   * Initialization of an (empty) array
-   */
-  final case class ArrayInit(elemType: TypeTree, size: Expr) extends Expr {
-    override def children: List[Ast] = List(elemType, size)
   }
 
   /**
@@ -308,21 +295,21 @@ object Asts {
   /**
    * Unary operator
    */
-  final case class UnaryOp(operator: Operator, operand: Expr) extends Expr {
+  final case class UnaryOp(operator: Operator, operand: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(operand)
   }
 
   /**
    * Binary operator
    */
-  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends Expr {
+  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(lhs, rhs)
   }
 
   /**
    * Access to a struct field: `lhs.select`
    */
-  final case class Select(lhs: Expr, selected: FunOrVarId) extends Expr {
+  final case class Select(lhs: Expr, selected: FunOrVarId) extends FormulaExpr {
     override def children: List[Ast] = List(lhs)
   }
 
@@ -330,13 +317,15 @@ object Asts {
     def rhs: Expr
 
     def lhs: Expr
+    
+    def typeAnnot: Option[TypeTree]
   }
 
   /**
    * Assignment of a value to a variable (or struct field, or in an array): `lhs = rhs`
    */
-  final case class VarAssig(lhs: Expr, rhs: Expr) extends Assignment {
-    override def children: List[Ast] = List(lhs, rhs)
+  final case class VarAssig(lhs: Expr, typeAnnot: Option[TypeTree], rhs: Expr) extends Assignment {
+    override def children: List[Ast] = List(lhs) ++ typeAnnot ++ List(rhs)
   }
 
   /**
@@ -344,8 +333,8 @@ object Asts {
    *
    * @param op the operator <b>without =</b>, e.g. `+` in a `+=` expression
    */
-  final case class VarModif(lhs: Expr, rhs: Expr, op: Operator) extends Assignment {
-    override def children: List[Ast] = List(lhs, rhs)
+  final case class VarModif(lhs: Expr, typeAnnot: Option[TypeTree], rhs: Expr, op: Operator) extends Assignment {
+    override def children: List[Ast] = List(lhs) ++ typeAnnot ++ List(rhs)
   }
 
   /**
@@ -358,7 +347,7 @@ object Asts {
    *   }
    * }}}
    */
-  final case class IfThenElse(cond: Expr, thenBr: Statement, elseBrOpt: Option[Statement]) extends Statement with Conditional {
+  final case class IfThenElse(cond: Expr, thenBr: Block, elseBrOpt: Option[Block]) extends Statement with Conditional {
     override def children: List[Ast] = List(cond, thenBr) ++ elseBrOpt
   }
 
@@ -429,16 +418,6 @@ object Asts {
    */
   final case class PanicStat(msg: Expr) extends Statement {
     override def children: List[Ast] = List(msg)
-  }
-
-  /**
-   * Node generated by lowering
-   *
-   * @param stats statements to be executed before [[expr]]
-   * @param expr  the expression to be executed after [[stats]]. Its return value will be the return value of the whole Sequence
-   */
-  final case class Sequence(stats: List[Statement], expr: Expr) extends Expr {
-    override def children: List[Ast] = stats :+ expr
   }
 
   sealed trait TypeTree extends Ast {
