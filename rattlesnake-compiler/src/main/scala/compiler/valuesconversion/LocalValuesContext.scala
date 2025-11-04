@@ -1,32 +1,36 @@
 package compiler.valuesconversion
 
 import compiler.irs.Asts
-import compiler.irs.Asts.{CaptureSetTree, Expr, FormulaExpr, TypeShapeTree, TypeTree}
 import identifiers.{FunOrVarId, NormalFunOrVarId, ThisId}
 import lang.CaptureDescriptors.CaptureSet
-import lang.ReassigPermission.*
 import lang.{Operator, ReassigPermission}
 import lang.Types.{NamedTypeShape, Type, TypeShape}
 import lang.Values.*
-import LocalValuesContext.{Known, KnownButUninitialized, Unknown, ErrorsCallbacks, ValueQueryResult}
+import LocalValuesContext.{ErrorsCallbacks, ExitManager, Known, KnownButUninitialized, Unknown, ValueQueryResult}
 import compiler.irs.SSA.PhiMerge
+import compiler.pipeline.CompilationStep
+import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.ValuesContext.LocalInfo
 
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int) extends ValuesContext {
+final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int, val exitManager: ExitManager) extends ValuesContext {
+  nestedContext match {
+    case nestedContext: LocalValuesContext => require(!nestedContext.hasExited)
+    case _ => ()
+  }
+
   private val regularValues = mutable.Map.empty[FunOrVarId, LocalInfo]
 
   export nestedContext.{valuesGen, resolveObject, globalCtx}
+  export exitManager.*
 
-  def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1)
+  def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager)
 
-  def copyWithOneMoreFrame: LocalValuesContext = copyWithSameGlobal.withOneMoreFrame
-
-  override def copyWithSameGlobal: LocalValuesContext = {
-    val copy = new LocalValuesContext(nestedContext.copyWithSameGlobal, level)
+  override def copy: LocalValuesContext = {
+    val copy = new LocalValuesContext(nestedContext.copy, level, new ExitManager())
     copy.regularValues.addAll(this.regularValues.map((id, info) => (id, info.copy())))
     copy
   }
@@ -69,7 +73,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int)
     }
   }
 
-  def mkType(typeTree: TypeTree)(using ErrorsCallbacks): Type = {
+  def mkType(typeTree: Asts.TypeTree)(using ErrorsCallbacks): Type = {
     typeTree match {
       case Asts.RefinedTypeTree(baseType, predicate) =>
         val predFormula = mkFormula(predicate)
@@ -79,27 +83,27 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int)
         }
       case Asts.CapturingTypeTree(typeShapeTree, captureDescr) =>
         Type(mkTypeShape(typeShapeTree), mkCapSet(captureDescr), None)
-      case typeTree: TypeShapeTree => mkTypeShape(typeTree).toType
+      case typeTree: Asts.TypeShapeTree => mkTypeShape(typeTree).toType
     }
   }
 
-  def mkTypeShape(typeShapeTree: TypeShapeTree)(using ErrorsCallbacks): TypeShape = typeShapeTree match {
+  def mkTypeShape(typeShapeTree: Asts.TypeShapeTree)(using ErrorsCallbacks): TypeShape = typeShapeTree match {
     case Asts.PrimitiveTypeShapeTree(primitiveType) => primitiveType
     case Asts.NamedTypeShapeTree(name, typeParams, params) =>
       NamedTypeShape(name, typeParams.map(mkType), params.map(mkFormula))
   }
 
-  def mkCapSet(captureSetTree: CaptureSetTree)(using ErrorsCallbacks): CaptureSet = captureSetTree match {
+  def mkCapSet(captureSetTree: Asts.CaptureSetTree)(using ErrorsCallbacks): CaptureSet = captureSetTree match {
     case Asts.ExplicitCaptureSetTree(capturedExpressions) => ???
     case Asts.ImplicitRootCaptureSetTree() => ???
   }
 
-  def mkFormula(expr: Expr)(using ErrorsCallbacks): Formula = expr match {
-    case expr: FormulaExpr => mkFormula(expr)
+  def mkFormula(expr: Asts.Expr)(using ErrorsCallbacks): Formula = expr match {
+    case expr: Asts.FormulaExpr => mkFormula(expr)
     case _ => valuesGen.newUndefined(expr)
   }
 
-  def mkFormula(expr: FormulaExpr)(using ErrorsCallbacks): Formula = expr match {
+  def mkFormula(expr: Asts.FormulaExpr)(using ErrorsCallbacks): Formula = expr match {
     case Asts.IntLit(value) => IntConstant(value)
     case Asts.DoubleLit(value) => ???
     case Asts.CharLit(value) => ???
@@ -134,7 +138,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int)
     case Asts.TypeTest(expr, tpe) => ???
   }
 
-  private def valueForLocalRef(name: FunOrVarId, expr: FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
+  private def valueForLocalRef(name: FunOrVarId, expr: Asts.FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
     valueOf(name) match {
       case result: LocalValuesContext.ErrorValueQueryResult =>
         errorsCallbacks.unknownIdCallback(result, expr.getPosition)
@@ -145,12 +149,12 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int)
 }
 
 object LocalValuesContext {
-  
-  def apply(globalValuesContext: GlobalValuesContext): LocalValuesContext = new LocalValuesContext(globalValuesContext, 0)
 
-  def unificationCodeFor(commonAncestor: LocalValuesContext, children: List[LocalValuesContext]): List[PhiMerge] = {
-    require(children.nonEmpty)
-    
+  def apply(globalValuesContext: GlobalValuesContext): LocalValuesContext = new LocalValuesContext(globalValuesContext, 0, new ExitManager())
+
+  def unifyAndReturnPhis(commonAncestor: LocalValuesContext, children: List[LocalValuesContext]): List[PhiMerge] = {
+    require(children.forall(_.level == commonAncestor.level))
+
     type Frame = mutable.Map[FunOrVarId, LocalInfo]
 
     val valuesGen = commonAncestor.valuesGen
@@ -172,13 +176,7 @@ object LocalValuesContext {
         }
       }
     }
-    
-    @tailrec
-    def dropNestedFrames(inputs: List[LocalValuesContext], result: LocalValuesContext): List[LocalValuesContext] = {
-      val inputsAfter = inputs.map(in => if in.level > result.level then in.nestedContext.asInstanceOf[LocalValuesContext] else in)
-      if inputsAfter == inputs then inputsAfter else dropNestedFrames(inputsAfter, result)
-    }
-    
+
     @tailrec
     def unifyRecursively(result: ValuesContext, inputs: List[ValuesContext]): Unit = {
       result match {
@@ -188,13 +186,21 @@ object LocalValuesContext {
         case _ => ()
       }
     }
-    
-    unifyRecursively(commonAncestor, dropNestedFrames(children, commonAncestor))
-    phiNodesB.result()
+
+    val activeChildren = children.filter(!_.hasExited)
+    if (activeChildren.forall(_.hasExited)){
+      commonAncestor.markHasExited()
+    }
+    if (activeChildren.isEmpty){
+      List.empty
+    } else {
+      unifyRecursively(commonAncestor, activeChildren)
+      phiNodesB.result()
+    }
   }
 
-  def unificationCodeFor(commonAncestor: LocalValuesContext, children: LocalValuesContext*): List[PhiMerge] =
-    unificationCodeFor(commonAncestor, children.toList)
+  def unifyAndReturnPhis(commonAncestor: LocalValuesContext, children: LocalValuesContext*): List[PhiMerge] =
+    unifyAndReturnPhis(commonAncestor, children.toList)
 
   final case class ErrorsCallbacks(
                                     unknownIdCallback: (ErrorValueQueryResult, Option[Position]) => Unit,
@@ -210,5 +216,29 @@ object LocalValuesContext {
   final case class KnownButUninitialized(id: FunOrVarId, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ErrorValueQueryResult
 
   final case class Known(value: Value, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ValueQueryResult
+
+  private enum ExitedStatus {
+    case Active, HasExited, ReportedHasExited
+  }
+
+  final class ExitManager {
+    private var exitedStatus = ExitedStatus.Active
+
+    def markHasExited(): Unit = {
+      if (exitedStatus != ExitedStatus.Active) {
+        throw IllegalStateException()
+      }
+      exitedStatus = ExitedStatus.HasExited
+    }
+
+    def reportHasExitedIfNeeded(er: ErrorReporter, compilationStep: CompilationStep, posOpt: Option[Position]): Unit = {
+      if (exitedStatus == ExitedStatus.HasExited) {
+        er.push(Err(compilationStep, "dead code", posOpt))
+        exitedStatus = ExitedStatus.ReportedHasExited
+      }
+    }
+
+    def hasExited: Boolean = exitedStatus != ExitedStatus.Active
+  }
 
 }

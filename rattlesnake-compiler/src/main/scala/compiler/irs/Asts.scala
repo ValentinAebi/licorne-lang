@@ -63,12 +63,13 @@ object Asts {
   sealed trait TypeDefTree extends TopLevelDef {
     def description: String
   }
-  
+
   sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
     def functions: List[FunDef]
+
     def directSupertypes: List[TypeShapeTree]
   }
-  
+
   sealed trait UnencapsulatedTypeDefTree extends TypeDefTree {
     def directSupertypes: List[TypeIdentifier]
   }
@@ -175,7 +176,7 @@ object Asts {
   final case class TypeParam(id: TypeIdentifier, variance: Variance) extends Ast {
     override def children: List[Ast] = Nil
   }
-  
+
   final case class LocalDef(
                              localName: FunOrVarId,
                              optTypeAnnot: Option[TypeTree],
@@ -279,15 +280,15 @@ object Asts {
   final case class StructOrClassInstantiation(typeId: TypeIdentifier, initializers: List[FieldInitializer]) extends Expr {
     override def children: List[Ast] = initializers
   }
-  
+
   sealed abstract class FieldInitializer extends Ast {
     val fieldName: FunOrVarId
   }
-  
+
   final case class FullFieldInitializer(fieldName: FunOrVarId, rhs: Expr) extends FieldInitializer {
     override def children: List[Ast] = List(rhs)
   }
-  
+
   final case class ShorthandFieldInitializer(fieldName: FunOrVarId) extends FieldInitializer {
     override def children: List[Ast] = Nil
   }
@@ -317,7 +318,7 @@ object Asts {
     def rhs: Expr
 
     def lhs: Expr
-    
+
     def typeAnnot: Option[TypeTree]
   }
 
@@ -361,6 +362,11 @@ object Asts {
     override def children: List[Ast] = List(cond, thenBr, elseBr)
 
     override def elseBrOpt: Option[Statement] = Some(elseBr)
+  }
+
+  sealed abstract class Loop extends Statement {
+    private val assignedVars = new OptionalAttribute[Set[FunOrVarId]]
+    export assignedVars.{getOpt as getAssignedVarsOpt, set as setAssignedVars}
   }
 
   /**

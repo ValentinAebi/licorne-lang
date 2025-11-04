@@ -1,10 +1,12 @@
 
 object Test {
 
-   fn clamp(x: Int) -> Int {
+   fn clamp(x: Int, min: Int, max: Int) -> Int {
       val result: Int;
-      if x < 0 {
-         result = 0;
+      if x <= min {
+         result = min;
+      } else if x >= max {
+         return max;
       } else {
          result = x;
       };
