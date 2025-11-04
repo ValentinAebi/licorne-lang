@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.irs.Asts.{Ast, TypeTree}
-import compiler.valuesconversion.ValueKind.{FunParamKind, IntermediateKind, LocalKind, ObjectKind, PhiKind, TypeAliasParamKind, UndefinedKind}
+import compiler.valuesconversion.ValueKind.*
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Values.Value
 
@@ -12,9 +12,6 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
 
   def newParam(funOwnerId: TypeIdentifier, funId: FunOrVarId, paramId: FunOrVarId): Value =
     newValue(FunParamKind(funOwnerId, funId, paramId))
-    
-  def newTypeAliasParam(typeAliasId: TypeIdentifier, paramId: FunOrVarId): Value =
-    newValue(TypeAliasParamKind(typeAliasId, paramId))
 
   def newObject(objectId: TypeIdentifier): Value =
     newValue(ObjectKind(objectId))
@@ -25,7 +22,7 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
   def newIntermediate(astNode: Ast): Value =
     newValue(IntermediateKind(astNode))
     
-  def newPhi(inputValues: List[Value]): Value =
+  def newPhi(inputValues: Set[Value]): Value =
     newValue(PhiKind(inputValues))
 
   def newUndefined(astNode: Ast): Value =
@@ -40,10 +37,9 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
 
 enum ValueKind {
   case FunParamKind(funOwnerId: TypeIdentifier, funId: FunOrVarId, paramId: FunOrVarId)
-  case TypeAliasParamKind(aliasId: TypeIdentifier, paramId: FunOrVarId)
   case ObjectKind(objectName: TypeIdentifier)
   case LocalKind(localId: FunOrVarId, introducingAstNode: Ast, typeAnnot: Option[TypeTree])
   case IntermediateKind(introducingAstNode: Ast)
-  case PhiKind(inputValues: List[Value])
+  case PhiKind(inputValues: Set[Value])
   case UndefinedKind(astNode: Ast)
 }

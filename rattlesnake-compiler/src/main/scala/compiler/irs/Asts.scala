@@ -56,11 +56,11 @@ object Asts {
     override def children: List[Ast] = stats
   }
 
-  sealed abstract class TopLevelDef extends Ast
+  sealed abstract class TopLevelDef extends Ast {
+    def id: TypeIdentifier
+  }
 
   sealed trait TypeDefTree extends TopLevelDef {
-    def id: TypeIdentifier
-    
     def description: String
   }
   
@@ -139,7 +139,7 @@ object Asts {
     override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
   }
 
-  final case class TypeAliasDef(typeName: TypeIdentifier, typeParams: List[TypeParam], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+  final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParam], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
     override def children: List[Ast] = params :+ rhs
   }
 
@@ -180,7 +180,7 @@ object Asts {
                              localName: FunOrVarId,
                              optTypeAnnot: Option[TypeTree],
                              rhsOpt: Option[Expr],
-                             reassigStatus: ReassigStatus
+                             reassigStatus: ReassigPermission
                            ) extends Statement {
     override def children: List[Ast] = optTypeAnnot.toList ++ rhsOpt
   }
@@ -347,7 +347,7 @@ object Asts {
    *   }
    * }}}
    */
-  final case class IfThenElse(cond: Expr, thenBr: Block, elseBrOpt: Option[Block]) extends Statement with Conditional {
+  final case class IfThenElse(cond: Expr, thenBr: Statement, elseBrOpt: Option[Statement]) extends Statement with Conditional {
     override def children: List[Ast] = List(cond, thenBr) ++ elseBrOpt
   }
 
@@ -409,7 +409,7 @@ object Asts {
   /**
    * Type test, e.g. `x is Foo`
    */
-  final case class TypeTest(expr: Expr, tpe: TypeShapeTree) extends Expr {
+  final case class TypeTest(expr: Expr, tpe: TypeShapeTree) extends FormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
 

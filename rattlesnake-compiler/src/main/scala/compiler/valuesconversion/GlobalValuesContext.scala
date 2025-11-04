@@ -1,5 +1,7 @@
 package compiler.valuesconversion
 
+import compiler.irs.Asts
+import compiler.valuesconversion.ValueKind.LocalKind
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Values.Value
 
@@ -9,16 +11,24 @@ final class GlobalValuesContext extends ValuesContext {
   private val valuesDebugInfo = mutable.WeakHashMap.empty[Value, ValueKind]
   private val objects = mutable.Map.empty[TypeIdentifier, Value]
 
-  val valuesGen: ValuesGenerator = ValuesGenerator(this)
-  
+  override val globalCtx: GlobalValuesContext = this
+  override val valuesGen: ValuesGenerator = ValuesGenerator(this)
+
   def resolveObject(objectId: TypeIdentifier): Value = objects.getOrElseUpdate(objectId, valuesGen.newObject(objectId))
 
-  override private[valuesconversion] def updateLocal(id: FunOrVarId, value: Value): Boolean = false
+  override def copyWithSameGlobal: ValuesContext = this
 
   override private[valuesconversion] def queryLocal(id: FunOrVarId): Option[ValuesContext.LocalInfo] = None
 
-  private[valuesconversion] def saveDebugInfo(value: Value, kind: ValueKind): Unit = {
+  def saveDebugInfo(value: Value, kind: ValueKind): Unit = {
     valuesDebugInfo(value) = kind
+  }
+
+  def remapAsLocal(value: Value, localId: FunOrVarId, introducingAstNode: Asts.Ast, typeAnnot: Option[Asts.TypeTree]): Unit = {
+    if (!valuesDebugInfo.contains(value)) {
+      throw IllegalStateException(s"cannot remap value $value since it is currently not recorded in the mapping")
+    }
+    valuesDebugInfo(value) = LocalKind(localId, introducingAstNode, typeAnnot)
   }
 
 }

@@ -1,6 +1,14 @@
 
-package TestMain {
+object Test {
 
-
+   fn clamp(x: Int) -> Int {
+      val result: Int;
+      if x < 0 {
+         result = 0;
+      } else {
+         result = x;
+      };
+      return result;
+   }
 
 }

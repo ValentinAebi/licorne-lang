@@ -29,7 +29,7 @@ object SSA {
   sealed trait AssigningInstr extends Instr {
     val assignedValue: Value
   }
-  final case class PhiMerge(assignedValue: Value, inValues: List[Value]) extends AssigningInstr
+  final case class PhiMerge(assignedValue: Value, inValues: Set[Value]) extends AssigningInstr
   final case class Assignment(assignedValue: Value, rhs: Formula) extends AssigningInstr
   final case class Instantiate(assignedValue: Value, classOrStructName: TypeIdentifier) extends AssigningInstr
   final case class Cast(assignedValue: Value, inValue: Value, targetType: Type) extends AssigningInstr
