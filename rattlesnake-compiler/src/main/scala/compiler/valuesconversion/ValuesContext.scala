@@ -13,7 +13,7 @@ trait ValuesContext {
 
   def resolveObject(objectId: TypeIdentifier): Value
   
-  def copy: ValuesContext
+  def copyWithSameGlobals: ValuesContext
   
   private[valuesconversion] def queryLocal(id: FunOrVarId): Option[LocalInfo]
   

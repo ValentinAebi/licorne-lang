@@ -25,12 +25,13 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   private val regularValues = mutable.Map.empty[FunOrVarId, LocalInfo]
 
   export nestedContext.{valuesGen, resolveObject, globalCtx}
-  export exitManager.*
+  export exitManager.{hasExited, reportHasExitedIfNeeded, markHasExited}
 
   def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager)
 
-  override def copy: LocalValuesContext = {
-    val copy = new LocalValuesContext(nestedContext.copy, level, new ExitManager())
+  override def copyWithSameGlobals: LocalValuesContext = {
+    val newExitManager = exitManager.copy
+    val copy = new LocalValuesContext(nestedContext.copyWithSameGlobals, level, newExitManager)
     copy.regularValues.addAll(this.regularValues.map((id, info) => (id, info.copy())))
     copy
   }
@@ -138,26 +139,15 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case Asts.TypeTest(expr, tpe) => ???
   }
 
-  private def valueForLocalRef(name: FunOrVarId, expr: Asts.FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
-    valueOf(name) match {
-      case result: LocalValuesContext.ErrorValueQueryResult =>
-        errorsCallbacks.unknownIdCallback(result, expr.getPosition)
-        valuesGen.newUndefined(expr)
-      case LocalValuesContext.Known(value, reassigStatus, typeUpperBound) => value
-    }
-  }
-}
-
-object LocalValuesContext {
-
-  def apply(globalValuesContext: GlobalValuesContext): LocalValuesContext = new LocalValuesContext(globalValuesContext, 0, new ExitManager())
-
-  def unifyAndReturnPhis(commonAncestor: LocalValuesContext, children: List[LocalValuesContext]): List[PhiMerge] = {
-    require(children.forall(_.level == commonAncestor.level))
+  def unifyAndReturnPhis(
+                          targetValuesOpt: Option[Map[FunOrVarId, Value]],
+                          children: List[LocalValuesContext]
+                        ): List[PhiMerge] = {
+    require(children.forall(_.level == level))
 
     type Frame = mutable.Map[FunOrVarId, LocalInfo]
-
-    val valuesGen = commonAncestor.valuesGen
+    
+    val remainingTargetValuesOpt = targetValuesOpt.map(mutable.Map.from)
     val phiNodesB = List.newBuilder[PhiMerge]
 
     def unify(result: Frame, inputs: List[Frame]): Unit = {
@@ -167,7 +157,12 @@ object LocalValuesContext {
           if (inValues.size == 1) {
             localInfo.value = Some(inValues.head)
           } else {
-            val newValue = valuesGen.newPhi(inValues)
+            val newValue = remainingTargetValuesOpt match {
+              case Some(targetValues) => targetValues.remove(id).getOrElse {
+                throw AssertionError(s"missing target value for local $id")
+              }
+              case None => valuesGen.newPhi(inValues)
+            }
             phiNodesB.addOne(PhiMerge(newValue, inValues))
             localInfo.value = Some(newValue)
           }
@@ -188,19 +183,36 @@ object LocalValuesContext {
     }
 
     val activeChildren = children.filter(!_.hasExited)
-    if (activeChildren.forall(_.hasExited)){
-      commonAncestor.markHasExited()
+    if (activeChildren.forall(_.hasExited)) {
+      markHasExited()
     }
-    if (activeChildren.isEmpty){
+    if (activeChildren.isEmpty) {
       List.empty
     } else {
-      unifyRecursively(commonAncestor, activeChildren)
+      unifyRecursively(this, activeChildren)
       phiNodesB.result()
     }
   }
+  
+  def unifyAndReturnPhis(
+                          targetValuesOpt: Option[Map[FunOrVarId, Value]],
+                          inputs: LocalValuesContext*
+                        ): List[PhiMerge] =
+    unifyAndReturnPhis(targetValuesOpt, inputs.toList)
 
-  def unifyAndReturnPhis(commonAncestor: LocalValuesContext, children: LocalValuesContext*): List[PhiMerge] =
-    unifyAndReturnPhis(commonAncestor, children.toList)
+  private def valueForLocalRef(name: FunOrVarId, expr: Asts.FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
+    valueOf(name) match {
+      case result: LocalValuesContext.ErrorValueQueryResult =>
+        errorsCallbacks.unknownIdCallback(result, expr.getPosition)
+        valuesGen.newUndefined(expr)
+      case LocalValuesContext.Known(value, reassigStatus, typeUpperBound) => value
+    }
+  }
+}
+
+object LocalValuesContext {
+
+  def apply(globalValuesContext: GlobalValuesContext): LocalValuesContext = new LocalValuesContext(globalValuesContext, 0, new ExitManager())
 
   final case class ErrorsCallbacks(
                                     unknownIdCallback: (ErrorValueQueryResult, Option[Position]) => Unit,
@@ -223,6 +235,12 @@ object LocalValuesContext {
 
   final class ExitManager {
     private var exitedStatus = ExitedStatus.Active
+    
+    def copy: ExitManager = {
+      val copy = new ExitManager()
+      copy.exitedStatus = exitedStatus
+      copy
+    }
 
     def markHasExited(): Unit = {
       if (exitedStatus != ExitedStatus.Active) {

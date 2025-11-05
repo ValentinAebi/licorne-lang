@@ -15,6 +15,11 @@ object Asts {
     // Positions are propagated by the TreeParser
     // Each AST is assigned the position of its leftmost token (by the map method of TreeParser)
     private val positionMemo = new OptionalAttribute[Position]
+    
+    def withPositionSet(posOpt: Option[Position]): this.type = {
+      setPosition(posOpt)
+      this
+    }
 
     export positionMemo.setOpt as setPosition
     export positionMemo.set as setPosition
@@ -377,7 +382,7 @@ object Asts {
    *   }
    * }}}
    */
-  final case class WhileLoop(cond: Expr, body: Statement) extends Statement {
+  final case class WhileLoop(cond: Expr, body: Statement) extends Loop {
     override def children: List[Ast] = List(cond, body)
   }
 
@@ -394,7 +399,7 @@ object Asts {
                             cond: Expr,
                             stepStats: List[Assignment],
                             body: Block
-                          ) extends Statement {
+                          ) extends Loop {
     override def children: List[Ast] = initStats ++ List(cond) ++ stepStats :+ body
   }
 

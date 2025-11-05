@@ -210,21 +210,45 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
       case Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
         val condFormula = mkCondFormula(cond, valsCtx)
         val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-        val thenBrCtx = valsCtx.copy
+        val thenBrCtx = valsCtx.copyWithSameGlobals
         generateSSA(thenBr, thenBrCtx, thenBrSSA)
         val elseBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-        val elseBrCtx = valsCtx.copy
+        val elseBrCtx = valsCtx.copyWithSameGlobals
         elseBrOpt.foreach { elseBr =>
           generateSSA(elseBr, elseBrCtx, elseBrSSA)
         }
-        val phiNodes = LocalValuesContext.unifyAndReturnPhis(valsCtx, thenBrCtx, elseBrCtx)
+        val phiNodes = valsCtx.unifyAndReturnPhis(None, thenBrCtx, elseBrCtx)
         ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
-      case Asts.WhileLoop(cond, body) =>
-        val condFormula = mkCondFormula(cond, valsCtx)
-        ???
-        // TODO
-
-      case Asts.ForLoop(initStats, cond, stepStats, body) => ???
+      case whileLoop@Asts.WhileLoop(cond, body) =>
+        val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
+        val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
+          varId -> valsCtx.valuesGen.newIntermediate(whileLoop)
+        }.toMap
+        val loopCtx = valsCtx.copyWithSameGlobals
+        for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
+          loopCtx.saveAssignment(id, bodyStartVal)
+        }
+        val condFormula = mkCondFormula(cond, loopCtx)
+        val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
+        generateSSA(body, loopCtx, bodySSA)
+        if (loopCtx.exitManager.hasExited) {
+          warn("loop body always exits, should be an if statement", whileLoop.getPosition)
+          // give up and generate a disjunction instead
+          generateSSA(
+            Asts.IfThenElse(cond, body, None).withPositionSet(whileLoop.getPosition),
+            valsCtx, ssaInstructionsList
+          )
+        }
+        val postLoopCtx = loopCtx.copyWithSameGlobals
+        val preLoopPhis = loopCtx.unifyAndReturnPhis(Some(bodyStartValuesOfModifiedVars), loopCtx, valsCtx)
+        val postLoopPhis = valsCtx.unifyAndReturnPhis(None, valsCtx, postLoopCtx)
+        ssaInstructionsList.saveInstr(Loop(preLoopPhis, condFormula, bodySSA.toList, postLoopPhis), whileLoop)
+      case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
+        generateSSA(Asts.Block(
+          initStats :+ Asts.WhileLoop(cond, Asts.Block(
+            body +: stepStats
+          ).withPositionSet(forLoop.getPosition)).withPositionSet(forLoop.getPosition)
+        ).withPositionSet(forLoop.getPosition), valsCtx, ssaInstructionsList)
       case Asts.ReturnStat(optVal) =>
         val formulaOpt = optVal.map {
           generateSSAExpr(_, valsCtx, ssaInstructionsList)
@@ -255,7 +279,11 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
     case None =>
       val assigned = mutable.Set.empty[FunOrVarId]
       val defined = mutable.Set.empty[FunOrVarId]
-      collectVarsAssignedInLoop(loop, assigned, defined)
+      loop match {
+        case Asts.WhileLoop(cond, body) =>
+          collectVarsAssignedInLoop(body, assigned, defined)
+        case Asts.ForLoop(initStats, cond, stepStats, body) => ???
+      }
       val assignedVars = assigned.toSet -- defined
       loop.setAssignedVars(assignedVars)
       assignedVars
