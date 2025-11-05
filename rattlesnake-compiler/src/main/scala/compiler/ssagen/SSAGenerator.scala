@@ -206,7 +206,16 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         val newValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, stat)
         valsCtx.saveAssignment(lhsLocalId, newValue)
       case Asts.VarAssig(lhs, typeAnnot, rhs) => ???
-      case Asts.VarModif(lhs, typeAnnot, rhs, op) => ???
+      case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
+        generateSSA(
+          Asts.VarAssig(
+            lhs, typeAnnot,
+            Asts.BinaryOp(lhs, op, rhs).withPositionSet(stat.getPosition)
+          ).withPositionSet(stat.getPosition),
+          valsCtx, ssaInstructionsList
+        )
+      case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
+        reportError("in-place mutation is only allowed on local variables", stat.getPosition)
       case Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
         val condFormula = mkCondFormula(cond, valsCtx)
         val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
