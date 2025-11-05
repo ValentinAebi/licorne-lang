@@ -8,7 +8,7 @@ import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.valuesconversion.LocalValuesContext.ErrorsCallbacks
+import compiler.valuesconversion.LocalValuesContext.{ErrorsCallbacks, Known}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.{ConstructorFunId, FunOrVarId, ThisId, TypeIdentifier}
 import lang.*
@@ -194,7 +194,6 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             val rhsFormula = generateSSAExpr(rhs, valsCtx, ssaInstructionsList)
             val localValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, rhs)
             valsCtx.saveNewLocal(localName, localValue, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
-            valsCtx.globalCtx.remapAsLocal(localValue, localName, stat, optTypeAnnot)
           case None =>
             valsCtx.saveNewLocal(localName, None, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
         }
@@ -226,7 +225,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         elseBrOpt.foreach { elseBr =>
           generateSSA(elseBr, elseBrCtx, elseBrSSA)
         }
-        val phiNodes = valsCtx.unifyAndReturnPhis(None, thenBrCtx, elseBrCtx)
+        val phiNodes = valsCtx.unifyAndReturnPhis(thenBrCtx, elseBrCtx)
         ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
       case whileLoop@Asts.WhileLoop(cond, body) =>
         val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
@@ -247,11 +246,24 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             Asts.IfThenElse(cond, body, None).withPositionSet(whileLoop.getPosition),
             valsCtx, ssaInstructionsList
           )
+        } else {
+          val preBodyPhisBuilder = List.newBuilder[LoopIterPhi]
+          val postLoopPhisBuilder = List.newBuilder[LoopExitPhi]
+          for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
+            valsCtx.valueOf(id) match {
+              case _: LocalValuesContext.ErrorValueQueryResult => ()
+              case LocalValuesContext.Known(preLoopVal, _, _) =>
+                // if value if known before the loop then it is also after its body
+                val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[Known].value
+                val postLoopVal = valsCtx.valuesGen.newPhi(Set(bodyEndVal))
+                preBodyPhisBuilder.addOne(LoopIterPhi(bodyStartVal, preLoopVal, bodyEndVal))
+                postLoopPhisBuilder.addOne(LoopExitPhi(postLoopVal, bodyEndVal, preLoopVal))
+                val found = valsCtx.saveAssignment(id, postLoopVal)
+                assert(found)
+            }
+          }
+          ssaInstructionsList.saveInstr(Loop(preBodyPhisBuilder.result(), condFormula, bodySSA.toList, postLoopPhisBuilder.result()), whileLoop)
         }
-        val postLoopCtx = loopCtx.copyWithSameGlobals
-        val preLoopPhis = loopCtx.unifyAndReturnPhis(Some(bodyStartValuesOfModifiedVars), loopCtx, valsCtx)
-        val postLoopPhis = valsCtx.unifyAndReturnPhis(None, valsCtx, postLoopCtx)
-        ssaInstructionsList.saveInstr(Loop(preLoopPhis, condFormula, bodySSA.toList, postLoopPhis), whileLoop)
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
         generateSSA(Asts.Block(
           initStats :+ Asts.WhileLoop(cond, Asts.Block(

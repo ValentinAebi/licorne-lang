@@ -24,11 +24,4 @@ final class GlobalValuesContext extends ValuesContext {
     valuesDebugInfo(value) = kind
   }
 
-  def remapAsLocal(value: Value, localId: FunOrVarId, introducingAstNode: Asts.Ast, typeAnnot: Option[Asts.TypeTree]): Unit = {
-    if (!valuesDebugInfo.contains(value)) {
-      throw IllegalStateException(s"cannot remap value $value since it is currently not recorded in the mapping")
-    }
-    valuesDebugInfo(value) = LocalKind(localId, introducingAstNode, typeAnnot)
-  }
-
 }

@@ -6,17 +6,19 @@ object Values {
 
   sealed trait Formula
   sealed trait Capturable
+  
+  sealed trait Value extends Formula
 
-  final class Value(uid: Long) extends Formula, Capturable {
+  final class IdValue(uid: Long) extends Value, Capturable {
     override def toString: String = "$" + uid
   }
 
-  case object True extends Formula
-  case object False extends Formula
-  case object NullPtr extends Formula
-  final case class IntConstant(value: Int) extends Formula
-  final case class DoubleConstant(value: Double) extends Formula
-  final case class StringConstant(value: String) extends Formula
+  case object True extends Value
+  case object False extends Value
+  case object NullPtr extends Value
+  final case class IntConstant(value: Int) extends Value
+  final case class DoubleConstant(value: Double) extends Value
+  final case class StringConstant(value: String) extends Value
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula
   final case class Minus(lhs: Formula, rhs: Formula) extends Formula

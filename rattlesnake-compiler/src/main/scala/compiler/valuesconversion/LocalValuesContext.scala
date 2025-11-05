@@ -7,7 +7,7 @@ import lang.{Operator, ReassigPermission}
 import lang.Types.{NamedTypeShape, Type, TypeShape}
 import lang.Values.*
 import LocalValuesContext.{ErrorsCallbacks, ExitManager, Known, KnownButUninitialized, Unknown, ValueQueryResult}
-import compiler.irs.SSA.PhiMerge
+import compiler.irs.SSA.{Phi, RegPhi}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
@@ -139,16 +139,12 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case Asts.TypeTest(expr, tpe) => ???
   }
 
-  def unifyAndReturnPhis(
-                          targetValuesOpt: Option[Map[FunOrVarId, Value]],
-                          children: List[LocalValuesContext]
-                        ): List[PhiMerge] = {
+  def unifyAndReturnPhis(children: List[LocalValuesContext]): List[Phi] = {
     require(children.forall(_.level == level))
 
     type Frame = mutable.Map[FunOrVarId, LocalInfo]
     
-    val remainingTargetValuesOpt = targetValuesOpt.map(mutable.Map.from)
-    val phiNodesB = List.newBuilder[PhiMerge]
+    val phiNodesB = List.newBuilder[Phi]
 
     def unify(result: Frame, inputs: List[Frame]): Unit = {
       for ((id, localInfo) <- result) {
@@ -157,13 +153,8 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
           if (inValues.size == 1) {
             localInfo.value = Some(inValues.head)
           } else {
-            val newValue = remainingTargetValuesOpt match {
-              case Some(targetValues) => targetValues.remove(id).getOrElse {
-                throw AssertionError(s"missing target value for local $id")
-              }
-              case None => valuesGen.newPhi(inValues)
-            }
-            phiNodesB.addOne(PhiMerge(newValue, inValues))
+            val newValue = valuesGen.newPhi(inValues)
+            phiNodesB.addOne(RegPhi(newValue, inValues))
             localInfo.value = Some(newValue)
           }
         } else {
@@ -193,12 +184,9 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       phiNodesB.result()
     }
   }
-  
-  def unifyAndReturnPhis(
-                          targetValuesOpt: Option[Map[FunOrVarId, Value]],
-                          inputs: LocalValuesContext*
-                        ): List[PhiMerge] =
-    unifyAndReturnPhis(targetValuesOpt, inputs.toList)
+
+  def unifyAndReturnPhis(inputs: LocalValuesContext*): List[Phi] =
+    unifyAndReturnPhis(inputs.toList)
 
   private def valueForLocalRef(name: FunOrVarId, expr: Asts.FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
     valueOf(name) match {
@@ -235,7 +223,7 @@ object LocalValuesContext {
 
   final class ExitManager {
     private var exitedStatus = ExitedStatus.Active
-    
+
     def copy: ExitManager = {
       val copy = new ExitManager()
       copy.exitedStatus = exitedStatus

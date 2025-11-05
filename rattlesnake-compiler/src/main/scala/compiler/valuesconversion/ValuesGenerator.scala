@@ -3,7 +3,7 @@ package compiler.valuesconversion
 import compiler.irs.Asts.{Ast, TypeTree}
 import compiler.valuesconversion.ValueKind.*
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Values.Value
+import lang.Values.{IdValue, Value}
 
 import java.util.concurrent.atomic.AtomicLong
 
@@ -29,7 +29,7 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
     newValue(UndefinedKind(astNode))
 
   private def newValue(kind: ValueKind): Value = {
-    val value = Value(uidGen.incrementAndGet())
+    val value = IdValue(uidGen.incrementAndGet())
     globalValuesContext.saveDebugInfo(value, kind)
     value
   }
