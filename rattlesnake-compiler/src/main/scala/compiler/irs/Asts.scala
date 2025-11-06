@@ -15,15 +15,25 @@ object Asts {
     // Positions are propagated by the TreeParser
     // Each AST is assigned the position of its leftmost token (by the map method of TreeParser)
     private val positionMemo = new OptionalAttribute[Position]
+    private val desugaringSource = new OptionalAttribute[Ast]
     
-    def withPositionSet(posOpt: Option[Position]): this.type = {
-      setPosition(posOpt)
+    def withDesugaringSource(desugaringSource: Ast): this.type = {
+      setDesugaringSource(desugaringSource)
+      positionMemo.setOpt(desugaringSource.getPosition)
       this
+    }
+    
+    def originalAst: Ast = desugaringSource.getOpt match {
+      case Some(source) => source
+      case None => this
     }
 
     export positionMemo.setOpt as setPosition
     export positionMemo.set as setPosition
     export positionMemo.getOpt as getPosition
+    
+    export desugaringSource.set as setDesugaringSource
+    export desugaringSource.getOpt as getDesugaringSource
 
     // TODO check all implementations of children
     def children: List[Ast]
@@ -324,14 +334,14 @@ object Asts {
 
     def lhs: Expr
 
-    def typeAnnot: Option[TypeTree]
+    def typeAnnotOpt: Option[TypeTree]
   }
 
   /**
    * Assignment of a value to a variable (or struct field, or in an array): `lhs = rhs`
    */
-  final case class VarAssig(lhs: Expr, typeAnnot: Option[TypeTree], rhs: Expr) extends Assignment {
-    override def children: List[Ast] = List(lhs) ++ typeAnnot ++ List(rhs)
+  final case class VarAssig(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr) extends Assignment {
+    override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)
   }
 
   /**
@@ -339,8 +349,8 @@ object Asts {
    *
    * @param op the operator <b>without =</b>, e.g. `+` in a `+=` expression
    */
-  final case class VarModif(lhs: Expr, typeAnnot: Option[TypeTree], rhs: Expr, op: Operator) extends Assignment {
-    override def children: List[Ast] = List(lhs) ++ typeAnnot ++ List(rhs)
+  final case class VarModif(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr, op: Operator) extends Assignment {
+    override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)
   }
 
   /**

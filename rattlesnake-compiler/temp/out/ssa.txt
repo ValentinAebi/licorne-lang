@@ -1,0 +1,39 @@
+public Test.sum($8: Int) -> Int
+   /* src: temp\testmain.rsn */
+   /* $8=n  */
+   loop {
+      $9 := phi { 0 (base), $11 (previous) }
+      $10 := phi { 0 (base), $12 (previous) }
+   } ($10 < $8) {
+      $11 := $9 + $10  	   /* $11=sum */ /* 19:10 */
+      $12 := $10 + 1  	   /* $12=i */ /* 18:29 */
+   }
+   $13 := phi { $11 (loop) or 0 (skip) }  	   /* $13=sum */
+   $14 := phi { $12 (loop) or 0 (skip) }  	   /* $14=i */  	   /* 18:7 */
+   return $13  	   /* 21:7 */
+
+public Test.clamp($3: Int,$4: Int,$5: Int) -> Int
+   /* src: temp\testmain.rsn */
+   /* $3=x $4=min $5=max  */
+   if ($3 <= $4) {
+      /* empty */
+   } else {
+      if ($5 <= $3) {
+         return $5  	   /* 9:10 */
+      } else {
+         /* empty */
+      }  	   /* 8:14 */
+   }
+   $6 := phi { $4, $3 }  	   /* $6=result */  	   /* 6:7 */
+   return $6  	   /* 13:7 */
+
+public Test.produceOne($16: Int) -> Int
+   /* src: temp\testmain.rsn */
+   /* $16=n  */
+   if ($16 < 10) {
+      /* empty */
+   } else {
+      /* empty */
+   }  	   /* 27:7 */
+   return 1  	   /* 34:7 */
+

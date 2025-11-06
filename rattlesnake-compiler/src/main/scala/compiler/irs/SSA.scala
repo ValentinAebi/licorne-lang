@@ -1,6 +1,7 @@
 package compiler.irs
 
 import compiler.irs.Asts.{Ast, TypeTree}
+import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.{FunctionSignature, Values}
 import lang.Values.*
@@ -21,7 +22,7 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNode
   }
   
-  final case class Function(signature: FunctionSignature, body: List[Instr])
+  final case class Function(signature: FunctionSignature, body: List[Instr], codeProviderNameOpt: Option[String])
 
   sealed trait ControlFlowInstr extends Instr {
     def isEmpty: Boolean
@@ -48,13 +49,15 @@ object SSA {
     override def inValues: Set[Value] = Set(bodyEndValue, skipLoopValue)
   }
   
+  final case class StaticTypeAssert(value: Value, tpe: Type) extends Instr
+  
   final case class Assignment(assignedValue: Value, rhs: Formula) extends AssigningInstr
   final case class Instantiate(assignedValue: Value, classOrStructName: TypeIdentifier) extends AssigningInstr
   final case class Cast(assignedValue: Value, inValue: Value, targetType: Type) extends AssigningInstr
   
-  final case class FieldWrite(owner: Formula, fieldName: String, value: Formula) extends Instr
-  final case class Return(retVal: Option[Formula]) extends Instr
-  final case class Panic(msg: Formula) extends Instr
+  final case class FieldWrite(owner: Value, fieldName: FunOrVarId, value: Value) extends Instr
+  final case class Return(retVal: Option[Value]) extends Instr
+  final case class Panic(msg: Value) extends Instr
   final case class Evaluate(formula: Formula) extends Instr
 
 }

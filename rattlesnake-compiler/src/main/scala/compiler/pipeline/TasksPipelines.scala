@@ -1,11 +1,12 @@
 package compiler.pipeline
 
-import compiler.io.SourceCodeProvider
+import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
+import compiler.ssaprinter.SSAPrinter
 import identifiers.TypeIdentifier
 
 import java.nio.file.Path
@@ -32,8 +33,7 @@ object TasksPipelines {
    */
   def typeChecker(er: ErrorReporter = defaultErrorReporter,
                   okReporter: String => Unit = println): CompilerStep[List[SourceCodeProvider], Unit] = {
-    MultiStep(frontend(er))
-      .andThen(MissingCompiler(er)) // TODO
+    ???
   }
 
   private def compilerImpl(outputDirectoryPath: Path,
@@ -42,13 +42,19 @@ object TasksPipelines {
                            er: ErrorReporter) = {
     MultiStep(frontend(er))
       .andThen(SSAGenerator(er))
-      .andThen(MissingCompiler(er)) // TODO
+      // FIXME this implementation is temporary
+      .andThen(SSAPrinter())
+      .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
+      .andThen(MissingCompiler(er, printProgram = false))
   }
 
-  private final class MissingCompiler(er: ErrorReporter) extends CompilerStep[Any, Nothing] {
+  private final class MissingCompiler(er: ErrorReporter, printProgram: Boolean) extends CompilerStep[Any, Nothing] {
     override def apply(input: Any): Nothing = {
-      println("Missing compiler. Last representation of the program before exiting was:")
-      println(caseClassesFormat(input.toString))
+      println("Compiler not implemented")
+      if (printProgram){
+        println("Last representation of the program before exiting was:")
+        println(caseClassesFormat(input.toString))
+      }
       er.displayErrorsAndTerminate()
     }
   }

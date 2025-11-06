@@ -4,4 +4,5 @@ enum CompilationStep {
   case Lexing
   case Parsing
   case SSAGeneration
+  case StringWriting
 }

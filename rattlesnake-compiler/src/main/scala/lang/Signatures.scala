@@ -14,7 +14,30 @@ final case class FunctionSignature(
                                     paramsInclThis: mutable.LinkedHashMap[Value, Type],
                                     retType: Type,
                                     visibility: Visibility
-                                  )
+                                  ) {
+  override def toString: String = {
+    val sb = StringBuilder()
+    sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
+    printListIfNonEmpty(typeParams, "<", ">", sb)
+    printListIfNonEmpty(paramsInclThis, "(", ")", sb, (param, tpe) => s"$param: $tpe")
+    sb.append(" -> ").append(retType)
+    sb.toString()
+  }
+}
+
+private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: String, sb: StringBuilder, paramsToStr: T => String = (t: T) => t.toString): Unit = {
+  if (ls.nonEmpty){
+    sb.append(opening)
+    val iter = ls.iterator
+    while (iter.hasNext) {
+      sb.append(paramsToStr(iter.next()))
+      if (iter.hasNext) {
+        sb.append(",")
+      }
+    }
+    sb.append(closing)
+  }
+}
 
 sealed trait TypeSignature {
   def id: TypeIdentifier

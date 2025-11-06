@@ -1,17 +1,17 @@
 package compiler.valuesconversion
 
 import compiler.irs.Asts
-import identifiers.{FunOrVarId, NormalFunOrVarId, ThisId}
-import lang.CaptureDescriptors.CaptureSet
-import lang.{Operator, ReassigPermission}
-import lang.Types.{NamedTypeShape, Type, TypeShape}
-import lang.Values.{IdValue, *}
-import LocalValuesContext.{ErrorsCallbacks, ExitManager, Known, KnownButUninitialized, Unknown, ValueQueryResult}
 import compiler.irs.SSA.{Phi, RegPhi}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
+import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
+import identifiers.{FunOrVarId, NormalFunOrVarId, ThisId}
+import lang.CaptureDescriptors.CaptureSet
+import lang.Types.{NamedTypeShape, Type, TypeShape}
+import lang.Values.*
+import lang.{Operator, ReassigPermission}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -207,7 +207,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case _ => Or(l, r)
   }
 
-  def unifyAndReturnPhis(children: List[LocalValuesContext]): List[Phi] = {
+  def unifyAndReturnPhis(ite: Asts.IfThenElse, children: List[LocalValuesContext]): List[Phi] = {
     require(children.forall(_.level == level))
 
     type Frame = mutable.Map[FunOrVarId, LocalInfo]
@@ -221,7 +221,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
           if (inValues.size == 1) {
             localInfo.value = Some(inValues.head)
           } else {
-            val newValue = valuesGen.newPhi(inValues)
+            val newValue = valuesGen.newPhi(id, inValues, ite.originalAst)
             phiNodesB.addOne(RegPhi(newValue, inValues))
             localInfo.value = Some(newValue)
           }
@@ -253,8 +253,8 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def unifyAndReturnPhis(inputs: LocalValuesContext*): List[Phi] =
-    unifyAndReturnPhis(inputs.toList)
+  def unifyAndReturnPhis(ite: Asts.IfThenElse, inputs: LocalValuesContext*): List[Phi] =
+    unifyAndReturnPhis(ite, inputs.toList)
 
   private def valueForLocalRef(name: FunOrVarId, expr: Asts.FormulaExpr)(using errorsCallbacks: ErrorsCallbacks): Value = {
     valueOf(name) match {
