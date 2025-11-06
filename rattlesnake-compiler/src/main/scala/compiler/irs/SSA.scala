@@ -23,8 +23,15 @@ object SSA {
   
   final case class Function(signature: FunctionSignature, body: List[Instr])
 
-  final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends Instr
-  final case class Disjunction(cond: Formula, thenBr: List[Instr], elseBr: List[Instr], postMerges: List[Phi]) extends Instr
+  sealed trait ControlFlowInstr extends Instr {
+    def isEmpty: Boolean
+  }
+  final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends ControlFlowInstr {
+    override def isEmpty: Boolean = preBodyCond.isEmpty && cond.isPureSyntactically && body.isEmpty && postMerges.isEmpty
+  }
+  final case class Disjunction(cond: Formula, thenBr: List[Instr], elseBr: List[Instr], postMerges: List[Phi]) extends ControlFlowInstr {
+    override def isEmpty: Boolean = cond.isPureSyntactically && thenBr.isEmpty && elseBr.isEmpty && postMerges.isEmpty
+  }
 
   sealed trait AssigningInstr extends Instr {
     val assignedValue: Value

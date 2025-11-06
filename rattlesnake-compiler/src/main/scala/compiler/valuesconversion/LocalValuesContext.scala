@@ -5,7 +5,7 @@ import identifiers.{FunOrVarId, NormalFunOrVarId, ThisId}
 import lang.CaptureDescriptors.CaptureSet
 import lang.{Operator, ReassigPermission}
 import lang.Types.{NamedTypeShape, Type, TypeShape}
-import lang.Values.*
+import lang.Values.{IdValue, *}
 import LocalValuesContext.{ErrorsCallbacks, ExitManager, Known, KnownButUninitialized, Unknown, ValueQueryResult}
 import compiler.irs.SSA.{Phi, RegPhi}
 import compiler.pipeline.CompilationStep
@@ -118,32 +118,100 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       val receiver = receiverOpt.map(mkFormula).getOrElse(queryLocal(ThisId).get.value.get)
       Call(receiver, funId, args.map(mkFormula))
     case Asts.Indexing(indexed, arg) => Call(mkFormula(indexed), NormalFunOrVarId("get"), List(mkFormula(arg)))
-    case Asts.UnaryOp(Operator.Minus, operand) => Neg(mkFormula(operand))
-    case Asts.UnaryOp(Operator.ExclamationMark, operand) => Not(mkFormula(operand))
+    case Asts.UnaryOp(Operator.Minus, operand) => neg(mkFormula(operand))
+    case Asts.UnaryOp(Operator.ExclamationMark, operand) => not(mkFormula(operand))
     case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
-    case Asts.BinaryOp(lhs, Operator.Plus, rhs) => Plus(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Minus, rhs) => Minus(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Times, rhs) => Times(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Div, rhs) => Div(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => Rem(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => LessThan(mkFormula(rhs), mkFormula(lhs))
-    case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => LessThan(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => LessOrEq(mkFormula(rhs), mkFormula(lhs))
-    case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => LessOrEq(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Equality, rhs) => Equal(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => Not(Equal(mkFormula(lhs), mkFormula(rhs)))
-    case Asts.BinaryOp(lhs, Operator.And, rhs) => And(mkFormula(lhs), mkFormula(rhs))
-    case Asts.BinaryOp(lhs, Operator.Or, rhs) => Or(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Plus, rhs) => plus(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Minus, rhs) => minus(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Times, rhs) => times(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Div, rhs) => div(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => rem(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => lessThan(mkFormula(rhs), mkFormula(lhs))
+    case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => lessThan(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => lessOrEq(mkFormula(rhs), mkFormula(lhs))
+    case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => lessOrEq(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Equality, rhs) => equal(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => not(equal(mkFormula(lhs), mkFormula(rhs)))
+    case Asts.BinaryOp(lhs, Operator.And, rhs) => and(mkFormula(lhs), mkFormula(rhs))
+    case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(mkFormula(lhs), mkFormula(rhs))
     case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
     case Asts.Select(lhs, selected) => Select(mkFormula(lhs), selected)
     case Asts.TypeTest(expr, tpe) => ???
+  }
+
+  private def not(operand: Formula): Formula = operand match {
+    case True => False
+    case False => True
+    case _ => Not(operand)
+  }
+
+  private def neg(operand: Formula): Formula = operand match {
+    case IntConstant(opVal) => IntConstant(-opVal)
+    // TODO types other than Int
+    case _ => Neg(operand)
+  }
+
+  private def plus(l: Formula, r: Formula): Formula = (l, r) match {
+    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv + rv)
+    case (l, IntConstant(0)) => l
+    case (IntConstant(0), r) => r
+    // TODO types other than Int
+    case _ => Plus(l, r)
+  }
+
+  private def minus(l: Formula, r: Formula): Formula = (l, r) match {
+    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv - rv)
+    case (l, IntConstant(0)) => l
+    case (IntConstant(0), r) => neg(r)
+    // TODO types other than Int
+    case _ => Minus(l, r)
+  }
+
+  private def times(l: Formula, r: Formula): Formula = (l, r) match {
+    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv * rv)
+    // TODO types other than Int
+    case _ => Times(l, r)
+  }
+
+  private def div(l: Formula, r: Formula): Formula = Div(l, r)
+
+  private def rem(l: Formula, r: Formula): Formula = Rem(l, r)
+
+  private def lessThan(l: Formula, r: Formula): Formula = (l, r) match {
+    case (IntConstant(lv), IntConstant(rv)) => if lv < rv then True else False
+    // TODO types other than Int
+    case _ => LessThan(l, r)
+  }
+
+  private def lessOrEq(l: Formula, r: Formula): Formula = (l, r) match {
+    case (IntConstant(lv), IntConstant(rv)) => if lv <= rv then True else False
+    // TODO types other than Int
+    case _ => LessOrEq(l, r)
+  }
+
+  private def equal(l: Formula, r: Formula): Formula = (l, r) match {
+    case (l: Constant, r: Constant) => if l == r then True else False
+    // TODO types other than Int
+    case _ => Equal(l, r)
+  }
+
+  private def and(l: Formula, r: Formula): Formula = (l, r) match {
+    case (True, r) => r
+    case (l, True) => l
+    case _ => And(l, r)
+  }
+
+  private def or(l: Formula, r: Formula): Formula = (l, r) match {
+    case (False, r) => r
+    case (l, False) => l
+    case _ => Or(l, r)
   }
 
   def unifyAndReturnPhis(children: List[LocalValuesContext]): List[Phi] = {
     require(children.forall(_.level == level))
 
     type Frame = mutable.Map[FunOrVarId, LocalInfo]
-    
+
     val phiNodesB = List.newBuilder[Phi]
 
     def unify(result: Frame, inputs: List[Frame]): Unit = {

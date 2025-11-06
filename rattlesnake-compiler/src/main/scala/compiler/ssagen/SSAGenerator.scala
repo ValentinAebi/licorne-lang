@@ -177,109 +177,124 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
     SSA.Function(sig, ssaInstructionsList.toList)
   }
 
-  private def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr]): Unit = {
-    valsCtx.reportHasExitedIfNeeded(er, CompilationStep.SSAGeneration, stat.getPosition)
-    stat match {
-      case expr: Asts.Expr => ssaInstructionsList.saveInstr(Evaluate(generateSSAExpr(expr, valsCtx, ssaInstructionsList)), stat)
-      case Asts.Block(stats) =>
-        val blockCtx = valsCtx.withOneMoreFrame
-        for (stat <- stats) {
-          generateSSA(stat, blockCtx, ssaInstructionsList)
-        }
-      case Asts.LocalDef(localName, optTypeAnnot, rhsOpt, reassigPermission) =>
-        if (valsCtx.knows(localName)) {
-          reportError(s"$localName is already defined in this scope", stat.getPosition)
-        } else rhsOpt match {
-          case Some(rhs) =>
-            val rhsFormula = generateSSAExpr(rhs, valsCtx, ssaInstructionsList)
-            val localValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, rhs)
-            valsCtx.saveNewLocal(localName, localValue, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
-          case None =>
-            valsCtx.saveNewLocal(localName, None, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
-        }
-      case Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnot, rhs) =>
-        if (!valsCtx.knows(lhsLocalId)) {
-          reportError(s"unknown variable: $lhsLocalId", stat.getPosition)
-        }
-        val rhsFormula = generateSSAExpr(rhs, valsCtx, ssaInstructionsList)
-        val newValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, stat)
-        valsCtx.saveAssignment(lhsLocalId, newValue)
-      case Asts.VarAssig(lhs, typeAnnot, rhs) => ???
-      case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
-        generateSSA(
-          Asts.VarAssig(
-            lhs, typeAnnot,
-            Asts.BinaryOp(lhs, op, rhs).withPositionSet(stat.getPosition)
-          ).withPositionSet(stat.getPosition),
-          valsCtx, ssaInstructionsList
-        )
-      case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
-        reportError("in-place mutation is only allowed on local variables", stat.getPosition)
-      case Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
-        val condFormula = mkCondFormula(cond, valsCtx)
-        val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-        val thenBrCtx = valsCtx.copyWithSameGlobals
-        generateSSA(thenBr, thenBrCtx, thenBrSSA)
-        val elseBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-        val elseBrCtx = valsCtx.copyWithSameGlobals
-        elseBrOpt.foreach { elseBr =>
-          generateSSA(elseBr, elseBrCtx, elseBrSSA)
-        }
-        val phiNodes = valsCtx.unifyAndReturnPhis(thenBrCtx, elseBrCtx)
-        ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
-      case whileLoop@Asts.WhileLoop(cond, body) =>
-        val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
-        val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
-          varId -> valsCtx.valuesGen.newIntermediate(whileLoop)
-        }.toMap
-        val loopCtx = valsCtx.copyWithSameGlobals
-        for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
-          loopCtx.saveAssignment(id, bodyStartVal)
-        }
-        val condFormula = mkCondFormula(cond, loopCtx)
-        val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
-        generateSSA(body, loopCtx, bodySSA)
-        if (loopCtx.exitManager.hasExited) {
-          warn("loop body always exits, should be an if statement", whileLoop.getPosition)
-          // give up and generate a disjunction instead
-          generateSSA(
-            Asts.IfThenElse(cond, body, None).withPositionSet(whileLoop.getPosition),
-            valsCtx, ssaInstructionsList
-          )
-        } else {
-          val preBodyPhisBuilder = List.newBuilder[LoopIterPhi]
-          val postLoopPhisBuilder = List.newBuilder[LoopExitPhi]
-          for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
-            valsCtx.valueOf(id) match {
-              case _: LocalValuesContext.ErrorValueQueryResult => ()
-              case LocalValuesContext.Known(preLoopVal, _, _) =>
-                // if value if known before the loop then it is also after its body
-                val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[Known].value
-                val postLoopVal = valsCtx.valuesGen.newPhi(Set(bodyEndVal))
-                preBodyPhisBuilder.addOne(LoopIterPhi(bodyStartVal, preLoopVal, bodyEndVal))
-                postLoopPhisBuilder.addOne(LoopExitPhi(postLoopVal, bodyEndVal, preLoopVal))
-                val found = valsCtx.saveAssignment(id, postLoopVal)
-                assert(found)
-            }
+  private def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[Instr]): Unit = {
+
+    // shadow the name of the outer function so that all recursions go through doGenerateSSA
+    val generateSSA: Unit = ()
+
+    def doGenerateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], isRepeat: Boolean): Unit = {
+      // @formatter:off
+      def reportError(msg: String, posOpt: Option[Position]): Unit = if (!isRepeat) this.reportError(msg, posOpt)
+      def warn(msg: String, posOpt: Option[Position]): Unit = if (!isRepeat) this.warn(msg, posOpt)
+      // @formatter:on
+
+      if (!isRepeat) {
+        valsCtx.reportHasExitedIfNeeded(er, CompilationStep.SSAGeneration, stat.getPosition)
+      }
+      stat match {
+        case expr: Asts.Expr => ssaInstructionsList.saveInstr(Evaluate(generateSSAExpr(expr, valsCtx, ssaInstructionsList)), stat)
+        case Asts.Block(stats) =>
+          val blockCtx = valsCtx.withOneMoreFrame
+          for (stat <- stats) {
+            doGenerateSSA(stat, blockCtx, ssaInstructionsList, isRepeat)
           }
-          ssaInstructionsList.saveInstr(Loop(preBodyPhisBuilder.result(), condFormula, bodySSA.toList, postLoopPhisBuilder.result()), whileLoop)
-        }
-      case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
-        generateSSA(Asts.Block(
-          initStats :+ Asts.WhileLoop(cond, Asts.Block(
-            body +: stepStats
-          ).withPositionSet(forLoop.getPosition)).withPositionSet(forLoop.getPosition)
-        ).withPositionSet(forLoop.getPosition), valsCtx, ssaInstructionsList)
-      case Asts.ReturnStat(optVal) =>
-        val formulaOpt = optVal.map {
-          generateSSAExpr(_, valsCtx, ssaInstructionsList)
-        }
-        ssaInstructionsList.saveInstr(Return(formulaOpt), stat)
-        valsCtx.markHasExited()
-      case Asts.PanicStat(msg) =>
-        ???
-        valsCtx.markHasExited()
+        case Asts.LocalDef(localName, optTypeAnnot, rhsOpt, reassigPermission) =>
+          if (valsCtx.knows(localName)) {
+            reportError(s"$localName is already defined in this scope", stat.getPosition)
+          } else rhsOpt match {
+            case Some(rhs) =>
+              val rhsFormula = generateSSAExpr(rhs, valsCtx, ssaInstructionsList)
+              val localValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, rhs)
+              valsCtx.saveNewLocal(localName, localValue, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
+            case None =>
+              valsCtx.saveNewLocal(localName, None, reassigPermission, optTypeAnnot.map(valsCtx.mkType))
+          }
+        case Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnot, rhs) =>
+          if (!valsCtx.knows(lhsLocalId)) {
+            reportError(s"unknown variable: $lhsLocalId", stat.getPosition)
+          }
+          val rhsFormula = generateSSAExpr(rhs, valsCtx, ssaInstructionsList)
+          val newValue = forceVal(rhsFormula, valsCtx, ssaInstructionsList, stat)
+          valsCtx.saveAssignment(lhsLocalId, newValue)
+        case Asts.VarAssig(lhs, typeAnnot, rhs) => ???
+        case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
+          doGenerateSSA(
+            Asts.VarAssig(
+              lhs, typeAnnot,
+              Asts.BinaryOp(lhs, op, rhs).withPositionSet(stat.getPosition)
+            ).withPositionSet(stat.getPosition),
+            valsCtx, ssaInstructionsList, isRepeat
+          )
+        case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
+          reportError("in-place mutation is only allowed on local variables", stat.getPosition)
+        case Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
+          val condFormula = mkCondFormula(cond, valsCtx)
+          val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
+          val thenBrCtx = valsCtx.copyWithSameGlobals
+          doGenerateSSA(thenBr, thenBrCtx, thenBrSSA, isRepeat)
+          val elseBrSSA = mutable.ListBuffer.empty[SSA.Instr]
+          val elseBrCtx = valsCtx.copyWithSameGlobals
+          elseBrOpt.foreach { elseBr =>
+            doGenerateSSA(elseBr, elseBrCtx, elseBrSSA, isRepeat)
+          }
+          val phiNodes = valsCtx.unifyAndReturnPhis(thenBrCtx, elseBrCtx)
+          ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
+        case whileLoop@Asts.WhileLoop(cond, body) =>
+          val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
+          val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
+            varId -> valsCtx.valuesGen.newIntermediate(whileLoop)
+          }.toMap
+          val loopCtx = valsCtx.copyWithSameGlobals
+          for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
+            loopCtx.saveAssignment(id, bodyStartVal)
+          }
+          val condFormula = mkCondFormula(cond, loopCtx)
+          val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
+          doGenerateSSA(body, loopCtx, bodySSA, isRepeat)
+          if (loopCtx.exitManager.hasExited) {
+            warn("loop body always exits, should be an if statement", whileLoop.getPosition)
+            // give up and generate a disjunction instead
+            doGenerateSSA(
+              Asts.IfThenElse(cond, body, None).withPositionSet(whileLoop.getPosition),
+              valsCtx, ssaInstructionsList, isRepeat = true
+            )
+          } else {
+            val preBodyPhisBuilder = List.newBuilder[LoopIterPhi]
+            val postLoopPhisBuilder = List.newBuilder[LoopExitPhi]
+            for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
+              valsCtx.valueOf(id) match {
+                case _: LocalValuesContext.ErrorValueQueryResult => ()
+                case LocalValuesContext.Known(preLoopVal, _, _) =>
+                  // if value if known before the loop then it is also after its body
+                  val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[Known].value
+                  val postLoopVal = valsCtx.valuesGen.newPhi(Set(bodyEndVal))
+                  preBodyPhisBuilder.addOne(LoopIterPhi(bodyStartVal, preLoopVal, bodyEndVal))
+                  postLoopPhisBuilder.addOne(LoopExitPhi(postLoopVal, bodyEndVal, preLoopVal))
+                  val found = valsCtx.saveAssignment(id, postLoopVal)
+                  assert(found)
+              }
+            }
+            ssaInstructionsList.saveInstr(Loop(preBodyPhisBuilder.result(), condFormula, bodySSA.toList, postLoopPhisBuilder.result()), whileLoop)
+          }
+        case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
+          doGenerateSSA(Asts.Block(
+            initStats :+ Asts.WhileLoop(cond, Asts.Block(
+              body +: stepStats
+            ).withPositionSet(forLoop.getPosition)).withPositionSet(forLoop.getPosition)
+          ).withPositionSet(forLoop.getPosition), valsCtx, ssaInstructionsList, isRepeat)
+        case Asts.ReturnStat(optVal) =>
+          val formulaOpt = optVal.map {
+            generateSSAExpr(_, valsCtx, ssaInstructionsList)
+          }
+          ssaInstructionsList.saveInstr(Return(formulaOpt), stat)
+          valsCtx.markHasExited()
+        case Asts.PanicStat(msg) =>
+          ???
+          valsCtx.markHasExited()
+      }
     }
+
+    doGenerateSSA(stat, valsCtx, ssaInstructionsList, isRepeat = false)
   }
 
   private def generateSSAExpr(expr: Asts.Expr, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr]): Formula = expr match {
@@ -341,8 +356,12 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
   }
 
   extension (ssaInstructionsList: mutable.ListBuffer[SSA.Instr]) private def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
-    instr.setAstNode(node)
-    ssaInstructionsList.addOne(instr)
+    instr match {
+      case instr: ControlFlowInstr if instr.isEmpty => ()
+      case _ =>
+        instr.setAstNode(node)
+        ssaInstructionsList.addOne(instr)
+    }
   }
 
   private def mkCondFormula(cond: Asts.Expr, valsCtx: LocalValuesContext): Formula = {

@@ -21,4 +21,17 @@ object Test {
       return sum;
    }
 
+   fn produceOne(n: Int) -> Int {
+      var t = 10;
+      val a = t*t;
+      if n < t {
+         t -= 8;
+         a -= 9 * (10 + 1)
+      } else {
+         t = 2;
+         a = t - 1;
+      };
+      return t - a;
+   }
+
 }
