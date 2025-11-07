@@ -2,8 +2,8 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.Operator.*
-import lang.Types.PrimitiveTypeShape.*
-import lang.Types.TypeShape
+import lang.Types.PrimitiveType.*
+import lang.Types.BasicType
 
 import scala.annotation.targetName
 
@@ -15,12 +15,12 @@ object Operators {
   /**
    * Signature of an unary operator
    */
-  final case class UnaryOpSignature(op: Operator, operandType: TypeShape, retType: TypeShape)
+  final case class UnaryOpSignature(op: Operator, operandType: BasicType, retType: BasicType)
 
   /**
    * Signature of a binary operator
    */
-  final case class BinaryOpSignature(leftOperandType: TypeShape, op: Operator, rightOperandType: TypeShape, retType: TypeShape)
+  final case class BinaryOpSignature(leftOperandType: BasicType, op: Operator, rightOperandType: BasicType, retType: BasicType)
 
   // # is treated separately
   val unaryOperators: List[UnaryOpSignature] = List(
@@ -68,19 +68,19 @@ object Operators {
   
   // Binop signature DSL implementation --------------------------------------------
 
-  private case class PartialBinop1(leftOperandType: TypeShape, op: Operator) {
-    @targetName("andThen") infix def $(rightOperandType: TypeShape): PartialBinop2 = {
+  private case class PartialBinop1(leftOperandType: BasicType, op: Operator) {
+    @targetName("andThen") infix def $(rightOperandType: BasicType): PartialBinop2 = {
       PartialBinop2(leftOperandType, op, rightOperandType)
     }
   }
 
-  private case class PartialBinop2(leftOperandType: TypeShape, op: Operator, rightOperandType: TypeShape) {
-    infix def is(retType: TypeShape): BinaryOpSignature = {
+  private case class PartialBinop2(leftOperandType: BasicType, op: Operator, rightOperandType: BasicType) {
+    infix def is(retType: BasicType): BinaryOpSignature = {
       BinaryOpSignature(leftOperandType, op, rightOperandType, retType)
     }
   }
 
-  extension (leftOperandType: TypeShape) {
+  extension (leftOperandType: BasicType) {
     @targetName("andThen") private infix def $(op: Operator): PartialBinop1 = {
       PartialBinop1(leftOperandType, op)
     }

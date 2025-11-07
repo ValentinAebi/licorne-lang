@@ -16,7 +16,7 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
     given globalValsCtx: GlobalValuesContext = analysisCtx.globalValuesContext
 
     for ((funSig, ssaFunc) <- functions) {
-      pps.add(funSig.toString).incrementIndent().newLine()
+      pps.add(funSig.toString).addSpace().startBlock()
       ssaFunc.codeProviderNameOpt.foreach { srcFileName =>
         pps.add("/* src: ").add(srcFileName).add(" */")
       }
@@ -30,7 +30,7 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
       }
       pps.add(" */").newLine()
       addAllInstr(ssaFunc.body, printIfEmpty = true)
-      pps.decrementIndent().newLine().newLine()
+      pps.endBlock().newLine().newLine()
     }
     pps.built
   }
@@ -65,7 +65,7 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
       case SSA.Instantiate(assignedValue, classOrStructName) => ???
       case SSA.Cast(assignedValue, inValue, targetType) => ???
       case SSA.StaticTypeAssert(value, tpe) =>
-        pps.add(s"assert $value :$tpe")
+        pps.add(s"type-assert $value : $tpe")
       case SSA.FieldWrite(owner, fieldName, value) =>
         pps.add(s"$owner.$fieldName := $value")
       case SSA.Return(retVal) =>
@@ -110,7 +110,7 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
         sb.append(s" /* ${pos.line}:${pos.col} */")
       }
     if (sb.nonEmpty) {
-      pps.add("  \t  ").add(sb.toString())
+      pps.add("   ").add(sb.toString())
     }
   }
 

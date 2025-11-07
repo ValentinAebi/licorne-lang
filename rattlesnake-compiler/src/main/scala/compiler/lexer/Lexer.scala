@@ -6,7 +6,7 @@ import compiler.lexer.Matchers.*
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.reporting.Errors.{CompilationError, Err, ErrorReporter, Fatal}
 import compiler.reporting.Position
-import lang.Types.PrimitiveTypeShape
+import lang.Types.PrimitiveType
 import lang.{Keyword, Operator}
 
 import scala.annotation.tailrec

@@ -42,9 +42,7 @@ enum Operator(val str: String) {
   case DivEq extends Operator("/=")
   case ModuloEq extends Operator("%=")
   
-  case Hat extends Operator("^")
-  case HatOpenBrace extends Operator("^{")
-  case At extends Operator("@")
+  case Apostrophe extends Operator("'")
   
   def isNamedOperator: Boolean = str.forall(_.isLetter)
 

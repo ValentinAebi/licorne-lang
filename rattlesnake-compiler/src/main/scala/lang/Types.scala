@@ -1,57 +1,56 @@
 package lang
 
 import identifiers.TypeIdentifier
-import lang.CaptureDescriptors.*
 import lang.Values.Formula
 
 
 object Types {
 
-  final case class Type(shape: TypeShape, cs: CaptureSet, refinementOpt: Option[Formula]) {
-    override def toString: String = {
-      val csDescr = if cs.isEmpty then "" else s"^${cs.toString}"
-      val refinementDescr = refinementOpt.map(r => s" with $r").getOrElse("")
-      shape.toString + csDescr + refinementDescr
-    }
+  sealed trait Type
+
+  final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
+    override def toString: String = s"$baseType with $predicate"
   }
 
-  sealed trait TypeShape {
+  sealed trait BasicType extends Type {
     def typeParams: List[Type]
-    def toType: Type = Type(this, CaptureSet.empty, None)
   }
 
-  enum PrimitiveTypeShape(val str: String) extends TypeShape {
-    case IntType extends PrimitiveTypeShape("Int")
-    case DoubleType extends PrimitiveTypeShape("Double")
-    case CharType extends PrimitiveTypeShape("Char")
-    case BoolType extends PrimitiveTypeShape("Bool")
-    case StringType extends PrimitiveTypeShape("String")
+  enum PrimitiveType(val str: String) extends BasicType {
+    case IntType extends PrimitiveType("Int")
+    case DoubleType extends PrimitiveType("Double")
+    case CharType extends PrimitiveType("Char")
+    case BoolType extends PrimitiveType("Bool")
+    case StringType extends PrimitiveType("String")
 
-    case VoidType extends PrimitiveTypeShape("Void")
-    case NothingType extends PrimitiveTypeShape("Nothing")
+    case VoidType extends PrimitiveType("Void")
+    case NothingType extends PrimitiveType("Nothing")
 
     override def typeParams: List[Type] = List.empty
 
     override def toString: String = str
   }
 
-  def primTypeFor(name: TypeIdentifier): Option[PrimitiveTypeShape] = {
-    PrimitiveTypeShape.values.find(_.str == name.stringId)
+  def primTypeFor(name: TypeIdentifier): Option[PrimitiveType] = {
+    PrimitiveType.values.find(_.str == name.stringId)
   }
 
-  final case class NamedTypeShape(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula]) extends TypeShape {
+  final case class NamedType(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula], isPure: Boolean)
+    extends BasicType {
     override def toString: String = {
       val typeParamsDescr = if typeParams.isEmpty then "" else typeParams.mkString("<", ",", ">")
       val paramsDescr = if params.isEmpty then "" else params.mkString("(", ",", ")")
-      typeName.toString + typeParamsDescr + paramsDescr
+      val purityDescr = if isPure then "" else "'"
+      typeName.toString + typeParamsDescr + paramsDescr + purityDescr
     }
   }
 
   /**
    * Type of a malformed/incorrect expression
    */
-  case object UndefinedTypeShape extends TypeShape {
+  case object UndefinedType extends BasicType {
     override def typeParams: List[Type] = List.empty
+
     override def toString: String = "[undefined type]"
   }
 

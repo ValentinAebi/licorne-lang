@@ -77,7 +77,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val `=>` = (op(Assig) ::: op(GreaterThan)).ignored
   private val lessThan = op(LessThan).ignored
   private val greaterThan = op(GreaterThan).ignored
-  private val at = op(At).ignored
+  private val apostrophe = op()
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
@@ -178,7 +178,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "methodsListOpt"
 
   private lazy val complexSuperTypesListOpt = {
-    opt(colon ::: repeatWithSepNonZero(primOrNamedShape, comma)) map {
+    opt(colon ::: repeatWithSepNonZero(primOrNamedType, comma)) map {
       case None => List.empty
       case Some(supertypes) => supertypes
     }
@@ -224,44 +224,22 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "path"
 
-  private lazy val capturableExpr = recursive {
-    objectRef OR path
-  } setName "capturableExpr"
-
-  private lazy val hatAndImplicitRootCap = recursive {
-    op(Hat) map (_ => ImplicitRootCaptureSetTree())
-  } setName "hatAndImplicitRootCap"
-
   private lazy val explicitCaptureSetTree = recursive {
     openBrace ::: repeatWithSep(expr, comma) ::: closeBrace map {
       case expressions => ExplicitCaptureSetTree(expressions)
     }
   } setName "explicitCaptureSetTree"
 
-  private lazy val hatAndExplicitCaptureSetTree = recursive {
-    op(HatOpenBrace) ::: repeatWithSep(expr, comma) ::: closeBrace map {
-      case _ ^: expressions => ExplicitCaptureSetTree(expressions)
-    }
-  } setName "hatAndExplicitCaptureSetTree"
-
-  private lazy val hatAndCaptureDescr: P[CaptureSetTree] = recursive {
-    hatAndImplicitRootCap OR hatAndExplicitCaptureSetTree
-  } setName "hatAndCaptureDescr"
-
-  private lazy val primOrNamedShape: AnyTreeParser[TypeShapeTree] = recursive {
-    highName ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron)
+  private lazy val primOrNamedType: AnyTreeParser[BasicTypeTree] = recursive {
+    highName ::: opt(apostrophe) ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron)
       ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
-      case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
-        val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeShapeTree(_))
+      case baseTypeName ^: apostropheOpt ^: typeParamsOpt ^: paramsOpt =>
+        val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
         if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
           errorReporter.push(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
         }
-        primTypeOpt.getOrElse(NamedTypeShapeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
+        primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil), apostropheOpt.isEmpty))
     }
-  } setName "primOrNamedShape"
-
-  private lazy val primOrNamedType = primOrNamedShape ::: opt(hatAndCaptureDescr) map {
-    case shape ^: cdOpt => shape ^ cdOpt
   } setName "primOrNamedType"
 
   private lazy val block = recursive {
@@ -304,7 +282,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val binopArg = recursive {
     (noBinopExpr OR structOrModuleInstantiation)
-      ::: opt((kw(As) OR kw(Is)) ::: primOrNamedShape
+      ::: opt((kw(As) OR kw(Is)) ::: primOrNamedType
     ) map {
       case expression ^: None => expression
       case expression ^: Some(As ^: tp) => Cast(expression, tp)

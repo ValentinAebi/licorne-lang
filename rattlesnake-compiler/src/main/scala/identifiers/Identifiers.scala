@@ -21,5 +21,9 @@ case object ConstructorFunId extends FunOrVarId {
 }
 
 case object ThisId extends FunOrVarId {
-  override def stringId: String = Keyword.This.toString
+  override def stringId: String = Keyword.This.str
+}
+
+case object ItId extends FunOrVarId {
+  override def stringId: String = Keyword.It.str
 }

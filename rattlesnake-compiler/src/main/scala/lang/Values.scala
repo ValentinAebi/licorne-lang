@@ -1,6 +1,7 @@
 package lang
 
 import identifiers.FunOrVarId
+import lang.Types.Type
 
 object Values {
 
@@ -66,18 +67,17 @@ object Values {
   final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable {
     override def toString: String = s"$owner.$fieldName"
   }
+  final case class HasType(formula: Formula, tpe: Type) extends Formula {
+    override def toString: String = s"$formula is $tpe"
+  }
 
   case object RootCapability extends Capturable {
     override def toString: String = "cap"
   }
-
-  extension (formula: Formula) def isPureSyntactically: Boolean = formula match {
-    case value: Value => true
-    case _ : Div | Rem => false
-    case op: BinOp => op.lhs.isPureSyntactically && op.rhs.isPureSyntactically
-    case op: UnaryOp => op.operand.isPureSyntactically
-    case Call(receiver, funId, args) => false
-    case Select(owner, fieldName) => owner.isPureSyntactically
+  
+  extension (formula: Formula) def asCst: Option[Constant] = formula match {
+    case cst: Constant => Some(cst)
+    case _ => None
   }
 
 }

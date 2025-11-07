@@ -5,7 +5,7 @@ import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.{FunctionSignature, Values}
 import lang.Values.*
-import lang.Types.{Type, TypeShape}
+import lang.Types.{Type, BasicType}
 
 object SSA {
 
@@ -24,36 +24,30 @@ object SSA {
   
   final case class Function(signature: FunctionSignature, body: List[Instr], codeProviderNameOpt: Option[String])
 
-  sealed trait ControlFlowInstr extends Instr {
-    def isEmpty: Boolean
-  }
-  final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends ControlFlowInstr {
-    override def isEmpty: Boolean = preBodyCond.isEmpty && cond.isPureSyntactically && body.isEmpty && postMerges.isEmpty
-  }
-  final case class Disjunction(cond: Formula, thenBr: List[Instr], elseBr: List[Instr], postMerges: List[Phi]) extends ControlFlowInstr {
-    override def isEmpty: Boolean = cond.isPureSyntactically && thenBr.isEmpty && elseBr.isEmpty && postMerges.isEmpty
-  }
+  sealed trait ControlFlowInstr extends Instr
+  final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends ControlFlowInstr
+  final case class Disjunction(cond: Formula, thenBr: List[Instr], elseBr: List[Instr], postMerges: List[Phi]) extends ControlFlowInstr
 
   sealed trait AssigningInstr extends Instr {
-    val assignedValue: Value
+    val assignedValue: IdValue
   }
   
   sealed trait Phi extends AssigningInstr {
     def inValues: Set[Value]
   }
-  final case class RegPhi(assignedValue: Value, inValues: Set[Value]) extends Phi
-  final case class LoopIterPhi(assignedValue: Value, baseCaseValue: Value, prevIterValue: Value) extends Phi {
+  final case class RegPhi(assignedValue: IdValue, inValues: Set[Value]) extends Phi
+  final case class LoopIterPhi(assignedValue: IdValue, baseCaseValue: Value, prevIterValue: Value) extends Phi {
     override def inValues: Set[Value] = Set(baseCaseValue, prevIterValue)
   }
-  final case class LoopExitPhi(assignedValue: Value, bodyEndValue: Value, skipLoopValue: Value) extends Phi {
+  final case class LoopExitPhi(assignedValue: IdValue, bodyEndValue: Value, skipLoopValue: Value) extends Phi {
     override def inValues: Set[Value] = Set(bodyEndValue, skipLoopValue)
   }
   
   final case class StaticTypeAssert(value: Value, tpe: Type) extends Instr
   
-  final case class Assignment(assignedValue: Value, rhs: Formula) extends AssigningInstr
-  final case class Instantiate(assignedValue: Value, classOrStructName: TypeIdentifier) extends AssigningInstr
-  final case class Cast(assignedValue: Value, inValue: Value, targetType: Type) extends AssigningInstr
+  final case class Assignment(assignedValue: IdValue, rhs: Formula) extends AssigningInstr
+  final case class Instantiate(assignedValue: IdValue, classOrStructName: TypeIdentifier) extends AssigningInstr
+  final case class Cast(assignedValue: IdValue, inValue: Value, targetType: Type) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, value: Value) extends Instr
   final case class Return(retVal: Option[Value]) extends Instr
