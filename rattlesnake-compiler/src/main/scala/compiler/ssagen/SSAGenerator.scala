@@ -1,7 +1,7 @@
 package compiler.ssagen
 
 import compiler.analysisctx.AnalysisContext
-import compiler.irs.Asts.{BasicTypeTree, InterfaceDef, VarAssig, VariableRef}
+import compiler.irs.Asts.{BasicTypeTree, InterfaceDef, ObjectDef, VarAssig, VariableRef}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -125,10 +125,22 @@ final class SSAGenerator(er: ErrorReporter)
         val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
         val thisVal = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, ThisId)
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
-        // FIXME add this to paramsInclThis
-        funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, None)
+        val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
+        val isObject = functionsProvider.isInstanceOf[ObjectDef]
+        if (thisParamIsOmitted && isObject){
+          val thisType = NamedType(functionsProvider.id, List.empty, List.empty, true)
+          paramsInclThis(thisVal) = thisType
+          funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
+        } else if (thisParamIsOmitted && !isObject){
+          reportError(s"parameters list of ${func.id} should start with the receiver parameter (syntax: 'this : Type')", func.getPosition)
+        } else if (!thisParamIsOmitted && isObject){
+          warn("receiver parameter may be omitted in objects", func.getPosition)
+        }
+        var isFirst = true
         for (paramTree <- func.params) {
-          if (funcLocalValsCtx.knows(paramTree.paramId)) {
+          if (paramTree.paramId == ThisId && !isFirst) {
+            reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
+          } else if (funcLocalValsCtx.knows(paramTree.paramId)) {
             reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
           } else {
             val paramValue = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, paramTree.paramId)
@@ -136,6 +148,7 @@ final class SSAGenerator(er: ErrorReporter)
             paramsInclThis(paramValue) = paramType
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, ReassigPermission.Val, Some(paramType))
           }
+          isFirst = false
         }
         val retType = func.optRetType match {
           case Some(retTypeTree) => mkType(retTypeTree, funcLocalValsCtx)

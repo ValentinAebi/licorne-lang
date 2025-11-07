@@ -141,7 +141,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val funDef = {
     opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
-      ::: openParenth ::: repeatWithSep(funOrClassParam, comma) ::: closeParenth
+      ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block) map {
       case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOpt =>
         FunDef(funName, typeParams, params, optRetType, bodyOpt,
@@ -157,12 +157,20 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val classParamTree = funOrClassParam OR packageImport
 
+  private lazy val funParamTree = funOrClassParam OR thisParam
+
   private lazy val funOrClassParam: P[FunctionParam & ClassParam] = recursive {
     opt(kw(Var)) ::: lowName ::: colon ::: typeTree map {
       case Some(_) ^: name ^: tpe => VarParam(name, tpe)
       case None ^: name ^: tpe => SimpleParam(name, tpe)
     }
   } setName "funOrClassParam"
+
+  private lazy val thisParam: P[SimpleParam] = {
+    kw(This).ignored ::: colon ::: typeTree map {
+      case tpe => SimpleParam(ThisId, tpe)
+    }
+  } setName "thisParam"
 
   private lazy val structOrTypeAliasParam: P[StructParam & TypeAliasParam] = recursive {
     lowName ::: colon ::: typeTree map {
