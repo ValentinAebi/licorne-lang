@@ -204,7 +204,7 @@ final class SSAGenerator(er: ErrorReporter)
       }
       stat match {
         case expr: Asts.Expr =>
-          val convertedExpr = generateSSAExpr(expr)(using valsCtx, Some(ssaInstructionsList))
+          val convertedExpr = generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx)
           ssaInstructionsList.saveInstr(Evaluate(convertedExpr), stat)
         case Asts.Block(stats) =>
           val blockCtx = valsCtx.withOneMoreFrame
@@ -233,22 +233,22 @@ final class SSAGenerator(er: ErrorReporter)
             reportError(s"illegal reassignment of value $lhsLocalId", assig.getPosition)
           }
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
-          val rhsFormula = generateSSAExpr(rhs)(using valsCtx, Some(ssaInstructionsList))
+          val rhsFormula = generateSSAExpr(rhs, Some(ssaInstructionsList), valsCtx)
           val newValue = valsCtx.valuesGen.newLocal(lhsLocalId, assig, typeAnnotOpt)
           ssaInstructionsList.saveInstr(Assignment(newValue, rhsFormula), assig)
           valsCtx.remap(lhsLocalId, newValue)
           generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
         case assig@Asts.VarAssig(indexing@Asts.Indexing(indexedExpr, idxExpr), typeAnnotTreeOpt, rhs) =>
-          val indexedValue = generateSSAExprForcedAsVal(indexedExpr, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
-          val idxValue = generateSSAExprForcedAsVal(idxExpr, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+          val indexedValue = generateSSAExprForcedAsVal(indexedExpr, ssaInstructionsList, valsCtx)
+          val idxValue = generateSSAExprForcedAsVal(idxExpr, ssaInstructionsList, valsCtx)
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
-          val rhsValue = generateSSAExprForcedAsVal(rhs, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+          val rhsValue = generateSSAExprForcedAsVal(rhs, ssaInstructionsList, valsCtx)
           generateTypeCheckForAnnotIfAny(rhsValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
           ssaInstructionsList.saveInstr(Evaluate(Call(indexedValue, NormalFunOrVarId("set"), List(idxValue, rhsValue))), assig)
         case assig@Asts.VarAssig(Asts.Select(owner, fieldId), typeAnnotTreeOpt, rhs) =>
-          val ownerValue = generateSSAExprForcedAsVal(owner, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+          val ownerValue = generateSSAExprForcedAsVal(owner, ssaInstructionsList, valsCtx)
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
-          val rhsValue = generateSSAExprForcedAsVal(rhs, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+          val rhsValue = generateSSAExprForcedAsVal(rhs, ssaInstructionsList, valsCtx)
           generateTypeCheckForAnnotIfAny(rhsValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
           ssaInstructionsList.saveInstr(FieldWrite(ownerValue, fieldId, rhsValue), assig)
         case assig@Asts.VarAssig(lhs, typeAnnotOpt, rhs) =>
@@ -264,7 +264,7 @@ final class SSAGenerator(er: ErrorReporter)
         case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
           reportError("in-place mutation is only allowed on local variables", stat.getPosition)
         case ite@Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
-          val condFormula = generateSSAExpr(cond)(using valsCtx, Some(ssaInstructionsList))
+          val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
           val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
           val thenBrCtx = valsCtx.copyWithSameGlobals
           doGenerateSSA(thenBr, thenBrCtx, thenBrSSA, isRepeat)
@@ -284,7 +284,7 @@ final class SSAGenerator(er: ErrorReporter)
           for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
             loopCtx.remap(id, bodyStartVal)
           }
-          val condFormula = generateSSAExpr(cond)(using loopCtx, Some(ssaInstructionsList))
+          val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), loopCtx)
           val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
           doGenerateSSA(body, loopCtx, bodySSA, isRepeat)
           if (loopCtx.exitManager.hasExited) {
@@ -323,12 +323,12 @@ final class SSAGenerator(er: ErrorReporter)
           ).withDesugaringSource(forLoop), valsCtx, ssaInstructionsList, isRepeat)
         case Asts.ReturnStat(optValExpr) =>
           val optRetVal = optValExpr.map {
-            generateSSAExprForcedAsVal(_, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+            generateSSAExprForcedAsVal(_, ssaInstructionsList, valsCtx)
           }
           ssaInstructionsList.saveInstr(Return(optRetVal), stat)
           valsCtx.markHasExited()
         case panic@Asts.PanicStat(msg) =>
-          val msgVal = generateSSAExprForcedAsVal(msg, ssaInstructionsList)(using valsCtx, Some(ssaInstructionsList))
+          val msgVal = generateSSAExprForcedAsVal(msg, ssaInstructionsList, valsCtx)
           ssaInstructionsList.saveInstr(Panic(msgVal), panic)
           valsCtx.markHasExited()
       }
@@ -337,9 +337,9 @@ final class SSAGenerator(er: ErrorReporter)
     doGenerateSSA(stat, valsCtx, ssaInstructionsList, isRepeat = false)
   }
 
-  private def generateSSAExprForcedAsVal(expr: Asts.Expr, ssaInstructionsList: mutable.ListBuffer[Instr])
-                                        (using valsCtx: LocalValuesContext, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]]) =
-    generateSSAExpr(expr) match {
+  private def generateSSAExprForcedAsVal(expr: Asts.Expr, ssaInstructionsList: mutable.ListBuffer[Instr],
+                                         valsCtx: LocalValuesContext): Value =
+    generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx) match {
       case value: Value => value
       case formula =>
         val resVal = valsCtx.valuesGen.newIntermediate(expr)
@@ -355,83 +355,97 @@ final class SSAGenerator(er: ErrorReporter)
     }
   }
 
-  private def generateSSAExpr(expr: Asts.Expr)
-                             (using valsCtx: LocalValuesContext, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]]): Formula = expr match {
-    case Asts.IntLit(value) => IntConstant(value)
-    case Asts.DoubleLit(value) => ???
-    case Asts.CharLit(value) => ???
-    case Asts.BoolLit(true) => True
-    case Asts.BoolLit(false) => False
-    case Asts.StringLit(value) => StringConstant(value)
-    case varRef@Asts.VariableRef(name) =>
-      valsCtx.valueOf(name) match {
-        case LocalValuesContext.Unknown(id) =>
-          reportError(s"not found: $id", varRef.getPosition)
-          valsCtx.valuesGen.newMissingValue(name, varRef)
-        case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
-          reportError(s"$id might not have been initialized", varRef.getPosition)
-          valsCtx.valuesGen.newMissingValue(name, varRef)
-        case KnownAndInitialized(value, reassigStatus, typeUpperBound) => value
-      }
-    case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
-    case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
-    case call@Asts.Call(receiverOpt, funId, args, isTailrec) =>
-      val receiver = receiverOpt.map(generateSSAExpr).getOrElse {
-        valsCtx.getThisValue match {
-          case Some(recv) => recv
-          case None =>
-            reportError(s"no receiver found for call to $funId", call.getPosition)
-            valsCtx.valuesGen.newMissingValue(ThisId, call)
+  private def generateSSAExpr(expr: Asts.Expr, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]], valsCtx: LocalValuesContext): Formula = {
+    
+    def generateSSAExpr(expr: Asts.Expr): Formula = this.generateSSAExpr(expr, ssaInstrListOpt, valsCtx)
+    
+    expr match {
+      case Asts.IntLit(value) => IntConstant(value)
+      case Asts.DoubleLit(value) => ???
+      case Asts.CharLit(value) => ???
+      case Asts.BoolLit(true) => True
+      case Asts.BoolLit(false) => False
+      case Asts.StringLit(value) => StringConstant(value)
+      case varRef@Asts.VariableRef(name) =>
+        valsCtx.valueOf(name) match {
+          case LocalValuesContext.Unknown(id) =>
+            reportError(s"not found: $id", varRef.getPosition)
+            valsCtx.valuesGen.newMissingValue(name, varRef)
+          case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
+            reportError(s"$id might not have been initialized", varRef.getPosition)
+            valsCtx.valuesGen.newMissingValue(name, varRef)
+          case KnownAndInitialized(value, reassigStatus, typeUpperBound) => value
         }
+      case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
+      case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
+      case call@Asts.Call(receiverOpt, funId, args, isTailrec) =>
+        val receiver = receiverOpt.map(generateSSAExpr).getOrElse {
+          valsCtx.getThisValue match {
+            case Some(recv) => recv
+            case None =>
+              reportError(s"no receiver found for call to $funId", call.getPosition)
+              valsCtx.valuesGen.newMissingValue(ThisId, call)
+          }
+        }
+        Call(receiver, funId, args.map(generateSSAExpr))
+      case Asts.Indexing(indexed, arg) => Call(generateSSAExpr(indexed), NormalFunOrVarId("get"), List(generateSSAExpr(arg)))
+      case Asts.UnaryOp(Operator.Minus, operand) => neg(generateSSAExpr(operand))
+      case Asts.UnaryOp(Operator.ExclamationMark, operand) => not(generateSSAExpr(operand))
+      case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
+      case Asts.BinaryOp(lhs, Operator.Plus, rhs) => plus(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Minus, rhs) => minus(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Times, rhs) => times(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Div, rhs) => div(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => rem(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => lessThan(generateSSAExpr(rhs), generateSSAExpr(lhs))
+      case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => lessThan(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => lessOrEq(generateSSAExpr(rhs), generateSSAExpr(lhs))
+      case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => lessOrEq(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Equality, rhs) => equal(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => not(equal(generateSSAExpr(lhs), generateSSAExpr(rhs)))
+      case Asts.BinaryOp(lhs, Operator.And, rhs) => and(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
+      case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
+      case Asts.TypeTest(expr, tpe) => HasType(generateSSAExpr(expr), mkBasicType(tpe, valsCtx))
+      case expr: Asts.NonFormulaExpr => ssaInstrListOpt match {
+        case None =>
+          reportError("illegal expression: only formulas are allowed in this position", expr.getPosition)
+          valsCtx.valuesGen.newIllegalConstruct(expr)
+        case Some(ssaInstructionsList) =>
+          generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
-      Call(receiver, funId, args.map(generateSSAExpr))
-    case Asts.Indexing(indexed, arg) => Call(generateSSAExpr(indexed), NormalFunOrVarId("get"), List(generateSSAExpr(arg)))
-    case Asts.UnaryOp(Operator.Minus, operand) => neg(generateSSAExpr(operand))
-    case Asts.UnaryOp(Operator.ExclamationMark, operand) => not(generateSSAExpr(operand))
-    case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
-    case Asts.BinaryOp(lhs, Operator.Plus, rhs) => plus(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Minus, rhs) => minus(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Times, rhs) => times(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Div, rhs) => div(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => rem(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => lessThan(generateSSAExpr(rhs), generateSSAExpr(lhs))
-    case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => lessThan(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => lessOrEq(generateSSAExpr(rhs), generateSSAExpr(lhs))
-    case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => lessOrEq(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Equality, rhs) => equal(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => not(equal(generateSSAExpr(lhs), generateSSAExpr(rhs)))
-    case Asts.BinaryOp(lhs, Operator.And, rhs) => and(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(generateSSAExpr(lhs), generateSSAExpr(rhs))
-    case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
-    case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
-    case Asts.TypeTest(expr, tpe) => HasType(generateSSAExpr(expr), mkBasicType(tpe, valsCtx))
-    case expr: Asts.NonFormulaExpr => ssaInstrListOpt match {
-      case None =>
-        reportError("illegal expression: only formulas are allowed in this position", expr.getPosition)
-        valsCtx.valuesGen.newIllegalConstruct(expr)
-      case Some(ssaInstructionsList) =>
-        generateNonFormulaExpr(expr, ssaInstructionsList)
     }
   }
 
-  private def generateNonFormulaExpr(expr: Asts.NonFormulaExpr, ssaInstructionsList: mutable.ListBuffer[SSA.Instr])
-                                    (using valsCtx: LocalValuesContext, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]]): Formula = expr match {
+  private def generateNonFormulaExpr(expr: Asts.NonFormulaExpr, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], valsCtx: LocalValuesContext): Formula = expr match {
     case Asts.FilledArrayInit(arrayElems) => ???
     case Asts.StructOrClassInstantiation(typeId, initializers) =>
       val instanceVal = valsCtx.valuesGen.newObject(typeId)
       ssaInstructionsList.saveInstr(Instantiate(instanceVal, typeId), expr)
       initializers.foreach {
         case initializer@Asts.FullFieldInitializer(fieldName, rhs) =>
-          ssaInstructionsList.saveInstr(FieldWrite(instanceVal, fieldName, generateSSAExpr(rhs)), initializer)
+          ssaInstructionsList.saveInstr(FieldWrite(instanceVal, fieldName, generateSSAExpr(rhs, Some(ssaInstructionsList), valsCtx)), initializer)
         case initializer@Asts.ShorthandFieldInitializer(fieldName) =>
-          val rhsExpr = generateSSAExpr(Asts.VariableRef(fieldName).withDesugaringSource(initializer))
+          val rhsExpr = generateSSAExpr(Asts.VariableRef(fieldName).withDesugaringSource(initializer), Some(ssaInstructionsList), valsCtx)
           ssaInstructionsList.saveInstr(FieldWrite(instanceVal, fieldName, rhsExpr), initializer)
       }
       instanceVal
-    case Asts.Ternary(cond, thenBr, elseBr) => ???
+    case ternary@Asts.Ternary(cond, thenBr, elseBr) =>
+      val thenResVal = valsCtx.valuesGen.newIntermediate(ternary)
+      val elseResVal = valsCtx.valuesGen.newIntermediate(ternary)
+      val resultVal = valsCtx.valuesGen.newIntermediate(ternary)
+      val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
+      val thenFormula = generateSSAExpr(thenBr, Some(ssaInstructionsList), valsCtx)
+      val elseFormula = generateSSAExpr(elseBr, Some(ssaInstructionsList), valsCtx)
+      ssaInstructionsList.saveInstr(Disjunction(condFormula,
+        List(Assignment(thenResVal, thenFormula)),
+        List(Assignment(elseResVal, elseFormula)),
+        List(RegPhi(resultVal, Set(thenResVal, elseResVal)))
+      ), ternary)
+      elseResVal
     case Asts.Cast(expr, tpe) => ???
   }
-
 
   private def not(operand: Formula): Formula = operand match {
     case True => False
@@ -503,7 +517,7 @@ final class SSAGenerator(er: ErrorReporter)
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext): Type = typeTree match {
     case Asts.RefinedTypeTree(baseType, predicate) =>
-      RefinedType(mkType(baseType, valsCtx), generateSSAExpr(predicate)(using valsCtx, None))
+      RefinedType(mkType(baseType, valsCtx), generateSSAExpr(predicate, None, valsCtx))
     case basicTypeTree: Asts.BasicTypeTree =>
       mkBasicType(basicTypeTree, valsCtx)
   }
@@ -511,7 +525,7 @@ final class SSAGenerator(er: ErrorReporter)
   private def mkBasicType(basicTypeTree: Asts.BasicTypeTree, valsCtx: LocalValuesContext): BasicType = basicTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case Asts.NamedTypeTree(name, typeParams, params, isPure) =>
-      NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_)(using valsCtx, None)), isPure)
+      NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)), isPure)
   }
 
   private def externalVarsAssignedInLoop(loop: Asts.Loop): Set[FunOrVarId] = {

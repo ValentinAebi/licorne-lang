@@ -12,11 +12,12 @@ object SSA {
   sealed abstract class Instr {
     private var astNode: Option[Ast] = None
 
-    def setAstNode(astNode: Ast): Unit = {
+    def setAstNode(astNode: Ast): this.type = {
       if (this.astNode.isDefined) {
         throw IllegalStateException("node has already been set")
       }
       this.astNode = Some(astNode)
+      this
     }
 
     def getAstNodeOpt: Option[Ast] = astNode
