@@ -6,14 +6,18 @@ import lang.Values.Formula
 
 object Types {
 
-  sealed trait Type
+  sealed trait Type {
+    def withoutRefinement: BasicType
+  }
 
   final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
+    override def withoutRefinement: BasicType = baseType.withoutRefinement
     override def toString: String = s"$baseType with $predicate"
   }
 
   sealed trait BasicType extends Type {
     def typeParams: List[Type]
+    override def withoutRefinement: BasicType = this
   }
 
   enum PrimitiveType(val str: String) extends BasicType {

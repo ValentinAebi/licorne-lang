@@ -62,10 +62,14 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
         pps.add(s"$assignedValue := phi { $bodyEndValue (loop) or $skipLoopValue (skip) }")
       case SSA.Assignment(assignedValue, rhs) =>
         pps.add(assignedValue.toString).add(" := ").add(rhs.toString)
-      case SSA.Instantiate(assignedValue, classOrStructName) => ???
-      case SSA.Cast(assignedValue, inValue, targetType) => ???
+      case SSA.Instantiate(assignedValue, classOrStructName) =>
+        pps.add(s"$assignedValue := new $classOrStructName")
+      case SSA.Cast(assignedValue, inValue, targetType) =>
+        pps.add(s"cast-dynamic $assignedValue := $inValue as $targetType")
+      case SSA.StaticAssert(formula) =>
+        pps.add(s"assert-static $formula")
       case SSA.StaticTypeAssert(value, tpe) =>
-        pps.add(s"type-assert $value : $tpe")
+        pps.add(s"type-assert-static $value : $tpe")
       case SSA.FieldWrite(owner, fieldName, value) =>
         pps.add(s"$owner.$fieldName := $value")
       case SSA.Return(retVal) =>
