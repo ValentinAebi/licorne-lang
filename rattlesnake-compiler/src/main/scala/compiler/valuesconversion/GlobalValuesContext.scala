@@ -16,7 +16,7 @@ final class GlobalValuesContext extends ValuesContext {
   def resolveObject(objectId: TypeIdentifier): IdValue =
     objects.getOrElseUpdate(objectId, valuesGen.newObject(objectId))
 
-  override def copyWithSameGlobals: ValuesContext = this
+  override def deepCopyWithSameGlobalCtx: ValuesContext = this
 
   override private[valuesconversion] def queryLocal(id: FunOrVarId): Option[ValuesContext.LocalInfo] = None
   

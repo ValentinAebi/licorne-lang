@@ -224,14 +224,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     noParenthType OR (openParenth ::: typeTree ::: closeParenth)
   } setName "typeTree"
 
-  private lazy val varRef = lowName map (VariableRef(_))
-
-  private lazy val path = recursive {
-    (thisRef OR varRef) ::: repeat(dot ::: lowName) map {
-      case root ^: selects => selects.foldLeft[Expr](root)(Select(_, _))
-    }
-  } setName "path"
-
   private lazy val explicitCaptureSetTree = recursive {
     openBrace ::: repeatWithSep(expr, comma) ::: closeBrace map {
       case expressions => ExplicitCaptureSetTree(expressions)
@@ -326,6 +318,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "indexing"
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
+  
+  private lazy val itRef = kw(It) map (_ => ItRef())
 
   private lazy val objectRef = highName map (ObjectRef(_))
 
@@ -335,7 +329,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "varRefOrNonPrefixedCall"
 
   private lazy val atomicExpr = recursive {
-    varRefOrNonPrefixedCall OR thisRef OR objectRef OR literalValue OR filledArrayInit OR parenthesizedExpr
+    varRefOrNonPrefixedCall OR thisRef OR itRef OR objectRef OR literalValue OR filledArrayInit OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {

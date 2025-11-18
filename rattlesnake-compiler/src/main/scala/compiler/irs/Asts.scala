@@ -276,6 +276,10 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
+  final case class ItRef() extends FormulaExpr {
+    override def children: List[Ast] = Nil
+  }
+
   final case class ObjectRef(objectName: TypeIdentifier) extends FormulaExpr {
     override def children: List[Ast] = Nil
   }

@@ -266,10 +266,10 @@ final class SSAGenerator(er: ErrorReporter)
         case ite@Asts.IfThenElse(cond, thenBr, elseBrOpt) =>
           val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
           val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-          val thenBrCtx = valsCtx.copyWithSameGlobals
+          val thenBrCtx = valsCtx.deepCopyWithSameGlobalCtx
           doGenerateSSA(thenBr, thenBrCtx, thenBrSSA, isRepeat)
           val elseBrSSA = mutable.ListBuffer.empty[SSA.Instr]
-          val elseBrCtx = valsCtx.copyWithSameGlobals
+          val elseBrCtx = valsCtx.deepCopyWithSameGlobalCtx
           elseBrOpt.foreach { elseBr =>
             doGenerateSSA(elseBr, elseBrCtx, elseBrSSA, isRepeat)
           }
@@ -280,7 +280,7 @@ final class SSAGenerator(er: ErrorReporter)
           val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
             varId -> valsCtx.valuesGen.newIntermediate(whileLoop)
           }.toMap
-          val loopCtx = valsCtx.copyWithSameGlobals
+          val loopCtx = valsCtx.deepCopyWithSameGlobalCtx
           for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
             loopCtx.remap(id, bodyStartVal)
           }
@@ -377,6 +377,7 @@ final class SSAGenerator(er: ErrorReporter)
           case KnownAndInitialized(value, reassigStatus, typeUpperBound) => value
         }
       case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
+      case Asts.ItRef() => generateSSAExpr(Asts.VariableRef(ItId))
       case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
       case call@Asts.Call(receiverOpt, funId, args, isTailrec) =>
         val receiver = receiverOpt.map(generateSSAExpr).getOrElse {
@@ -444,7 +445,12 @@ final class SSAGenerator(er: ErrorReporter)
         List(RegPhi(resultVal, Set(thenResVal, elseResVal)))
       ), ternary)
       elseResVal
-    case Asts.Cast(expr, tpe) => ???
+    case cast@Asts.Cast(expr, tpe) =>
+      val inVal = generateSSAExprForcedAsVal(expr, ssaInstructionsList, valsCtx)
+      val resultVal = valsCtx.valuesGen.newIntermediate(cast)
+      val targetType = mkBasicType(tpe, valsCtx)
+      ssaInstructionsList.saveInstr(Cast(resultVal, inVal, targetType), cast)
+      resultVal
   }
 
   private def not(operand: Formula): Formula = operand match {
@@ -517,7 +523,11 @@ final class SSAGenerator(er: ErrorReporter)
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext): Type = typeTree match {
     case Asts.RefinedTypeTree(baseType, predicate) =>
-      RefinedType(mkType(baseType, valsCtx), generateSSAExpr(predicate, None, valsCtx))
+      val baseT = mkType(baseType, valsCtx)
+      val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
+      val itVal = valsCtx.valuesGen.newLocal(ItId, typeTree, None)
+      refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
+      RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
     case basicTypeTree: Asts.BasicTypeTree =>
       mkBasicType(basicTypeTree, valsCtx)
   }

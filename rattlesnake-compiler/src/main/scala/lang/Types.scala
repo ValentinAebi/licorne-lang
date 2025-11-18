@@ -1,7 +1,7 @@
 package lang
 
 import identifiers.TypeIdentifier
-import lang.Values.Formula
+import lang.Values.{Formula, IdValue}
 
 
 object Types {
@@ -10,7 +10,7 @@ object Types {
     def withoutRefinement: BasicType
   }
 
-  final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
+  final case class RefinedType(baseType: Type, itValue: IdValue, predicate: Formula) extends Type {
     override def withoutRefinement: BasicType = baseType.withoutRefinement
     override def toString: String = s"$baseType with $predicate"
   }

@@ -31,7 +31,9 @@ object Values {
   }
   final case class IntConstant(value: Int) extends Constant
   final case class DoubleConstant(value: Double) extends Constant
-  final case class StringConstant(value: String) extends Constant
+  final case class StringConstant(value: String) extends Constant {
+    override def toString: String = s"\"$value\""
+  }
 
   sealed trait BinOp(val operator: Operator) extends Formula {
     def lhs: Formula

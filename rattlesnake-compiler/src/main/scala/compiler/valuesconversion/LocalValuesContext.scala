@@ -7,8 +7,8 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
-import identifiers.{FunOrVarId, NormalFunOrVarId, ThisId}
-import lang.Types.{NamedType, Type, BasicType}
+import identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId}
+import lang.Types.{BasicType, NamedType, Type}
 import lang.Values.*
 import lang.{Operator, ReassigPermission}
 
@@ -29,18 +29,18 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
 
   def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager)
 
-  override def copyWithSameGlobals: LocalValuesContext = {
+  override def deepCopyWithSameGlobalCtx: LocalValuesContext = {
     val newExitManager = exitManager.copy
-    val copy = new LocalValuesContext(nestedContext.copyWithSameGlobals, level, newExitManager)
+    val copy = new LocalValuesContext(nestedContext.deepCopyWithSameGlobalCtx, level, newExitManager)
     copy.values.addAll(this.values.map((id, info) => (id, info.copy())))
     copy
   }
 
-  def saveNewLocal(id: FunOrVarId, value: Option[Value], reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Boolean = {
+  def saveNewLocal(id: FunOrVarId, value: Option[Value], reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean = {
     if (queryLocal(id).isDefined) {
       false
     } else {
-      values(id) = LocalInfo(value, reassigStatus, typeUpperBound)
+      values(id) = LocalInfo(value, reassigPermission, typeUpperBound)
       true
     }
   }
@@ -54,6 +54,13 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
         info.value = Some(value)
         true
       case None => false
+    }
+  }
+  
+  def saveOrRemap(id: FunOrVarId, value: Value, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Unit = {
+    val saved = saveNewLocal(id, value, reassigStatus, typeUpperBound)
+    if (!saved){
+      remap(id, value)
     }
   }
 

@@ -15,6 +15,7 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
 
     given globalValsCtx: GlobalValuesContext = analysisCtx.globalValuesContext
 
+    pps.newLine()
     for ((funSig, ssaFunc) <- functions) {
       pps.add(funSig.toString).addSpace().startBlock()
       ssaFunc.codeProviderNameOpt.foreach { srcFileName =>
@@ -78,6 +79,8 @@ final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function
         pps.add("panic ").add(msg.toString)
       case SSA.Evaluate(formula) =>
         pps.add("evaluate ").add(formula.toString)
+      case SSA.DynamicAssert(formula) =>
+        pps.add(s"dynamic-assert $formula")
     }
   }
 

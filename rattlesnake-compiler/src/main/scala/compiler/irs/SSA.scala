@@ -55,5 +55,6 @@ object SSA {
   final case class Return(retVal: Option[Value]) extends Instr
   final case class Panic(msg: Value) extends Instr
   final case class Evaluate(formula: Formula) extends Instr
+  final case class DynamicAssert(formula: Formula) extends Instr
 
 }
