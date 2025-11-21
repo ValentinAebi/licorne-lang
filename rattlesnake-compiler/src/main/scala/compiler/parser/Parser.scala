@@ -230,7 +230,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "explicitCaptureSetTree"
 
-  private lazy val primOrNamedType: AnyTreeParser[BasicTypeTree] = recursive {
+  private lazy val primOrNamedType: AnyTreeParser[BaseTypeTree] = recursive {
     highName ::: opt(apostrophe) ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron)
       ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
       case baseTypeName ^: apostropheOpt ^: typeParamsOpt ^: paramsOpt =>

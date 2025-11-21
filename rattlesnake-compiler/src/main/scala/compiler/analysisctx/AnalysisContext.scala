@@ -1,11 +1,13 @@
 package compiler.analysisctx
 
+import compiler.datastructures.Graph
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
+import lang.Types.Type
 
 import scala.collection.mutable
 
@@ -17,7 +19,28 @@ final case class AnalysisContext(
                                   datatypes: Map[TypeIdentifier, DatatypeSignature],
                                   structs: Map[TypeIdentifier, StructSignature],
                                   typeAliases: Map[TypeIdentifier, TypeAliasSignature]
-                                )
+                                ) {
+  
+  def performCyclicityChecks(er: ErrorReporter): Unit = {
+    checkSubtypingCyclicity(er)
+    checkObjectImportsCyclicity(er)
+    checkTypeAliasCyclicity(er)
+    // TODO also check that names refer to known types
+  }
+  
+  private def checkSubtypingCyclicity(er: ErrorReporter): Unit = {
+    ??? // TODO using Graph
+  }
+  
+  private def checkObjectImportsCyclicity(er: ErrorReporter): Unit = {
+    ??? // TODO using Graph
+  }
+  
+  private def checkTypeAliasCyclicity(er: ErrorReporter): Unit = {
+    ??? // TODO using Graph
+  }
+  
+}
 
 object AnalysisContext {
 

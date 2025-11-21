@@ -81,5 +81,15 @@ object Values {
     case cst: Constant => Some(cst)
     case _ => None
   }
+  
+  extension (formula: Formula) def substitute(valsSubst: Map[IdValue, Formula]): Formula = formula match {
+    case value: IdValue => ???
+    case constant: Constant => ???
+    case op: BinOp => ???
+    case op: UnaryOp => ???
+    case Call(receiver, funId, args) => ???
+    case Select(owner, fieldName) => ???
+    case HasType(formula, tpe) => ???
+  }
 
 }

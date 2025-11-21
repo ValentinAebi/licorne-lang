@@ -1,0 +1,106 @@
+package compiler.datastructures
+
+import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Test
+
+class GraphTests {
+
+  private val graph1: Graph[Int] = {
+    val gb = Graph.Builder[Int]()
+
+    extension (from: Int) def ->(to: Int): Unit = {
+      gb.addEdge(from, to)
+    }
+
+    /*
+     1 -> 2 <- 8 <- 7 -> 9 <- 11     15
+     v    v         ^ ^. v        v"  v
+     3 -> 4 -> 5 -> 6    10 <- 12 <- 13 -> 14
+     */
+
+    1 -> 2
+    1 -> 3
+    2 -> 4
+    3 -> 4
+    4 -> 5
+    5 -> 6
+    6 -> 7
+    7 -> 8
+    7 -> 9
+    8 -> 2
+    9 -> 10
+    10 -> 7
+    11 -> 9
+    12 -> 10
+    13 -> 12
+    13 -> 14
+    15 -> 12
+    15 -> 13
+
+    gb.build()
+  }
+
+  private val graph2: Graph[String] = {
+    val gb = Graph.Builder[String]()
+
+    extension (from: String) def ->(to: String): Unit = {
+      gb.addEdge(from, to)
+    }
+
+    /*
+     A -> B <- H <- G -> I <- K <- P <- O
+     v    v         ^    v              ^
+     C -> D -> E -> F    J -> L -> M -> N
+     */
+
+    "A" -> "B"
+    "A" -> "C"
+    "B" -> "D"
+    "C" -> "D"
+    "D" -> "E"
+    "E" -> "F"
+    "F" -> "G"
+    "G" -> "H"
+    "G" -> "I"
+    "H" -> "B"
+    "I" -> "J"
+    "J" -> "L"
+    "K" -> "I"
+    "L" -> "M"
+    "M" -> "N"
+    "N" -> "O"
+    "O" -> "P"
+    "P" -> "K"
+
+    gb.build()
+  }
+
+  @Test
+  def findShortestCycleTest1(): Unit = {
+    val acceptableSolutions = rotationsOf(7, 9, 10)
+    val res = graph1.findShortestCycle().get
+    assertTrue(s"incorrect: $res", acceptableSolutions.contains(res))
+  }
+
+  @Test
+  def findShortestCycleTest2(): Unit = {
+    val acceptableSolutions = rotationsOf("B", "D", "E", "F", "G", "H")
+    val res = graph2.findShortestCycle().get
+    assertTrue(s"incorrect: $res", acceptableSolutions.contains(res))
+  }
+
+  @Test
+  def findShortestPathTest(): Unit = {
+    val exp = Seq(15, 12, 10, 7, 8)
+    val act = graph1.shortestPath(15, 8).get
+    assertEquals(exp, act)
+  }
+
+  private def rotationsOf[T](seq: T*): Set[Seq[T]] = {
+    (for (i <- seq.indices) yield {
+      val (left, right) = seq.splitAt(i)
+      right ++ left
+    }).toSet
+  }
+
+}

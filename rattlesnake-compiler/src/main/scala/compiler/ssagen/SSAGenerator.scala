@@ -36,14 +36,14 @@ final class SSAGenerator(er: ErrorReporter)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
-            val funcs = convertToIdToSigMapAndCheckBodyPresence(functionsMap, df.getPosition, isInterface = true)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = InterfaceSignature(id, typeParams.convert, funcs, directSupertypes.map(mkBasicType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
-            val funcs = convertToIdToSigMapAndCheckBodyPresence(functionsMap, df.getPosition, isInterface = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
             val sig = ObjectSignature(id, importedObjectsVals, funcs, directSupertypes.map(mkBasicType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
@@ -64,7 +64,7 @@ final class SSAGenerator(er: ErrorReporter)
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
-            val funcs = convertToIdToSigMapAndCheckBodyPresence(functionsMap, df.getPosition, isInterface = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = ClassSignature(id, typeParams.convert, fields, importedObjects, funcs,
               directSupertypes.map(mkBasicType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
@@ -97,7 +97,7 @@ final class SSAGenerator(er: ErrorReporter)
                 typeAliasParams(paramId) = (paramType, paramValue)
                 paramsCtx.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams.convert, thisValue, typeAliasParams)
+            val sig = TypeAliasSignature(typeName, typeParams.convert, thisValue, typeAliasParams, mkType(rhs, paramsCtx))
             ctxBuilder.saveSignature(sig, df.getPosition)
         }
         for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
@@ -124,14 +124,14 @@ final class SSAGenerator(er: ErrorReporter)
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
         val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
-        if (thisParamIsOmitted && isObject){
+        if (thisParamIsOmitted && isObject) {
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty, true)
           paramsInclThis(thisVal) = thisType
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
-        } else if (thisParamIsOmitted && !isObject){
+        } else if (thisParamIsOmitted && !isObject) {
           reportError(s"parameters list of ${func.id} should start with the receiver parameter (syntax: 'this : Type')", func.getPosition)
-        } else if (!thisParamIsOmitted && isObject){
-          warn("receiver parameter may be omitted in objects", func.getPosition)
+        } else if (!thisParamIsOmitted && isObject) {
+          warn("receiver parameter can be omitted inside objects", func.getPosition)
         }
         var isFirst = true
         for (paramTree <- func.params) {
@@ -159,11 +159,12 @@ final class SSAGenerator(er: ErrorReporter)
         }
       }
     }
+    er.displayAndTerminateIfErrors()
     functions.toMap
   }
 
-  private def convertToIdToSigMapAndCheckBodyPresence(functionsMap: Map[FunOrVarId, (FunctionSignature, Option[SSA.Function])],
-                                                      funPos: Option[Position], isInterface: Boolean): Map[FunOrVarId, FunctionSignature] = {
+  private def createIdToSigMapAndCheckBodyExists(functionsMap: Map[FunOrVarId, (FunctionSignature, Option[SSA.Function])],
+                                                 funPos: Option[Position], isInterface: Boolean): Map[FunOrVarId, FunctionSignature] = {
     val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
     for ((id, (sig, optSSA)) <- functionsMap) {
       resultB.addOne(id -> sig)
@@ -356,9 +357,9 @@ final class SSAGenerator(er: ErrorReporter)
   }
 
   private def generateSSAExpr(expr: Asts.Expr, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]], valsCtx: LocalValuesContext): Formula = {
-    
+
     def generateSSAExpr(expr: Asts.Expr): Formula = this.generateSSAExpr(expr, ssaInstrListOpt, valsCtx)
-    
+
     expr match {
       case Asts.IntLit(value) => IntConstant(value)
       case Asts.DoubleLit(value) => ???
@@ -523,16 +524,16 @@ final class SSAGenerator(er: ErrorReporter)
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext): Type = typeTree match {
     case Asts.RefinedTypeTree(baseType, predicate) =>
-      val baseT = mkType(baseType, valsCtx)
+      val baseT = mkBasicType(baseType, valsCtx)
       val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
       val itVal = valsCtx.valuesGen.newLocal(ItId, typeTree, None)
       refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
       RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
-    case basicTypeTree: Asts.BasicTypeTree =>
+    case basicTypeTree: Asts.BaseTypeTree =>
       mkBasicType(basicTypeTree, valsCtx)
   }
 
-  private def mkBasicType(basicTypeTree: Asts.BasicTypeTree, valsCtx: LocalValuesContext): BasicType = basicTypeTree match {
+  private def mkBasicType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext): BaseType = basicTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case Asts.NamedTypeTree(name, typeParams, params, isPure) =>
       NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)), isPure)

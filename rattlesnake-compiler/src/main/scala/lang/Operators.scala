@@ -3,7 +3,7 @@ package lang
 import identifiers.TypeIdentifier
 import lang.Operator.*
 import lang.Types.PrimitiveType.*
-import lang.Types.BasicType
+import lang.Types.BaseType
 
 import scala.annotation.targetName
 
@@ -15,12 +15,12 @@ object Operators {
   /**
    * Signature of an unary operator
    */
-  final case class UnaryOpSignature(op: Operator, operandType: BasicType, retType: BasicType)
+  final case class UnaryOpSignature(op: Operator, operandType: BaseType, retType: BaseType)
 
   /**
    * Signature of a binary operator
    */
-  final case class BinaryOpSignature(leftOperandType: BasicType, op: Operator, rightOperandType: BasicType, retType: BasicType)
+  final case class BinaryOpSignature(leftOperandType: BaseType, op: Operator, rightOperandType: BaseType, retType: BaseType)
 
   // # is treated separately
   val unaryOperators: List[UnaryOpSignature] = List(
@@ -68,19 +68,19 @@ object Operators {
   
   // Binop signature DSL implementation --------------------------------------------
 
-  private case class PartialBinop1(leftOperandType: BasicType, op: Operator) {
-    @targetName("andThen") infix def $(rightOperandType: BasicType): PartialBinop2 = {
+  private case class PartialBinop1(leftOperandType: BaseType, op: Operator) {
+    @targetName("andThen") infix def $(rightOperandType: BaseType): PartialBinop2 = {
       PartialBinop2(leftOperandType, op, rightOperandType)
     }
   }
 
-  private case class PartialBinop2(leftOperandType: BasicType, op: Operator, rightOperandType: BasicType) {
-    infix def is(retType: BasicType): BinaryOpSignature = {
+  private case class PartialBinop2(leftOperandType: BaseType, op: Operator, rightOperandType: BaseType) {
+    infix def is(retType: BaseType): BinaryOpSignature = {
       BinaryOpSignature(leftOperandType, op, rightOperandType, retType)
     }
   }
 
-  extension (leftOperandType: BasicType) {
+  extension (leftOperandType: BaseType) {
     @targetName("andThen") private infix def $(op: Operator): PartialBinop1 = {
       PartialBinop1(leftOperandType, op)
     }

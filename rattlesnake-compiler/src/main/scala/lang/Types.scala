@@ -1,31 +1,36 @@
 package lang
 
 import identifiers.TypeIdentifier
-import lang.Values.{Formula, IdValue}
+import lang.Values.{And, Formula, IdValue}
+
+import scala.collection.mutable
 
 
 object Types {
 
   sealed trait Type {
-    def withoutRefinement: BasicType
+    def baseType: BaseType
   }
 
-  final case class RefinedType(baseType: Type, itValue: IdValue, predicate: Formula) extends Type {
-    override def withoutRefinement: BasicType = baseType.withoutRefinement
+  final case class RefinedType(baseType: BaseType, itValue: IdValue, predicate: Formula) extends Type {
     override def toString: String = s"$baseType with $predicate"
   }
 
-  sealed trait BasicType extends Type {
+  sealed trait BaseType extends Type {
     def typeParams: List[Type]
-    override def withoutRefinement: BasicType = this
+
+    override def baseType: BaseType = this
   }
 
-  enum PrimitiveType(val str: String) extends BasicType {
+  trait TypeVar extends BaseType
+
+  enum PrimitiveType(val str: String) extends BaseType {
     case IntType extends PrimitiveType("Int")
     case DoubleType extends PrimitiveType("Double")
     case CharType extends PrimitiveType("Char")
     case BoolType extends PrimitiveType("Bool")
     case StringType extends PrimitiveType("String")
+    case NullType extends PrimitiveType("Null")
 
     case VoidType extends PrimitiveType("Void")
     case NothingType extends PrimitiveType("Nothing")
@@ -39,8 +44,10 @@ object Types {
     PrimitiveType.values.find(_.str == name.stringId)
   }
 
-  final case class NamedType(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula], isPure: Boolean)
-    extends BasicType {
+  final case class NamedType(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula], isPure: Boolean) extends BaseType {
+    
+    def pureOnlyIf(pure: Boolean): NamedType = copy(isPure = isPure && pure)
+    
     override def toString: String = {
       val typeParamsDescr = if typeParams.isEmpty then "" else typeParams.mkString("<", ",", ">")
       val paramsDescr = if params.isEmpty then "" else params.mkString("(", ",", ")")
@@ -49,13 +56,36 @@ object Types {
     }
   }
 
-  /**
-   * Type of a malformed/incorrect expression
-   */
-  case object UndefinedType extends BasicType {
-    override def typeParams: List[Type] = List.empty
-
-    override def toString: String = "[undefined type]"
+  extension (tpe: Type) {
+    
+    def substituteVar(targetVar: TypeVar, replacement: Type): Type = tpe match {
+      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
+        baseTypeRaw.substituteVar(targetVar, replacement) match {
+          case RefinedType(baseTypeSubst, itValueSubst, predicateSubst) =>
+            RefinedType(baseTypeSubst, itValueRaw, And(predicateRaw, predicateSubst.substitute(Map(itValueSubst -> itValueRaw))))
+          case baseTypeSubst: BaseType => RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
+        }
+      case primitiveType: PrimitiveType => primitiveType
+      case NamedType(typeName, typeParams, params, isPure) =>
+        NamedType(typeName, typeParams.map(_.substituteVar(targetVar, replacement)), params, isPure)
+      case typeVar: TypeVar if typeVar == targetVar => replacement
+      case typeVar: TypeVar => typeVar
+    }
+    
+    def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = tpe match {
+      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
+        baseTypeRaw.substitute(typesSubst, valsSubst) match {
+          case RefinedType(baseTypeSubst, itValueSubst, predicateSubst) =>
+            RefinedType(baseTypeRaw, itValueRaw, And(predicateRaw, predicateSubst.substitute(valsSubst ++ Map(itValueSubst -> itValueRaw))))
+          case baseTypeSubst: BaseType =>
+            RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
+        }
+      case typeVar: TypeVar => typeVar
+      case primitiveType: PrimitiveType => primitiveType
+      case NamedType(typeName, Nil, Nil, _) if typesSubst.contains(typeName) =>
+        typesSubst.apply(typeName)
+      case namedType: NamedType => namedType
+    }
   }
 
 }

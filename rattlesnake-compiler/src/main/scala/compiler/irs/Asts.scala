@@ -90,7 +90,7 @@ object Asts {
   sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
     def functions: List[FunDef]
 
-    def directSupertypes: List[BasicTypeTree]
+    def directSupertypes: List[BaseTypeTree]
   }
 
   sealed trait UnencapsulatedTypeDefTree extends TypeDefTree {
@@ -101,7 +101,7 @@ object Asts {
                                  id: TypeIdentifier,
                                  typeParams: List[TypeParam],
                                  functions: List[FunDef],
-                                 directSupertypes: List[BasicTypeTree]
+                                 directSupertypes: List[BaseTypeTree]
                                ) extends EncapsulatedTypeDefTree {
     override def description: String = s"interface $id"
 
@@ -112,7 +112,7 @@ object Asts {
                               id: TypeIdentifier,
                               importedObjects: List[TypeIdentifier],
                               functions: List[FunDef],
-                              directSupertypes: List[BasicTypeTree]
+                              directSupertypes: List[BaseTypeTree]
                             ) extends EncapsulatedTypeDefTree {
     override def description: String = s"object $id"
 
@@ -124,7 +124,7 @@ object Asts {
                              typeParams: List[TypeParam],
                              params: List[ClassParam],
                              functions: List[FunDef],
-                             directSupertypes: List[BasicTypeTree]
+                             directSupertypes: List[BaseTypeTree]
                            ) extends EncapsulatedTypeDefTree {
     override def description: String = s"class $id"
 
@@ -217,9 +217,9 @@ object Asts {
 
     final override def children: List[Ast] = Nil
 
-    def getTypeShapeOpt: Option[BasicType]
+    def getTypeShapeOpt: Option[BaseType]
 
-    final def getTypeShape: BasicType = {
+    final def getTypeShape: BaseType = {
       getTypeShapeOpt match
         case Some(shape) => shape
         case None => throw new NoSuchElementException(s"type missing in $this")
@@ -234,35 +234,35 @@ object Asts {
    * Integer literal
    */
   final case class IntLit(value: Int) extends NumericLiteral {
-    override def getTypeShapeOpt: Option[BasicType] = Some(IntType)
+    override def getTypeShapeOpt: Option[BaseType] = Some(IntType)
   }
 
   /**
    * Double literal
    */
   final case class DoubleLit(value: Double) extends NumericLiteral {
-    override def getTypeShapeOpt: Option[BasicType] = Some(DoubleType)
+    override def getTypeShapeOpt: Option[BaseType] = Some(DoubleType)
   }
 
   /**
    * Char literal
    */
   final case class CharLit(value: Char) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BasicType] = Some(CharType)
+    override def getTypeShapeOpt: Option[BaseType] = Some(CharType)
   }
 
   /**
    * Bool (boolean) literal
    */
   final case class BoolLit(value: Boolean) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BasicType] = Some(BoolType)
+    override def getTypeShapeOpt: Option[BaseType] = Some(BoolType)
   }
 
   /**
    * String literal
    */
   final case class StringLit(value: String) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BasicType] = Some(StringType)
+    override def getTypeShapeOpt: Option[BaseType] = Some(StringType)
   }
 
   /**
@@ -433,14 +433,14 @@ object Asts {
   /**
    * Cast, e.g. `x as Int`
    */
-  final case class Cast(expr: Expr, tpe: BasicTypeTree) extends NonFormulaExpr {
+  final case class Cast(expr: Expr, tpe: BaseTypeTree) extends NonFormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
   /**
    * Type test, e.g. `x is Foo`
    */
-  final case class TypeTest(expr: Expr, tpe: BasicTypeTree) extends FormulaExpr {
+  final case class TypeTest(expr: Expr, tpe: BaseTypeTree) extends FormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
@@ -451,21 +451,19 @@ object Asts {
     override def children: List[Ast] = List(msg)
   }
 
-  sealed trait TypeTree extends Ast {
-    def withRefinement(predicate: Expr): RefinedTypeTree = RefinedTypeTree(this, predicate)
-  }
+  sealed trait TypeTree extends Ast
 
-  final case class RefinedTypeTree(baseType: TypeTree, predicate: Expr) extends TypeTree {
+  final case class RefinedTypeTree(baseType: BaseTypeTree, predicate: Expr) extends TypeTree {
     override def children: List[Ast] = List(baseType, predicate)
   }
 
-  sealed trait BasicTypeTree extends TypeTree
+  sealed trait BaseTypeTree extends TypeTree
 
-  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends BasicTypeTree {
+  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends BaseTypeTree {
     override def children: List[Ast] = Nil
   }
 
-  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr], isPure: Boolean) extends BasicTypeTree {
+  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr], isPure: Boolean) extends BaseTypeTree {
     override def children: List[Ast] = typeArgs ++ args
   }
 

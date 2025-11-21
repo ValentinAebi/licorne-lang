@@ -8,7 +8,7 @@ import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId}
-import lang.Types.{BasicType, NamedType, Type}
+import lang.Types.{BaseType, NamedType, Type}
 import lang.Values.*
 import lang.{Operator, ReassigPermission}
 
