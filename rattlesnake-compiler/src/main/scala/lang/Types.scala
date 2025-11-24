@@ -3,8 +3,6 @@ package lang
 import identifiers.TypeIdentifier
 import lang.Values.{And, Formula, IdValue}
 
-import scala.collection.mutable
-
 
 object Types {
 
@@ -13,7 +11,7 @@ object Types {
   }
 
   final case class RefinedType(baseType: BaseType, itValue: IdValue, predicate: Formula) extends Type {
-    override def toString: String = s"$baseType with $predicate"
+    override def toString: String = s"$baseType $itValue with $predicate"
   }
 
   sealed trait BaseType extends Type {

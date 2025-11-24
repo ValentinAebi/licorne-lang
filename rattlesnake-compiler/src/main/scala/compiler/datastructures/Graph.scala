@@ -69,7 +69,7 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
         curr = tableGet(minCycleElem, curr)._2.get
         cycle = curr :: cycle
       }
-      Some(cycle)
+      Some(cycle.last +: cycle)
     }
   }
 
@@ -119,6 +119,15 @@ object Graph {
       addVertex(from)
       addVertex(to)
       adjSets.apply(from).add(to)
+      this
+    }
+
+    def addDescendants(n: N, descendants: IterableOnce[N]): this.type = {
+      addVertex(n)
+      for (d <- descendants){
+        addVertex(d)
+      }
+      adjSets.apply(n).addAll(descendants)
       this
     }
 

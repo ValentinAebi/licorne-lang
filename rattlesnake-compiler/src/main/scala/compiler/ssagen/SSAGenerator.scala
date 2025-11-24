@@ -100,14 +100,16 @@ final class SSAGenerator(er: ErrorReporter)
             val sig = TypeAliasSignature(typeName, typeParams.convert, thisValue, typeAliasParams, mkType(rhs, paramsCtx))
             ctxBuilder.saveSignature(sig, df.getPosition)
         }
-        for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
-          val sig = DatatypeSignature(id, typeParams.convert, directSupertypes,
-            datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
-          ctxBuilder.saveSignature(sig, df.getPosition)
-        }
+      }
+      for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
+        val sig = DatatypeSignature(id, typeParams.convert, directSupertypes,
+          datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
+        ctxBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    (allFunctionsCollector.toMap, ctxBuilder.build())
+    val ctx = ctxBuilder.build()
+    ctx.performCyclicityChecks(er)
+    (allFunctionsCollector.toMap, ctx)
   }
 
   private def collectFunctions(functionsProvider: Asts.EncapsulatedTypeDefTree, globalValsCtx: GlobalValuesContext,
