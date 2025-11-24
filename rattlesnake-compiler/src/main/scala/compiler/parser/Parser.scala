@@ -418,7 +418,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input
     if (positionedTokens.isEmpty) {
-      errorReporter.pushFatal(Fatal(Parsing, "empty source", Some(Position(srcName, 1, 1))))
+      Source(List.empty)
     } else {
       ll1Iterator = LL1Iterator.from(positionedTokens)
       source.extract(ll1Iterator) match {
