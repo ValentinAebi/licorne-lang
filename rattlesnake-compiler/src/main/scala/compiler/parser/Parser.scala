@@ -188,7 +188,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val complexSuperTypesListOpt = {
     opt(colon ::: repeatWithSepNonZero(primOrNamedType, comma)) map {
       case None => List.empty
-      case Some(supertypes) => supertypes
+      case Some(allSupertypes) =>
+        allSupertypes.flatMap {
+          case primitiveTypeTree: PrimitiveTypeTree =>
+            errorReporter.push(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
+            None
+          case namedTypeTree: NamedTypeTree => Some(namedTypeTree)
+        }
     }
   } setName "complexSuperTypesListOpt"
   

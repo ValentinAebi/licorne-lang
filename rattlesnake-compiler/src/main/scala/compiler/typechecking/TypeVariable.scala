@@ -28,5 +28,5 @@ final class TypeVariable extends Types.TypeVar {
     alreadyInstantiated = true
   }
 
-  override def typeParams: List[Type] = List.empty
+  override def typeArgs: List[Type] = List.empty
 }

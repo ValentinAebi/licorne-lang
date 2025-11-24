@@ -3,7 +3,7 @@ package lang
 import identifiers.*
 import lang.Field.StableField
 import lang.Values.IdValue
-import lang.Types.{Type, BaseType}
+import lang.Types.{BaseType, NamedType, Type}
 
 import scala.collection.mutable
 
@@ -41,6 +41,10 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
 
 sealed trait TypeSignature {
   def id: TypeIdentifier
+
+  def typeParams: List[(TypeIdentifier, Variance)]
+
+  def params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)]
 }
 
 final case class TypeAliasSignature(
@@ -51,16 +55,24 @@ final case class TypeAliasSignature(
                                      rhs: Type
                                    ) extends TypeSignature
 
-sealed trait RuntimeTypeSignature extends TypeSignature
+sealed trait RuntimeTypeSignature extends TypeSignature {
+  override def params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)] = mutable.LinkedHashMap.empty
+}
 
-sealed trait ConcreteTypeSignature extends RuntimeTypeSignature
+sealed trait ConcreteTypeSignature {
+  this: RuntimeTypeSignature =>
+}
+
+sealed trait AbstractTypeSignature extends RuntimeTypeSignature {
+  this: RuntimeTypeSignature =>
+}
 
 sealed trait Encapsulated {
   this: RuntimeTypeSignature =>
 
   def functions: Map[FunOrVarId, FunctionSignature]
 
-  def directSupertypes: List[Type]
+  def directSupertypes: List[NamedType]
 }
 
 sealed trait Unencapsulated {
@@ -71,15 +83,13 @@ sealed trait Unencapsulated {
 
 sealed trait TypeParametric extends RuntimeTypeSignature {
   this: TypeSignature =>
-
-  def typeParams: List[(TypeIdentifier, Variance)]
 }
 
 final case class InterfaceSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[(TypeIdentifier, Variance)],
                                      functions: Map[FunOrVarId, FunctionSignature],
-                                     directSupertypes: List[Type]
+                                     directSupertypes: List[NamedType]
                                    )
   extends RuntimeTypeSignature, TypeParametric, Encapsulated
 
@@ -89,7 +99,7 @@ final case class ClassSignature(
                                  fields: mutable.LinkedHashMap[FunOrVarId, Field],
                                  importedObjects: mutable.LinkedHashSet[IdValue],
                                  functions: Map[FunOrVarId, FunctionSignature],
-                                 directSupertypes: List[Type]
+                                 directSupertypes: List[NamedType]
                                )
   extends RuntimeTypeSignature, ConcreteTypeSignature, TypeParametric, Encapsulated
 
@@ -99,9 +109,11 @@ final case class ObjectSignature(
                                   id: TypeIdentifier,
                                   importedObjects: mutable.LinkedHashSet[IdValue],
                                   functions: Map[FunOrVarId, FunctionSignature],
-                                  directSupertypes: List[Type]
+                                  directSupertypes: List[NamedType]
                                 )
-  extends RuntimeTypeSignature, ConcreteTypeSignature, Encapsulated
+  extends RuntimeTypeSignature, AbstractTypeSignature, ConcreteTypeSignature, Encapsulated {
+  override def typeParams: List[(TypeIdentifier, Variance)] = List.empty
+}
 
 final case class DatatypeSignature(
                                     id: TypeIdentifier,
@@ -109,7 +121,7 @@ final case class DatatypeSignature(
                                     directSupertypes: List[TypeIdentifier],
                                     directSubtypes: mutable.LinkedHashSet[TypeIdentifier]
                                   )
-  extends RuntimeTypeSignature, Unencapsulated, TypeParametric
+  extends RuntimeTypeSignature, AbstractTypeSignature, Unencapsulated, TypeParametric
 
 final case class StructSignature(
                                   id: TypeIdentifier,

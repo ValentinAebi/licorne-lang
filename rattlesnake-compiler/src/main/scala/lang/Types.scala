@@ -15,7 +15,7 @@ object Types {
   }
 
   sealed trait BaseType extends Type {
-    def typeParams: List[Type]
+    def typeArgs: List[Type]
 
     override def baseType: BaseType = this
   }
@@ -33,7 +33,7 @@ object Types {
     case VoidType extends PrimitiveType("Void")
     case NothingType extends PrimitiveType("Nothing")
 
-    override def typeParams: List[Type] = List.empty
+    override def typeArgs: List[Type] = List.empty
 
     override def toString: String = str
   }
@@ -42,13 +42,13 @@ object Types {
     PrimitiveType.values.find(_.str == name.stringId)
   }
 
-  final case class NamedType(typeName: TypeIdentifier, typeParams: List[Type], params: List[Formula], isPure: Boolean) extends BaseType {
+  final case class NamedType(typeName: TypeIdentifier, typeArgs: List[Type], args: List[Formula], isPure: Boolean) extends BaseType {
     
     def pureOnlyIf(pure: Boolean): NamedType = copy(isPure = isPure && pure)
     
     override def toString: String = {
-      val typeParamsDescr = if typeParams.isEmpty then "" else typeParams.mkString("<", ",", ">")
-      val paramsDescr = if params.isEmpty then "" else params.mkString("(", ",", ")")
+      val typeParamsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("<", ",", ">")
+      val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")
       val purityDescr = if isPure then "" else "'"
       typeName.toString + typeParamsDescr + paramsDescr + purityDescr
     }

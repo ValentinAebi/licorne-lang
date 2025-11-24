@@ -90,7 +90,7 @@ object Asts {
   sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
     def functions: List[FunDef]
 
-    def directSupertypes: List[BaseTypeTree]
+    def directSupertypes: List[NamedTypeTree]
   }
 
   sealed trait UnencapsulatedTypeDefTree extends TypeDefTree {
@@ -101,22 +101,22 @@ object Asts {
                                  id: TypeIdentifier,
                                  typeParams: List[TypeParam],
                                  functions: List[FunDef],
-                                 directSupertypes: List[BaseTypeTree]
+                                 directSupertypes: List[NamedTypeTree]
                                ) extends EncapsulatedTypeDefTree {
     override def description: String = s"interface $id"
 
-    override def children: List[Ast] = functions ++ directSupertypes
+    override def children: List[Ast] = typeParams ++ functions
   }
 
   final case class ObjectDef(
                               id: TypeIdentifier,
                               importedObjects: List[TypeIdentifier],
                               functions: List[FunDef],
-                              directSupertypes: List[BaseTypeTree]
+                              directSupertypes: List[NamedTypeTree]
                             ) extends EncapsulatedTypeDefTree {
     override def description: String = s"object $id"
 
-    override def children: List[Ast] = functions ++ directSupertypes
+    override def children: List[Ast] = functions
   }
 
   final case class ClassDef(
@@ -124,11 +124,11 @@ object Asts {
                              typeParams: List[TypeParam],
                              params: List[ClassParam],
                              functions: List[FunDef],
-                             directSupertypes: List[BaseTypeTree]
+                             directSupertypes: List[NamedTypeTree]
                            ) extends EncapsulatedTypeDefTree {
     override def description: String = s"class $id"
 
-    override def children: List[Ast] = typeParams ++ params ++ functions ++ directSupertypes
+    override def children: List[Ast] = typeParams ++ params ++ functions
   }
 
   final case class DataTypeDef(

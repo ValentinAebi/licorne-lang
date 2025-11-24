@@ -26,10 +26,14 @@ final class SSAGenerator(er: ErrorReporter)
     val globalValuesContext = ctxBuilder.globalValuesContext
     val valuesGen = globalValuesContext.valuesGen
     val allFunctionsCollector = mutable.Map.empty[FunctionSignature, SSA.Function]
+    val positionsMapB = Map.newBuilder[TypeIdentifier, Position]
     for (src <- input) {
       val datatypeDefs = mutable.ListBuffer.empty[Asts.DataTypeDef]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
       for (df <- src.defs) {
+        df.getPosition.foreach { pos =>
+          positionsMapB.addOne(df.id -> pos)
+        }
         val thisValue = valuesGen.newParam(df.id, ConstructorFunId, ThisId)
         df match {
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
@@ -37,7 +41,7 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
-            val sig = InterfaceSignature(id, typeParams.convert, funcs, directSupertypes.map(mkBasicType(_, paramsCtx)))
+            val sig = InterfaceSignature(id, typeParams.convert, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
@@ -45,7 +49,7 @@ final class SSAGenerator(er: ErrorReporter)
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
-            val sig = ObjectSignature(id, importedObjectsVals, funcs, directSupertypes.map(mkBasicType(_, paramsCtx)))
+            val sig = ObjectSignature(id, importedObjectsVals, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ClassDef(id, typeParams, params, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
@@ -65,8 +69,7 @@ final class SSAGenerator(er: ErrorReporter)
             }
             val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
-            val sig = ClassSignature(id, typeParams.convert, fields, importedObjects, funcs,
-              directSupertypes.map(mkBasicType(_, paramsCtx)))
+            val sig = ClassSignature(id, typeParams.convert, fields, importedObjects, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(df)
@@ -108,7 +111,7 @@ final class SSAGenerator(er: ErrorReporter)
       }
     }
     val ctx = ctxBuilder.build()
-    ctx.performCyclicityChecks(er)
+    ctx.performTypeReferenceChecks()(using er, positionsMapB.result(), SSAGeneration)
     (allFunctionsCollector.toMap, ctx)
   }
 
@@ -537,8 +540,12 @@ final class SSAGenerator(er: ErrorReporter)
 
   private def mkBasicType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext): BaseType = basicTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
-    case Asts.NamedTypeTree(name, typeParams, params, isPure) =>
-      NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)), isPure)
+    case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
+  }
+  
+  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext): NamedType = {
+    val Asts.NamedTypeTree(name, typeParams, params, isPure) = namedTypeTree
+    NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)), isPure)
   }
 
   private def externalVarsAssignedInLoop(loop: Asts.Loop): Set[FunOrVarId] = {
