@@ -9,7 +9,11 @@ import lang.Types.*
 import lang.Values.{And, Formula}
 import lang.{TypeAliasSignature, Types, Values, Variance}
 
-final class TypeCheckingContext(val program: Program, val typeParams: Map[TypeIdentifier, Variance]) {
+final class TypeCheckingContext(
+                                 val program: Program,
+                                 val typeTypeParams: Map[TypeIdentifier, Variance],
+                                 val functionTypeParams: Set[TypeIdentifier]
+                               ) {
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
@@ -37,21 +41,29 @@ final class TypeCheckingContext(val program: Program, val typeParams: Map[TypeId
     else desugarType(desugaredType)
   }
 
-  def checkTypesWellDefined(tpe: Type)(using er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = tpe match {
+  def checkTypesWellDefined(tpe: Type, posOpt: Option[Position])(using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
     case Types.RefinedType(baseType, itValue, predicate) =>
-      checkTypesWellDefined(baseType)
-      checkTypesWellDefined(predicate)
+      checkTypesWellDefined(baseType, posOpt)
+      checkTypesWellDefined(predicate, posOpt)
     case typeVar: Types.TypeVar =>
       throw AssertionError("should not happen: unexpected type variable")
     case primitiveType: Types.PrimitiveType => ()
     case NamedType(typeName, typeArgs, args) =>
-      if (!typeParams.contains(typeName)) {
+      if (!functionTypeParams.contains(typeName) && !typeTypeParams.contains(typeName)) {
         program.resolveSignature(typeName) match {
           case None =>
             er.reportError(s"type not found: $typeName", posOpt)
           case Some(sig) =>
             val expTypeParamsCnt = sig.typeParams.size
-            if (typeArgs.size != expTypeParamsCnt) {
+            if (typeArgs.size == expTypeParamsCnt) {
+              for (((typeParam, paramVariance), typeArg) <- sig.typeParams.zip(typeArgs)) {
+                tcCtx.varianceOf(typeArg.baseType).foreach { argVariance =>
+                  if (!argVariance.isAssignableTo(paramVariance)) {
+                    er.reportError(s"variance error: cannot instantiate type parameter $typeParam of $typeName to type parameter $typeArg", posOpt)
+                  }
+                }
+              }
+            } else {
               er.reportError(s"expected ${singOrPlural(expTypeParamsCnt, "type parameter", "type parameters")}, found ${typeArgs.size}", posOpt)
             }
             val expParamsCnt = sig.params.size
@@ -59,13 +71,13 @@ final class TypeCheckingContext(val program: Program, val typeParams: Map[TypeId
               er.reportError(s"expected ${singOrPlural(expParamsCnt, "parameter", "parameters")}, found ${typeArgs.size}", posOpt)
             }
         }
-        typeArgs.foreach(checkTypesWellDefined)
-        args.foreach(checkTypesWellDefined)
+        typeArgs.foreach(checkTypesWellDefined(_, posOpt))
+        args.foreach(checkTypesWellDefined(_, posOpt))
       }
   }
 
   def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
-    case NamedType(typeName, Nil, Nil) => typeParams.get(typeName)
+    case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName)
     case _ => None
   }
 
@@ -73,20 +85,20 @@ final class TypeCheckingContext(val program: Program, val typeParams: Map[TypeId
     if cnt == 0 || cnt == 1 then s"$cnt $sing"
     else s"$cnt $plur"
 
-  private def checkTypesWellDefined(formula: Formula)(using er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = formula match {
+  private def checkTypesWellDefined(formula: Formula, posOpt: Option[Position])(using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = formula match {
     case _: Values.Value => ()
     case op: Values.BinOp =>
-      checkTypesWellDefined(op.lhs)
-      checkTypesWellDefined(op.rhs)
+      checkTypesWellDefined(op.lhs, posOpt)
+      checkTypesWellDefined(op.rhs, posOpt)
     case op: Values.UnaryOp =>
-      checkTypesWellDefined(op.operand)
+      checkTypesWellDefined(op.operand, posOpt)
     case Values.Call(receiver, funId, args) =>
-      checkTypesWellDefined(receiver)
-      args.foreach(checkTypesWellDefined)
-    case Values.Select(owner, fieldName) => checkTypesWellDefined(owner)
+      checkTypesWellDefined(receiver, posOpt)
+      args.foreach(checkTypesWellDefined(_, posOpt))
+    case Values.Select(owner, fieldName) => checkTypesWellDefined(owner, posOpt)
     case Values.HasType(formula, tpe) =>
-      checkTypesWellDefined(formula)
-      checkTypesWellDefined(tpe)
+      checkTypesWellDefined(formula, posOpt)
+      checkTypesWellDefined(tpe, posOpt)
   }
 
   extension (er: ErrorReporter) private def reportError(msg: String, posOpt: Option[Position])(using compilationStep: CompilationStep): Unit = {

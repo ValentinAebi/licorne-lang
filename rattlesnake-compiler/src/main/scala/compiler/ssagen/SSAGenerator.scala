@@ -123,8 +123,7 @@ final class SSAGenerator(er: ErrorReporter)
     val functions = mutable.Map.empty[FunOrVarId, (FunctionSignature, Option[SSA.Function])]
     for (func <- functionsProvider.functions) {
       if (functions.contains(func.id)) {
-        reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}",
-          functionsProvider.getPosition)
+        reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
       } else {
         val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
         val thisVal = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, ThisId)
@@ -159,7 +158,7 @@ final class SSAGenerator(er: ErrorReporter)
           case None => PrimitiveType.VoidType
         }
         val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
-        val bodyOpt = func.bodyOpt.map(generateSSAFunc(sig, _, funcLocalValsCtx, func.getPosition.map(_.srcCodeProviderName)))
+        val bodyOpt = func.bodyOpt.map(generateSSAFunc(sig, _, funcLocalValsCtx, func.getPosition))
         functions(func.id) = (sig, bodyOpt)
         bodyOpt.foreach { body =>
           allFunctionsCollector(sig) = body
@@ -188,12 +187,12 @@ final class SSAGenerator(er: ErrorReporter)
     case Asts.TypeParam(id, variance) => (id, variance)
   }
 
-  private def generateSSAFunc(sig: FunctionSignature, body: Asts.Block, valsCtx: LocalValuesContext, codeProviderNameOpt: Option[String]): SSA.Function = {
+  private def generateSSAFunc(sig: FunctionSignature, body: Asts.Block, valsCtx: LocalValuesContext, posOpt: Option[Position]): SSA.Function = {
     val ssaInstructionsList = mutable.ListBuffer.empty[SSA.Instr]
     for (stat <- body.stats) {
       generateSSA(stat, valsCtx, ssaInstructionsList)
     }
-    SSA.Function(sig, ssaInstructionsList.toList, codeProviderNameOpt)
+    SSA.Function(sig, ssaInstructionsList.toList, posOpt)
   }
 
   private def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[Instr]): Unit = {

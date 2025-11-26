@@ -41,7 +41,12 @@ final case class Program(
     checkObjectImportsCyclicity()
     checkTypeAliasesCyclicity()
     er.displayAndTerminateIfErrors()
+
     buildAndCheckFlattenedSubtypingMaps()
+    er.displayAndTerminateIfErrors()
+
+    checkFunctionSignatures()
+    er.displayAndTerminateIfErrors()
   }
 
   def resolveSignature(typeId: TypeIdentifier): Option[TypeSignature] =
@@ -75,7 +80,7 @@ final case class Program(
 
   private def checkInterfaceSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, InterfaceSignature(id, typeParams, functions, directSupertypes)) <- interfaces) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
 
       checkSuperinterfaces(id, directSupertypes, positions.get(id))
     }
@@ -83,7 +88,7 @@ final case class Program(
 
   private def checkClassSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, ClassSignature(id, typeParams, fields, importedObjects, functions, directSupertypes)) <- classes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
 
       val posOpt = positions.get(id)
       checkFields(fields.values, posOpt)
@@ -94,7 +99,7 @@ final case class Program(
 
   private def checkObjectSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, ObjectSignature(id, importedObjects, functions, directSupertypes)) <- objects) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, Map.empty)
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, Map.empty, Set.empty)
 
       checkImportedObjects(importedObjects)
       checkSuperinterfaces(id, directSupertypes, positions.get(id))
@@ -103,7 +108,7 @@ final case class Program(
 
   private def checkDatatypeSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
 
       checkSupertypesOfStructLike(id, directSupertypes, positions.get(id))
     }
@@ -111,7 +116,7 @@ final case class Program(
 
   private def checkStructSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, StructSignature(id, typeParams, fields, directSupertypes)) <- structs) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
 
       val posOpt = positions.get(id)
       checkFields(fields.values, posOpt)
@@ -143,22 +148,29 @@ final case class Program(
         case Contravariant =>
           er.reportError(s"variance error: field ${field.id} has contravariant type ${field.tpe.baseType}", posOpt)
       }
-      tcCtx.checkTypesWellDefined(field.tpe)(using er, posOpt, compilationStep)
+      tcCtx.checkTypesWellDefined(field.tpe, posOpt)
     }
   }
 
-  private def checkFunctionSignatures(functions: Iterable[FunctionSignature])(using compilationStep: CompilationStep): Unit = {
-    for (funSig <- functions) {
-      // TODO check the types in signature
-      // TODO check overrides (presence of the method, parameters, type parameters, return type, visibility)
-      // TODO check variance
+  private def checkFunctionSignatures()(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+    // TODO check the types in signature
+    // TODO check overrides (presence of the method, parameters, type parameters, return type, visibility)
+    for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, body, posOpt)) <- functions) {
+      val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
+
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
+
+      for ((paramId, paramType) <- funParamsInclThis) {
+        tcCtx.checkTypesWellDefined(paramType, posOpt)
+        // TODO check variance (and be careful about "composition", e.g. double contravariance)
+      }
     }
   }
 
   private def checkSuperinterfaces(childTypeId: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
                                   (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT)(using er, posOpt, compilationStep)
+      tcCtx.checkTypesWellDefined(superT, posOpt)
       resolveSignature(superT.typeName).foreach {
         case _: InterfaceSignature => ()
         case _ => er.reportError(s"interface not found: ${superT.typeName}", posOpt)
@@ -169,7 +181,7 @@ final case class Program(
   private def checkSupertypesOfStructLike(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
                                          (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT)(using er, posOpt, compilationStep)
+      tcCtx.checkTypesWellDefined(superT, posOpt)
       resolveSignature(superT.typeName).foreach {
         case DatatypeSignature(superTypeId, _, _, subOfSuper) =>
           if (!subOfSuper.contains(id)) {

@@ -17,8 +17,8 @@ final class SSAPrinter extends CompilerStep[Program, String] {
     pps.newLine()
     for ((funSig, ssaFunc) <- program.functions) {
       pps.add(funSig.toString).addSpace().startBlock()
-      ssaFunc.codeProviderNameOpt.foreach { srcFileName =>
-        pps.add("/* src: ").add(srcFileName).add(" */")
+      ssaFunc.posOpt.foreach { position =>
+        pps.add("/* src: ").add(position.srcCodeProviderName).add(" */")
       }
       pps.newLine().add("/* ")
       for (paramVal <- funSig.paramsInclThis.keys) {
