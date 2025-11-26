@@ -18,7 +18,7 @@ final case class FunctionSignature(
   override def toString: String = {
     val sb = StringBuilder()
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
-    printListIfNonEmpty(typeParams, "<", ">", sb)
+    printListIfNonEmpty(typeParams, "[", "]", sb)
     printListIfNonEmpty(paramsInclThis, "(", ")", sb, (param, tpe) => s"$param: $tpe")
     sb.append(" -> ").append(retType)
     sb.toString()
@@ -48,8 +48,8 @@ sealed trait TypeSignature {
 
   def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
     NamedType(id,
-      typeParams.map((tid, _) => NamedType(tid, List.empty, List.empty, true)),
-      params.map(_._2._2).toList, true).substitute(typesSubst, valsSubst)
+      typeParams.map((tid, _) => NamedType(tid, List.empty, List.empty)),
+      params.map(_._2._2).toList).substitute(typesSubst, valsSubst)
   }
 }
 

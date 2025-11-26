@@ -23,7 +23,7 @@ final class SSAPrinter extends CompilerStep[Program, String] {
       pps.newLine().add("/* ")
       for (paramVal <- funSig.paramsInclThis.keys) {
         globalValsCtx.debugInfoOf(paramVal)
-          .flatMap(_.referencedLocal)
+          .flatMap(_.referencedSourceId)
           .foreach { localId =>
             pps.add(paramVal.toString).add("=").add(localId).add(" ")
           }
@@ -104,7 +104,7 @@ final class SSAPrinter extends CompilerStep[Program, String] {
     instr match {
       case assigningInstr: SSA.AssigningInstr =>
         globalValsCtx.debugInfoOf(assigningInstr.assignedValue)
-          .flatMap(_.referencedLocal)
+          .flatMap(_.referencedSourceId)
           .foreach { debugInfo =>
             sb.append(" /* ").append(assigningInstr.assignedValue).append("=").append(debugInfo).append(" */")
           }

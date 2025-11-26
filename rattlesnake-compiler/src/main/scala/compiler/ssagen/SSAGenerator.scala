@@ -132,7 +132,7 @@ final class SSAGenerator(er: ErrorReporter)
         val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
         if (thisParamIsOmitted && isObject) {
-          val thisType = NamedType(functionsProvider.id, List.empty, List.empty, true)
+          val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
           paramsInclThis(thisVal) = thisType
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
         } else if (thisParamIsOmitted && !isObject) {
@@ -246,13 +246,6 @@ final class SSAGenerator(er: ErrorReporter)
           ssaInstructionsList.saveInstr(Assignment(newValue, rhsFormula), assig)
           valsCtx.remap(lhsLocalId, newValue)
           generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
-        case assig@Asts.VarAssig(indexing@Asts.Indexing(indexedExpr, idxExpr), typeAnnotTreeOpt, rhs) =>
-          val indexedValue = generateSSAExprForcedAsVal(indexedExpr, ssaInstructionsList, valsCtx)
-          val idxValue = generateSSAExprForcedAsVal(idxExpr, ssaInstructionsList, valsCtx)
-          val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
-          val rhsValue = generateSSAExprForcedAsVal(rhs, ssaInstructionsList, valsCtx)
-          generateTypeCheckForAnnotIfAny(rhsValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
-          ssaInstructionsList.saveInstr(Evaluate(Call(indexedValue, NormalFunOrVarId("set"), List(idxValue, rhsValue))), assig)
         case assig@Asts.VarAssig(Asts.Select(owner, fieldId), typeAnnotTreeOpt, rhs) =>
           val ownerValue = generateSSAExprForcedAsVal(owner, ssaInstructionsList, valsCtx)
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
@@ -397,7 +390,6 @@ final class SSAGenerator(er: ErrorReporter)
           }
         }
         Call(receiver, funId, args.map(generateSSAExpr))
-      case Asts.Indexing(indexed, arg) => Call(generateSSAExpr(indexed), NormalFunOrVarId("get"), List(generateSSAExpr(arg)))
       case Asts.UnaryOp(Operator.Minus, operand) => neg(generateSSAExpr(operand))
       case Asts.UnaryOp(Operator.ExclamationMark, operand) => not(generateSSAExpr(operand))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
@@ -428,7 +420,6 @@ final class SSAGenerator(er: ErrorReporter)
   }
 
   private def generateNonFormulaExpr(expr: Asts.NonFormulaExpr, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], valsCtx: LocalValuesContext): Formula = expr match {
-    case Asts.FilledArrayInit(arrayElems) => ???
     case Asts.StructOrClassInstantiation(typeId, initializers) =>
       val instanceVal = valsCtx.valuesGen.newObject(typeId)
       ssaInstructionsList.saveInstr(Instantiate(instanceVal, typeId), expr)
@@ -546,8 +537,8 @@ final class SSAGenerator(er: ErrorReporter)
   }
   
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext): NamedType = {
-    val Asts.NamedTypeTree(name, typeParams, params, isPure) = namedTypeTree
-    NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)), isPure)
+    val Asts.NamedTypeTree(name, typeParams, params) = namedTypeTree
+    NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)))
   }
 
   private def externalVarsAssignedInLoop(loop: Asts.Loop): Set[FunOrVarId] = {

@@ -9,20 +9,20 @@ import lang.Types.*
 import lang.Values.{And, Formula}
 import lang.{TypeAliasSignature, Types, Values, Variance}
 
-final class TypeCheckingContext(val analysisContext: Program, val typeParams: Map[TypeIdentifier, Variance]) {
+final class TypeCheckingContext(val program: Program, val typeParams: Map[TypeIdentifier, Variance]) {
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
       case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
         desugarType(baseTypeRaw) match {
           case RefinedType(baseTypeDes, itValueDes, predicateDes) =>
-            RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map(itValueDes -> itValueRaw))))
+            RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
           case baseTypeDes: BaseType =>
             RefinedType(baseTypeDes, itValueRaw, predicateRaw)
         }
       case primitiveType: Types.PrimitiveType => primitiveType
-      case Types.NamedType(typeName, typeArgs, args, isPure) =>
-        analysisContext.typeAliases.get(typeName) match {
+      case Types.NamedType(typeName, typeArgs, args) =>
+        program.typeAliases.get(typeName) match {
           case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs)) =>
             val typesSubst = typeParams.map((id, variance) => id).zipCommons(typeArgs).toMap
             val valsSubst = params.map {
@@ -44,9 +44,9 @@ final class TypeCheckingContext(val analysisContext: Program, val typeParams: Ma
     case typeVar: Types.TypeVar =>
       throw AssertionError("should not happen: unexpected type variable")
     case primitiveType: Types.PrimitiveType => ()
-    case NamedType(typeName, typeArgs, args, isPure) =>
+    case NamedType(typeName, typeArgs, args) =>
       if (!typeParams.contains(typeName)) {
-        analysisContext.resolveSignature(typeName) match {
+        program.resolveSignature(typeName) match {
           case None =>
             er.reportError(s"type not found: $typeName", posOpt)
           case Some(sig) =>
@@ -63,9 +63,9 @@ final class TypeCheckingContext(val analysisContext: Program, val typeParams: Ma
         args.foreach(checkTypesWellDefined)
       }
   }
-  
+
   def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
-    case NamedType(typeName, Nil, Nil, _) => typeParams.get(typeName)
+    case NamedType(typeName, Nil, Nil) => typeParams.get(typeName)
     case _ => None
   }
 

@@ -3,14 +3,14 @@ package compiler.valuesconversion
 import compiler.irs.Asts
 import compiler.irs.Asts.Ast
 import compiler.valuesconversion.ValueKind.*
-import identifiers.{FunOrVarId, Identifier, TypeIdentifier}
+import identifiers.{FunOrVarId, Identifier, NormalFunOrVarId, TypeIdentifier}
 import lang.Types.Type
 import lang.Values.{IdValue, Value}
 
-import java.util.concurrent.atomic.AtomicLong
+import scala.collection.mutable
 
 final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
-  private val uidGen = AtomicLong(0)
+  private val uidGen = mutable.Map.empty[Identifier, Int]
 
   def newParam(funOwnerId: TypeIdentifier, funId: FunOrVarId, paramId: FunOrVarId): IdValue =
     newValue(FunParamKind(funOwnerId, funId, paramId))
@@ -34,7 +34,10 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
     newValue(IllegalConstructKind(construct))
 
   private def newValue(kind: ValueKind): IdValue = {
-    val value = IdValue(uidGen.incrementAndGet())
+    val varId = kind.referencedSourceId.getOrElse(NormalFunOrVarId("unk"))
+    val uidIdx = uidGen.getOrElse(varId, 0)
+    uidGen(varId) = uidIdx + 1
+    val value = IdValue(s"$varId$$$uidIdx")
     globalValuesContext.saveDebugInfo(value, kind)
     value
   }
@@ -49,7 +52,7 @@ enum ValueKind {
   case MissingValueKind(missingId: FunOrVarId, astNode: Ast)
   case IllegalConstructKind(construct: Ast)
 
-  def referencedLocal: Option[Identifier] = this match {
+  def referencedSourceId: Option[Identifier] = this match {
     case FunParamKind(funOwnerId, funId, paramId) => Some(paramId)
     case ObjectKind(objectName) => Some(objectName)
     case LocalKind(localId, introducingAstNode, typeAnnot) => Some(localId)

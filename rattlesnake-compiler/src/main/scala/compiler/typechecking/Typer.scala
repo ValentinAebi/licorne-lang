@@ -15,7 +15,7 @@ import scala.collection.mutable
 final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
 
   override def apply(input: (Map[FunctionSignature, SSA.Function], Program)): (Map[FunctionSignature, SSA.Function], Program, TypeStore) = {
-    val (functions, analysisCtx) = input
+    val (functions, program) = input
     
     ??? // TODO
   }

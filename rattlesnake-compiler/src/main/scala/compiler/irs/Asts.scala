@@ -290,20 +290,6 @@ object Asts {
     override def children: List[Ast] = receiverOpt.toList ++ args
   }
 
-  /**
-   * Array indexing: `indexed[arg]`
-   */
-  final case class Indexing(indexed: Expr, arg: Expr) extends FormulaExpr {
-    override def children: List[Ast] = List(indexed, arg)
-  }
-
-  /**
-   * Initialization of an array that contains all the elements in `arrayElems` (in order)
-   */
-  final case class FilledArrayInit(arrayElems: List[Expr]) extends NonFormulaExpr {
-    override def children: List[Ast] = arrayElems
-  }
-
   final case class StructOrClassInstantiation(typeId: TypeIdentifier, initializers: List[FieldInitializer]) extends NonFormulaExpr {
     override def children: List[Ast] = initializers
   }
@@ -462,7 +448,7 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr], isPure: Boolean) extends BaseTypeTree {
+  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends BaseTypeTree {
     override def children: List[Ast] = typeArgs ++ args
   }
 

@@ -58,6 +58,12 @@ final case class Program(
       case _ => None
     }
 
+  def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] =
+    for {
+      subTSupers <- flattenedSupertypesSubstitutions.get(subT)
+      superSubst <- subTSupers.get(superT)
+    } yield superSubst
+
   private def buildSubtypingGraph(): Graph[TypeIdentifier] = {
     val graphB = Graph.Builder[TypeIdentifier]()
     for ((id, sig) <- interfaces ++ classes ++ objects ++ datatypes ++ structs) {
@@ -206,26 +212,30 @@ final case class Program(
   private def buildAndCheckFlattenedSubtypingMaps()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for (subtypeId <- subtypingGraph.topologicalSort().reverse) {
       val subtypeSupertypes = mutable.Map.empty[TypeIdentifier, Map[TypeIdentifier, Type]]
+
+      def checkAndSave(name: TypeIdentifier, newSubst: Map[TypeIdentifier, Type]): Unit = {
+        subtypeSupertypes.get(name) match {
+          case Some(prevSubst) =>
+            if (prevSubst != newSubst) {
+              val supertype2Sig = resolveSignatureAs[RuntimeTypeSignature](name).get
+              val conflictingType1 = supertype2Sig.toType(prevSubst, Map.empty)
+              val conflictingType2 = supertype2Sig.toType(newSubst, Map.empty)
+              er.reportError(s"$subtypeId subtypes both $conflictingType1 and $conflictingType2", positions.get(subtypeId))
+            }
+          case None =>
+            subtypeSupertypes(name) = newSubst
+        }
+      }
+
       val subtypeSig = resolveSignatureAs[RuntimeTypeSignature](subtypeId).get
       for (supertype1 <- subtypeSig.directSupertypes) {
         val supertype1Sig = resolveSignatureAs[RuntimeTypeSignature](supertype1.typeName).get
         val oneStepSubst = (supertype1Sig.typeParams.map(_._1) zip supertype1.typeArgs).toMap
-        subtypeSupertypes(supertype1.typeName) = oneStepSubst
+        checkAndSave(supertype1.typeName, oneStepSubst)
         for (supertype2 <- supertype1Sig.directSupertypes) {
           val superSubst = flattenedSupertypesSubstitutions(supertype1.typeName)(supertype2.typeName)
           val composedSubst = for (tid, tpe) <- superSubst yield tid -> tpe.substitute(oneStepSubst, Map.empty)
-          subtypeSupertypes.get(supertype2.typeName) match {
-            case Some(prevSubst) =>
-              if (prevSubst != composedSubst) {
-                val supertype2Sig = resolveSignatureAs[RuntimeTypeSignature](supertype2.typeName).get
-                val conflictingType1 = supertype2Sig.toType(prevSubst, Map.empty)
-                val conflictingType2 = supertype2Sig.toType(composedSubst, Map.empty)
-                er.reportError(s"$subtypeId subtypes both $conflictingType1 and $conflictingType2, which are incompatible", positions.get(subtypeId))
-              }
-            case None =>
-              subtypeSupertypes(supertype2.typeName) = composedSubst
-          }
-          subtypeSupertypes(supertype2.typeName) = composedSubst
+          checkAndSave(supertype2.typeName, composedSubst)
         }
       }
       flattenedSupertypesSubstitutions(subtypeId) = subtypeSupertypes
@@ -238,7 +248,7 @@ final case class Program(
     case typeVar: Types.TypeVar =>
       throw AssertionError("should not happen: typeVar in typealias definition")
     case primitiveType: Types.PrimitiveType => Set.empty
-    case Types.NamedType(typeName, typeParams, params, isPure) =>
+    case Types.NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
   }
 

@@ -58,25 +58,18 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   }
 
   private val assig = op(Assig).ignored
-  private val doubleEqual = op(Equality).ignored
   private val openParenth = op(OpeningParenthesis).ignored
   private val closeParenth = op(ClosingParenthesis).ignored
   private val openBrace = op(OpeningBrace).ignored
   private val closeBrace = op(ClosingBrace).ignored
   private val openBracket = op(OpeningBracket).ignored
   private val closeBracket = op(ClosingBracket).ignored
-  private val openChevron = op(LessThan).ignored
-  private val closeChevron = op(GreaterThan).ignored
   private val comma = op(Comma).ignored
   private val dot = op(Dot).ignored
   private val colon = op(Colon).ignored
-  private val doubleColon = colon ::: colon
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = (op(Minus) ::: op(GreaterThan)).ignored
-  private val `=>` = (op(Assig) ::: op(GreaterThan)).ignored
-  private val lessThan = op(LessThan).ignored
-  private val greaterThan = op(GreaterThan).ignored
-  private val apostrophe = op()
+  private val apostrophe = op(Apostrophe)
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
@@ -192,14 +185,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
           case primitiveTypeTree: PrimitiveTypeTree =>
             errorReporter.push(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
             None
-          case namedTypeTree@NamedTypeTree(name, typeArgs, args, isPure) if args.nonEmpty =>
+          case namedTypeTree@NamedTypeTree(name, typeArgs, args) if args.nonEmpty =>
             errorReporter.push(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
             None
-          case namedTypeTree: NamedTypeTree =>
-            if (!namedTypeTree.isPure) {
-              errorReporter.push(Warning(Parsing, "impurity marker has no effect in this position", namedTypeTree.getPosition))
-            }
-            Some(namedTypeTree)
+          case namedTypeTree: NamedTypeTree => Some(namedTypeTree)
         }
     }
   } setName "supertypesListOpt"
@@ -236,14 +225,14 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "explicitCaptureSetTree"
 
   private lazy val primOrNamedType: AnyTreeParser[BaseTypeTree] = recursive {
-    highName ::: opt(apostrophe) ::: opt(openChevron ::: repeatWithSep(typeTree, comma) ::: closeChevron)
+    highName ::: opt(apostrophe) ::: opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
       ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
       case baseTypeName ^: apostropheOpt ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
         if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
           errorReporter.push(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
         }
-        primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil), apostropheOpt.isEmpty))
+        primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
     }
   } setName "primOrNamedType"
 
@@ -301,11 +290,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "parenthArgsList"
 
   private lazy val typeParamsWithoutVarianceListOpt = recursive {
-    opt(openChevron ::: repeatWithSepNonZero(highName, comma) ::: closeChevron) map (_.getOrElse(List.empty))
+    opt(openBracket ::: repeatWithSepNonZero(highName, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   } setName "typeParamsWithoutVarianceListOpt"
 
   private lazy val typeParamsPossiblyWithVarianceListOpt = recursive {
-    opt(openChevron ::: repeatWithSepNonZero(typeParam, comma) ::: closeChevron) map (_.getOrElse(List.empty))
+    opt(openBracket ::: repeatWithSepNonZero(typeParam, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   } setName "typeParamsPossiblyWithVarianceListOpt"
 
   private lazy val typeParam = opt(op(Plus, Minus)) ::: highName map {
@@ -317,10 +306,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         case None => Variance.Invariant
       })
   } setName "typeParam"
-
-  private lazy val indexing = recursive {
-    openBracket ::: expr ::: closeBracket
-  } setName "indexing"
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
 
@@ -334,16 +319,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "varRefOrNonPrefixedCall"
 
   private lazy val atomicExpr = recursive {
-    varRefOrNonPrefixedCall OR thisRef OR itRef OR objectRef OR literalValue OR filledArrayInit OR parenthesizedExpr
+    varRefOrNonPrefixedCall OR thisRef OR itRef OR objectRef OR literalValue OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat((dot ::: lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList)) OR indexing) map {
+    atomicExpr ::: repeat((dot ::: lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList))) map {
       case atExpr ^: repeated =>
         repeated.foldLeft(atExpr) {
           case (acc, name ^: Some(optExclMark ^: args)) => Call(Some(acc), name, args, optExclMark.isDefined)
           case (acc, name ^: None) => Select(acc, name)
-          case (acc, index: Expr) => Indexing(acc, index)
         }
     }
   } setName "selectOrIndexingChain"
@@ -351,10 +335,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val parenthesizedExpr = recursive {
     openParenth ::: expr ::: closeParenth
   } setName "parenthesizedExpr"
-
-  private lazy val filledArrayInit = recursive {
-    openBracket ::: repeatWithSep(expr, comma) ::: closeBracket map (FilledArrayInit(_))
-  } setName "filledArrayInit"
 
   private lazy val structOrModuleInstantiation = recursive {
     kw(New).ignored ::: highName ::: openBrace ::: repeatWithSep(fieldInitializer, comma) ::: closeBrace map {
