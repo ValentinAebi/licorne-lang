@@ -75,6 +75,33 @@ class GraphTests {
     gb.build()
   }
 
+  private val graph3: Graph[String] = {
+    val gb = Graph.Builder[String]()
+
+    extension (from: String) def ->(to: String): Unit = {
+      gb.addEdge(from, to)
+    }
+
+    /*
+     A -> B -> C -> D -> I
+     v         v      v"
+     E -> F -> G -> H
+     */
+
+    "A" -> "B"
+    "A" -> "E"
+    "B" -> "C"
+    "C" -> "D"
+    "C" -> "G"
+    "D" -> "I"
+    "E" -> "F"
+    "F" -> "G"
+    "G" -> "H"
+    "I" -> "H"
+
+    gb.build()
+  }
+
   @Test
   def findShortestCycleTest1(): Unit = {
     val acceptableSolutions = rotationsOf(7, 9, 10)
@@ -96,10 +123,24 @@ class GraphTests {
     assertEquals(exp, act)
   }
 
+  @Test
+  def topologicalSortTest(): Unit = {
+    val result = graph3.topologicalSort()
+    assertEquals(graph3.vertices, result.toSet)
+    assertEquals(graph3.vertices.size, result.size)
+    for (from <- graph3.vertices) {
+      val fromIdx = result.indexOf(from)
+      for (to <- graph3.adjSetOf(from)) {
+        val toIdx = result.indexOf(to)
+        assertTrue(s"edge from $from to $to but topological order says $result", fromIdx <= toIdx)
+      }
+    }
+  }
+
   private def rotationsOf[T](seq: T*): Set[Seq[T]] = {
     (for (i <- seq.indices) yield {
       val (left, right) = seq.splitAt(i)
-      right ++ left
+      right ++ left :+ right.head
     }).toSet
   }
 

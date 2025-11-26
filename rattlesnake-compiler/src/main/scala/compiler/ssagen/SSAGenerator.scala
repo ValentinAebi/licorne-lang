@@ -84,10 +84,10 @@ final class SSAGenerator(er: ErrorReporter)
                 stableFields(paramId) = StableField(fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = StructSignature(id, typeParams.convert, stableFields, directSupertypes)
+            val sig = StructSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
-              datatypeSubtypes.getOrElseUpdate(superT, mutable.LinkedHashSet.empty).addOne(id)
+              datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
             }
           case df@Asts.TypeAliasDef(typeName, typeParams, params, rhs) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
@@ -105,13 +105,14 @@ final class SSAGenerator(er: ErrorReporter)
         }
       }
       for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
-        val sig = DatatypeSignature(id, typeParams.convert, directSupertypes,
+        val emptyValsCtx = LocalValuesContext(globalValuesContext)
+        val sig = DatatypeSignature(id, typeParams.convert, directSupertypes.map(mkNamedType(_, emptyValsCtx)),
           datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
         ctxBuilder.saveSignature(sig, df.getPosition)
       }
     }
     val ctx = ctxBuilder.build()
-    ctx.performTypeReferenceChecks()(using er, positionsMapB.result(), SSAGeneration)
+    ctx.performTypeDefChecks()(using er, positionsMapB.result(), SSAGeneration)
     (allFunctionsCollector.toMap, ctx)
   }
 

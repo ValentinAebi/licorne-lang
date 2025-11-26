@@ -82,7 +82,8 @@ object Types {
       case primitiveType: PrimitiveType => primitiveType
       case NamedType(typeName, Nil, Nil, _) if typesSubst.contains(typeName) =>
         typesSubst.apply(typeName)
-      case namedType: NamedType => namedType
+      case NamedType(typeName, typeArgs, args, isPure) =>
+        NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(valsSubst)), isPure)
     }
   }
 

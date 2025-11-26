@@ -16,13 +16,13 @@ object Asts {
     // Each AST is assigned the position of its leftmost token (by the map method of TreeParser)
     private val positionMemo = new OptionalAttribute[Position]
     private val desugaringSource = new OptionalAttribute[Ast]
-    
+
     def withDesugaringSource(desugaringSource: Ast): this.type = {
       setDesugaringSource(desugaringSource)
       positionMemo.setOpt(desugaringSource.getPosition)
       this
     }
-    
+
     def originalAst: Ast = desugaringSource.getOpt match {
       case Some(source) => source
       case None => this
@@ -31,16 +31,16 @@ object Asts {
     export positionMemo.setOpt as setPosition
     export positionMemo.set as setPosition
     export positionMemo.getOpt as getPosition
-    
+
     export desugaringSource.set as setDesugaringSource
     export desugaringSource.getOpt as getDesugaringSource
 
     // FIXME check all implementations of children
     def children: List[Ast]
-    
+
     final def preorderWalk(f: PartialFunction[Ast, Unit]): Unit =
       preorderWalkImpl(f.lift)
-    
+
     private def preorderWalkImpl(f: Ast => Option[Unit]): Unit = {
       f.apply(this)
       children.foreach(_.preorderWalkImpl(f))
@@ -85,17 +85,15 @@ object Asts {
 
   sealed trait TypeDefTree extends TopLevelDef {
     def description: String
-  }
-
-  sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
-    def functions: List[FunDef]
 
     def directSupertypes: List[NamedTypeTree]
   }
 
-  sealed trait UnencapsulatedTypeDefTree extends TypeDefTree {
-    def directSupertypes: List[TypeIdentifier]
+  sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
+    def functions: List[FunDef]
   }
+
+  sealed trait UnencapsulatedTypeDefTree extends TypeDefTree
 
   final case class InterfaceDef(
                                  id: TypeIdentifier,
@@ -134,7 +132,7 @@ object Asts {
   final case class DataTypeDef(
                                 id: TypeIdentifier,
                                 typeParams: List[TypeParam],
-                                directSupertypes: List[TypeIdentifier]
+                                directSupertypes: List[NamedTypeTree]
                               ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"datatype $id"
 
@@ -148,7 +146,7 @@ object Asts {
                               id: TypeIdentifier,
                               typeParams: List[TypeParam],
                               fields: List[StructParam],
-                              directSupertypes: List[TypeIdentifier]
+                              directSupertypes: List[NamedTypeTree]
                             ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"struct $id"
 
@@ -210,6 +208,7 @@ object Asts {
   }
 
   sealed abstract class FormulaExpr extends Expr
+
   sealed abstract class NonFormulaExpr extends Expr
 
   sealed abstract class Literal extends FormulaExpr {

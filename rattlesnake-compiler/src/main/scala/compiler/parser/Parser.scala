@@ -6,7 +6,7 @@ import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
-import compiler.reporting.Errors.{Err, ErrorReporter, Fatal}
+import compiler.reporting.Errors.{Err, ErrorReporter, Fatal, Warning}
 import compiler.reporting.Position
 import identifiers.*
 import lang.*
@@ -93,7 +93,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR structDef OR typeAliasDef
 
   private lazy val interfaceDef: P[InterfaceDef] = {
-    kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: complexSuperTypesListOpt ::: methodsListOpt map {
+    kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
       case id ^: typeParams ^: supertypes ^: functions =>
         InterfaceDef(id, typeParams, functions, supertypes)
     }
@@ -102,7 +102,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val classDef: P[ClassDef] = {
     kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
-      ::: complexSuperTypesListOpt ::: methodsListOpt map {
+      ::: supertypesListOpt ::: methodsListOpt map {
       case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
         ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
     }
@@ -111,20 +111,20 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val objectDef: P[ObjectDef] = {
     kw(Object).ignored ::: highName
       ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
-      ::: complexSuperTypesListOpt ::: methodsListOpt map {
+      ::: supertypesListOpt ::: methodsListOpt map {
       case objectName ^: importedPackagesOpt ^: supertypes ^: functions =>
         ObjectDef(objectName, importedPackagesOpt.getOrElse(Nil), functions, supertypes)
     }
   } setName "objectDef"
 
   private lazy val datatypeDef = {
-    kw(Datatype).ignored ::: highName ::: simpleSuperTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
+    kw(Datatype).ignored ::: highName ::: supertypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
       case id ^: supertypes ^: typeParams => DataTypeDef(id, typeParams, supertypes)
     }
   } setName "datatypeDef"
 
   private lazy val structDef = {
-    kw(Struct).ignored ::: highName ::: simpleSuperTypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
+    kw(Struct).ignored ::: highName ::: supertypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
       case name ^: supertypes ^: typeParams ^: fieldsOpt =>
         StructDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
@@ -185,7 +185,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "methodsListOpt"
 
-  private lazy val complexSuperTypesListOpt = {
+  private lazy val supertypesListOpt = {
     opt(colon ::: repeatWithSepNonZero(primOrNamedType, comma)) map {
       case None => List.empty
       case Some(allSupertypes) =>
@@ -193,17 +193,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
           case primitiveTypeTree: PrimitiveTypeTree =>
             errorReporter.push(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
             None
-          case namedTypeTree: NamedTypeTree => Some(namedTypeTree)
+          case namedTypeTree@NamedTypeTree(name, typeArgs, args, isPure) if args.nonEmpty =>
+            errorReporter.push(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
+            None
+          case namedTypeTree: NamedTypeTree =>
+            if (!namedTypeTree.isPure) {
+              errorReporter.push(Warning(Parsing, "impurity marker has no effect in this position", namedTypeTree.getPosition))
+            }
+            Some(namedTypeTree)
         }
     }
-  } setName "complexSuperTypesListOpt"
-  
-  private lazy val simpleSuperTypesListOpt = {
-    opt(colon ::: repeatWithSepNonZero(highName, comma)) map {
-      case None => List.empty
-      case Some(supertypes) => supertypes
-    }
-  } setName "simpleSuperTypesListOpt"
+  } setName "supertypesListOpt"
 
   private lazy val possiblyNegativeNumericLiteralValue: FinalTreeParser[NumericLiteral] = {
     (numericLiteralValue OR (op(Minus) ::: numericLiteralValue)) map {
@@ -324,7 +324,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "indexing"
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
-  
+
   private lazy val itRef = kw(It) map (_ => ItRef())
 
   private lazy val objectRef = highName map (ObjectRef(_))
@@ -362,7 +362,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case tid ^: initializers => StructOrClassInstantiation(tid, initializers)
     }
   } setName "structOrModuleInstantiation"
-  
+
   private lazy val fieldInitializer = recursive {
     lowName ::: opt(assig ::: expr) map {
       case fieldName ^: Some(rhs) => FullFieldInitializer(fieldName, rhs)

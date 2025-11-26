@@ -59,7 +59,7 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
       }
     }
 
-    if (minCycleLen == Int.MaxValue){
+    if (minCycleLen == Int.MaxValue) {
       None
     } else {
       var cycle = List.empty[N]
@@ -101,6 +101,41 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
     }
   }
 
+  def topologicalSort(): List[N] = {
+
+    val terminationTimes = mutable.Map.empty[N, Int]
+    var time = 0
+    val workstack = mutable.Stack.empty[(Option[N], Iterator[N])]
+    val started = mutable.Set.empty[N]
+
+    // DFS
+    workstack.push(None -> vertices.iterator)
+    while (workstack.nonEmpty) {
+      val (currOpt, iter) = workstack.head
+      currOpt.foreach(started.add)
+      if (iter.hasNext) {
+        val next = iter.next()
+        if (!started(next)) {
+          workstack.push(Some(next) -> adjSetOf(next).iterator)
+        }
+      } else {
+        currOpt.foreach { curr =>
+          terminationTimes(curr) = time
+          time += 1
+        }
+        workstack.pop()
+      }
+    }
+
+    val terminationTimesArray = terminationTimes.toArray
+    terminationTimesArray.sortInPlaceBy(_._2)
+    var ls = List.empty[N]
+    for ((n, _) <- terminationTimesArray) {
+      ls = n :: ls
+    }
+    ls
+  }
+
 }
 
 object Graph {
@@ -124,7 +159,7 @@ object Graph {
 
     def addDescendants(n: N, descendants: IterableOnce[N]): this.type = {
       addVertex(n)
-      for (d <- descendants){
+      for (d <- descendants) {
         addVertex(d)
       }
       adjSets.apply(n).addAll(descendants)
