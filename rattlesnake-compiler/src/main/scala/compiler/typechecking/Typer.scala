@@ -1,6 +1,6 @@
 package compiler.typechecking
 
-import compiler.analysisctx.AnalysisContext
+import compiler.program.Program
 import compiler.irs.SSA
 import compiler.irs.SSA.Instr
 import compiler.pipeline.CompilerStep
@@ -12,9 +12,9 @@ import lang.Values.*
 
 import scala.collection.mutable
 
-final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], AnalysisContext), (Map[FunctionSignature, SSA.Function], AnalysisContext, TypeStore)] {
+final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
 
-  override def apply(input: (Map[FunctionSignature, SSA.Function], AnalysisContext)): (Map[FunctionSignature, SSA.Function], AnalysisContext, TypeStore) = {
+  override def apply(input: (Map[FunctionSignature, SSA.Function], Program)): (Map[FunctionSignature, SSA.Function], Program, TypeStore) = {
     val (functions, analysisCtx) = input
     
     ??? // TODO

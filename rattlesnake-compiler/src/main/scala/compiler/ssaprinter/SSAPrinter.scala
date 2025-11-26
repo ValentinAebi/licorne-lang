@@ -1,22 +1,21 @@
 package compiler.ssaprinter
 
-import compiler.analysisctx.AnalysisContext
+import compiler.program.Program
 import compiler.irs.SSA
 import compiler.pipeline.CompilerStep
 import compiler.valuesconversion.GlobalValuesContext
 import lang.{FunctionSignature, Values}
 
-final class SSAPrinter extends CompilerStep[(Map[FunctionSignature, SSA.Function], AnalysisContext), String] {
+final class SSAPrinter extends CompilerStep[Program, String] {
 
-  override def apply(input: (Map[FunctionSignature, SSA.Function], AnalysisContext)): String = {
-    val (functions, analysisCtx) = input
+  override def apply(program: Program): String = {
 
     given pps: PrettyPrintString = PrettyPrintString(indentGranularity = 3)
 
-    given globalValsCtx: GlobalValuesContext = analysisCtx.globalValuesContext
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     pps.newLine()
-    for ((funSig, ssaFunc) <- functions) {
+    for ((funSig, ssaFunc) <- program.functions) {
       pps.add(funSig.toString).addSpace().startBlock()
       ssaFunc.codeProviderNameOpt.foreach { srcFileName =>
         pps.add("/* src: ").add(srcFileName).add(" */")

@@ -1,6 +1,7 @@
-package compiler.analysisctx
+package compiler.program
 
 import compiler.datastructures.Graph
+import compiler.irs.SSA
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -9,66 +10,53 @@ import compiler.typechecking.TypeCheckingContext
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
+import lang.Field.ReassignableField
 import lang.Types.{NamedType, PrimitiveType, Type}
 import lang.Values.{Formula, IdValue}
+import lang.Variance.*
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-final case class AnalysisContext(
-                                  globalValuesContext: GlobalValuesContext,
-                                  interfaces: Map[TypeIdentifier, InterfaceSignature],
-                                  classes: Map[TypeIdentifier, ClassSignature],
-                                  objects: Map[TypeIdentifier, ObjectSignature],
-                                  datatypes: Map[TypeIdentifier, DatatypeSignature],
-                                  structs: Map[TypeIdentifier, StructSignature],
-                                  typeAliases: Map[TypeIdentifier, TypeAliasSignature]
-                                ) {
+final case class Program(
+                          globalValuesContext: GlobalValuesContext,
+                          interfaces: Map[TypeIdentifier, InterfaceSignature],
+                          classes: Map[TypeIdentifier, ClassSignature],
+                          objects: Map[TypeIdentifier, ObjectSignature],
+                          datatypes: Map[TypeIdentifier, DatatypeSignature],
+                          structs: Map[TypeIdentifier, StructSignature],
+                          typeAliases: Map[TypeIdentifier, TypeAliasSignature],
+                          functions: Map[FunctionSignature, SSA.Function]
+                        ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.Map.empty[TypeIdentifier, mutable.Map[TypeIdentifier, Map[TypeIdentifier, Type]]]
 
-  def performTypeDefChecks()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
-    for ((_, InterfaceSignature(id, typeParams, functions, directSupertypes)) <- interfaces) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
-      checkFunctionSignatures(functions.values)
-      checkSuperinterfaces(id, directSupertypes, positions.get(id))
-    }
-    for ((_, ClassSignature(id, typeParams, fields, importedObjects, functions, directSupertypes)) <- classes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
-      val posOpt = positions.get(id)
-      fields.foreach { (_, field) =>
-        // TODO check variance
-        tcCtx.checkTypesWellDefined(field.tpe)(using er, posOpt, compilationStep)
-      }
-      checkImportedObjects(importedObjects)
-      checkFunctionSignatures(functions.values)
-      checkSuperinterfaces(id, directSupertypes, positions.get(id))
-    }
-    for ((_, ObjectSignature(id, importedObjects, functions, directSupertypes)) <- objects) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, Map.empty)
-      checkImportedObjects(importedObjects)
-      checkFunctionSignatures(functions.values)
-      checkSuperinterfaces(id, directSupertypes, positions.get(id))
-    }
-    for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
-      checkSupertypesOfStructLike(id, directSupertypes, positions.get(id))
-    }
-    for ((_, StructSignature(id, typeParams, fields, directSupertypes)) <- structs) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
-      val posOpt = positions.get(id)
-      fields.foreach { (_, field) =>
-        // TODO check variance
-        tcCtx.checkTypesWellDefined(field.tpe)(using er, posOpt, compilationStep)
-      }
-      checkSupertypesOfStructLike(id, directSupertypes, posOpt)
-    }
+  def checkDefinitions()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    checkInterfaceSignatures()
+    checkClassSignatures()
+    checkObjectSignatures()
+    checkDatatypeSignatures()
+    checkStructSignatures()
     checkSubtypingCyclicity()
     checkObjectImportsCyclicity()
     checkTypeAliasesCyclicity()
     er.displayAndTerminateIfErrors()
     buildAndCheckFlattenedSubtypingMaps()
   }
+
+  def resolveSignature(typeId: TypeIdentifier): Option[TypeSignature] =
+    (interfaces.get(typeId)
+      orElse classes.get(typeId)
+      orElse objects.get(typeId)
+      orElse datatypes.get(typeId)
+      orElse structs.get(typeId)
+      orElse typeAliases.get(typeId))
+
+  def resolveSignatureAs[S <: TypeSignature : ClassTag](typeId: TypeIdentifier): Option[S] =
+    resolveSignature(typeId) match {
+      case Some(sig: S) => Some(sig)
+      case _ => None
+    }
 
   private def buildSubtypingGraph(): Graph[TypeIdentifier] = {
     val graphB = Graph.Builder[TypeIdentifier]()
@@ -77,6 +65,52 @@ final case class AnalysisContext(
       graphB.addDescendants(id, sig.directSupertypes.map(_.typeName))
     }
     graphB.build()
+  }
+
+  private def checkInterfaceSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, InterfaceSignature(id, typeParams, functions, directSupertypes)) <- interfaces) {
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+
+      checkSuperinterfaces(id, directSupertypes, positions.get(id))
+    }
+  }
+
+  private def checkClassSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, ClassSignature(id, typeParams, fields, importedObjects, functions, directSupertypes)) <- classes) {
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+
+      val posOpt = positions.get(id)
+      checkFields(fields.values, posOpt)
+      checkImportedObjects(importedObjects)
+      checkSuperinterfaces(id, directSupertypes, positions.get(id))
+    }
+  }
+
+  private def checkObjectSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, ObjectSignature(id, importedObjects, functions, directSupertypes)) <- objects) {
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, Map.empty)
+
+      checkImportedObjects(importedObjects)
+      checkSuperinterfaces(id, directSupertypes, positions.get(id))
+    }
+  }
+
+  private def checkDatatypeSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+
+      checkSupertypesOfStructLike(id, directSupertypes, positions.get(id))
+    }
+  }
+
+  private def checkStructSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, StructSignature(id, typeParams, fields, directSupertypes)) <- structs) {
+      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap)
+
+      val posOpt = positions.get(id)
+      checkFields(fields.values, posOpt)
+      checkSupertypesOfStructLike(id, directSupertypes, posOpt)
+    }
   }
 
   private def checkImportedObjects(importedObjects: mutable.LinkedHashSet[IdValue])
@@ -91,10 +125,27 @@ final case class AnalysisContext(
     }
   }
 
+  private def checkFields(fields: Iterable[Field], posOpt: Option[Position])
+                         (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+    fields.foreach { field =>
+      tcCtx.varianceOf(field.tpe.baseType).foreach {
+        case Invariant => ()
+        case Covariant =>
+          if (field.isInstanceOf[ReassignableField]) {
+            er.reportError(s"variance error: reassignable field ${field.id} has covariant type ${field.tpe.baseType}", posOpt)
+          }
+        case Contravariant =>
+          er.reportError(s"variance error: field ${field.id} has contravariant type ${field.tpe.baseType}", posOpt)
+      }
+      tcCtx.checkTypesWellDefined(field.tpe)(using er, posOpt, compilationStep)
+    }
+  }
+
   private def checkFunctionSignatures(functions: Iterable[FunctionSignature])(using compilationStep: CompilationStep): Unit = {
     for (funSig <- functions) {
       // TODO check the types in signature
       // TODO check overrides (presence of the method, parameters, type parameters, return type, visibility)
+      // TODO check variance
     }
   }
 
@@ -122,20 +173,6 @@ final case class AnalysisContext(
       }
     }
   }
-
-  def resolveSignature(typeId: TypeIdentifier): Option[TypeSignature] =
-    (interfaces.get(typeId)
-      orElse classes.get(typeId)
-      orElse objects.get(typeId)
-      orElse datatypes.get(typeId)
-      orElse structs.get(typeId)
-      orElse typeAliases.get(typeId))
-
-  def resolveSignatureAs[S <: TypeSignature : ClassTag](typeId: TypeIdentifier): Option[S] =
-    resolveSignature(typeId) match {
-      case Some(sig: S) => Some(sig)
-      case _ => None
-    }
 
   private def checkSubtypingCyclicity()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     subtypingGraph.findShortestCycle().foreach { cycle =>
@@ -179,7 +216,7 @@ final case class AnalysisContext(
           val composedSubst = for (tid, tpe) <- superSubst yield tid -> tpe.substitute(oneStepSubst, Map.empty)
           subtypeSupertypes.get(supertype2.typeName) match {
             case Some(prevSubst) =>
-              if (prevSubst != composedSubst){
+              if (prevSubst != composedSubst) {
                 val supertype2Sig = resolveSignatureAs[RuntimeTypeSignature](supertype2.typeName).get
                 val conflictingType1 = supertype2Sig.toType(prevSubst, Map.empty)
                 val conflictingType2 = supertype2Sig.toType(composedSubst, Map.empty)
@@ -220,7 +257,7 @@ final case class AnalysisContext(
 
 }
 
-object AnalysisContext {
+object Program {
 
   final class Builder(er: ErrorReporter) {
     private val signatures = mutable.Map.empty[TypeIdentifier, TypeSignature]
@@ -237,7 +274,7 @@ object AnalysisContext {
       }
     }
 
-    def build(): AnalysisContext = {
+    def build(allFunctions: Map[FunctionSignature, SSA.Function]): Program = {
       val interfacesB = Map.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = Map.newBuilder[TypeIdentifier, ObjectSignature]
@@ -254,14 +291,15 @@ object AnalysisContext {
           case sig: TypeAliasSignature => typeAliasesB.addOne(id, sig)
         }
       }
-      AnalysisContext(
+      Program(
         globalValuesContext,
         interfacesB.result(),
         classesB.result(),
         packagesB.result(),
         datatypes.result(),
         structsB.result(),
-        typeAliasesB.result()
+        typeAliasesB.result(),
+        allFunctions
       )
     }
   }

@@ -4,6 +4,7 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
+import compiler.ssagen.SSAGenerator
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,7 +108,7 @@ class AnalyzerTests(fileName: String) {
     }
 
     val er = ErrorReporter(errorsConsumer, exitCalled)
-    val pipeline = TasksPipelines.typeChecker(er, okReporter = _ => ())
+    val pipeline = TasksPipelines.multiFrontEnd(er).andThen(SSAGenerator(er))
     try {
       pipeline.apply(srcFiles)
     } catch {
@@ -118,7 +119,7 @@ class AnalyzerTests(fileName: String) {
     val existsUnexpectedErrors = errors.exists(!_._2)
     if (errorsAreMissing || (existsUnexpectedErrors && !ignoreAdditionalErrorsFlag.elem) || fatalErrorOccured) {
       fail(
-        if fatalErrorOccured then "A fatal error occured\n\n" else "" +
+        if fatalErrorOccured then "A fatal error occurred\n\n" else "" +
           "\nExpected errors:\n" +
           expectedErrors.map(markOkOrNot).mkString("\n") +
           "\n\nActual errors:\n" +

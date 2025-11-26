@@ -1,0 +1,9 @@
+
+interface List<T>
+interface I<T>
+interface J<S> : I<List<S>>
+interface K<T> : I<List<List<T>>>
+class Foo1 : J<Int>, K<Int>          //> E : Foo1 subtypes both I<List<Int>> and I<List<List<Int>>>, which are incompatible
+class Foo2 : K<String>, J<List<String>>
+class Foo3 : K<Int>, J<List<String>> //> E : Foo3 subtypes both I<List<List<Int>>> and I<List<List<String>>>, which are incompatible
+class Foo4 : I<String>, List<Int>

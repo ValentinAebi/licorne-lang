@@ -1,6 +1,6 @@
 package compiler.typechecking
 
-import compiler.analysisctx.AnalysisContext
+import compiler.program.Program
 import identifiers.TypeIdentifier
 import lang.Types.{BaseType, NamedType, RefinedType, Type}
 import lang.Variance

@@ -1,6 +1,6 @@
 package compiler.typechecking
 
-import compiler.analysisctx.AnalysisContext
+import compiler.program.Program
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
@@ -9,7 +9,7 @@ import lang.Types.*
 import lang.Values.{And, Formula}
 import lang.{TypeAliasSignature, Types, Values, Variance}
 
-final class TypeCheckingContext(val analysisContext: AnalysisContext, val typeParams: Map[TypeIdentifier, Variance]) {
+final class TypeCheckingContext(val analysisContext: Program, val typeParams: Map[TypeIdentifier, Variance]) {
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
@@ -62,6 +62,11 @@ final class TypeCheckingContext(val analysisContext: AnalysisContext, val typePa
         typeArgs.foreach(checkTypesWellDefined)
         args.foreach(checkTypesWellDefined)
       }
+  }
+  
+  def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
+    case NamedType(typeName, Nil, Nil, _) => typeParams.get(typeName)
+    case _ => None
   }
 
   private def singOrPlural(cnt: Int, sing: String, plur: String): String =

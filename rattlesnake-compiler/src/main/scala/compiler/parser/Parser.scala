@@ -6,8 +6,7 @@ import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
-import compiler.reporting.Errors.{Err, ErrorReporter, Fatal, Warning}
-import compiler.reporting.Position
+import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import identifiers.*
 import lang.*
 import lang.Keyword.*
@@ -428,7 +427,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     } else {
       ll1Iterator = LL1Iterator.from(positionedTokens)
       source.extract(ll1Iterator) match {
-        case Some(source) => source.setName(srcName)
+        case Some(source) =>
+          errorReporter.displayAndTerminateIfErrors()
+          source.setName(srcName)
         case None => errorReporter.displayErrorsAndTerminate()
       }
     }

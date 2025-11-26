@@ -36,11 +36,17 @@ object TasksPipelines {
     ???
   }
 
+  def multiFrontEnd(er: ErrorReporter): CompilerStep[List[SourceCodeProvider], List[Asts.Source]] = MultiStep(frontend(er))
+
+  def frontend(er: ErrorReporter): CompilerStep[SourceCodeProvider, Asts.Source] = {
+    new Lexer(er).andThen(new Parser(er))
+  }
+
   private def compilerImpl(outputDirectoryPath: Path,
                            runtimeDirPath: Path,
                            agentDirPath: Path,
                            er: ErrorReporter) = {
-    MultiStep(frontend(er))
+    multiFrontEnd(er)
       .andThen(SSAGenerator(er))
       // FIXME this implementation is temporary
       .andThen(SSAPrinter())
@@ -51,7 +57,7 @@ object TasksPipelines {
   private final class MissingCompiler(er: ErrorReporter, printProgram: Boolean) extends CompilerStep[Any, Nothing] {
     override def apply(input: Any): Nothing = {
       println("Compiler not implemented")
-      if (printProgram){
+      if (printProgram) {
         println("Last representation of the program before exiting was:")
         println(caseClassesFormat(input.toString))
       }
@@ -122,10 +128,6 @@ object TasksPipelines {
       i += 1
     }
     -1
-  }
-
-  private def frontend(er: ErrorReporter): CompilerStep[SourceCodeProvider, Asts.Source] = {
-    new Lexer(er).andThen(new Parser(er))
   }
 
   private def defaultErrorReporter: ErrorReporter =

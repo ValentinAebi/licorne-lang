@@ -134,8 +134,9 @@ final case class StructSignature(
   extends RuntimeTypeSignature, ConcreteTypeSignature, UnencapsulatedTypeSignature, TypeParametricTypeSignature
 
 enum Field {
-  case ReassignableField(tpe: Type)
-  case StableField(tpe: Type, value: IdValue)
+  case ReassignableField(id: FunOrVarId, tpe: Type)
+  case StableField(id: FunOrVarId, tpe: Type, value: IdValue)
 
+  def id: FunOrVarId
   def tpe: Type
 }

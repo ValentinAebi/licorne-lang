@@ -1,6 +1,6 @@
 package compiler.ssagen
 
-import compiler.analysisctx.AnalysisContext
+import compiler.program.Program
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -19,10 +19,10 @@ import scala.collection.mutable
 
 
 final class SSAGenerator(er: ErrorReporter)
-  extends CompilerStep[List[Asts.Source], (Map[FunctionSignature, SSA.Function], AnalysisContext)] {
+  extends CompilerStep[List[Asts.Source], Program] {
 
-  override def apply(input: List[Asts.Source]): (Map[FunctionSignature, SSA.Function], AnalysisContext) = {
-    val ctxBuilder = AnalysisContext.Builder(er)
+  override def apply(input: List[Asts.Source]): Program = {
+    val ctxBuilder = Program.Builder(er)
     val globalValuesContext = ctxBuilder.globalValuesContext
     val valuesGen = globalValuesContext.valuesGen
     val allFunctionsCollector = mutable.Map.empty[FunctionSignature, SSA.Function]
@@ -58,11 +58,11 @@ final class SSAGenerator(er: ErrorReporter)
             val importedObjects = mutable.LinkedHashSet.empty[IdValue]
             params.foreach {
               case Asts.VarParam(paramId, paramTypeTree) =>
-                fields(paramId) = ReassignableField(mkType(paramTypeTree, paramsCtx))
+                fields(paramId) = ReassignableField(paramId, mkType(paramTypeTree, paramsCtx))
               case Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newParam(id, ConstructorFunId, paramId)
                 val paramType = mkType(paramTypeTree, paramsCtx)
-                fields(paramId) = StableField(paramType, fieldValue)
+                fields(paramId) = StableField(paramId, paramType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
               case Asts.ObjectImport(objectId) =>
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
@@ -81,7 +81,7 @@ final class SSAGenerator(er: ErrorReporter)
               case Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newParam(id, ConstructorFunId, paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
-                stableFields(paramId) = StableField(fieldType, fieldValue)
+                stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
             val sig = StructSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
@@ -111,9 +111,10 @@ final class SSAGenerator(er: ErrorReporter)
         ctxBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val ctx = ctxBuilder.build()
-    ctx.performTypeDefChecks()(using er, positionsMapB.result(), SSAGeneration)
-    (allFunctionsCollector.toMap, ctx)
+    val ctx = ctxBuilder.build(allFunctionsCollector.toMap)
+    ctx.checkDefinitions()(using er, positionsMapB.result(), SSAGeneration)
+    er.displayAndTerminateIfErrors()
+    ctx
   }
 
   private def collectFunctions(functionsProvider: Asts.EncapsulatedTypeDefTree, globalValsCtx: GlobalValuesContext,
