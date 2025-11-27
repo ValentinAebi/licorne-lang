@@ -1,0 +1,13 @@
+
+class CovVar[+T](var a: T)      //> E : variance error: covariant type parameter T in invariant position
+class CovStable[+T](a: T)
+class ContraVar[-T](var a: T)   //> E : variance error: contravariant type parameter T in invariant position
+class ContraStable[-T](a: T)    //> E : variance error: contravariant type parameter T in covariant position
+class InvVar[T](var a: T)
+class InvStable[T](a: T)
+
+interface List[S]
+class MutList[+U] : List[U]     //> E : variance error: covariant type parameter U in invariant position
+
+interface A[+P]
+class B[Q] : A[Q]

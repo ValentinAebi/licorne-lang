@@ -1,0 +1,15 @@
+
+interface Covariant[+T] {
+   fn accept(this, t: T)            //> E : variance error: covariant type parameter T in contravariant position
+   fn produce(this) -> T
+}
+
+interface Contravariant[-T] {
+   fn accept(this, t: T)
+   fn produce(this) -> T            //> E : variance error: contravariant type parameter T in covariant position
+}
+
+interface Invariant[T] {
+   fn accept(this, t: T)
+   fn produce(this) -> T
+}

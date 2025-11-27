@@ -1,10 +1,10 @@
 package compiler.ssaprinter
 
-import compiler.program.Program
 import compiler.irs.SSA
 import compiler.pipeline.CompilerStep
+import compiler.program.Program
 import compiler.valuesconversion.GlobalValuesContext
-import lang.{FunctionSignature, Values}
+import lang.Values
 
 final class SSAPrinter extends CompilerStep[Program, String] {
 
@@ -29,7 +29,12 @@ final class SSAPrinter extends CompilerStep[Program, String] {
           }
       }
       pps.add(" */").newLine()
-      addAllInstr(ssaFunc.body, printIfEmpty = true)
+      ssaFunc.bodyOpt match {
+        case Some(body) =>
+          addAllInstr(body, printIfEmpty = true)
+        case None =>
+          pps.add("/* abstract */")
+      }
       pps.endBlock().newLine().newLine()
     }
     pps.built

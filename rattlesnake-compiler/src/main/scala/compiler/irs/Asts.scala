@@ -169,7 +169,7 @@ object Asts {
 
   sealed trait FunctionParam extends Ast {
     val paramId: FunOrVarId
-    val paramTypeTree: TypeTree
+    val paramTypeTreeOpt: Option[TypeTree]
   }
 
   sealed trait StructParam extends Ast {
@@ -183,11 +183,21 @@ object Asts {
   }
 
   final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, FunctionParam {
+    override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
+
     override def children: List[Ast] = List(paramTypeTree)
   }
 
   final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, StructParam, FunctionParam, TypeAliasParam {
+    override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
+
     override def children: List[Ast] = List(paramTypeTree)
+  }
+
+  final case class ThisParam(paramTypeTreeOpt: Option[TypeTree]) extends FunctionParam {
+    override val paramId: FunOrVarId = ThisId
+
+    override def children: List[Ast] = paramTypeTreeOpt.toList
   }
 
   final case class ObjectImport(objectId: TypeIdentifier) extends ClassParam {

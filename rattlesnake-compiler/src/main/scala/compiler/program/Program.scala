@@ -8,7 +8,7 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.TypeCheckingContext
 import compiler.valuesconversion.GlobalValuesContext
-import identifiers.TypeIdentifier
+import identifiers.{ThisId, TypeIdentifier}
 import lang.*
 import lang.Field.ReassignableField
 import lang.Types.{NamedType, PrimitiveType, Type}
@@ -139,38 +139,30 @@ final case class Program(
   private def checkFields(fields: Iterable[Field], posOpt: Option[Position])
                          (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     fields.foreach { field =>
-      tcCtx.varianceOf(field.tpe.baseType).foreach {
-        case Invariant => ()
-        case Covariant =>
-          if (field.isInstanceOf[ReassignableField]) {
-            er.reportError(s"variance error: reassignable field ${field.id} has covariant type ${field.tpe.baseType}", posOpt)
-          }
-        case Contravariant =>
-          er.reportError(s"variance error: field ${field.id} has contravariant type ${field.tpe.baseType}", posOpt)
-      }
-      tcCtx.checkTypesWellDefined(field.tpe, posOpt)
+      val variance = if field.isStable then Covariant else Invariant
+      tcCtx.checkTypesWellDefined(field.tpe, Some(variance), posOpt)
     }
   }
 
   private def checkFunctionSignatures()(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {
-    // TODO check the types in signature
     // TODO check overrides (presence of the method, parameters, type parameters, return type, visibility)
     for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, body, posOpt)) <- functions) {
       val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
 
       given tcCtx: TypeCheckingContext = TypeCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
 
-      for ((paramId, paramType) <- funParamsInclThis) {
-        tcCtx.checkTypesWellDefined(paramType, posOpt)
-        // TODO check variance (and be careful about "composition", e.g. double contravariance)
+      tcCtx.checkTypesWellDefined(funParamsInclThis.head._2, None, posOpt)
+      for ((paramId, paramType) <- funParamsInclThis.tail) {
+        tcCtx.checkTypesWellDefined(paramType, Some(Contravariant), posOpt)
       }
+      tcCtx.checkTypesWellDefined(funRetType, Some(Covariant), posOpt)
     }
   }
 
   private def checkSuperinterfaces(childTypeId: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
                                   (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT, posOpt)
+      tcCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
         case _: InterfaceSignature => ()
         case _ => er.reportError(s"interface not found: ${superT.typeName}", posOpt)
@@ -181,7 +173,7 @@ final case class Program(
   private def checkSupertypesOfStructLike(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
                                          (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT, posOpt)
+      tcCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
         case DatatypeSignature(superTypeId, _, _, subOfSuper) =>
           if (!subOfSuper.contains(id)) {

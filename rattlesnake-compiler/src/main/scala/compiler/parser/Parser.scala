@@ -6,7 +6,7 @@ import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
-import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
+import compiler.reporting.Errors.{Err, ErrorReporter}
 import identifiers.*
 import lang.*
 import lang.Keyword.*
@@ -110,15 +110,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "objectDef"
 
   private lazy val datatypeDef = {
-    kw(Datatype).ignored ::: highName ::: supertypesListOpt ::: typeParamsPossiblyWithVarianceListOpt map {
-      case id ^: supertypes ^: typeParams => DataTypeDef(id, typeParams, supertypes)
+    kw(Datatype).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt map {
+      case id ^: typeParams ^: supertypes => DataTypeDef(id, typeParams, supertypes)
     }
   } setName "datatypeDef"
 
   private lazy val structDef = {
-    kw(Struct).ignored ::: highName ::: supertypesListOpt ::: typeParamsPossiblyWithVarianceListOpt
+    kw(Struct).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt
       ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
-      case name ^: supertypes ^: typeParams ^: fieldsOpt =>
+      case name ^: typeParams ^: supertypes ^: fieldsOpt =>
         StructDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
     }
   } setName "structDef"
@@ -158,9 +158,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "funOrClassParam"
 
-  private lazy val thisParam: P[SimpleParam] = {
-    kw(This).ignored ::: colon ::: typeTree map {
-      case tpe => SimpleParam(ThisId, tpe)
+  private lazy val thisParam: P[ThisParam] = {
+    kw(This).ignored ::: opt(colon ::: typeTree) map {
+      case tpeOpt => ThisParam(tpeOpt)
     }
   } setName "thisParam"
 

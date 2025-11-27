@@ -23,7 +23,7 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNode
   }
   
-  final case class Function(signature: FunctionSignature, body: List[Instr], posOpt: Option[Position])
+  final case class Function(signature: FunctionSignature, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
 
   sealed trait ControlFlowInstr extends Instr
   final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends ControlFlowInstr

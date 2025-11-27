@@ -1,10 +1,10 @@
 package compiler.ssagen
 
-import compiler.program.Program
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
+import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
@@ -39,17 +39,19 @@ final class SSAGenerator(er: ErrorReporter)
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
+            val noFunctionsSig = InterfaceSignature(id, typeParams.convert, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
-            val sig = InterfaceSignature(id, typeParams.convert, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val sig = noFunctionsSig.copy(functions = funcs)
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
-            val sig = ObjectSignature(id, importedObjectsVals, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
+            val sig = noFunctionsSig.copy(functions = funcs)
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ClassDef(id, typeParams, params, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
@@ -67,9 +69,10 @@ final class SSAGenerator(er: ErrorReporter)
               case Asts.ObjectImport(objectId) =>
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
-            val functionsMap = collectFunctions(df, globalValuesContext, allFunctionsCollector)
+            val noFunctionsSig = ClassSignature(id, typeParams.convert, fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
-            val sig = ClassSignature(id, typeParams.convert, fields, importedObjects, funcs, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val sig = noFunctionsSig.copy(functions = funcs)
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(df)
@@ -117,10 +120,13 @@ final class SSAGenerator(er: ErrorReporter)
     ctx
   }
 
-  private def collectFunctions(functionsProvider: Asts.EncapsulatedTypeDefTree, globalValsCtx: GlobalValuesContext,
-                               allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
-                              ): Map[FunOrVarId, (FunctionSignature, Option[SSA.Function])] = {
-    val functions = mutable.Map.empty[FunOrVarId, (FunctionSignature, Option[SSA.Function])]
+  private def collectFunctions(
+                                functionsProvider: Asts.EncapsulatedTypeDefTree,
+                                functionsProviderIncompleteSig: EncapsulatedTypeSignature,
+                                globalValsCtx: GlobalValuesContext,
+                                allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
+                              ): Map[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+    val functions = mutable.Map.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (func <- functionsProvider.functions) {
       if (functions.contains(func.id)) {
         reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
@@ -147,7 +153,9 @@ final class SSAGenerator(er: ErrorReporter)
             reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
           } else {
             val paramValue = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, paramTree.paramId)
-            val paramType = mkType(paramTree.paramTypeTree, funcLocalValsCtx)
+            val paramType =
+              paramTree.paramTypeTreeOpt.map(mkType(_, funcLocalValsCtx))
+                .getOrElse(functionsProviderIncompleteSig.toType(Map.empty, Map.empty))
             paramsInclThis(paramValue) = paramType
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, ReassigPermission.Val, Some(paramType))
           }
@@ -158,25 +166,23 @@ final class SSAGenerator(er: ErrorReporter)
           case None => PrimitiveType.VoidType
         }
         val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
-        val bodyOpt = func.bodyOpt.map(generateSSAFunc(sig, _, funcLocalValsCtx, func.getPosition))
+        val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
         functions(func.id) = (sig, bodyOpt)
-        bodyOpt.foreach { body =>
-          allFunctionsCollector(sig) = body
-        }
+        allFunctionsCollector(sig) = bodyOpt
       }
     }
     er.displayAndTerminateIfErrors()
     functions.toMap
   }
 
-  private def createIdToSigMapAndCheckBodyExists(functionsMap: Map[FunOrVarId, (FunctionSignature, Option[SSA.Function])],
+  private def createIdToSigMapAndCheckBodyExists(functionsMap: Map[FunOrVarId, (FunctionSignature, SSA.Function)],
                                                  funPos: Option[Position], isInterface: Boolean): Map[FunOrVarId, FunctionSignature] = {
     val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
     for ((id, (sig, optSSA)) <- functionsMap) {
       resultB.addOne(id -> sig)
-      if (isInterface && optSSA.isDefined) {
+      if (isInterface && optSSA.bodyOpt.isDefined) {
         reportError("methods declared in interfaces are not allowed to have a body", funPos)
-      } else if (!isInterface && optSSA.isEmpty) {
+      } else if (!isInterface && optSSA.bodyOpt.isEmpty) {
         reportError("methods declared in classes and objects must have a body", funPos)
       }
     }
@@ -187,12 +193,15 @@ final class SSAGenerator(er: ErrorReporter)
     case Asts.TypeParam(id, variance) => (id, variance)
   }
 
-  private def generateSSAFunc(sig: FunctionSignature, body: Asts.Block, valsCtx: LocalValuesContext, posOpt: Option[Position]): SSA.Function = {
-    val ssaInstructionsList = mutable.ListBuffer.empty[SSA.Instr]
-    for (stat <- body.stats) {
-      generateSSA(stat, valsCtx, ssaInstructionsList)
-    }
-    SSA.Function(sig, ssaInstructionsList.toList, posOpt)
+  private def generateSSAFunc(sig: FunctionSignature, bodyOpt: Option[Asts.Block], valsCtx: LocalValuesContext, posOpt: Option[Position]): SSA.Function = bodyOpt match {
+    case Some(body) =>
+      val ssaInstructionsList = mutable.ListBuffer.empty[SSA.Instr]
+      for (stat <- body.stats) {
+        generateSSA(stat, valsCtx, ssaInstructionsList)
+      }
+      SSA.Function(sig, Some(ssaInstructionsList.toList), posOpt)
+    case None =>
+      SSA.Function(sig, None, posOpt)
   }
 
   private def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[Instr]): Unit = {
@@ -534,7 +543,7 @@ final class SSAGenerator(er: ErrorReporter)
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
   }
-  
+
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext): NamedType = {
     val Asts.NamedTypeTree(name, typeParams, params) = namedTypeTree
     NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)))

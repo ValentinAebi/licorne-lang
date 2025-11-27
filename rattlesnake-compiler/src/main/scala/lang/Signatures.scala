@@ -2,8 +2,8 @@ package lang
 
 import identifiers.*
 import lang.Field.StableField
+import lang.Types.{NamedType, Type}
 import lang.Values.{Formula, IdValue}
-import lang.Types.{BaseType, NamedType, Type}
 
 import scala.collection.mutable
 
@@ -138,5 +138,11 @@ enum Field {
   case StableField(id: FunOrVarId, tpe: Type, value: IdValue)
 
   def id: FunOrVarId
+
   def tpe: Type
+
+  def isStable: Boolean = this match {
+    case _: ReassignableField => false
+    case _: StableField => true
+  }
 }
