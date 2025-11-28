@@ -181,16 +181,17 @@ object Asts {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
-
-  final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, FunctionParam {
+  
+  sealed trait NonThisFunctionParam extends FunctionParam {
+    val paramTypeTree: TypeTree
     override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
+  }
 
+  final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, NonThisFunctionParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, StructParam, FunctionParam, TypeAliasParam {
-    override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
-
+  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, StructParam, NonThisFunctionParam, TypeAliasParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 

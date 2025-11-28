@@ -6,6 +6,11 @@ enum Visibility extends Enum[Visibility] {
   def isPublic: Boolean = this == Public
   
   def isPrivate: Boolean = this == Private
+  
+  def eqOrMorePermissive(that: Visibility): Boolean = (this, that) match {
+    case (Public, _) | (_, Private) => true
+    case _ => this == that
+  }
 
   override def toString: String = name().toLowerCase
   

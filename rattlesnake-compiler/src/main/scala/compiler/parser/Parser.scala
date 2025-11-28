@@ -337,7 +337,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "parenthesizedExpr"
 
   private lazy val structOrModuleInstantiation = recursive {
-    kw(New).ignored ::: highName ::: openBrace ::: repeatWithSep(fieldInitializer, comma) ::: closeBrace map {
+    kw(New).ignored ::: highName ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
       case tid ^: initializers => StructOrClassInstantiation(tid, initializers)
     }
   } setName "structOrModuleInstantiation"

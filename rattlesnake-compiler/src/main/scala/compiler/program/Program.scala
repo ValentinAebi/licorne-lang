@@ -8,12 +8,12 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.TypeCheckingContext
 import compiler.valuesconversion.GlobalValuesContext
-import identifiers.{ThisId, TypeIdentifier}
+import identifiers.TypeIdentifier
 import lang.*
-import lang.Field.ReassignableField
-import lang.Types.{NamedType, PrimitiveType, Type}
-import lang.Values.{Formula, IdValue}
+import lang.Types.{BaseType, NamedType, PrimitiveType, RefinedType, Type}
+import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
+import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -46,6 +46,7 @@ final case class Program(
     er.displayAndTerminateIfErrors()
 
     checkFunctionSignatures()
+    checkOverrides()
     er.displayAndTerminateIfErrors()
   }
 
@@ -68,6 +69,35 @@ final case class Program(
       subTSupers <- flattenedSupertypesSubstitutions.get(subT)
       superSubst <- subTSupers.get(superT)
     } yield superSubst
+
+  def desugarType(tpe: Type): Type = {
+    val desugaredType = tpe match {
+      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
+        desugarType(baseTypeRaw) match {
+          case RefinedType(baseTypeDes, itValueDes, predicateDes) =>
+            RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
+          case baseTypeDes: BaseType =>
+            RefinedType(baseTypeDes, itValueRaw, predicateRaw)
+        }
+      case primitiveType: Types.PrimitiveType => primitiveType
+      case Types.NamedType(typeName, typeArgs, args) =>
+        typeAliases.get(typeName) match {
+          case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs)) =>
+            val typesSubst = typeParams.map((id, variance) => id).zipCommons(typeArgs).toMap
+            val valsSubst = params.map {
+              case (paramId, (paramType, paramVal)) => paramVal
+            }.zipCommons(args).toMap
+            rhs.substitute(typesSubst, valsSubst)
+          case None => tpe
+        }
+      case typeVar: Types.TypeVar => typeVar
+    }
+    if desugaredType == tpe then tpe
+    else desugarType(desugaredType)
+  }
+
+  extension [T](l: Iterable[T]) private def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
+    l.take(r.size).zip(r.take(l.size))
 
   private def buildSubtypingGraph(): Graph[TypeIdentifier] = {
     val graphB = Graph.Builder[TypeIdentifier]()
@@ -145,17 +175,74 @@ final case class Program(
   }
 
   private def checkFunctionSignatures()(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {
-    // TODO check overrides (presence of the method, parameters, type parameters, return type, visibility)
-    for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, body, posOpt)) <- functions) {
+    for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, funBodyOpt, funPosOpt)) <- functions) {
       val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
 
       given tcCtx: TypeCheckingContext = TypeCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
 
-      tcCtx.checkTypesWellDefined(funParamsInclThis.head._2, None, posOpt)
-      for ((paramId, paramType) <- funParamsInclThis.tail) {
-        tcCtx.checkTypesWellDefined(paramType, Some(Contravariant), posOpt)
+      val conflictingTypeParams = funTypeParams.intersect(ownerSig.typeParams)
+      if (conflictingTypeParams.nonEmpty) {
+        er.reportError(s"type parameters ${conflictingTypeParams.mkString(",")} conflict with type parameters of $ownerName", funPosOpt)
       }
-      tcCtx.checkTypesWellDefined(funRetType, Some(Covariant), posOpt)
+      for ((paramId, paramType) <- funParamsInclThis.tail) {
+        tcCtx.checkTypesWellDefined(paramType, Some(Contravariant), funPosOpt)
+      }
+      tcCtx.checkTypesWellDefined(funRetType, Some(Covariant), funPosOpt)
+    }
+  }
+
+  private def checkOverrides()(using er: ErrorReporter, typeDefPositions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((subT, subTSupertypes) <- flattenedSupertypesSubstitutions; (superT, typeTypeParamsSubst) <- subTSupertypes) {
+      val subTSig = resolveSignature(subT).get
+      val superTSig = resolveSignature(superT).get
+      (subTSig, superTSig) match {
+        case (subTSig: EncapsulatedTypeSignature, superTSig: EncapsulatedTypeSignature) =>
+          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility)) <- superTSig.functions) {
+            subTSig.functions.get(funId) match {
+              case None =>
+                er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", typeDefPositions.get(subT))
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility)) =>
+                val funPosOpt = functions.get(subFunSig).flatMap(_.posOpt)
+                val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
+                val paramsLenMatch = subFunParams.size == superFunParams.size
+                if (!typeParamsLenMatch) {
+                  er.reportError(s"length of type parameters list in method $funId in $subT does not match its length in its supertype $superT", funPosOpt)
+                }
+                if (!paramsLenMatch) {
+                  er.reportError(s"length of parameters list in method $funId in $subT does not match its length in its supertype $superT", funPosOpt)
+                }
+                if (typeParamsLenMatch && paramsLenMatch) {
+                  val funTypeParamsSubst = superFunTypeParams zip subFunTypeParams.map(NamedType(_, List.empty, List.empty))
+                  val typeParamsSubst = typeTypeParamsSubst ++ funTypeParamsSubst
+                  val valsSubst = mutable.Map.empty[IdValue, IdValue]
+                  // TODO do not forget to check refinements on the receiver (the base type is not checked here)
+                  val superTSubst = superTSig.toType(typeParamsSubst, Map.empty)
+                  for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
+                    val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
+                    if (subParamType != expectedSubParamType) {
+                      val paramNameIfKnown =
+                        globalValuesContext.debugInfoOf(subParamVal)
+                          .flatMap(_.referencedSourceId)
+                          .map(" " + _)
+                          .getOrElse("")
+                      er.reportError(s"type mismatch on parameter$paramNameIfKnown of method $funId: " +
+                        s"type is $subParamType but should be $expectedSubParamType since the method overrides $funId in $superTSubst", funPosOpt)
+                    }
+                    valsSubst(superParamVal) = subParamVal
+                  }
+                  val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
+                  if (!subFunRetType.baseSubtypeOf(expectedRetType)(using this)) {
+                    er.reportError(s"type mismatch on return type of method $funId: " +
+                      s"type $subFunRetType is not a subtype of $expectedRetType but the method overrides $funId in $superTSubst", funPosOpt)
+                  }
+                }
+                if (!subFunVisibility.eqOrMorePermissive(superFunVisibility)) {
+                  er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
+                }
+            }
+          }
+        case _ => ()
+      }
     }
   }
 

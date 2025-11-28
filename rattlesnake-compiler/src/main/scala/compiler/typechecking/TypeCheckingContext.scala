@@ -15,32 +15,6 @@ final class TypeCheckingContext(
                                  val functionTypeParams: Set[TypeIdentifier]
                                ) {
 
-  def desugarType(tpe: Type): Type = {
-    val desugaredType = tpe match {
-      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
-        desugarType(baseTypeRaw) match {
-          case RefinedType(baseTypeDes, itValueDes, predicateDes) =>
-            RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
-          case baseTypeDes: BaseType =>
-            RefinedType(baseTypeDes, itValueRaw, predicateRaw)
-        }
-      case primitiveType: Types.PrimitiveType => primitiveType
-      case Types.NamedType(typeName, typeArgs, args) =>
-        program.typeAliases.get(typeName) match {
-          case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs)) =>
-            val typesSubst = typeParams.map((id, variance) => id).zipCommons(typeArgs).toMap
-            val valsSubst = params.map {
-              case (paramId, (paramType, paramVal)) => paramVal
-            }.zipCommons(args).toMap
-            rhs.substitute(typesSubst, valsSubst)
-          case None => tpe
-        }
-      case typeVar: Types.TypeVar => typeVar
-    }
-    if desugaredType == tpe then tpe
-    else desugarType(desugaredType)
-  }
-
   def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
     case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName)
     case _ => None
@@ -111,8 +85,5 @@ final class TypeCheckingContext(
   extension (er: ErrorReporter) private def reportError(msg: String, posOpt: Option[Position])(using compilationStep: CompilationStep): Unit = {
     er.push(Err(compilationStep, msg, posOpt))
   }
-
-  extension [T](l: Iterable[T]) private def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
-    l.take(r.size).zip(r.take(l.size))
 
 }

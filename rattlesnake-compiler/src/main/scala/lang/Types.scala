@@ -7,6 +7,8 @@ import java.util.Objects
 
 
 object Types {
+  
+  private val itForHashAndEquals = IdValue("it")
 
   sealed trait Type {
     def baseType: BaseType
@@ -22,7 +24,7 @@ object Types {
       case _ => false
     }
 
-    override def hashCode(): Int = Objects.hash(baseType, predicate.substitute(Map.empty, Map(itValue -> IdValue("it"))))
+    override def hashCode(): Int = Objects.hash(baseType, predicate.substitute(Map.empty, Map(itValue -> itForHashAndEquals)))
 
     override def toString: String = s"$baseType $itValue with $predicate"
   }

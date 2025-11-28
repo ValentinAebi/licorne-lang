@@ -147,15 +147,26 @@ final class SSAGenerator(er: ErrorReporter)
         }
         var isFirst = true
         for (paramTree <- func.params) {
-          if (paramTree.paramId == ThisId && !isFirst) {
-            reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
-          } else if (funcLocalValsCtx.knows(paramTree.paramId)) {
+          if (funcLocalValsCtx.knows(paramTree.paramId)) {
             reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
           } else {
             val paramValue = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, paramTree.paramId)
-            val paramType =
-              paramTree.paramTypeTreeOpt.map(mkType(_, funcLocalValsCtx))
-                .getOrElse(functionsProviderIncompleteSig.toType(Map.empty, Map.empty))
+            val paramType = paramTree match {
+              case Asts.ThisParam(paramTypeTreeOpt) =>
+                if (!isFirst){
+                  reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
+                }
+                val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
+                paramTypeTreeOpt.map { paramTypeTree =>
+                  val actualThisType = mkType(paramTypeTree, funcLocalValsCtx)
+                  if (actualThisType.baseType != expectedThisType){
+                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (not that it may be omitted)", func.getPosition)
+                  }
+                  actualThisType
+                }.getOrElse(expectedThisType)
+              case paramTree: Asts.NonThisFunctionParam =>
+                mkType(paramTree.paramTypeTree, funcLocalValsCtx)
+            }
             paramsInclThis(paramValue) = paramType
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, ReassigPermission.Val, Some(paramType))
           }
