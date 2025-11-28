@@ -35,8 +35,6 @@ object Types {
     override def baseType: BaseType = this
   }
 
-  trait TypeVar extends BaseType
-
   enum PrimitiveType(val str: String) extends BaseType {
     case IntType extends PrimitiveType("Int")
     case DoubleType extends PrimitiveType("Double")
@@ -67,20 +65,6 @@ object Types {
 
   extension (tpe: Type) {
 
-    def substituteVar(targetVar: TypeVar, replacement: Type): Type = tpe match {
-      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
-        baseTypeRaw.substituteVar(targetVar, replacement) match {
-          case RefinedType(baseTypeSubst, itValueSubst, predicateSubst) =>
-            RefinedType(baseTypeSubst, itValueRaw, And(predicateRaw, predicateSubst.substitute(Map.empty, Map(itValueSubst -> itValueRaw))))
-          case baseTypeSubst: BaseType => RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
-        }
-      case primitiveType: PrimitiveType => primitiveType
-      case NamedType(typeName, typeParams, params) =>
-        NamedType(typeName, typeParams.map(_.substituteVar(targetVar, replacement)), params)
-      case typeVar: TypeVar if typeVar == targetVar => replacement
-      case typeVar: TypeVar => typeVar
-    }
-
     def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = tpe match {
       case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
         baseTypeRaw.substitute(typesSubst, valsSubst) match {
@@ -89,7 +73,6 @@ object Types {
           case baseTypeSubst: BaseType =>
             RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
         }
-      case typeVar: TypeVar => typeVar
       case primitiveType: PrimitiveType => primitiveType
       case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
         typesSubst.apply(typeName)

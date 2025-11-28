@@ -90,7 +90,6 @@ final case class Program(
             rhs.substitute(typesSubst, valsSubst)
           case None => tpe
         }
-      case typeVar: Types.TypeVar => typeVar
     }
     if desugaredType == tpe then tpe
     else desugarType(desugaredType)
@@ -336,8 +335,6 @@ final case class Program(
   private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = tpe match {
     case Types.RefinedType(baseType, itValue, predicate) =>
       findMentionedTypes(baseType) ++ findMentionedTypes(predicate)
-    case typeVar: Types.TypeVar =>
-      throw AssertionError("should not happen: typeVar in typealias definition")
     case primitiveType: Types.PrimitiveType => Set.empty
     case Types.NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)

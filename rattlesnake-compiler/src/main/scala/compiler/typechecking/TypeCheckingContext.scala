@@ -24,8 +24,6 @@ final class TypeCheckingContext(
     case Types.RefinedType(baseType, itValue, predicate) =>
       checkTypesWellDefined(baseType, expVarianceOpt, posOpt)
       checkTypesWellDefined(predicate, posOpt)
-    case typeVar: Types.TypeVar =>
-      throw AssertionError("should not happen: unexpected type variable")
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
       if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
