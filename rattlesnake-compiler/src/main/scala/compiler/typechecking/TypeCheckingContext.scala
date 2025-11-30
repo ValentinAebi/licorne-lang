@@ -6,8 +6,8 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import identifiers.TypeIdentifier
 import lang.Types.*
-import lang.Values.{And, Formula}
-import lang.{TypeAliasSignature, Types, Values, Variance}
+import lang.Values.Formula
+import lang.{Types, Values, Variance}
 
 final class TypeCheckingContext(
                                  val program: Program,

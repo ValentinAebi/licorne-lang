@@ -56,6 +56,9 @@ object Types {
   }
 
   final case class NamedType(typeName: TypeIdentifier, typeArgs: List[Type], args: List[Formula]) extends BaseType {
+    
+    def isSimpleName: Boolean = typeArgs.isEmpty && args.isEmpty
+    
     override def toString: String = {
       val typeParamsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")

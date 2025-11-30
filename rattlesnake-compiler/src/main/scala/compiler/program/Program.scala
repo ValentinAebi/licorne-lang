@@ -6,15 +6,16 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
+import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
 import compiler.typechecking.TypeCheckingContext
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
-import lang.Types.{BaseType, NamedType, PrimitiveType, RefinedType, Type}
+import lang.Types.*
 import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
-import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
 
+import java.util
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
@@ -26,7 +27,8 @@ final case class Program(
                           datatypes: Map[TypeIdentifier, DatatypeSignature],
                           structs: Map[TypeIdentifier, StructSignature],
                           typeAliases: Map[TypeIdentifier, TypeAliasSignature],
-                          functions: Map[FunctionSignature, SSA.Function]
+                          functions: Map[FunctionSignature, SSA.Function],
+                          formulaPositions: util.IdentityHashMap[Formula, Position]
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.Map.empty[TypeIdentifier, mutable.Map[TypeIdentifier, Map[TypeIdentifier, Type]]]
@@ -64,11 +66,15 @@ final case class Program(
       case _ => None
     }
 
-  def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] =
-    for {
+  def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
+    if subT == superT then resolveSignatureAs[RuntimeTypeSignature](subT).map {
+      _.typeParams.map((tid, _) => tid -> NamedType(tid, List.empty, List.empty)).toMap
+    }
+    else for {
       subTSupers <- flattenedSupertypesSubstitutions.get(subT)
       superSubst <- subTSupers.get(superT)
     } yield superSubst
+  }
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
@@ -83,7 +89,10 @@ final case class Program(
       case Types.NamedType(typeName, typeArgs, args) =>
         typeAliases.get(typeName) match {
           case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs)) =>
-            val typesSubst = typeParams.map((id, variance) => id).zipCommons(typeArgs).toMap
+            val typesSubst =
+              typeParams.map((id, variance) => id)
+                .zipCommons(typeArgs.map(desugarType))
+                .toMap
             val valsSubst = params.map {
               case (paramId, (paramType, paramVal)) => paramVal
             }.zipCommons(args).toMap
@@ -232,7 +241,7 @@ final case class Program(
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
                   if (!subFunRetType.baseSubtypeOf(expectedRetType)(using this)) {
                     er.reportError(s"type mismatch on return type of method $funId: " +
-                      s"type $subFunRetType is not a subtype of $expectedRetType but the method overrides $funId in $superTSubst", funPosOpt)
+                      s"$subFunRetType is not a subtype of $expectedRetType but the method overrides $funId in $superTSubst", funPosOpt)
                   }
                 }
                 if (!subFunVisibility.eqOrMorePermissive(superFunVisibility)) {
@@ -372,7 +381,8 @@ object Program {
       }
     }
 
-    def build(allFunctions: Map[FunctionSignature, SSA.Function]): Program = {
+    def build(allFunctions: Map[FunctionSignature, SSA.Function],
+              formulaPositions: util.IdentityHashMap[Formula, Position]): Program = {
       val interfacesB = Map.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = Map.newBuilder[TypeIdentifier, ObjectSignature]
@@ -397,7 +407,8 @@ object Program {
         datatypes.result(),
         structsB.result(),
         typeAliasesB.result(),
-        allFunctions
+        allFunctions,
+        formulaPositions
       )
     }
   }

@@ -15,6 +15,7 @@ import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
 import lang.Values.*
 
+import java.util
 import scala.collection.mutable
 
 
@@ -22,6 +23,8 @@ final class SSAGenerator(er: ErrorReporter)
   extends CompilerStep[List[Asts.Source], Program] {
 
   override def apply(input: List[Asts.Source]): Program = {
+    given formulaPositions: util.IdentityHashMap[Formula, Position] = util.IdentityHashMap()
+
     val ctxBuilder = Program.Builder(er)
     val globalValuesContext = ctxBuilder.globalValuesContext
     val valuesGen = globalValuesContext.valuesGen
@@ -114,7 +117,7 @@ final class SSAGenerator(er: ErrorReporter)
         ctxBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val ctx = ctxBuilder.build(allFunctionsCollector.toMap)
+    val ctx = ctxBuilder.build(allFunctionsCollector.toMap, formulaPositions)
     ctx.checkDefinitions()(using er, positionsMapB.result(), SSAGeneration)
     er.displayAndTerminateIfErrors()
     ctx
@@ -125,7 +128,7 @@ final class SSAGenerator(er: ErrorReporter)
                                 functionsProviderIncompleteSig: EncapsulatedTypeSignature,
                                 globalValsCtx: GlobalValuesContext,
                                 allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
-                              ): Map[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              )(using util.IdentityHashMap[Formula, Position]): Map[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.Map.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (func <- functionsProvider.functions) {
       if (functions.contains(func.id)) {
@@ -153,13 +156,13 @@ final class SSAGenerator(er: ErrorReporter)
             val paramValue = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, paramTree.paramId)
             val paramType = paramTree match {
               case Asts.ThisParam(paramTypeTreeOpt) =>
-                if (!isFirst){
+                if (!isFirst) {
                   reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
                 }
                 val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funcLocalValsCtx)
-                  if (actualThisType.baseType != expectedThisType){
+                  if (actualThisType.baseType != expectedThisType) {
                     reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (not that it may be omitted)", func.getPosition)
                   }
                   actualThisType
@@ -204,7 +207,12 @@ final class SSAGenerator(er: ErrorReporter)
     case Asts.TypeParam(id, variance) => (id, variance)
   }
 
-  private def generateSSAFunc(sig: FunctionSignature, bodyOpt: Option[Asts.Block], valsCtx: LocalValuesContext, posOpt: Option[Position]): SSA.Function = bodyOpt match {
+  private def generateSSAFunc(
+                               sig: FunctionSignature,
+                               bodyOpt: Option[Asts.Block],
+                               valsCtx: LocalValuesContext,
+                               posOpt: Option[Position]
+                             )(using util.IdentityHashMap[Formula, Position]): SSA.Function = bodyOpt match {
     case Some(body) =>
       val ssaInstructionsList = mutable.ListBuffer.empty[SSA.Instr]
       for (stat <- body.stats) {
@@ -215,7 +223,11 @@ final class SSAGenerator(er: ErrorReporter)
       SSA.Function(sig, None, posOpt)
   }
 
-  private def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[Instr]): Unit = {
+  private def generateSSA(
+                           stat: Asts.Statement,
+                           valsCtx: LocalValuesContext,
+                           ssaInstructionsList: mutable.ListBuffer[Instr]
+                         )(using util.IdentityHashMap[Formula, Position]): Unit = {
 
     // shadow the name of the outer function so that all recursions go through doGenerateSSA
     val generateSSA: Unit = ()
@@ -357,8 +369,11 @@ final class SSAGenerator(er: ErrorReporter)
     doGenerateSSA(stat, valsCtx, ssaInstructionsList, isRepeat = false)
   }
 
-  private def generateSSAExprForcedAsVal(expr: Asts.Expr, ssaInstructionsList: mutable.ListBuffer[Instr],
-                                         valsCtx: LocalValuesContext): Value =
+  private def generateSSAExprForcedAsVal(
+                                          expr: Asts.Expr,
+                                          ssaInstructionsList: mutable.ListBuffer[Instr],
+                                          valsCtx: LocalValuesContext
+                                        )(using util.IdentityHashMap[Formula, Position]): Value =
     generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx) match {
       case value: Value => value
       case formula =>
@@ -367,19 +382,27 @@ final class SSAGenerator(er: ErrorReporter)
         resVal
     }
 
-  private def generateTypeCheckForAnnotIfAny(rhsValue: Value, typeAnnotOpt: Option[Type],
-                                             valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[Instr],
-                                             astNode: Asts.Ast): Unit = {
+  private def generateTypeCheckForAnnotIfAny(
+                                              rhsValue: Value,
+                                              typeAnnotOpt: Option[Type],
+                                              valsCtx: LocalValuesContext,
+                                              ssaInstructionsList: mutable.ListBuffer[Instr],
+                                              astNode: Asts.Ast
+                                            ): Unit = {
     typeAnnotOpt.foreach { typeAnnot =>
       ssaInstructionsList.saveInstr(StaticTypeAssert(rhsValue, typeAnnot), astNode)
     }
   }
 
-  private def generateSSAExpr(expr: Asts.Expr, ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]], valsCtx: LocalValuesContext): Formula = {
+  private def generateSSAExpr(
+                               expr: Asts.Expr,
+                               ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]],
+                               valsCtx: LocalValuesContext
+                             )(using formulaPositions: util.IdentityHashMap[Formula, Position]): Formula = {
 
     def generateSSAExpr(expr: Asts.Expr): Formula = this.generateSSAExpr(expr, ssaInstrListOpt, valsCtx)
 
-    expr match {
+    val formula = expr match {
       case Asts.IntLit(value) => IntConstant(value)
       case Asts.DoubleLit(value) => ???
       case Asts.CharLit(value) => ???
@@ -436,9 +459,17 @@ final class SSAGenerator(er: ErrorReporter)
           generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
     }
+    expr.getPosition.foreach {
+      formulaPositions.put(formula, _)
+    }
+    formula
   }
 
-  private def generateNonFormulaExpr(expr: Asts.NonFormulaExpr, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], valsCtx: LocalValuesContext): Formula = expr match {
+  private def generateNonFormulaExpr(
+                                      expr: Asts.NonFormulaExpr,
+                                      ssaInstructionsList: mutable.ListBuffer[SSA.Instr],
+                                      valsCtx: LocalValuesContext
+                                    )(using util.IdentityHashMap[Formula, Position]): Formula = expr match {
     case Asts.StructOrClassInstantiation(typeId, initializers) =>
       val instanceVal = valsCtx.valuesGen.newObject(typeId)
       ssaInstructionsList.saveInstr(Instantiate(instanceVal, typeId), expr)
@@ -539,7 +570,8 @@ final class SSAGenerator(er: ErrorReporter)
     case _ => Or(l, r)
   }
 
-  private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext): Type = typeTree match {
+  private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
+                    (using util.IdentityHashMap[Formula, Position]): Type = typeTree match {
     case Asts.RefinedTypeTree(baseType, predicate) =>
       val baseT = mkBasicType(baseType, valsCtx)
       val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
@@ -550,12 +582,14 @@ final class SSAGenerator(er: ErrorReporter)
       mkBasicType(basicTypeTree, valsCtx)
   }
 
-  private def mkBasicType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext): BaseType = basicTypeTree match {
+  private def mkBasicType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext)
+                         (using util.IdentityHashMap[Formula, Position]): BaseType = basicTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
   }
 
-  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext): NamedType = {
+  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext)
+                         (using util.IdentityHashMap[Formula, Position]): NamedType = {
     val Asts.NamedTypeTree(name, typeParams, params) = namedTypeTree
     NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)))
   }

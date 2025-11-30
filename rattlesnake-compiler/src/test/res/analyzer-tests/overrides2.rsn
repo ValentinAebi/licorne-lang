@@ -1,0 +1,24 @@
+
+typealias Plants = List[Plant]
+
+interface Seq[+T]
+interface List[+T] : Seq[T]
+class MutList[E] : List[E]
+
+interface Animal
+class Dog(name: String) : Animal
+
+interface Plant
+class Flower : Plant
+
+interface AnimalMaker {
+   fn mkAnimals(this) -> Seq[Animal]
+   fn mkAnimalsFood1(this) -> Plants
+   fn mkAnimalsFood2(this) -> Plants
+}
+
+interface DogMaker : AnimalMaker {
+    fn mkAnimals(this) -> MutList[Dog]
+    fn mkAnimalsFood1(this) -> List[Animal]    //> E : type mismatch on return type of method mkAnimalsFood1: List[Animal] is not a subtype of Plants but the method overrides mkAnimalsFood1 in AnimalMaker
+    fn mkAnimalsFood2(this) -> List[Flower]
+}

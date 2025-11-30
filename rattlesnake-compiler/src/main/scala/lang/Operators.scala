@@ -2,25 +2,33 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.Operator.*
-import lang.Types.PrimitiveType.*
 import lang.Types.BaseType
+import lang.Types.PrimitiveType.*
 
 import scala.annotation.targetName
 
 object Operators {
-  
+
   // Operators do not work on structs, hence the empty struct mapping
   private given Map[TypeIdentifier, StructSignature] = Map.empty
+
+  sealed trait OperatorSignature {
+    def op: Operator
+
+    def retType: BaseType
+  }
 
   /**
    * Signature of an unary operator
    */
   final case class UnaryOpSignature(op: Operator, operandType: BaseType, retType: BaseType)
+    extends OperatorSignature
 
   /**
    * Signature of a binary operator
    */
   final case class BinaryOpSignature(leftOperandType: BaseType, op: Operator, rightOperandType: BaseType, retType: BaseType)
+    extends OperatorSignature
 
   // # is treated separately
   val unaryOperators: List[UnaryOpSignature] = List(
@@ -31,7 +39,7 @@ object Operators {
 
   //  ==  and  !=  are treated separately
   val binaryOperators: List[BinaryOpSignature] = List(
-    
+
     IntType $ Plus $ IntType is IntType,
     DoubleType $ Plus $ DoubleType is DoubleType,
     IntType $ Minus $ IntType is IntType,
@@ -41,7 +49,7 @@ object Operators {
     IntType $ Div $ IntType is IntType,
     DoubleType $ Div $ DoubleType is DoubleType,
     IntType $ Modulo $ IntType is IntType,
-    
+
     IntType $ LessThan $ IntType is BoolType,
     DoubleType $ LessThan $ DoubleType is BoolType,
     IntType $ LessOrEq $ IntType is BoolType,
@@ -56,7 +64,7 @@ object Operators {
 
     StringType $ Plus $ StringType is StringType
   )
-  
+
   val assigOperators: Map[Operator, Operator] = Map(
     PlusEq -> Plus,
     MinusEq -> Minus,
@@ -64,8 +72,8 @@ object Operators {
     DivEq -> Div,
     ModuloEq -> Modulo
   )
-  
-  
+
+
   // Binop signature DSL implementation --------------------------------------------
 
   private case class PartialBinop1(leftOperandType: BaseType, op: Operator) {
