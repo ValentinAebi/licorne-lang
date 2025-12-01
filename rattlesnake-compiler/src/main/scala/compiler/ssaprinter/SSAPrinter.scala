@@ -43,14 +43,19 @@ final class SSAPrinter extends CompilerStep[Program, String] {
   private def add(instr: SSA.Instr)
                  (using pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
     instr match {
-      case SSA.Loop(preBodyCond, cond, body, postMerges) =>
-        pps.add("loop ").startBlock()
-        addAllInstr(preBodyCond, printIfEmpty = true)
-        pps.endBlock().add(" (").add(cond.toString).add(") ").startBlock()
+      case SSA.Loop(cond, body, variables) =>
+        pps.add("loop (").add(cond.toString).add(") ").startBlock()
         addAllInstr(body, printIfEmpty = true)
+        pps.endBlock().add(" with vars ").startBlock()
+        val varsIter = variables.iterator
+        while (varsIter.hasNext) {
+          val varInfo = varsIter.next()
+          pps.add(varInfo.toString)
+          if (varsIter.hasNext) {
+            pps.newLine()
+          }
+        }
         pps.endBlock()
-        if (postMerges.nonEmpty) pps.newLine()
-        addAllInstr(postMerges, printIfEmpty = false)
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
         pps.add("if (").add(cond.toString).add(") ").startBlock()
         addAllInstr(thenBr, printIfEmpty = true)
@@ -59,12 +64,8 @@ final class SSAPrinter extends CompilerStep[Program, String] {
         pps.endBlock()
         if (postMerges.nonEmpty) pps.newLine()
         addAllInstr(postMerges, printIfEmpty = false)
-      case SSA.RegPhi(assignedValue, inValues) =>
+      case SSA.Phi(assignedValue, inValues) =>
         pps.add(s"$assignedValue := phi ${inValues.mkString("{ ", ", ", " }")}")
-      case SSA.LoopIterPhi(assignedValue, baseCaseValue, prevIterValue) =>
-        pps.add(s"$assignedValue := phi { $baseCaseValue (base), $prevIterValue (previous) }")
-      case SSA.LoopExitPhi(assignedValue, bodyEndValue, skipLoopValue) =>
-        pps.add(s"$assignedValue := phi { $bodyEndValue (loop) or $skipLoopValue (skip) }")
       case SSA.Assignment(assignedValue, rhs) =>
         pps.add(assignedValue.toString).add(" := ").add(rhs.toString)
       case SSA.Instantiate(assignedValue, classOrStructName) =>

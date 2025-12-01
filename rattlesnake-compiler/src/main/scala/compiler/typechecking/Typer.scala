@@ -8,6 +8,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
+import compiler.typeinference.TypeInference
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Operators.OperatorSignature
@@ -28,11 +29,9 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
   private case class ThisContext(thisVal: IdValue, thisType: BaseType)
 
   private def traverse(instr: Instr)(using ts: PartialTypeStore, formulaPositions: util.IdentityHashMap[Formula, Position], program: Program, thisCtx: ThisContext): Unit = instr match {
-    case SSA.Loop(preBodyCond, cond, body, postMerges) => ???
+    case SSA.Loop(cond, body, variables) => ???
     case SSA.Disjunction(cond, thenBr, elseBr, postMerges) => ???
-    case SSA.RegPhi(assignedValue, inValues) => ???
-    case SSA.LoopIterPhi(assignedValue, baseCaseValue, prevIterValue) => ???
-    case SSA.LoopExitPhi(assignedValue, bodyEndValue, skipLoopValue) => ???
+    case SSA.Phi(assignedValue, inValues) => ???
     case SSA.Assignment(assignedValue, rhs) => ???
     case SSA.Instantiate(assignedValue, classOrStructName) => ???
     case SSA.Cast(assignedValue, inValue, targetType) => ???

@@ -7,6 +7,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
+import compiler.ssagen.ConservativeFormulaSimplifications.*
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.*
@@ -229,10 +230,7 @@ final class SSAGenerator(er: ErrorReporter)
                            ssaInstructionsList: mutable.ListBuffer[Instr]
                          )(using util.IdentityHashMap[Formula, Position]): Unit = {
 
-    // shadow the name of the outer function so that all recursions go through doGenerateSSA
-    val generateSSA: Unit = ()
-
-    def doGenerateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], isRepeat: Boolean): Unit = {
+    def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], isRepeat: Boolean): Unit = {
       // @formatter:off
       def reportError(msg: String, posOpt: Option[Position]): Unit = if (!isRepeat) this.reportError(msg, posOpt)
       def warn(msg: String, posOpt: Option[Position]): Unit = if (!isRepeat) this.warn(msg, posOpt)
@@ -248,7 +246,7 @@ final class SSAGenerator(er: ErrorReporter)
         case Asts.Block(stats) =>
           val blockCtx = valsCtx.withOneMoreFrame
           for (stat <- stats) {
-            doGenerateSSA(stat, blockCtx, ssaInstructionsList, isRepeat)
+            generateSSA(stat, blockCtx, ssaInstructionsList, isRepeat)
           }
         case localDef@Asts.LocalDef(localName, typeAnnotTreeOpt, rhsOpt, reassigPermission) =>
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
@@ -256,8 +254,8 @@ final class SSAGenerator(er: ErrorReporter)
             reportError(s"$localName is already defined in this scope", stat.getPosition)
           } else rhsOpt match {
             case Some(rhs) =>
-              doGenerateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
-              doGenerateSSA(Asts.VarAssig(
+              generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
+              generateSSA(Asts.VarAssig(
                 Asts.VariableRef(localName).withDesugaringSource(localDef),
                 None, rhs
               ).withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
@@ -286,7 +284,7 @@ final class SSAGenerator(er: ErrorReporter)
         case assig@Asts.VarAssig(lhs, typeAnnotOpt, rhs) =>
           reportError("assignment target is not valid", assig.getPosition)
         case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
-          doGenerateSSA(
+          generateSSA(
             Asts.VarAssig(
               lhs, typeAnnot,
               Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
@@ -299,11 +297,11 @@ final class SSAGenerator(er: ErrorReporter)
           val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
           val thenBrSSA = mutable.ListBuffer.empty[SSA.Instr]
           val thenBrCtx = valsCtx.deepCopyWithSameGlobalCtx
-          doGenerateSSA(thenBr, thenBrCtx, thenBrSSA, isRepeat)
+          generateSSA(thenBr, thenBrCtx, thenBrSSA, isRepeat)
           val elseBrSSA = mutable.ListBuffer.empty[SSA.Instr]
           val elseBrCtx = valsCtx.deepCopyWithSameGlobalCtx
           elseBrOpt.foreach { elseBr =>
-            doGenerateSSA(elseBr, elseBrCtx, elseBrSSA, isRepeat)
+            generateSSA(elseBr, elseBrCtx, elseBrSSA, isRepeat)
           }
           val phiNodes = valsCtx.unifyAndReturnPhis(ite, thenBrCtx, elseBrCtx)
           ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
@@ -318,17 +316,16 @@ final class SSAGenerator(er: ErrorReporter)
           }
           val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), loopCtx)
           val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
-          doGenerateSSA(body, loopCtx, bodySSA, isRepeat)
+          generateSSA(body, loopCtx, bodySSA, isRepeat)
           if (loopCtx.exitManager.hasExited) {
             warn("loop body always exits, should be an if statement", whileLoop.getPosition)
             // give up and generate a disjunction instead
-            doGenerateSSA(
+            generateSSA(
               Asts.IfThenElse(cond, body, None).withDesugaringSource(whileLoop),
               valsCtx, ssaInstructionsList, isRepeat = true
             )
           } else {
-            val preBodyPhisBuilder = List.newBuilder[LoopIterPhi]
-            val postLoopPhisBuilder = List.newBuilder[LoopExitPhi]
+            val loopVars = List.newBuilder[LoopVarInfo]
             for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
               valsCtx.valueOf(id) match {
                 case _: LocalValuesContext.ErrorValueQueryResult => ()
@@ -337,18 +334,16 @@ final class SSAGenerator(er: ErrorReporter)
                   val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[KnownAndInitialized].value
                   val postLoopVal = valsCtx.valuesGen.newPhi(id, Set(bodyEndVal), whileLoop.originalAst)
                   if (preLoopVal != bodyEndVal) {
-                    preBodyPhisBuilder.addOne(LoopIterPhi(bodyStartVal, preLoopVal, bodyEndVal))
-                    postLoopPhisBuilder.addOne(LoopExitPhi(postLoopVal, bodyEndVal, preLoopVal))
+                    loopVars.addOne(LoopVarInfo(id, preLoopVal, bodyStartVal, postLoopVal))
                   }
                   val found = valsCtx.remap(id, postLoopVal)
                   assert(found)
               }
             }
-            ssaInstructionsList.saveInstr(Loop(preBodyPhisBuilder.result(), condFormula, bodySSA.toList,
-              postLoopPhisBuilder.result()), whileLoop)
+            ssaInstructionsList.saveInstr(Loop(condFormula, bodySSA.toList, loopVars.result()), whileLoop)
           }
         case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
-          doGenerateSSA(Asts.Block(
+          generateSSA(Asts.Block(
             initStats :+ Asts.WhileLoop(cond, Asts.Block(
               body +: stepStats
             ).withDesugaringSource(forLoop)).withDesugaringSource(forLoop)
@@ -366,7 +361,7 @@ final class SSAGenerator(er: ErrorReporter)
       }
     }
 
-    doGenerateSSA(stat, valsCtx, ssaInstructionsList, isRepeat = false)
+    generateSSA(stat, valsCtx, ssaInstructionsList, isRepeat = false)
   }
 
   private def generateSSAExprForcedAsVal(
@@ -491,7 +486,7 @@ final class SSAGenerator(er: ErrorReporter)
       ssaInstructionsList.saveInstr(Disjunction(condFormula,
         List(Assignment(thenResVal, thenFormula)),
         List(Assignment(elseResVal, elseFormula)),
-        List(RegPhi(resultVal, Set(thenResVal, elseResVal)))
+        List(Phi(resultVal, Set(thenResVal, elseResVal)))
       ), ternary)
       elseResVal
     case cast@Asts.Cast(expr, tpe) =>
@@ -500,74 +495,6 @@ final class SSAGenerator(er: ErrorReporter)
       val targetType = mkBasicType(tpe, valsCtx)
       ssaInstructionsList.saveInstr(Cast(resultVal, inVal, targetType), cast)
       resultVal
-  }
-
-  private def not(operand: Formula): Formula = operand match {
-    case True => False
-    case False => True
-    case _ => Not(operand)
-  }
-
-  private def neg(operand: Formula): Formula = operand match {
-    case IntConstant(opVal) => IntConstant(-opVal)
-    // TODO types other than Int
-    case _ => Neg(operand)
-  }
-
-  private def plus(l: Formula, r: Formula): Formula = (l, r) match {
-    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv + rv)
-    case (l, IntConstant(0)) => l
-    case (IntConstant(0), r) => r
-    // TODO types other than Int
-    case _ => Plus(l, r)
-  }
-
-  private def minus(l: Formula, r: Formula): Formula = (l, r) match {
-    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv - rv)
-    case (l, IntConstant(0)) => l
-    case (IntConstant(0), r) => neg(r)
-    // TODO types other than Int
-    case _ => Minus(l, r)
-  }
-
-  private def times(l: Formula, r: Formula): Formula = (l, r) match {
-    case (IntConstant(lv), IntConstant(rv)) => IntConstant(lv * rv)
-    // TODO types other than Int
-    case _ => Times(l, r)
-  }
-
-  private def div(l: Formula, r: Formula): Formula = Div(l, r)
-
-  private def rem(l: Formula, r: Formula): Formula = Rem(l, r)
-
-  private def lessThan(l: Formula, r: Formula): Formula = (l, r) match {
-    case (IntConstant(lv), IntConstant(rv)) => if lv < rv then True else False
-    // TODO types other than Int
-    case _ => LessThan(l, r)
-  }
-
-  private def lessOrEq(l: Formula, r: Formula): Formula = (l, r) match {
-    case (IntConstant(lv), IntConstant(rv)) => if lv <= rv then True else False
-    // TODO types other than Int
-    case _ => LessOrEq(l, r)
-  }
-
-  private def equal(l: Formula, r: Formula): Formula = (l, r) match {
-    case (l: Constant, r: Constant) => if l == r then True else False
-    // TODO types other than Int
-    case _ => Equal(l, r)
-  }
-
-  private def and(l: Formula, r: Formula): Formula = (l, r) match {
-    case (True, r) => r
-    case (l, True) => l
-    case _ => And(l, r)
-  }
-
-  private def or(l: Formula, r: Formula): Formula = (l, r) match {
-    case (False, r) => r
-    case (l, False) => l
-    case _ => Or(l, r)
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)

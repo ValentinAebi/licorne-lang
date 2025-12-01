@@ -1,16 +1,16 @@
 package compiler.valuesconversion
 
 import compiler.irs.Asts
-import compiler.irs.SSA.{Phi, RegPhi}
+import compiler.irs.SSA.Phi
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
-import identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId}
-import lang.Types.{BaseType, NamedType, Type}
+import identifiers.{FunOrVarId, ThisId}
+import lang.ReassigPermission
+import lang.Types.Type
 import lang.Values.*
-import lang.{Operator, ReassigPermission}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -108,7 +108,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
             localInfo.value = Some(inValues.head)
           } else {
             val newValue = valuesGen.newPhi(id, inValues, ite.originalAst)
-            phiNodesB.addOne(RegPhi(newValue, inValues))
+            phiNodesB.addOne(Phi(newValue, inValues))
             localInfo.value = Some(newValue)
           }
         } else {

@@ -69,8 +69,7 @@ final case class Program(
   def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
     if subT == superT then resolveSignatureAs[RuntimeTypeSignature](subT).map {
       _.typeParams.map((tid, _) => tid -> NamedType(tid, List.empty, List.empty)).toMap
-    }
-    else for {
+    } else for {
       subTSupers <- flattenedSupertypesSubstitutions.get(subT)
       superSubst <- subTSupers.get(superT)
     } yield superSubst
@@ -86,18 +85,19 @@ final case class Program(
             RefinedType(baseTypeDes, itValueRaw, predicateRaw)
         }
       case primitiveType: Types.PrimitiveType => primitiveType
-      case Types.NamedType(typeName, typeArgs, args) =>
+      case NamedType(typeName, typeArgsRaw, args) =>
+        val typeArgsSubst = typeArgsRaw.map(desugarType)
         typeAliases.get(typeName) match {
           case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs)) =>
             val typesSubst =
               typeParams.map((id, variance) => id)
-                .zipCommons(typeArgs.map(desugarType))
+                .zipCommons(typeArgsSubst)
                 .toMap
             val valsSubst = params.map {
               case (paramId, (paramType, paramVal)) => paramVal
             }.zipCommons(args).toMap
-            rhs.substitute(typesSubst, valsSubst)
-          case None => tpe
+            desugarType(rhs.substitute(typesSubst, valsSubst))
+          case None => NamedType(typeName, typeArgsSubst, args)
         }
     }
     if desugaredType == tpe then tpe
@@ -342,10 +342,10 @@ final case class Program(
   }
 
   private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = tpe match {
-    case Types.RefinedType(baseType, itValue, predicate) =>
+    case RefinedType(baseType, itValue, predicate) =>
       findMentionedTypes(baseType) ++ findMentionedTypes(predicate)
     case primitiveType: Types.PrimitiveType => Set.empty
-    case Types.NamedType(typeName, typeParams, params) =>
+    case NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
   }
 

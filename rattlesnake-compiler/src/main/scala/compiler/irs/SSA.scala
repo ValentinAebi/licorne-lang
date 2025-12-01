@@ -24,25 +24,20 @@ object SSA {
   }
   
   final case class Function(signature: FunctionSignature, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
+  
+  final case class LoopVarInfo(varId: FunOrVarId, beforeLoopVal: Value, bodyStartVal: Value, bodyEndVal: Value) {
+    override def toString: String = s"$varId: $beforeLoopVal ($bodyStartVal ; <body> ; $bodyEndVal)"
+  }
 
   sealed trait ControlFlowInstr extends Instr
-  final case class Loop(preBodyCond: List[LoopIterPhi], cond: Formula, body: List[Instr], postMerges: List[LoopExitPhi]) extends ControlFlowInstr
+  final case class Loop(cond: Formula, body: List[Instr], variables: List[LoopVarInfo]) extends ControlFlowInstr
   final case class Disjunction(cond: Formula, thenBr: List[Instr], elseBr: List[Instr], postMerges: List[Phi]) extends ControlFlowInstr
 
   sealed trait AssigningInstr extends Instr {
     val assignedValue: IdValue
   }
   
-  sealed trait Phi extends AssigningInstr {
-    def inValues: Set[Value]
-  }
-  final case class RegPhi(assignedValue: IdValue, inValues: Set[Value]) extends Phi
-  final case class LoopIterPhi(assignedValue: IdValue, baseCaseValue: Value, prevIterValue: Value) extends Phi {
-    override def inValues: Set[Value] = Set(baseCaseValue, prevIterValue)
-  }
-  final case class LoopExitPhi(assignedValue: IdValue, bodyEndValue: Value, skipLoopValue: Value) extends Phi {
-    override def inValues: Set[Value] = Set(bodyEndValue, skipLoopValue)
-  }
+  final case class Phi(assignedValue: IdValue, inValues: Set[Value]) extends AssigningInstr
   
   final case class StaticTypeAssert(value: Value, tpe: Type) extends Instr
   final case class StaticAssert(formula: Formula) extends Instr
