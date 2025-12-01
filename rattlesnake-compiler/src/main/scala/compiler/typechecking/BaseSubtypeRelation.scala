@@ -19,6 +19,8 @@ object BaseSubtypeRelation {
       case (_, NothingType) => false
       case (NullType, _) => true
       case (_, NullType) => false
+      case (_, AnyType) => true
+      case (AnyType, _) => false
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
         assert(subtypeArgs.isEmpty)
         assert(supertypeArgs.isEmpty)

@@ -41,8 +41,9 @@ object Types {
     case CharType extends PrimitiveType("Char")
     case BoolType extends PrimitiveType("Bool")
     case StringType extends PrimitiveType("String")
+    
     case NullType extends PrimitiveType("Null")
-
+    case AnyType extends PrimitiveType("Any")
     case VoidType extends PrimitiveType("Void")
     case NothingType extends PrimitiveType("Nothing")
 
