@@ -6,8 +6,8 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
-import compiler.typechecking.TypeCheckingContext
+import compiler.typechecking.SubtypeRelation.enforceSubtypingConstraint
+import compiler.typechecking.{RefinementConstraint, TypeCheckingContext}
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
@@ -32,6 +32,8 @@ final case class Program(
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.Map.empty[TypeIdentifier, mutable.Map[TypeIdentifier, Map[TypeIdentifier, Type]]]
+  
+  val constraintsCollector = RefinementConstraint.Collector()
 
   def checkDefinitions()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     checkInterfaceSignatures()
@@ -239,10 +241,7 @@ final case class Program(
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  if (!subFunRetType.baseSubtypeOf(expectedRetType)(using this)) {
-                    er.reportError(s"type mismatch on return type of method $funId: " +
-                      s"$subFunRetType is not a subtype of $expectedRetType but the method overrides $funId in $superTSubst", funPosOpt)
-                  }
+                  enforceSubtypingConstraint(subFunRetType, expectedRetType)(using s"return type of method $funId that overrides $funId in $superT", funPosOpt, er, this)
                 }
                 if (!subFunVisibility.eqOrMorePermissive(superFunVisibility)) {
                   er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)

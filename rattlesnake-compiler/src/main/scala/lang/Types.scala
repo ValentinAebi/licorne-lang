@@ -12,9 +12,12 @@ object Types {
 
   sealed trait Type {
     def baseType: BaseType
+    def itValueAndRefinementOpt: Option[(IdValue, Formula)]
   }
 
   final case class RefinedType(baseType: BaseType, itValue: IdValue, predicate: Formula) extends Type {
+
+    override def itValueAndRefinementOpt: Option[(IdValue, Formula)] = Some(itValue -> predicate)
 
     override def equals(other: Any): Boolean = other match {
       case RefinedType(otherBaseType, otherItValue, otherPredicate) =>
@@ -47,6 +50,8 @@ object Types {
     case VoidType extends PrimitiveType("Void")
     case NothingType extends PrimitiveType("Nothing")
 
+    override def itValueAndRefinementOpt: Option[(IdValue, Formula)] = None
+
     override def typeArgs: List[Type] = List.empty
 
     override def toString: String = str
@@ -57,6 +62,8 @@ object Types {
   }
 
   final case class NamedType(typeName: TypeIdentifier, typeArgs: List[Type], args: List[Formula]) extends BaseType {
+
+    override def itValueAndRefinementOpt: Option[(IdValue, Formula)] = None
     
     def isSimpleName: Boolean = typeArgs.isEmpty && args.isEmpty
     

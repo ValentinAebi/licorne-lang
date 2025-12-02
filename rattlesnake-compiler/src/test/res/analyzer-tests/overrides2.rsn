@@ -19,6 +19,6 @@ interface AnimalMaker {
 
 interface DogMaker : AnimalMaker {
     fn mkAnimals(this) -> MutList[Dog]
-    fn mkAnimalsFood1(this) -> List[Animal]    //> E : type mismatch on return type of method mkAnimalsFood1: List[Animal] is not a subtype of Plants but the method overrides mkAnimalsFood1 in AnimalMaker
+    fn mkAnimalsFood1(this) -> List[Animal]    //> E : return type of method mkAnimalsFood1 that overrides mkAnimalsFood1 in AnimalMaker: expected Plants, found List[Animal]
     fn mkAnimalsFood2(this) -> List[Flower]
 }

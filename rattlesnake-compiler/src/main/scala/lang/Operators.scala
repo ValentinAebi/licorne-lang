@@ -2,8 +2,9 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.Operator.*
-import lang.Types.BaseType
 import lang.Types.PrimitiveType.*
+import lang.Types.{BaseType, RefinedType, Type}
+import lang.Values.{Equal, IdValue, IntConstant, Not}
 
 import scala.annotation.targetName
 
@@ -15,22 +16,25 @@ object Operators {
   sealed trait OperatorSignature {
     def op: Operator
 
-    def retType: BaseType
+    def retType: Type
   }
 
   /**
    * Signature of an unary operator
    */
-  final case class UnaryOpSignature(op: Operator, operandType: BaseType, retType: BaseType)
+  final case class UnaryOpSignature(op: Operator, operandType: Type, retType: Type)
     extends OperatorSignature
 
   /**
    * Signature of a binary operator
    */
-  final case class BinaryOpSignature(leftOperandType: BaseType, op: Operator, rightOperandType: BaseType, retType: BaseType)
+  final case class BinaryOpSignature(leftOperandType: Type, op: Operator, rightOperandType: Type, retType: Type)
     extends OperatorSignature
-
-  // # is treated separately
+  
+  private val binopItVal = IdValue("binop-it")
+  // TODO nonZeroDouble for / and % on Doubles
+  private val nonZeroInt = RefinedType(IntType, binopItVal, Not(Equal(binopItVal, IntConstant(0))))
+  
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),
     UnaryOpSignature(Minus, DoubleType, DoubleType),
@@ -46,9 +50,9 @@ object Operators {
     DoubleType $ Minus $ DoubleType is DoubleType,
     IntType $ Times $ IntType is IntType,
     DoubleType $ Times $ DoubleType is DoubleType,
-    IntType $ Div $ IntType is IntType,
+    IntType $ Div $ nonZeroInt is IntType,
     DoubleType $ Div $ DoubleType is DoubleType,
-    IntType $ Modulo $ IntType is IntType,
+    IntType $ Modulo $ nonZeroInt is IntType,
 
     IntType $ LessThan $ IntType is BoolType,
     DoubleType $ LessThan $ DoubleType is BoolType,
@@ -76,19 +80,19 @@ object Operators {
 
   // Binop signature DSL implementation --------------------------------------------
 
-  private case class PartialBinop1(leftOperandType: BaseType, op: Operator) {
-    @targetName("andThen") infix def $(rightOperandType: BaseType): PartialBinop2 = {
+  private case class PartialBinop1(leftOperandType: Type, op: Operator) {
+    @targetName("andThen") infix def $(rightOperandType: Type): PartialBinop2 = {
       PartialBinop2(leftOperandType, op, rightOperandType)
     }
   }
 
-  private case class PartialBinop2(leftOperandType: BaseType, op: Operator, rightOperandType: BaseType) {
+  private case class PartialBinop2(leftOperandType: Type, op: Operator, rightOperandType: Type) {
     infix def is(retType: BaseType): BinaryOpSignature = {
       BinaryOpSignature(leftOperandType, op, rightOperandType, retType)
     }
   }
 
-  extension (leftOperandType: BaseType) {
+  extension (leftOperandType: Type) {
     @targetName("andThen") private infix def $(op: Operator): PartialBinop1 = {
       PartialBinop1(leftOperandType, op)
     }

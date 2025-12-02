@@ -1,4 +1,4 @@
-package compiler.typeinference
+package compiler.typechecking
 
 import compiler.program.Program
 import identifiers.TypeIdentifier

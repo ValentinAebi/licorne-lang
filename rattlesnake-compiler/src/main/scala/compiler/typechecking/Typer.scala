@@ -7,8 +7,7 @@ import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.baseSubtypeOf
-import compiler.typeinference.TypeInference
+import compiler.typechecking.SubtypeRelation.*
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Operators.OperatorSignature
@@ -28,7 +27,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
 
   private case class ThisContext(thisVal: IdValue, thisType: BaseType)
 
-  private def traverse(instr: Instr)(using ts: PartialTypeStore, formulaPositions: util.IdentityHashMap[Formula, Position], program: Program, thisCtx: ThisContext): Unit = instr match {
+  private def traverse(instr: Instr)(using ts: PartialTypeStore, er: ErrorReporter, formulaPositions: util.IdentityHashMap[Formula, Position], program: Program, thisCtx: ThisContext): Unit = instr match {
     case SSA.Loop(cond, body, variables) => ???
     case SSA.Disjunction(cond, thenBr, elseBr, postMerges) => ???
     case SSA.Phi(assignedValue, inValues) => ???
@@ -45,7 +44,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
   }
 
   private def computeTypes(formula: Formula)
-                          (using ts: TypeStore, program: Program, formulaPositions: util.IdentityHashMap[Formula, Position], thisCtx: ThisContext): Type = {
+                          (using ts: TypeStore, er: ErrorReporter, program: Program, formulaPositions: util.IdentityHashMap[Formula, Position], thisCtx: ThisContext): Type = {
     val posOpt = if formulaPositions.containsKey(formula) then Some(formulaPositions.get(formula)) else None
     formula match {
       case value: IdValue =>
@@ -61,16 +60,26 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         val rhsType = computeTypes(op.rhs)
         val candidateOperators = Operators.binaryOperators.filter { opSig =>
           opSig.op == op.operator
-            && lhsType.baseSubtypeOf(opSig.leftOperandType)
-            && rhsType.baseSubtypeOf(opSig.rightOperandType)
+            && lhsType.baseType.trivialSubtypeOf(opSig.leftOperandType.baseType)
+            && rhsType.baseType.trivialSubtypeOf(opSig.rightOperandType.baseType)
         }
-        resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt)
+        resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt) match {
+          case Some(opSig) =>
+            enforceSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
+            opSig.retType
+          case None => NothingType
+        }
       case op: UnaryOp =>
         val operandType = computeTypes(op.operand)
         val candidatesOperators = Operators.unaryOperators.filter { opSig =>
-          opSig.op == op.operator && operandType.baseSubtypeOf(opSig.operandType)
+          opSig.op == op.operator && operandType.baseType.trivialSubtypeOf(opSig.operandType.baseType)
         }
-        resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt)
+        resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt) match {
+          case Some(opSig) =>
+            enforceSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
+            opSig.retType
+          case None => NothingType
+        }
       case Call(receiver, funId, args) =>
         val receiverType = computeTypes(receiver)
         val argTypes = args.map(computeTypes)
@@ -119,7 +128,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
                     if (argsSizeMatch) {
                       for (((_, paramTypeRaw), argType) <- funSig.paramsInclThis.tail zip argTypes) {
                         val paramType = substIfNeeded(paramTypeRaw)
-                        checkTypeConstraint(paramType, argType, "function argument", posOpt)
+                        enforceSubtypingConstraint(paramType, argType)(using "method argument", posOpt)
                       }
                     }
                     substIfNeeded(funSig.retType)
@@ -152,12 +161,6 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     }
   }
 
-  private def checkTypeConstraint(expected: Type, actual: Type, descr: String, posOpt: Option[Position])(using Program): Unit = {
-    if (!actual.baseSubtypeOf(expected)) {
-      reportError(s"type mismatch on $descr: expected $expected, found $actual", posOpt)
-    }
-  }
-
   private def reportMethodNotFoundInType(receiverType: BaseType, funId: FunOrVarId, posOpt: Option[Position])(using Program): NothingType.type = {
     val receiverTypeDescr = mkReceiverTypeDescr(receiverType)
     reportError(s"method $funId not found in $receiverTypeDescr", posOpt)
@@ -173,14 +176,16 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     desugaredReceiverType.toString + (if desugaredReceiverType == receiverType then "" else s"( = $desugaredReceiverType)")
   }
 
-  private def resolveCandidatesOp[S <: OperatorSignature](candidateOperators: List[S], op: Operator, operandsDescr: String, posOpt: Option[Position]) = {
+  private def resolveCandidatesOp[S <: OperatorSignature](candidateOperators: List[S], op: Operator, operandsDescr: String, posOpt: Option[Position]): Option[S] = {
     candidateOperators match {
       case Nil =>
         reportError(s"no operator $op found for $operandsDescr", posOpt)
-      case List(opSig) => opSig.retType
+        None
+      case List(opSig) => Some(opSig)
       case candidates =>
         reportError(s"more than one operators $op found for $operandsDescr: " +
           "candidates are " + candidates.mkString(", "), posOpt)
+        None
     }
   }
 
