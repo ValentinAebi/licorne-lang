@@ -7,11 +7,12 @@ import java.util.Objects
 
 
 object Types {
-  
+
   private val itForHashAndEquals = IdValue("it")
 
   sealed trait Type {
     def baseType: BaseType
+
     def itValueAndRefinementOpt: Option[(IdValue, Formula)]
   }
 
@@ -44,7 +45,7 @@ object Types {
     case CharType extends PrimitiveType("Char")
     case BoolType extends PrimitiveType("Bool")
     case StringType extends PrimitiveType("String")
-    
+
     case NullType extends PrimitiveType("Null")
     case AnyType extends PrimitiveType("Any")
     case VoidType extends PrimitiveType("Void")
@@ -64,13 +65,45 @@ object Types {
   final case class NamedType(typeName: TypeIdentifier, typeArgs: List[Type], args: List[Formula]) extends BaseType {
 
     override def itValueAndRefinementOpt: Option[(IdValue, Formula)] = None
-    
+
     def isSimpleName: Boolean = typeArgs.isEmpty && args.isEmpty
-    
+
     override def toString: String = {
       val typeParamsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")
       typeName.toString + typeParamsDescr + paramsDescr
+    }
+  }
+
+  final class TypeVariable extends BaseType {
+    private var actualTypeOpt = Option.empty[Type]
+
+    def tryToResolve(tpe: Type): Unit = {
+      val actualTpe = goUpPath(tpe)
+      if (actualTpe != this) {
+        actualTypeOpt = Some(actualTpe)
+      }
+    }
+
+    def actualTypeIfKnown: Option[Type] = actualTypeOpt.map(goUpPath)
+
+    def substitutedIfResolved: Type = actualTypeIfKnown.getOrElse(this)
+
+    override def typeArgs: List[Type] = List.empty
+
+    override def itValueAndRefinementOpt: Option[(IdValue, Formula)] = None
+
+    override def toString: String = s"?${System.identityHashCode(this)}?"
+
+    private def goUpPath(tpe: Type): Type = tpe match {
+      case tVar: TypeVariable => tVar.actualTypeOpt match {
+        case Some(actualType) =>
+          val repr = goUpPath(actualType)
+          tVar.actualTypeOpt = Some(repr)
+          repr
+        case None => tpe
+      }
+      case _ => tpe
     }
   }
 
@@ -89,6 +122,7 @@ object Types {
         typesSubst.apply(typeName)
       case NamedType(typeName, typeArgs, args) =>
         NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
+      case tVar: TypeVariable => tVar
     }
   }
 

@@ -4,14 +4,13 @@ import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import lang.{RuntimeTypeSignature, Variance}
-import lang.Types.PrimitiveType.*
 import lang.Types.*
-import lang.Values.True
+import lang.Types.PrimitiveType.*
+import lang.{RuntimeTypeSignature, Variance}
 
 import scala.util.boundary
 
-object SubtypeRelation {
+object BaseSubtypeRelation {
 
   def enforceSubtypingConstraint(subT: Type, superT: Type)
                                 (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
@@ -20,14 +19,14 @@ object SubtypeRelation {
   private def enforceSubtypingConstraintInternal(subT: Type, superT: Type)
                                                 (using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
+      case (subT: TypeVariable, superT) =>
+        subT.tryToResolve(superT)
+        true
+      case (subT, superT: TypeVariable) =>
+        superT.tryToResolve(subT)
+        true
       case (subT, superT) =>
-        val correct = enforceSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
-        val subItOpt = subT.itValueAndRefinementOpt.map(_._1)
-        val subRefinement = subT.itValueAndRefinementOpt.map(_._2).getOrElse(True)
-        val superItOpt = superT.itValueAndRefinementOpt.map(_._1)
-        val superRefinement = superT.itValueAndRefinementOpt.map(_._2).getOrElse(True)
-        program.constraintsCollector.saveConstraint(RefinementConstraint(subItOpt, subRefinement, superItOpt, superRefinement, errorMsg.msg, posOpt))
-        correct
+        enforceSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
     }
   }
 

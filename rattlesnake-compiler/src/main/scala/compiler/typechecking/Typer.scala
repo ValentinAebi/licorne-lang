@@ -7,49 +7,94 @@ import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.SubtypeRelation.*
-import identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.typechecking.BaseSubtypeRelation.*
+import identifiers.FunOrVarId
 import lang.*
 import lang.Operators.OperatorSignature
 import lang.Types.PrimitiveType.*
-import lang.Types.{BaseType, Type}
+import lang.Types.{BaseType, Type, TypeVariable}
 import lang.Values.*
-
-import java.util
 
 final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
 
   override def apply(input: (Map[FunctionSignature, SSA.Function], Program)): (Map[FunctionSignature, SSA.Function], Program, TypeStore) = {
     val (functions, program) = input
-
-    ??? // TODO
+    val ts = new PartialTypeStore
+    for ((funSig, func) <- functions) {
+      val (thisVal, thisType) = funSig.paramsInclThis.head
+      ts(thisVal) = thisType
+      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal)
+      func.bodyOpt.foreach { body =>
+        traverseAll(body, tcCtx)(using ts, er, program)
+      }
+    }
+    (functions, program, ts)
   }
 
-  private case class ThisContext(thisVal: IdValue, thisType: BaseType)
+  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext =
+    instructions.foldLeft(tcCtx) { (ctx, instr) =>
+      traverse(instr, ctx)
+    }
 
-  private def traverse(instr: Instr)(using ts: PartialTypeStore, er: ErrorReporter, formulaPositions: util.IdentityHashMap[Formula, Position], program: Program, thisCtx: ThisContext): Unit = instr match {
-    case SSA.Loop(cond, body, variables) => ???
-    case SSA.Disjunction(cond, thenBr, elseBr, postMerges) => ???
-    case SSA.Phi(assignedValue, inValues) => ???
-    case SSA.Assignment(assignedValue, rhs) => ???
-    case SSA.Instantiate(assignedValue, classOrStructName) => ???
-    case SSA.Cast(assignedValue, inValue, targetType) => ???
-    case SSA.StaticTypeAssert(value, tpe) => ???
-    case SSA.StaticAssert(formula) => ???
-    case SSA.FieldWrite(owner, fieldName, rhs) => ???
-    case SSA.Return(retVal) => ???
-    case SSA.Panic(msg) => ???
-    case SSA.Evaluate(formula) => ???
-    case SSA.DynamicAssert(formula) => ???
+  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
+    given Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
+
+    instr match {
+      case SSA.Loop(cond, body, variables) =>
+        val condType = computeTypes(cond)(using tcCtx)
+        enforceSubtypingConstraint(condType, BoolType)(using "loop condition")
+        val bodyCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForThenBranch(cond))
+        traverseAll(body, bodyCtx)
+        tcCtx.withAdditionalSmartCasts(extractSmartcastsForElseBranch(cond))
+      case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
+        val condType = computeTypes(cond)(using tcCtx)
+        enforceSubtypingConstraint(condType, BoolType)(using "condition")
+        val thenStartCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForThenBranch(cond))
+        val thenEndCtx = traverseAll(thenBr, thenStartCtx)
+        val elseStartCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForElseBranch(cond))
+        val elseEndCtx = traverseAll(elseBr, elseStartCtx)
+        val ctxAfter =
+          if thenEndCtx.alwaysExitsFlagIsRaised then elseEndCtx
+          else if elseEndCtx.alwaysExitsFlagIsRaised then thenEndCtx
+          else tcCtx
+        traverseAll(postMerges, ctxAfter)
+      case SSA.Phi(assignedValue, inValues) => ???
+      case SSA.Assignment(assignedValue, rhs) =>
+        val rhsType = computeTypes(rhs)(using tcCtx)
+        ts(assignedValue) = rhsType
+        tcCtx
+      case SSA.Instantiate(assignedValue, classOrStructName) => ???
+      case SSA.Cast(assignedValue, inValue, targetType) => ???
+      case SSA.StaticTypeAssert(value, tpe) => ???
+      case SSA.StaticAssert(formula) =>
+        computeTypes(formula)(using tcCtx)
+        tcCtx
+      case SSA.FieldWrite(owner, fieldName, rhs) => ???
+      case SSA.Return(None) =>
+        tcCtx.raiseAlwaysExitsFlag()
+        tcCtx
+      case SSA.Return(Some(retVal)) =>
+        computeTypes(retVal)(using tcCtx)
+        tcCtx.raiseAlwaysExitsFlag()
+        tcCtx
+      case SSA.Panic(msg) =>
+        computeTypes(msg)(using tcCtx)
+        tcCtx.raiseAlwaysExitsFlag()
+        tcCtx
+      case SSA.Evaluate(formula) =>
+        computeTypes(formula)(using tcCtx)
+        tcCtx
+      case SSA.DynamicAssert(formula) => ???
+    }
   }
 
   private def computeTypes(formula: Formula)
-                          (using ts: TypeStore, er: ErrorReporter, program: Program, formulaPositions: util.IdentityHashMap[Formula, Position], thisCtx: ThisContext): Type = {
-    val posOpt = if formulaPositions.containsKey(formula) then Some(formulaPositions.get(formula)) else None
+                          (using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
+    val posOpt = if program.formulaPositions.containsKey(formula) then Some(program.formulaPositions.get(formula)) else None
     formula match {
       case value: IdValue =>
         // must be known, otherwise SSA generation would have failed
-        ts.typeOf(value)
+        tcCtx.smartcasts.getOrElse(value, ts.typeOf(value))
       case True | False => BoolType
       case NullPtr => NullType
       case IntConstant(value) => IntType
@@ -102,18 +147,8 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
                     val substOpt = if (typeArgs.nonEmpty && typeArgs.size != funSig.typeParams.size) {
                       reportError(s"wrong number of type parameters for method $funId: expected ${funSig.typeParams.size}, was ${typeArgs.size}", posOpt)
                       None
-                    } else if (typeArgs.isEmpty && funSig.typeParams.nonEmpty) {
-                      if (argsSizeMatch) {
-                        funSig.paramsInclThis.tail.zip(argTypes).foldLeft(Option(Map.empty[TypeIdentifier, Type])) {
-                          case (None, _) => None
-                          case (Some(prevSubst), ((_, paramType), argType)) =>
-                            TypeInference.unifyInfer(paramType, funSig.typeParams.toSet, argType) match {
-                              case None => None
-                              case Some(newSubst) if newSubst.exists((tid, _) => prevSubst.get(tid).exists(_ != tid)) => None
-                              case Some(newSubst) => Some(prevSubst ++ newSubst)
-                            }
-                        }
-                      } else None
+                    } else if (typeArgs.isEmpty && funSig.typeParams.nonEmpty) Option.when(argsSizeMatch) {
+                      funSig.typeParams.map(_ -> new TypeVariable).toMap
                     } else Some {
                       funSig.typeParams.zip(argTypes).toMap
                     }
@@ -138,26 +173,54 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         }
       case Select(owner, fieldName) =>
         val ownerType = computeTypes(owner)
-        program.desugarType(ownerType).baseType match {
-          case _: Types.PrimitiveType =>
-            reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
-          case Types.NamedType(typeName, typeArgs, args) =>
-            program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
+        findField(owner, ownerType, fieldName, posOpt, fieldShouldBeReassignable = false)
+      case HasType(formula, tpe) => ???
+    }
+  }
+
+  private def extractSmartcastsForThenBranch(cond: Formula): Map[IdValue, BaseType] = cond match {
+    case And(lhs, rhs) => extractSmartcastsForThenBranch(lhs) ++ extractSmartcastsForThenBranch(rhs)
+    case HasType(value: IdValue, tpe) => Map(value -> tpe.baseType)
+    case _ => Map.empty
+  }
+
+  private def extractSmartcastsForElseBranch(cond: Formula): Map[IdValue, BaseType] = cond match {
+    case Or(lhs, rhs) => extractSmartcastsForElseBranch(lhs) ++ extractSmartcastsForElseBranch(rhs)
+    case HasType(value: IdValue, tpe) => Map(value -> tpe.baseType)
+    case _ => Map.empty
+  }
+
+  private def findField(owner: Formula, ownerType: Type, fieldName: FunOrVarId, posOpt: Option[Position], fieldShouldBeReassignable: Boolean)(using er: ErrorReporter, program: Program, tcCtx: TypeCheckingContext): Type = {
+    program.desugarType(ownerType).baseType match {
+      case _: Types.PrimitiveType =>
+        reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
+      case Types.NamedType(typeName, typeArgs, args) =>
+        program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
+          case None =>
+            reportError(s"type not found: $typeName", posOpt)
+          case Some(structSig: StructSignature) =>
+            structSig.fields.get(fieldName) match {
+              case Some(field) => field.tpe
               case None =>
-                reportError(s"type not found: $typeName", posOpt)
-              case Some(structSig: StructSignature) =>
-                structSig.fields.get(fieldName) match {
-                  case Some(field) => field.tpe
-                  case None =>
-                    reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
-                }
-              case Some(_: ClassSignature) =>
-                reportError(s"field not found or not accessible in $typeName; note that class fields are always private and should be accessed from the outside through getters only", posOpt)
-              case _ =>
                 reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
             }
+          case Some(classSig: ClassSignature) if owner == tcCtx.thisVal =>
+            classSig.fields.get(fieldName) match {
+              case None =>
+                reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
+              case Some(field) =>
+                if (fieldShouldBeReassignable && field.isStable) {
+                  reportError(s"field $fieldName is not reassignable", posOpt)
+                }
+                field.tpe
+            }
+          case Some(_: ClassSignature) =>
+            reportError(s"field not found or not accessible in $typeName; note that class fields are always private and should be accessed from the outside through getters only", posOpt)
+          case _ =>
+            reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
         }
-      case HasType(formula, tpe) => ???
+      case _: TypeVariable =>
+        reportError(s"access to field $fieldName: cannot resolve receiver type", posOpt)
     }
   }
 

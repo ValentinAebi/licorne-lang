@@ -6,8 +6,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.SubtypeRelation.enforceSubtypingConstraint
-import compiler.typechecking.{RefinementConstraint, TypeCheckingContext}
+import compiler.typechecking.BaseSubtypeRelation.enforceSubtypingConstraint
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
@@ -32,8 +31,6 @@ final case class Program(
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.Map.empty[TypeIdentifier, mutable.Map[TypeIdentifier, Map[TypeIdentifier, Type]]]
-  
-  val constraintsCollector = RefinementConstraint.Collector()
 
   def checkDefinitions()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     checkInterfaceSignatures()
@@ -101,6 +98,7 @@ final case class Program(
             desugarType(rhs.substitute(typesSubst, valsSubst))
           case None => NamedType(typeName, typeArgsSubst, args)
         }
+      case typeVariable: TypeVariable => typeVariable.actualTypeIfKnown.getOrElse(typeVariable)
     }
     if desugaredType == tpe then tpe
     else desugarType(desugaredType)
@@ -120,7 +118,7 @@ final case class Program(
 
   private def checkInterfaceSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, InterfaceSignature(id, typeParams, functions, directSupertypes)) <- interfaces) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
       checkSuperinterfaces(id, directSupertypes, positions.get(id))
     }
@@ -128,7 +126,7 @@ final case class Program(
 
   private def checkClassSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, ClassSignature(id, typeParams, fields, importedObjects, functions, directSupertypes)) <- classes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
       val posOpt = positions.get(id)
       checkFields(fields.values, posOpt)
@@ -139,7 +137,7 @@ final case class Program(
 
   private def checkObjectSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, ObjectSignature(id, importedObjects, functions, directSupertypes)) <- objects) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, Map.empty, Set.empty)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, Map.empty, Set.empty)
 
       checkImportedObjects(importedObjects)
       checkSuperinterfaces(id, directSupertypes, positions.get(id))
@@ -148,7 +146,7 @@ final case class Program(
 
   private def checkDatatypeSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
       checkSupertypesOfStructLike(id, directSupertypes, positions.get(id))
     }
@@ -156,7 +154,7 @@ final case class Program(
 
   private def checkStructSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((_, StructSignature(id, typeParams, fields, directSupertypes)) <- structs) {
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, typeParams.toMap, Set.empty)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
       val posOpt = positions.get(id)
       checkFields(fields.values, posOpt)
@@ -177,10 +175,10 @@ final case class Program(
   }
 
   private def checkFields(fields: Iterable[Field], posOpt: Option[Position])
-                         (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+                         (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     fields.foreach { field =>
       val variance = if field.isStable then Covariant else Invariant
-      tcCtx.checkTypesWellDefined(field.tpe, Some(variance), posOpt)
+      sigCheckCtx.checkTypesWellDefined(field.tpe, Some(variance), posOpt)
     }
   }
 
@@ -188,16 +186,16 @@ final case class Program(
     for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, funBodyOpt, funPosOpt)) <- functions) {
       val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
 
-      given tcCtx: TypeCheckingContext = TypeCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
+      given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
 
       val conflictingTypeParams = funTypeParams.intersect(ownerSig.typeParams)
       if (conflictingTypeParams.nonEmpty) {
         er.reportError(s"type parameters ${conflictingTypeParams.mkString(",")} conflict with type parameters of $ownerName", funPosOpt)
       }
       for ((paramId, paramType) <- funParamsInclThis.tail) {
-        tcCtx.checkTypesWellDefined(paramType, Some(Contravariant), funPosOpt)
+        sigCheckCtx.checkTypesWellDefined(paramType, Some(Contravariant), funPosOpt)
       }
-      tcCtx.checkTypesWellDefined(funRetType, Some(Covariant), funPosOpt)
+      sigCheckCtx.checkTypesWellDefined(funRetType, Some(Covariant), funPosOpt)
     }
   }
 
@@ -254,9 +252,9 @@ final case class Program(
   }
 
   private def checkSuperinterfaces(childTypeId: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
-                                  (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+                                  (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
+      sigCheckCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
         case _: InterfaceSignature => ()
         case _ => er.reportError(s"interface not found: ${superT.typeName}", posOpt)
@@ -265,9 +263,9 @@ final case class Program(
   }
 
   private def checkSupertypesOfStructLike(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
-                                         (using tcCtx: TypeCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+                                         (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
-      tcCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
+      sigCheckCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
         case DatatypeSignature(superTypeId, _, _, subOfSuper) =>
           if (!subOfSuper.contains(id)) {
@@ -346,6 +344,7 @@ final case class Program(
     case primitiveType: Types.PrimitiveType => Set.empty
     case NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
+    case _: TypeVariable => Set.empty
   }
 
   private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {

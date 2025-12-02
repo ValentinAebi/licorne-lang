@@ -330,7 +330,7 @@ final class SSAGenerator(er: ErrorReporter)
               valsCtx.valueOf(id) match {
                 case _: LocalValuesContext.ErrorValueQueryResult => ()
                 case LocalValuesContext.KnownAndInitialized(preLoopVal, _, _) =>
-                  // if value is known before the loop then it is also after its body
+                  // if value is known before the loop then it is also known after its body
                   val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[KnownAndInitialized].value
                   val postLoopVal = valsCtx.valuesGen.newPhi(id, Set(bodyEndVal), whileLoop.originalAst)
                   if (preLoopVal != bodyEndVal) {
