@@ -25,8 +25,8 @@ object SSA {
   
   final case class Function(signature: FunctionSignature, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
   
-  final case class LoopVarInfo(varId: FunOrVarId, beforeLoopVal: Value, bodyStartVal: Value, bodyEndVal: Value) {
-    override def toString: String = s"$varId: $beforeLoopVal ($bodyStartVal ; <body> ; $bodyEndVal)"
+  final case class LoopVarInfo(varId: FunOrVarId, beforeLoopVal: Value, bodyStartVal: IdValue, bodyEndVal: Value, afterLoopVal: IdValue) {
+    override def toString: String = s"$varId: $beforeLoopVal ($bodyStartVal ; <body> ; $bodyEndVal) $afterLoopVal"
   }
 
   sealed trait ControlFlowInstr extends Instr

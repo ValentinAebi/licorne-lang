@@ -1,18 +1,19 @@
 package compiler.typechecking
 
 import compiler.irs.SSA
-import compiler.irs.SSA.Instr
+import compiler.irs.SSA.{Instr, LoopVarInfo}
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.*
+import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.FunOrVarId
 import lang.*
 import lang.Operators.OperatorSignature
 import lang.Types.PrimitiveType.*
-import lang.Types.{BaseType, Type, TypeVariable}
+import lang.Types.{BaseType, NamedType, Type, TypeVariable}
 import lang.Values.*
 
 final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
@@ -23,7 +24,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     for ((funSig, func) <- functions) {
       val (thisVal, thisType) = funSig.paramsInclThis.head
       ts(thisVal) = thisType
-      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal)
+      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false)
       func.bodyOpt.foreach { body =>
         traverseAll(body, tcCtx)(using ts, er, program)
       }
@@ -41,68 +42,107 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
 
     instr match {
       case SSA.Loop(cond, body, variables) =>
-        val condType = computeTypes(cond)(using tcCtx)
-        enforceSubtypingConstraint(condType, BoolType)(using "loop condition")
-        val bodyCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForThenBranch(cond))
-        traverseAll(body, bodyCtx)
-        tcCtx.withAdditionalSmartCasts(extractSmartcastsForElseBranch(cond))
+        val condType = computeType(cond)(using tcCtx)
+        enforceBaseSubtypingConstraint(condType, BoolType)(using "loop condition")
+        val (bodyInfos, afterLoopInfos) = extractTypeInfos(cond)
+        val bodyCtx = tcCtx.withTypeInfoRefined(bodyInfos)
+        for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
+          ts(bodyStartVal) = computeType(beforeLoopVal)(using bodyCtx)
+        }
+        val afterBodyCtx = traverseAll(body, bodyCtx)
+        for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
+          val typeAtEndOfBody = computeType(bodyEndVal)(using afterBodyCtx)
+          val typeAtBeginningOfBody = ts.typeOf(bodyStartVal)
+          enforceBaseSubtypingConstraint(typeAtEndOfBody.baseType, typeAtBeginningOfBody.baseType)(using s"base type of $varId at the end of loop body")
+        }
+        val afterLoopCtx = tcCtx.withTypeInfoRefined(afterLoopInfos)
+        for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
+          ts(afterLoopVal) = Types.join(computeType(beforeLoopVal)(using afterLoopCtx), computeType(bodyEndVal)(using afterLoopCtx))
+        }
+        afterLoopCtx
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
-        val condType = computeTypes(cond)(using tcCtx)
-        enforceSubtypingConstraint(condType, BoolType)(using "condition")
-        val thenStartCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForThenBranch(cond))
+        val condType = computeType(cond)(using tcCtx)
+        enforceBaseSubtypingConstraint(condType, BoolType)(using "condition")
+        val (thenInfos, elseInfos) = extractTypeInfos(cond)
+        val thenStartCtx = tcCtx.withTypeInfoRefined(thenInfos)
         val thenEndCtx = traverseAll(thenBr, thenStartCtx)
-        val elseStartCtx = tcCtx.withAdditionalSmartCasts(extractSmartcastsForElseBranch(cond))
+        val elseStartCtx = tcCtx.withTypeInfoRefined(elseInfos)
         val elseEndCtx = traverseAll(elseBr, elseStartCtx)
         val ctxAfter =
-          if thenEndCtx.alwaysExitsFlagIsRaised then elseEndCtx
-          else if elseEndCtx.alwaysExitsFlagIsRaised then thenEndCtx
+          if thenEndCtx.alwaysExitsFlag then elseEndCtx
+          else if elseEndCtx.alwaysExitsFlag then thenEndCtx
           else tcCtx
         traverseAll(postMerges, ctxAfter)
-      case SSA.Phi(assignedValue, inValues) => ???
+      case SSA.Phi(assignedValue, inValues) =>
+        ts(assignedValue) = Types.join(inValues.map(computeType(_)(using tcCtx)))
+        tcCtx
       case SSA.Assignment(assignedValue, rhs) =>
-        val rhsType = computeTypes(rhs)(using tcCtx)
+        val rhsType = computeType(rhs)(using tcCtx)
         ts(assignedValue) = rhsType
         tcCtx
       case SSA.Instantiate(assignedValue, classOrStructName) => ???
       case SSA.Cast(assignedValue, inValue, targetType) => ???
-      case SSA.StaticTypeAssert(value, tpe) => ???
+      case SSA.StaticTypeAssert(value, tpe) =>
+        enforceBaseSubtypingConstraint(computeType(value)(using tcCtx), tpe)(using "type ascription")
+        tcCtx
       case SSA.StaticAssert(formula) =>
-        computeTypes(formula)(using tcCtx)
+        computeType(formula)(using tcCtx)
         tcCtx
       case SSA.FieldWrite(owner, fieldName, rhs) => ???
       case SSA.Return(None) =>
-        tcCtx.raiseAlwaysExitsFlag()
-        tcCtx
+        tcCtx.withAlwaysExitsFlagRaised
       case SSA.Return(Some(retVal)) =>
-        computeTypes(retVal)(using tcCtx)
-        tcCtx.raiseAlwaysExitsFlag()
-        tcCtx
+        computeType(retVal)(using tcCtx)
+        tcCtx.withAlwaysExitsFlagRaised
       case SSA.Panic(msg) =>
-        computeTypes(msg)(using tcCtx)
-        tcCtx.raiseAlwaysExitsFlag()
-        tcCtx
+        computeType(msg)(using tcCtx)
+        tcCtx.withAlwaysExitsFlagRaised
       case SSA.Evaluate(formula) =>
-        computeTypes(formula)(using tcCtx)
+        computeType(formula)(using tcCtx)
         tcCtx
       case SSA.DynamicAssert(formula) => ???
     }
   }
 
-  private def computeTypes(formula: Formula)
-                          (using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
+  /**
+   * @return (info when cond, info when !cond)
+   */
+  private def extractTypeInfos(cond: Formula)(using ts: TypeStore): (Set[TypeInfo], Set[TypeInfo]) = cond match {
+    case And(lhs, rhs) =>
+      val (infoWhenLhs, infoWhenNotLhs) = extractTypeInfos(lhs)
+      val (infoWhenRhs, infoWhenNotRhs) = extractTypeInfos(rhs)
+      (infoWhenLhs ++ infoWhenRhs, Set.empty)
+    case Or(lhs, rhs) =>
+      val (infoWhenLhs, infoWhenNotLhs) = extractTypeInfos(lhs)
+      val (infoWhenRhs, infoWhenNotRhs) = extractTypeInfos(rhs)
+      (Set.empty, infoWhenNotLhs ++ infoWhenNotRhs)
+    case Not(operand) =>
+      val (infoWhenOperand, infoWhenNotOperand) = extractTypeInfos(operand)
+      (infoWhenNotOperand, infoWhenOperand)
+    case HasType(idValue: IdValue, testedType) =>
+      ts.typeOfOpt(idValue) match {
+        case Some(NamedType(knownType, Nil, Nil)) =>
+          (Set(TypeInfo(idValue, knownType, Set(testedType), Set.empty)),
+            Set(TypeInfo(idValue, knownType, Set.empty, Set(testedType))))
+        case _ => (Set.empty, Set.empty)
+      }
+  }
+
+  private def computeType(formula: Formula)
+                         (using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
     val posOpt = if program.formulaPositions.containsKey(formula) then Some(program.formulaPositions.get(formula)) else None
     formula match {
-      case value: IdValue =>
+      case idValue: IdValue =>
         // must be known, otherwise SSA generation would have failed
-        tcCtx.smartcasts.getOrElse(value, ts.typeOf(value))
+        ts.typeOf(idValue)  // TODO smartcasts (create a function to compute types after downcasting, accounting for the possible presence of type parameters)
       case True | False => BoolType
       case NullPtr => NullType
       case IntConstant(value) => IntType
       case DoubleConstant(value) => DoubleType
       case StringConstant(value) => StringType
       case op: BinOp =>
-        val lhsType = computeTypes(op.lhs)
-        val rhsType = computeTypes(op.rhs)
+        val lhsType = computeType(op.lhs)
+        val rhsType = computeType(op.rhs)
         val candidateOperators = Operators.binaryOperators.filter { opSig =>
           opSig.op == op.operator
             && lhsType.baseType.trivialSubtypeOf(opSig.leftOperandType.baseType)
@@ -110,24 +150,24 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         }
         resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt) match {
           case Some(opSig) =>
-            enforceSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
+            enforceBaseSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
             opSig.retType
           case None => NothingType
         }
       case op: UnaryOp =>
-        val operandType = computeTypes(op.operand)
+        val operandType = computeType(op.operand)
         val candidatesOperators = Operators.unaryOperators.filter { opSig =>
           opSig.op == op.operator && operandType.baseType.trivialSubtypeOf(opSig.operandType.baseType)
         }
         resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt) match {
           case Some(opSig) =>
-            enforceSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
+            enforceBaseSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
             opSig.retType
           case None => NothingType
         }
       case Call(receiver, funId, args) =>
-        val receiverType = computeTypes(receiver)
-        val argTypes = args.map(computeTypes)
+        val receiverType = computeType(receiver)
+        val argTypes = args.map(computeType)
         program.desugarType(receiverType).baseType match {
           case Types.NamedType(typeName, typeArgs, args) =>
             assert(args.isEmpty)
@@ -163,7 +203,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
                     if (argsSizeMatch) {
                       for (((_, paramTypeRaw), argType) <- funSig.paramsInclThis.tail zip argTypes) {
                         val paramType = substIfNeeded(paramTypeRaw)
-                        enforceSubtypingConstraint(paramType, argType)(using "method argument", posOpt)
+                        enforceBaseSubtypingConstraint(paramType, argType)(using "method argument", posOpt)
                       }
                     }
                     substIfNeeded(funSig.retType)
@@ -172,22 +212,10 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
           case _ => reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
         }
       case Select(owner, fieldName) =>
-        val ownerType = computeTypes(owner)
+        val ownerType = computeType(owner)
         findField(owner, ownerType, fieldName, posOpt, fieldShouldBeReassignable = false)
       case HasType(formula, tpe) => ???
     }
-  }
-
-  private def extractSmartcastsForThenBranch(cond: Formula): Map[IdValue, BaseType] = cond match {
-    case And(lhs, rhs) => extractSmartcastsForThenBranch(lhs) ++ extractSmartcastsForThenBranch(rhs)
-    case HasType(value: IdValue, tpe) => Map(value -> tpe.baseType)
-    case _ => Map.empty
-  }
-
-  private def extractSmartcastsForElseBranch(cond: Formula): Map[IdValue, BaseType] = cond match {
-    case Or(lhs, rhs) => extractSmartcastsForElseBranch(lhs) ++ extractSmartcastsForElseBranch(rhs)
-    case HasType(value: IdValue, tpe) => Map(value -> tpe.baseType)
-    case _ => Map.empty
   }
 
   private def findField(owner: Formula, ownerType: Type, fieldName: FunOrVarId, posOpt: Option[Position], fieldShouldBeReassignable: Boolean)(using er: ErrorReporter, program: Program, tcCtx: TypeCheckingContext): Type = {

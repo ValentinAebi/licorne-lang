@@ -7,7 +7,7 @@ import compiler.reporting.Position
 import identifiers.TypeIdentifier
 import lang.Types.*
 import lang.Values.Formula
-import lang.{Types, Values, Variance}
+import lang.{RuntimeTypeSignature, Types, Values, Variance}
 
 final class SignaturesCheckingContext(
                                  val program: Program,
@@ -73,7 +73,9 @@ final class SignaturesCheckingContext(
     case Values.Select(owner, fieldName) => checkTypesWellDefined(owner, posOpt)
     case Values.HasType(formula, tpe) =>
       checkTypesWellDefined(formula, posOpt)
-      checkTypesWellDefined(tpe, None, posOpt)
+      if (tcCtx.program.resolveSignatureAs[RuntimeTypeSignature](tpe).isEmpty){
+        er.reportError(s"unknown runtime type: $tpe", posOpt)
+      }
   }
 
   private def singOrPlural(cnt: Int, sing: String, plur: String): String =

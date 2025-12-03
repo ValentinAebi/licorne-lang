@@ -125,5 +125,11 @@ object Types {
       case tVar: TypeVariable => tVar
     }
   }
+  
+  def join(types: Type*): Type = join(types.toSet)
+  
+  def join(types: Set[Type]): Type = {
+    ??? // TODO
+  }
 
 }

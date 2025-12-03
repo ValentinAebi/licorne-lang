@@ -87,7 +87,7 @@ object Values {
     override def toString: String = s"$owner.$fieldName"
   }
 
-  final case class HasType(formula: Formula, tpe: Type) extends Formula {
+  final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula {
     override def toString: String = s"$formula is $tpe"
   }
 

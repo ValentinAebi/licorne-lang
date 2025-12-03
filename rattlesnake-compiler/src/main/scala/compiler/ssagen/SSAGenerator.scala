@@ -1,5 +1,6 @@
 package compiler.ssagen
 
+import compiler.irs.Asts.NamedTypeTree
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -334,7 +335,7 @@ final class SSAGenerator(er: ErrorReporter)
                   val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[KnownAndInitialized].value
                   val postLoopVal = valsCtx.valuesGen.newPhi(id, Set(bodyEndVal), whileLoop.originalAst)
                   if (preLoopVal != bodyEndVal) {
-                    loopVars.addOne(LoopVarInfo(id, preLoopVal, bodyStartVal, postLoopVal))
+                    loopVars.addOne(LoopVarInfo(id, preLoopVal, bodyStartVal, bodyEndVal, postLoopVal))
                   }
                   val found = valsCtx.remap(id, postLoopVal)
                   assert(found)
@@ -445,7 +446,10 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
       case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
-      case Asts.TypeTest(expr, tpe) => HasType(generateSSAExpr(expr), mkBasicType(tpe, valsCtx))
+      case Asts.TypeTest(expr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(expr), typeName)
+      case Asts.TypeTest(expr, tpe) =>
+        reportError(s"illegal type for dynamic type test: $tpe", expr.getPosition)
+        valsCtx.valuesGen.newIllegalConstruct(expr)
       case expr: Asts.NonFormulaExpr => ssaInstrListOpt match {
         case None =>
           reportError("illegal expression: only formulas are allowed in this position", expr.getPosition)

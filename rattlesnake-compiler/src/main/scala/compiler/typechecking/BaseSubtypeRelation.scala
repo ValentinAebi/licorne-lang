@@ -12,11 +12,11 @@ import scala.util.boundary
 
 object BaseSubtypeRelation {
 
-  def enforceSubtypingConstraint(subT: Type, superT: Type)
-                                (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
-    enforceSubtypingConstraintInternal(subT, superT)(using ErrorMessage(s"$positionDescr: expected $superT, found $subT"))
+  def enforceBaseSubtypingConstraint(subT: Type, superT: Type)
+                                    (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
+    enforceBaseSubtypingConstraintInternal(subT, superT)(using ErrorMessage(s"$positionDescr: expected $superT, found $subT"))
 
-  private def enforceSubtypingConstraintInternal(subT: Type, superT: Type)
+  private def enforceBaseSubtypingConstraintInternal(subT: Type, superT: Type)
                                                 (using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
       case (subT: TypeVariable, superT) =>
@@ -26,11 +26,11 @@ object BaseSubtypeRelation {
         superT.tryToResolve(subT)
         true
       case (subT, superT) =>
-        enforceSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
+        enforceBaseSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
     }
   }
 
-  private def enforceSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
+  private def enforceBaseSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
                                                             (using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     (subT, superT) match {
       case (subT, superT) if subT.trivialSubtypeOf(superT) => true
@@ -60,9 +60,9 @@ object BaseSubtypeRelation {
                     }
                     correct
                   case Variance.Covariant =>
-                    enforceSubtypingConstraintInternal(typeInSub, typeInSuper)
+                    enforceBaseSubtypingConstraintInternal(typeInSub, typeInSuper)
                   case Variance.Contravariant =>
-                    enforceSubtypingConstraintInternal(typeInSuper, typeInSub)
+                    enforceBaseSubtypingConstraintInternal(typeInSuper, typeInSub)
                 }
                 if (!typeArgsMatch) {
                   boundary.break(false)

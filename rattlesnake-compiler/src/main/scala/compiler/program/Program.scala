@@ -6,7 +6,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.enforceSubtypingConstraint
+import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
@@ -239,7 +239,7 @@ final case class Program(
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  enforceSubtypingConstraint(subFunRetType, expectedRetType)(using s"return type of method $funId that overrides $funId in $superT", funPosOpt, er, this)
+                  enforceBaseSubtypingConstraint(subFunRetType, expectedRetType)(using s"return type of method $funId that overrides $funId in $superT", funPosOpt, er, this)
                 }
                 if (!subFunVisibility.eqOrMorePermissive(superFunVisibility)) {
                   er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
@@ -353,7 +353,7 @@ final case class Program(
     case op: Values.UnaryOp => findMentionedTypes(op.operand)
     case Values.Call(receiver, funId, args) => findMentionedTypes(receiver) ++ args.flatMap(findMentionedTypes)
     case Values.Select(owner, fieldName) => findMentionedTypes(owner)
-    case Values.HasType(formula, tpe) => findMentionedTypes(formula) ++ findMentionedTypes(tpe)
+    case Values.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
   }
 
   extension (er: ErrorReporter) private def reportError(msg: String, posOpt: Option[Position])(using compilationStep: CompilationStep): Unit = {
