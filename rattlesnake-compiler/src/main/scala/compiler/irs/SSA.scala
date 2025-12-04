@@ -44,7 +44,7 @@ object SSA {
   
   final case class Assignment(assignedValue: IdValue, rhs: Formula) extends AssigningInstr
   final case class Instantiate(assignedValue: IdValue, classOrStructName: TypeIdentifier) extends AssigningInstr
-  final case class Cast(assignedValue: IdValue, inValue: Value, targetType: BaseType) extends AssigningInstr
+  final case class Cast(assignedValue: IdValue, inValue: IdValue, target: TypeIdentifier) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, rhs: Formula) extends Instr
   final case class Return(retValOpt: Option[Value]) extends Instr

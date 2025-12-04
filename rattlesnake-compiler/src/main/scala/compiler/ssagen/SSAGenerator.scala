@@ -369,9 +369,9 @@ final class SSAGenerator(er: ErrorReporter)
                                           expr: Asts.Expr,
                                           ssaInstructionsList: mutable.ListBuffer[Instr],
                                           valsCtx: LocalValuesContext
-                                        )(using util.IdentityHashMap[Formula, Position]): Value =
+                                        )(using util.IdentityHashMap[Formula, Position]): IdValue =
     generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx) match {
-      case value: Value => value
+      case value: IdValue => value
       case formula =>
         val resVal = valsCtx.valuesGen.newIntermediate(expr)
         ssaInstructionsList.saveInstr(Assignment(resVal, formula), expr)
@@ -446,10 +446,10 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
       case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
-      case Asts.TypeTest(expr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(expr), typeName)
-      case Asts.TypeTest(expr, tpe) =>
-        reportError(s"illegal type for dynamic type test: $tpe", expr.getPosition)
-        valsCtx.valuesGen.newIllegalConstruct(expr)
+      case Asts.TypeTest(testedExpr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
+      case typeTest@Asts.TypeTest(_, tpe) =>
+        reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
+        valsCtx.valuesGen.newIllegalConstruct(typeTest)
       case expr: Asts.NonFormulaExpr => ssaInstrListOpt match {
         case None =>
           reportError("illegal expression: only formulas are allowed in this position", expr.getPosition)
@@ -493,12 +493,15 @@ final class SSAGenerator(er: ErrorReporter)
         List(Phi(resultVal, Set(thenResVal, elseResVal)))
       ), ternary)
       elseResVal
-    case cast@Asts.Cast(expr, tpe) =>
-      val inVal = generateSSAExprForcedAsVal(expr, ssaInstructionsList, valsCtx)
+    case cast@Asts.Cast(castExpr, NamedTypeTree(typeName, Nil, Nil)) =>
+      val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       val resultVal = valsCtx.valuesGen.newIntermediate(cast)
-      val targetType = mkBasicType(tpe, valsCtx)
-      ssaInstructionsList.saveInstr(Cast(resultVal, inVal, targetType), cast)
+      ssaInstructionsList.saveInstr(Cast(resultVal, castValue, typeName), cast)
       resultVal
+    case cast@Asts.Cast(castExpr, tpe) =>
+      val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
+      reportError(s"illegal type for dynamic type test: $tpe", cast.getPosition)
+      valsCtx.valuesGen.newIllegalConstruct(cast)
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)

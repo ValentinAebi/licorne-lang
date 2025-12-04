@@ -9,7 +9,7 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.*
 import compiler.typechecking.TypeCheckingContext.TypeInfo
-import identifiers.FunOrVarId
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Operators.OperatorSignature
 import lang.Types.PrimitiveType.*
@@ -81,7 +81,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         ts(assignedValue) = rhsType
         tcCtx
       case SSA.Instantiate(assignedValue, classOrStructName) => ???
-      case SSA.Cast(assignedValue, inValue, targetType) => ???
+      case SSA.Cast(resultValue, castValue, targetType) =>
+        val castValueType = computeType(castValue)(using tcCtx)
+        reasonForIllegalDowncastTarget(castValueType, targetType).foreach {
+          reportError(_, instr.getAstNodeOpt.flatMap(_.getPosition))
+        }
+        tcCtx.withTypeInfoRefined(Set(TypeInfo(castValue, targetType, Set(targetType), Set.empty)))
       case SSA.StaticTypeAssert(value, tpe) =>
         enforceBaseSubtypingConstraint(computeType(value)(using tcCtx), tpe)(using "type ascription")
         tcCtx
@@ -134,7 +139,11 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     formula match {
       case idValue: IdValue =>
         // must be known, otherwise SSA generation would have failed
-        ts.typeOf(idValue)  // TODO smartcasts (create a function to compute types after downcasting, accounting for the possible presence of type parameters)
+        val regularType = ts.typeOf(idValue)
+        tcCtx.inferredTypeFor(idValue) match {
+          case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) => NamedType(typeId, List.empty, List.empty)
+          case _ => regularType
+        }
       case True | False => BoolType
       case NullPtr => NullType
       case IntConstant(value) => IntType
@@ -214,7 +223,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
       case Select(owner, fieldName) =>
         val ownerType = computeType(owner)
         findField(owner, ownerType, fieldName, posOpt, fieldShouldBeReassignable = false)
-      case HasType(formula, tpe) => ???
+      case HasType(formula, tpe) =>
+        val formulaType = computeType(formula)
+        reasonForIllegalDowncastTarget(formulaType, tpe).foreach {
+          reportError(_, posOpt)
+        }
+        BoolType
     }
   }
 
@@ -250,6 +264,25 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
       case _: TypeVariable =>
         reportError(s"access to field $fieldName: cannot resolve receiver type", posOpt)
     }
+  }
+
+  extension (targetId: TypeIdentifier) private def isValidDowncastTargetForType(tpe: Type)(using program: Program): Boolean =
+    reasonForIllegalDowncastTarget(tpe, targetId).isEmpty
+
+  private def reasonForIllegalDowncastTarget(originalType: Type, targetId: TypeIdentifier)(using program: Program): Option[String] = originalType.baseType match {
+    case NamedType(originId, _, Nil) =>
+      program.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
+        case None =>
+          Some(s"type $targetId not found")
+        case Some(sig) =>
+          if (sig.typeParams.nonEmpty) {
+            Some(s"$targetId takes type parameters")
+          } else if (program.subToSuperSubst(targetId, originId).isEmpty) {
+            Some(s"$targetId does not subtype of $originId")
+          } else None
+      }
+    case _ =>
+      Some("target is an unresolved or primitive type")
   }
 
   private def reportMethodNotFoundInType(receiverType: BaseType, funId: FunOrVarId, posOpt: Option[Position])(using Program): NothingType.type = {
