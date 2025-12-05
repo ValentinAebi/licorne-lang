@@ -235,12 +235,7 @@ final case class Program(
                   for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
                     val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
                     if (subParamType != expectedSubParamType) {
-                      val paramNameIfKnown =
-                        globalValuesContext.debugInfoOf(subParamVal)
-                          .flatMap(_.referencedSourceId)
-                          .map(" " + _)
-                          .getOrElse("")
-                      er.reportError(s"type mismatch on parameter$paramNameIfKnown of method $funId: " +
+                      er.reportError(s"type mismatch on parameter ${subParamVal.varId} of method $funId: " +
                         s"type is $subParamType but should be $expectedSubParamType since the method overrides $funId in $superTSubst", funPosOpt)
                     }
                     valsSubst(superParamVal) = subParamVal

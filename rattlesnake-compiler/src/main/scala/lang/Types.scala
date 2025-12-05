@@ -1,7 +1,6 @@
 package lang
 
-import identifiers.TypeIdentifier
-import lang.Types.TypeVariable
+import identifiers.{ItId, TypeIdentifier}
 import lang.Values.{And, Formula, IdValue}
 
 import java.util.Objects
@@ -9,7 +8,7 @@ import java.util.Objects
 
 object Types {
 
-  private val itForHashAndEquals = IdValue("it")
+  private val itForHashAndEquals = IdValue("it$", 1)
 
   sealed trait Type {
     def baseType: BaseType
@@ -132,8 +131,6 @@ object Types {
 
   def join(types: Type*): Type = join(types.toSet)
 
-  def join(types: Set[Type]): Type = {
-    ??? // TODO
-  }
+  def join(types: Set[Type]): Type = UnionType(types)
 
 }

@@ -38,7 +38,7 @@ final class SSAGenerator(er: ErrorReporter)
         df.getPosition.foreach { pos =>
           positionsMapB.addOne(df.id -> pos)
         }
-        val thisValue = valuesGen.newParam(df.id, ConstructorFunId, ThisId)
+        val thisValue = valuesGen.newValue(ThisId)
         df match {
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
@@ -66,7 +66,7 @@ final class SSAGenerator(er: ErrorReporter)
               case Asts.VarParam(paramId, paramTypeTree) =>
                 fields(paramId) = ReassignableField(paramId, mkType(paramTypeTree, paramsCtx))
               case Asts.SimpleParam(paramId, paramTypeTree) =>
-                val fieldValue = valuesGen.newParam(id, ConstructorFunId, paramId)
+                val fieldValue = valuesGen.newValue(id)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 fields(paramId) = StableField(paramId, paramType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
@@ -86,7 +86,7 @@ final class SSAGenerator(er: ErrorReporter)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             fields.foreach {
               case Asts.SimpleParam(paramId, paramTypeTree) =>
-                val fieldValue = valuesGen.newParam(id, ConstructorFunId, paramId)
+                val fieldValue = valuesGen.newValue(paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
@@ -102,7 +102,7 @@ final class SSAGenerator(er: ErrorReporter)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
             params.foreach {
               case Asts.SimpleParam(paramId, paramTypeTree) =>
-                val paramValue = valuesGen.newParam(typeName, ConstructorFunId, paramId)
+                val paramValue = valuesGen.newValue(paramId)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 typeAliasParams(paramId) = (paramType, paramValue)
                 paramsCtx.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
@@ -136,7 +136,7 @@ final class SSAGenerator(er: ErrorReporter)
         reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
       } else {
         val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
-        val thisVal = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, ThisId)
+        val thisVal = globalValsCtx.valuesGen.newValue(ThisId)
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
         val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
@@ -154,7 +154,7 @@ final class SSAGenerator(er: ErrorReporter)
           if (funcLocalValsCtx.knows(paramTree.paramId)) {
             reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
           } else {
-            val paramValue = globalValsCtx.valuesGen.newParam(functionsProvider.id, func.id, paramTree.paramId)
+            val paramValue = globalValsCtx.valuesGen.newValue(paramTree.paramId)
             val paramType = paramTree match {
               case Asts.ThisParam(paramTypeTreeOpt) =>
                 if (!isFirst) {
@@ -271,7 +271,7 @@ final class SSAGenerator(er: ErrorReporter)
           }
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
           val rhsFormula = generateSSAExpr(rhs, Some(ssaInstructionsList), valsCtx)
-          val newValue = valsCtx.valuesGen.newLocal(lhsLocalId, assig, typeAnnotOpt)
+          val newValue = valsCtx.valuesGen.newValue(lhsLocalId)
           ssaInstructionsList.saveInstr(Assignment(newValue, rhsFormula), assig)
           valsCtx.remap(lhsLocalId, newValue)
           generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, valsCtx, ssaInstructionsList, assig)
@@ -308,7 +308,7 @@ final class SSAGenerator(er: ErrorReporter)
         case whileLoop@Asts.WhileLoop(cond, body) =>
           val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
           val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
-            varId -> valsCtx.valuesGen.newIntermediate(whileLoop)
+            varId -> valsCtx.valuesGen.newValue()
           }.toMap
           val loopCtx = valsCtx.deepCopyWithSameGlobalCtx
           for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
@@ -332,7 +332,7 @@ final class SSAGenerator(er: ErrorReporter)
                 case LocalValuesContext.KnownAndInitialized(preLoopVal, _, _) =>
                   // if value is known before the loop then it is also known after its body
                   val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[KnownAndInitialized].value
-                  val postLoopVal = valsCtx.valuesGen.newPhi(id, Set(bodyEndVal), whileLoop.originalAst)
+                  val postLoopVal = valsCtx.valuesGen.newValue(id)
                   if (preLoopVal != bodyEndVal) {
                     loopVars.addOne(LoopVarInfo(id, preLoopVal, bodyStartVal, bodyEndVal, postLoopVal))
                   }
@@ -372,7 +372,7 @@ final class SSAGenerator(er: ErrorReporter)
     generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx) match {
       case value: IdValue => value
       case formula =>
-        val resVal = valsCtx.valuesGen.newIntermediate(expr)
+        val resVal = valsCtx.valuesGen.newValue()
         ssaInstructionsList.saveInstr(Assignment(resVal, formula), expr)
         resVal
     }
@@ -408,10 +408,10 @@ final class SSAGenerator(er: ErrorReporter)
         valsCtx.valueOf(name) match {
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRef.getPosition)
-            valsCtx.valuesGen.newMissingValue(name, varRef)
+            valsCtx.valuesGen.newValue(name)
           case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
             reportError(s"$id might not have been initialized", varRef.getPosition)
-            valsCtx.valuesGen.newMissingValue(name, varRef)
+            valsCtx.valuesGen.newValue(name)
           case KnownAndInitialized(value, reassigStatus, typeUpperBound) => value
         }
       case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
@@ -423,7 +423,7 @@ final class SSAGenerator(er: ErrorReporter)
             case Some(recv) => recv
             case None =>
               reportError(s"no receiver found for call to $funId", call.getPosition)
-              valsCtx.valuesGen.newMissingValue(ThisId, call)
+              valsCtx.valuesGen.newValue(ThisId)
           }
         }
         Call(receiver, funId, args.map(generateSSAExpr))
@@ -448,11 +448,11 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.TypeTest(testedExpr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
-        valsCtx.valuesGen.newIllegalConstruct(typeTest)
+        valsCtx.valuesGen.newErrorValue()
       case expr: Asts.NonFormulaExpr => ssaInstrListOpt match {
         case None =>
           reportError("illegal expression: only formulas are allowed in this position", expr.getPosition)
-          valsCtx.valuesGen.newIllegalConstruct(expr)
+          valsCtx.valuesGen.newErrorValue()
         case Some(ssaInstructionsList) =>
           generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
@@ -469,7 +469,7 @@ final class SSAGenerator(er: ErrorReporter)
                                       valsCtx: LocalValuesContext
                                     )(using util.IdentityHashMap[Formula, Position]): Formula = expr match {
     case Asts.StructOrClassInstantiation(typeId, initializers) =>
-      val instanceVal = valsCtx.valuesGen.newObject(typeId)
+      val instanceVal = valsCtx.valuesGen.newValue(typeId)
       ssaInstructionsList.saveInstr(Instantiate(instanceVal, typeId), expr)
       initializers.foreach {
         case initializer@Asts.FullFieldInitializer(fieldName, rhs) =>
@@ -480,9 +480,9 @@ final class SSAGenerator(er: ErrorReporter)
       }
       instanceVal
     case ternary@Asts.Ternary(cond, thenBr, elseBr) =>
-      val thenResVal = valsCtx.valuesGen.newIntermediate(ternary)
-      val elseResVal = valsCtx.valuesGen.newIntermediate(ternary)
-      val resultVal = valsCtx.valuesGen.newIntermediate(ternary)
+      val thenResVal = valsCtx.valuesGen.newValue()
+      val elseResVal = valsCtx.valuesGen.newValue()
+      val resultVal = valsCtx.valuesGen.newValue()
       val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
       val thenFormula = generateSSAExpr(thenBr, Some(ssaInstructionsList), valsCtx)
       val elseFormula = generateSSAExpr(elseBr, Some(ssaInstructionsList), valsCtx)
@@ -494,13 +494,13 @@ final class SSAGenerator(er: ErrorReporter)
       elseResVal
     case cast@Asts.Cast(castExpr, NamedTypeTree(typeName, Nil, Nil)) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
-      val resultVal = valsCtx.valuesGen.newIntermediate(cast)
+      val resultVal = valsCtx.valuesGen.newValue()
       ssaInstructionsList.saveInstr(Cast(resultVal, castValue, typeName), cast)
       resultVal
     case cast@Asts.Cast(castExpr, tpe) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       reportError(s"illegal type for dynamic type test: $tpe", cast.getPosition)
-      valsCtx.valuesGen.newIllegalConstruct(cast)
+      valsCtx.valuesGen.newErrorValue()
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
@@ -508,7 +508,7 @@ final class SSAGenerator(er: ErrorReporter)
     case Asts.RefinedTypeTree(baseType, predicate) =>
       val baseT = mkNominalType(baseType, valsCtx)
       val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
-      val itVal = valsCtx.valuesGen.newLocal(ItId, typeTree, None)
+      val itVal = valsCtx.valuesGen.newValue(ItId)
       refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
       RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
     case basicTypeTree: Asts.BaseTypeTree =>

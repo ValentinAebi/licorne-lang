@@ -1,6 +1,6 @@
 package lang
 
-import identifiers.{FunOrVarId, TypeIdentifier}
+import identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import lang.Types.Type
 
 object Values {
@@ -11,8 +11,8 @@ object Values {
 
   sealed trait Value extends Formula
 
-  final class IdValue(uid: String) extends Value, Capturable {
-    override def toString: String = uid
+  final class IdValue(val varId: String, idx: Long) extends Value, Capturable {
+    override def toString: String = s"$varId$$$idx"
   }
 
   sealed trait Constant extends Value {

@@ -1,6 +1,6 @@
 package lang
 
-import identifiers.TypeIdentifier
+import identifiers.{ItId, TypeIdentifier}
 import lang.Operator.*
 import lang.Types.PrimitiveType.*
 import lang.Types.{BaseType, RefinedType, Type}
@@ -31,7 +31,7 @@ object Operators {
   final case class BinaryOpSignature(leftOperandType: Type, op: Operator, rightOperandType: Type, retType: Type)
     extends OperatorSignature
   
-  private val binopItVal = IdValue("binop-it")
+  private val binopItVal = IdValue("it$", 0)
   // TODO nonZeroDouble for / and % on Doubles
   private val nonZeroInt = RefinedType(IntType, binopItVal, Not(Equal(binopItVal, IntConstant(0))))
   

@@ -107,7 +107,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
           if (inValues.size == 1) {
             localInfo.value = Some(inValues.head)
           } else {
-            val newValue = valuesGen.newPhi(id, inValues, ite.originalAst)
+            val newValue = valuesGen.newValue(id)
             phiNodesB.addOne(Phi(newValue, inValues))
             localInfo.value = Some(newValue)
           }

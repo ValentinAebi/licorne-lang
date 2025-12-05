@@ -18,17 +18,11 @@ final class SSAPrinter extends CompilerStep[Program, String] {
     for ((funSig, ssaFunc) <- program.functions) {
       pps.add(funSig.toString).addSpace().startBlock()
       ssaFunc.posOpt.foreach { position =>
-        pps.add("/* src: ").add(position.srcCodeProviderName).add(" */")
+        pps.add("/* src: ")
+          .add(position.srcCodeProviderName)
+          .add(" */")
+          .newLine()
       }
-      pps.newLine().add("/* ")
-      for (paramVal <- funSig.paramsInclThis.keys) {
-        globalValsCtx.debugInfoOf(paramVal)
-          .flatMap(_.referencedSourceId)
-          .foreach { localId =>
-            pps.add(paramVal.toString).add("=").add(localId).add(" ")
-          }
-      }
-      pps.add(" */").newLine()
       ssaFunc.bodyOpt match {
         case Some(body) =>
           addAllInstr(body, printIfEmpty = true)
@@ -98,31 +92,9 @@ final class SSAPrinter extends CompilerStep[Program, String] {
     while (iter.nonEmpty) {
       val instr = iter.next()
       add(instr)
-      addDebugInfo(instr)
       if (iter.nonEmpty) {
         pps.newLine()
       }
-    }
-  }
-
-  private def addDebugInfo(instr: SSA.Instr)(using pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
-    val sb = StringBuilder()
-    instr match {
-      case assigningInstr: SSA.AssigningInstr =>
-        globalValsCtx.debugInfoOf(assigningInstr.assignedValue)
-          .flatMap(_.referencedSourceId)
-          .foreach { debugInfo =>
-            sb.append(" /* ").append(assigningInstr.assignedValue).append("=").append(debugInfo).append(" */")
-          }
-      case _ => ()
-    }
-    instr.getAstNodeOpt
-      .flatMap(_.getPosition)
-      .foreach { pos =>
-        sb.append(s" /* ${pos.line}:${pos.col} */")
-      }
-    if (sb.nonEmpty) {
-      pps.add("   ").add(sb.toString())
     }
   }
 
