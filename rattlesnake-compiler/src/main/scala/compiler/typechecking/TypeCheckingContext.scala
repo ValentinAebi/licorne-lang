@@ -3,9 +3,8 @@ package compiler.typechecking
 import compiler.program.Program
 import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.TypeIdentifier
-import lang.Types.{BaseType, Type}
-import lang.{DatatypeSignature, StructSignature, UnencapsulatedTypeSignature}
 import lang.Values.IdValue
+import lang.{DatatypeSignature, StructSignature}
 
 import scala.annotation.tailrec
 import scala.util.boundary
@@ -42,7 +41,7 @@ object TypeCheckingContext {
     }
 
     /**
-     * @return None if all possible types where excluded (in the typical context this implies that we are in an unreachable branch)
+     * @return None if all possible types were excluded (in the typical context this implies that we are in an unreachable branch)
      */
     def mostPreciseType(using program: Program): Option[TypeIdentifier] = boundary {
 
@@ -56,11 +55,12 @@ object TypeCheckingContext {
         }
         if narrowed == front then front else narrowDown(narrowed)
       }
-      
-      val front = narrowDown(Set(tpe))
-      front.size match {
+
+      val startFront = if knownIs.isEmpty then Set(tpe) else knownIs
+      val endFront = narrowDown(startFront)
+      endFront.size match {
         case 0 => None
-        case 1 => Some(front.head)
+        case 1 => Some(endFront.head)
         case _ => Some(tpe)
       }
     }

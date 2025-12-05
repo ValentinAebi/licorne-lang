@@ -7,7 +7,7 @@ enum Visibility extends Enum[Visibility] {
   
   def isPrivate: Boolean = this == Private
   
-  def eqOrMorePermissive(that: Visibility): Boolean = (this, that) match {
+  def atLeastAsPermissiveAs(that: Visibility): Boolean = (this, that) match {
     case (Public, _) | (_, Private) => true
     case _ => this == that
   }

@@ -12,9 +12,12 @@ import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Operators.OperatorSignature
+import lang.Types.*
 import lang.Types.PrimitiveType.*
-import lang.Types.{BaseType, NamedType, Type, TypeVariable}
 import lang.Values.*
+
+import scala.util.boundary
+import scala.util.boundary.Label
 
 final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
 
@@ -131,6 +134,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
             Set(TypeInfo(idValue, knownType, Set.empty, Set(testedType))))
         case _ => (Set.empty, Set.empty)
       }
+    case _ => (Set.empty, Set.empty)
   }
 
   private def computeType(formula: Formula)
@@ -138,11 +142,14 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     val posOpt = if program.formulaPositions.containsKey(formula) then Some(program.formulaPositions.get(formula)) else None
     formula match {
       case idValue: IdValue =>
-        // must be known, otherwise SSA generation would have failed
-        val regularType = ts.typeOf(idValue)
-        tcCtx.inferredTypeFor(idValue) match {
-          case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) => NamedType(typeId, List.empty, List.empty)
-          case _ => regularType
+        ts.typeOfOpt(idValue) match {
+          case Some(regularType) =>
+            tcCtx.inferredTypeFor(idValue) match {
+              case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) => NamedType(typeId, List.empty, List.empty)
+              case _ => regularType
+            }
+          // typically, the type of a missing value because of an illegal construct
+          case _ => NothingType
         }
       case True | False => BoolType
       case NullPtr => NullType
@@ -177,8 +184,9 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
       case Call(receiver, funId, args) =>
         val receiverType = computeType(receiver)
         val argTypes = args.map(computeType)
-        program.desugarType(receiverType).baseType match {
-          case Types.NamedType(typeName, typeArgs, args) =>
+
+        forceComputeJoins(program.desugarType(receiverType).baseType) match {
+          case Some(Types.NamedType(typeName, typeArgs, args)) =>
             assert(args.isEmpty)
             program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
               case None =>
@@ -218,11 +226,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
                     substIfNeeded(funSig.retType)
                 }
             }
-          case _ => reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
+          case None =>
+            reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
         }
       case Select(owner, fieldName) =>
         val ownerType = computeType(owner)
-        findField(owner, ownerType, fieldName, posOpt, fieldShouldBeReassignable = false)
+        findField(owner, ownerType.baseType, fieldName, posOpt, fieldShouldBeReassignable = false)
       case HasType(formula, tpe) =>
         val formulaType = computeType(formula)
         reasonForIllegalDowncastTarget(formulaType, tpe).foreach {
@@ -232,11 +241,45 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     }
   }
 
-  private def findField(owner: Formula, ownerType: Type, fieldName: FunOrVarId, posOpt: Option[Position], fieldShouldBeReassignable: Boolean)(using er: ErrorReporter, program: Program, tcCtx: TypeCheckingContext): Type = {
-    program.desugarType(ownerType).baseType match {
-      case _: Types.PrimitiveType =>
-        reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
-      case Types.NamedType(typeName, typeArgs, args) =>
+  private def forceComputeJoins(tpe: BaseType)(using program: Program): Option[NamedType] = boundary {
+
+    def extractTypeIds(tpe: BaseType)(using Label[Option[NamedType]]): Set[TypeIdentifier] = tpe match {
+      case NamedType(tid, _, _) => Set(tid)
+      case BaseUnionType(types) => types.flatMap(extractTypeIds)
+      case _ => boundary.break(None)
+    }
+
+    val allTypeIds = extractTypeIds(tpe)
+    val commonDirectSupertypes = allTypeIds.map { tid =>
+      val sig = program.resolveSignatureAs[RuntimeTypeSignature](tid).getOrElse {
+        boundary.break(None)
+      }
+      sig.directSupertypes.toSet
+    }.reduce(_.intersect(_))
+
+    val possibleSubstitutions = {
+      for {
+        NamedType(superTypeId, _, _) <- commonDirectSupertypes
+        subst <- program.subToSuperSubst(allTypeIds.head, superTypeId)
+        if allTypeIds.tail.forall {
+          program.subToSuperSubst(_, superTypeId).contains(subst)
+        }
+      } yield (superTypeId, subst)
+    }
+    if (possibleSubstitutions.size == 1) {
+      val (superTypeId, subst) = possibleSubstitutions.head
+      program.resolveSignatureAs[RuntimeTypeSignature](superTypeId).flatMap { sig =>
+        sig.toType(subst, Map.empty) match {
+          case namedType: NamedType => Some(namedType)
+          case _ => None
+        }
+      }
+    } else None
+  }
+
+  private def findField(owner: Formula, ownerType: BaseType, fieldName: FunOrVarId, posOpt: Option[Position], fieldShouldBeReassignable: Boolean)(using er: ErrorReporter, program: Program, tcCtx: TypeCheckingContext): Type = {
+    forceComputeJoins(program.desugarType(ownerType).baseType) match {
+      case Some(Types.NamedType(typeName, typeArgs, args)) =>
         program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
           case None =>
             reportError(s"type not found: $typeName", posOpt)
@@ -261,33 +304,45 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
           case _ =>
             reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
         }
-      case _: TypeVariable =>
-        reportError(s"access to field $fieldName: cannot resolve receiver type", posOpt)
+      case None =>
+        val remarkAboutUnion = mkUnionReceiverRemark(ownerType)
+        reportError(s"access to field $fieldName: cannot resolve receiver type$remarkAboutUnion", posOpt)
     }
   }
 
   extension (targetId: TypeIdentifier) private def isValidDowncastTargetForType(tpe: Type)(using program: Program): Boolean =
     reasonForIllegalDowncastTarget(tpe, targetId).isEmpty
 
-  private def reasonForIllegalDowncastTarget(originalType: Type, targetId: TypeIdentifier)(using program: Program): Option[String] = originalType.baseType match {
-    case NamedType(originId, _, Nil) =>
-      program.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
-        case None =>
-          Some(s"type $targetId not found")
-        case Some(sig) =>
-          if (sig.typeParams.nonEmpty) {
-            Some(s"$targetId takes type parameters")
-          } else if (program.subToSuperSubst(targetId, originId).isEmpty) {
-            Some(s"$targetId does not subtype of $originId")
-          } else None
-      }
-    case _ =>
-      Some("target is an unresolved or primitive type")
+  private def reasonForIllegalDowncastTarget(originalType: Type, targetId: TypeIdentifier)
+                                            (using program: Program): Option[String] = {
+    originalType.baseType match {
+      case NamedType(originId, _, Nil) =>
+        program.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
+          case None =>
+            Some(s"type $targetId not found")
+          case Some(sig) =>
+            if (sig.typeParams.nonEmpty) {
+              Some(s"$targetId takes type parameters")
+            } else if (program.subToSuperSubst(targetId, originId).isEmpty) {
+              Some(s"$targetId does not subtype of $originId")
+            } else None
+        }
+      case _ =>
+        Some("target is an unresolved or primitive type")
+    }
   }
 
   private def reportMethodNotFoundInType(receiverType: BaseType, funId: FunOrVarId, posOpt: Option[Position])(using Program): NothingType.type = {
     val receiverTypeDescr = mkReceiverTypeDescr(receiverType)
-    reportError(s"method $funId not found in $receiverTypeDescr", posOpt)
+    val remarkAboutUnion = mkUnionReceiverRemark(receiverType)
+    reportError(s"method $funId not found in $receiverTypeDescr$remarkAboutUnion", posOpt)
+  }
+
+  private def mkUnionReceiverRemark(receiverType: BaseType): String = {
+    receiverType match {
+      case BaseUnionType(types) => ", you may want to explicitize the type of the receiver using a type ascription"
+      case _ => ""
+    }
   }
 
   private def reportFieldNotFoundInType(receiverType: BaseType, fieldId: FunOrVarId, posOpt: Option[Position])(using Program): NothingType.type = {

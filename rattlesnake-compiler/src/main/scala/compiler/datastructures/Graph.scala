@@ -2,7 +2,7 @@ package compiler.datastructures
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.reflect.ClassTag
+import scala.reflect.{ClassTag, classTag}
 import scala.util.boundary
 
 final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
@@ -10,8 +10,12 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
   def adjSetOf(n: N): Set[N] = verticesToAdjSets.getOrElse(n, Set.empty)
 
   val vertices: Set[N] = verticesToAdjSets.keySet
+  
+  def findShortestCycle(): Option[Seq[N]] = shortestCycleMemo
+  
+  private lazy val shortestCycleMemo = computeShortestCycle()
 
-  def findShortestCycle(): Option[Seq[N]] = {
+  private def computeShortestCycle(): Option[Seq[N]] = {
     if (vertices.isEmpty) {
       return None
     }
@@ -101,9 +105,13 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
     }
   }
 
-  def topologicalSort(): List[N] = {
+  def topologicalSort(): List[N] = topologicalSortMemo
+  
+  private lazy val topologicalSortMemo = computeTopologicalSort()
 
-    val terminationTimes = mutable.Map.empty[N, Int]
+  private def computeTopologicalSort(): List[N] = {
+
+    val terminationTimes = new Array[Any](vertices.size)
     var time = 0
     val workstack = mutable.Stack.empty[(Option[N], Iterator[N])]
     val started = mutable.Set.empty[N]
@@ -120,18 +128,16 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
         }
       } else {
         currOpt.foreach { curr =>
-          terminationTimes(curr) = time
+          terminationTimes(time) = curr
           time += 1
         }
         workstack.pop()
       }
     }
-
-    val terminationTimesArray = terminationTimes.toArray
-    terminationTimesArray.sortInPlaceBy(_._2)
+    
     var ls = List.empty[N]
-    for ((n, _) <- terminationTimesArray) {
-      ls = n :: ls
+    for (n <- terminationTimes) {
+      ls = n.asInstanceOf[N] :: ls
     }
     ls
   }

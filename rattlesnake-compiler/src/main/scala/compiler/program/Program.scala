@@ -10,12 +10,13 @@ import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
-import lang.Types.*
+import lang.Types.{TypeVariable, *}
 import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
 
 import java.util
 import scala.collection.mutable
+import scala.compiletime.uninitialized
 import scala.reflect.ClassTag
 
 final case class Program(
@@ -30,7 +31,8 @@ final case class Program(
                           formulaPositions: util.IdentityHashMap[Formula, Position]
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
-  private val flattenedSupertypesSubstitutions = mutable.Map.empty[TypeIdentifier, mutable.Map[TypeIdentifier, Map[TypeIdentifier, Type]]]
+  private val flattenedSupertypesSubstitutions = mutable.LinkedHashMap.empty[TypeIdentifier, mutable.LinkedHashMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
+  private var overrides = mutable.Map.empty[FunctionSignature, mutable.Set[FunctionSignature]]
 
   def checkDefinitions()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     checkInterfaceSignatures()
@@ -45,9 +47,10 @@ final case class Program(
 
     buildAndCheckFlattenedSubtypingMaps()
     er.displayAndTerminateIfErrors()
-
+    
     checkFunctionSignatures()
-    checkOverrides()
+    analyzeOverrides()
+    
     er.displayAndTerminateIfErrors()
   }
 
@@ -80,8 +83,9 @@ final case class Program(
         desugarType(baseTypeRaw) match {
           case RefinedType(baseTypeDes, itValueDes, predicateDes) =>
             RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
-          case baseTypeDes: BaseType =>
+          case baseTypeDes: NominalType =>
             RefinedType(baseTypeDes, itValueRaw, predicateRaw)
+          case _: (UnionType | BaseUnionType | TypeVariable) => assert(false)
         }
       case primitiveType: Types.PrimitiveType => primitiveType
       case NamedType(typeName, typeArgsRaw, args) =>
@@ -99,6 +103,8 @@ final case class Program(
           case None => NamedType(typeName, typeArgsSubst, args)
         }
       case typeVariable: TypeVariable => typeVariable.actualTypeIfKnown.getOrElse(typeVariable)
+      case UnionType(types) => UnionType(types.map(desugarType))
+      case BaseUnionType(types) => UnionType(types.map(desugarType))
     }
     if desugaredType == tpe then tpe
     else desugarType(desugaredType)
@@ -199,7 +205,7 @@ final case class Program(
     }
   }
 
-  private def checkOverrides()(using er: ErrorReporter, typeDefPositions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+  private def analyzeOverrides()(using er: ErrorReporter, typeDefPositions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for ((subT, subTSupertypes) <- flattenedSupertypesSubstitutions; (superT, typeTypeParamsSubst) <- subTSupertypes) {
       val subTSig = resolveSignature(subT).get
       val superTSig = resolveSignature(superT).get
@@ -210,6 +216,7 @@ final case class Program(
               case None =>
                 er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", typeDefPositions.get(subT))
               case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility)) =>
+                overrides.getOrElseUpdate(subFunSig, mutable.Set.empty).add(superFunSig)
                 val funPosOpt = functions.get(subFunSig).flatMap(_.posOpt)
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size
@@ -241,7 +248,7 @@ final case class Program(
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
                   enforceBaseSubtypingConstraint(subFunRetType, expectedRetType)(using s"return type of method $funId that overrides $funId in $superT", funPosOpt, er, this)
                 }
-                if (!subFunVisibility.eqOrMorePermissive(superFunVisibility)) {
+                if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
                   er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
                 }
             }
@@ -307,7 +314,7 @@ final case class Program(
 
   private def buildAndCheckFlattenedSubtypingMaps()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     for (subtypeId <- subtypingGraph.topologicalSort().reverse) {
-      val subtypeSupertypes = mutable.Map.empty[TypeIdentifier, Map[TypeIdentifier, Type]]
+      val subtypeSupertypes = mutable.LinkedHashMap.empty[TypeIdentifier, Map[TypeIdentifier, Type]]
 
       def checkAndSave(name: TypeIdentifier, newSubst: Map[TypeIdentifier, Type]): Unit = {
         subtypeSupertypes.get(name) match {
@@ -345,6 +352,10 @@ final case class Program(
     case NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
     case _: TypeVariable => Set.empty
+    case UnionType(types) =>
+      types.flatMap(findMentionedTypes)
+    case BaseUnionType(types) =>
+      types.flatMap(findMentionedTypes)
   }
 
   private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {

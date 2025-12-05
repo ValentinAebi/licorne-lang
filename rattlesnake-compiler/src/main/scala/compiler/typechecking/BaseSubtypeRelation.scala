@@ -14,10 +14,10 @@ object BaseSubtypeRelation {
 
   def enforceBaseSubtypingConstraint(subT: Type, superT: Type)
                                     (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
-    enforceBaseSubtypingConstraintInternal(subT, superT)(using ErrorMessage(s"$positionDescr: expected $superT, found $subT"))
+    checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected $superT, found $subT"), Some(er))
 
-  private def enforceBaseSubtypingConstraintInternal(subT: Type, superT: Type)
-                                                (using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+  private def checkSubtypingConstraint(subT: Type, superT: Type)
+                                      (using errorMsg: ErrorMessage, erOpt: Option[ErrorReporter], posOpt: Option[Position], program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
       case (subT: TypeVariable, superT) =>
         subT.tryToResolve(superT)
@@ -26,12 +26,12 @@ object BaseSubtypeRelation {
         superT.tryToResolve(subT)
         true
       case (subT, superT) =>
-        enforceBaseSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
+        checkSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
     }
   }
 
-  private def enforceBaseSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
-                                                            (using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+  private def checkSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
+                                                          (using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter], program: Program): Boolean = {
     (subT, superT) match {
       case (subT, superT) if subT.trivialSubtypeOf(superT) => true
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
@@ -60,9 +60,9 @@ object BaseSubtypeRelation {
                     }
                     correct
                   case Variance.Covariant =>
-                    enforceBaseSubtypingConstraintInternal(typeInSub, typeInSuper)
+                    checkSubtypingConstraint(typeInSub, typeInSuper)
                   case Variance.Contravariant =>
-                    enforceBaseSubtypingConstraintInternal(typeInSuper, typeInSub)
+                    checkSubtypingConstraint(typeInSuper, typeInSub)
                 }
                 if (!typeArgsMatch) {
                   boundary.break(false)
@@ -71,6 +71,15 @@ object BaseSubtypeRelation {
               true
             }
         }
+      case (BaseUnionType(subtypes), superT) =>
+        val subtypesIter = subtypes.iterator
+        var isCorrect = true
+        while (isCorrect && subtypesIter.hasNext) {
+          isCorrect = checkSubtypingConstraint(subtypesIter.next(), superT)
+        }
+        isCorrect
+      case (subT, BaseUnionType(superTypes)) =>
+        superTypes.exists(checkSubtypingConstraint(subT, _)(using errorMsg, None))
       case _ =>
         reportNotSubtype(subT, superT)
     }
@@ -90,8 +99,8 @@ object BaseSubtypeRelation {
     case _ => false
   }
 
-  private def reportNotSubtype(subT: Type, superT: Type)(using errorMsg: ErrorMessage, posOpt: Option[Position], er: ErrorReporter): Boolean = {
-    er.push(Err(TypeChecking, errorMsg.msg, posOpt))
+  private def reportNotSubtype(subT: Type, superT: Type)(using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter]): Boolean = {
+    erOpt.foreach(_.push(Err(TypeChecking, errorMsg.msg, posOpt)))
     false
   }
 

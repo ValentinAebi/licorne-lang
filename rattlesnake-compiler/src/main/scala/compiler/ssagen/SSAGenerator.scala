@@ -8,7 +8,6 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.ssagen.ConservativeFormulaSimplifications.*
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.*
@@ -428,22 +427,22 @@ final class SSAGenerator(er: ErrorReporter)
           }
         }
         Call(receiver, funId, args.map(generateSSAExpr))
-      case Asts.UnaryOp(Operator.Minus, operand) => neg(generateSSAExpr(operand))
-      case Asts.UnaryOp(Operator.ExclamationMark, operand) => not(generateSSAExpr(operand))
+      case Asts.UnaryOp(Operator.Minus, operand) => Neg(generateSSAExpr(operand))
+      case Asts.UnaryOp(Operator.ExclamationMark, operand) => Not(generateSSAExpr(operand))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
-      case Asts.BinaryOp(lhs, Operator.Plus, rhs) => plus(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Minus, rhs) => minus(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Times, rhs) => times(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Div, rhs) => div(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => rem(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => lessThan(generateSSAExpr(rhs), generateSSAExpr(lhs))
-      case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => lessThan(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => lessOrEq(generateSSAExpr(rhs), generateSSAExpr(lhs))
-      case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => lessOrEq(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Equality, rhs) => equal(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => not(equal(generateSSAExpr(lhs), generateSSAExpr(rhs)))
-      case Asts.BinaryOp(lhs, Operator.And, rhs) => and(generateSSAExpr(lhs), generateSSAExpr(rhs))
-      case Asts.BinaryOp(lhs, Operator.Or, rhs) => or(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Plus, rhs) => Plus(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Minus, rhs) => Minus(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Times, rhs) => Times(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Div, rhs) => Div(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Modulo, rhs) => Rem(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => LessThan(generateSSAExpr(rhs), generateSSAExpr(lhs))
+      case Asts.BinaryOp(lhs, Operator.LessThan, rhs) => LessThan(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => LessOrEq(generateSSAExpr(rhs), generateSSAExpr(lhs))
+      case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) => LessOrEq(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Equality, rhs) => Equal(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Inequality, rhs) => Not(Equal(generateSSAExpr(lhs), generateSSAExpr(rhs)))
+      case Asts.BinaryOp(lhs, Operator.And, rhs) => And(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case Asts.BinaryOp(lhs, Operator.Or, rhs) => Or(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
       case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
       case Asts.TypeTest(testedExpr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
@@ -507,17 +506,17 @@ final class SSAGenerator(er: ErrorReporter)
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
                     (using util.IdentityHashMap[Formula, Position]): Type = typeTree match {
     case Asts.RefinedTypeTree(baseType, predicate) =>
-      val baseT = mkBasicType(baseType, valsCtx)
+      val baseT = mkNominalType(baseType, valsCtx)
       val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
       val itVal = valsCtx.valuesGen.newLocal(ItId, typeTree, None)
       refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
       RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
     case basicTypeTree: Asts.BaseTypeTree =>
-      mkBasicType(basicTypeTree, valsCtx)
+      mkNominalType(basicTypeTree, valsCtx)
   }
 
-  private def mkBasicType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext)
-                         (using util.IdentityHashMap[Formula, Position]): BaseType = basicTypeTree match {
+  private def mkNominalType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext)
+                           (using util.IdentityHashMap[Formula, Position]): NominalType = basicTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
   }

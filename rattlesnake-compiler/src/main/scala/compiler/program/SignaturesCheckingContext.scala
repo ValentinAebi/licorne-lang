@@ -58,6 +58,8 @@ final class SignaturesCheckingContext(
         }
         args.foreach(checkTypesWellDefined(_, posOpt))
       }
+    case _: (UnionType | BaseUnionType | TypeVariable) =>
+      assert(false)
   }
 
   private def checkTypesWellDefined(formula: Formula, posOpt: Option[Position])(using tcCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = formula match {
