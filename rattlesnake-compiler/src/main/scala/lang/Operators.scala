@@ -23,13 +23,17 @@ object Operators {
    * Signature of an unary operator
    */
   final case class UnaryOpSignature(op: Operator, operandType: Type, retType: Type)
-    extends OperatorSignature
+    extends OperatorSignature {
+    override def toString: String = s"$op: ($operandType) -> $retType"
+  }
 
   /**
    * Signature of a binary operator
    */
   final case class BinaryOpSignature(leftOperandType: Type, op: Operator, rightOperandType: Type, retType: Type)
-    extends OperatorSignature
+    extends OperatorSignature {
+    override def toString: String = s"$leftOperandType $op $rightOperandType -> $retType"
+  }
   
   private val binopItVal = IdValue("it$", 0)
   // TODO nonZeroDouble for / and % on Doubles

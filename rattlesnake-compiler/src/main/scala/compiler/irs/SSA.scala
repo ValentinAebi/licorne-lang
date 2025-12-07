@@ -4,7 +4,7 @@ import compiler.irs.Asts.Ast
 import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.FunctionSignature
-import lang.Types.{BaseType, Type}
+import lang.Types.Type
 import lang.Values.*
 
 object SSA {
@@ -43,7 +43,7 @@ object SSA {
   final case class StaticAssert(formula: Formula) extends Instr
   
   final case class Assignment(assignedValue: IdValue, rhs: Formula) extends AssigningInstr
-  final case class Instantiate(assignedValue: IdValue, classOrStructName: TypeIdentifier) extends AssigningInstr
+  final case class Instantiate(assignedValue: IdValue, classOrStructName: TypeIdentifier, typeArgs: List[Type], initialization: List[Instr]) extends AssigningInstr
   final case class Cast(assignedValue: IdValue, inValue: IdValue, target: TypeIdentifier) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, rhs: Formula) extends Instr

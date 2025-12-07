@@ -181,7 +181,7 @@ object Asts {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
-  
+
   sealed trait NonThisFunctionParam extends FunctionParam {
     val paramTypeTree: TypeTree
     override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
@@ -301,8 +301,8 @@ object Asts {
     override def children: List[Ast] = receiverOpt.toList ++ args
   }
 
-  final case class StructOrClassInstantiation(typeId: TypeIdentifier, initializers: List[FieldInitializer]) extends NonFormulaExpr {
-    override def children: List[Ast] = initializers
+  final case class StructOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {
+    override def children: List[Ast] = typeArgs ++ initializers
   }
 
   sealed abstract class FieldInitializer extends Ast {

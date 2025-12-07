@@ -62,8 +62,21 @@ final class SSAPrinter extends CompilerStep[Program, String] {
         pps.add(s"$assignedValue := phi ${inValues.mkString("{ ", ", ", " }")}")
       case SSA.Assignment(assignedValue, rhs) =>
         pps.add(assignedValue.toString).add(" := ").add(rhs.toString)
-      case SSA.Instantiate(assignedValue, classOrStructName) =>
+      case SSA.Instantiate(assignedValue, classOrStructName, typeArgs, initialization) =>
         pps.add(s"$assignedValue := new $classOrStructName")
+        if (typeArgs.nonEmpty){
+          pps.add("[")
+          val tArgsIter = typeArgs.iterator
+          while (tArgsIter.hasNext){
+            pps.add(tArgsIter.next().toString)
+            if (tArgsIter.hasNext){
+              pps.add(",")
+            }
+          }
+          pps.add("]")
+        }
+        addAllInstr(initialization, printIfEmpty = false)
+        pps.newLine().add(s"end initialization of $assignedValue")
       case SSA.Cast(assignedValue, inValue, targetType) =>
         pps.add(s"cast-dynamic $assignedValue := $inValue as $targetType")
       case SSA.StaticAssert(formula) =>

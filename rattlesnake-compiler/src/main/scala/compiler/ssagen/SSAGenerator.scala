@@ -18,6 +18,7 @@ import lang.Values.*
 
 import java.util
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 
 final class SSAGenerator(er: ErrorReporter)
@@ -126,7 +127,7 @@ final class SSAGenerator(er: ErrorReporter)
 
   private def collectFunctions(
                                 functionsProvider: Asts.EncapsulatedTypeDefTree,
-                                functionsProviderIncompleteSig: EncapsulatedTypeSignature,
+                                functionsProviderIncompleteSig: Encapsulated,
                                 globalValsCtx: GlobalValuesContext,
                                 allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
                               )(using util.IdentityHashMap[Formula, Position]): Map[FunOrVarId, (FunctionSignature, SSA.Function)] = {
@@ -308,7 +309,7 @@ final class SSAGenerator(er: ErrorReporter)
         case whileLoop@Asts.WhileLoop(cond, body) =>
           val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
           val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
-            varId -> valsCtx.valuesGen.newValue()
+            varId -> valsCtx.valuesGen.newValue(varId)
           }.toMap
           val loopCtx = valsCtx.deepCopyWithSameGlobalCtx
           for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
@@ -468,16 +469,18 @@ final class SSAGenerator(er: ErrorReporter)
                                       ssaInstructionsList: mutable.ListBuffer[SSA.Instr],
                                       valsCtx: LocalValuesContext
                                     )(using util.IdentityHashMap[Formula, Position]): Formula = expr match {
-    case Asts.StructOrClassInstantiation(typeId, initializers) =>
+    case Asts.StructOrClassInstantiation(typeId, typeArgs, initializers) =>
       val instanceVal = valsCtx.valuesGen.newValue(typeId)
-      ssaInstructionsList.saveInstr(Instantiate(instanceVal, typeId), expr)
+      val initializersSSAInstrList = ListBuffer.empty[Instr]
       initializers.foreach {
         case initializer@Asts.FullFieldInitializer(fieldName, rhs) =>
-          ssaInstructionsList.saveInstr(FieldWrite(instanceVal, fieldName, generateSSAExpr(rhs, Some(ssaInstructionsList), valsCtx)), initializer)
+          initializersSSAInstrList.saveInstr(FieldWrite(instanceVal, fieldName, generateSSAExpr(rhs, Some(initializersSSAInstrList), valsCtx)), initializer)
         case initializer@Asts.ShorthandFieldInitializer(fieldName) =>
-          val rhsExpr = generateSSAExpr(Asts.VariableRef(fieldName).withDesugaringSource(initializer), Some(ssaInstructionsList), valsCtx)
-          ssaInstructionsList.saveInstr(FieldWrite(instanceVal, fieldName, rhsExpr), initializer)
+          val rhsExpr = generateSSAExpr(Asts.VariableRef(fieldName).withDesugaringSource(initializer), Some(initializersSSAInstrList), valsCtx)
+          initializersSSAInstrList.saveInstr(FieldWrite(instanceVal, fieldName, rhsExpr), initializer)
       }
+      ssaInstructionsList.saveInstr(
+        Instantiate(instanceVal, typeId, typeArgs.map(mkType(_, valsCtx)), initializersSSAInstrList.toList), expr)
       instanceVal
     case ternary@Asts.Ternary(cond, thenBr, elseBr) =>
       val thenResVal = valsCtx.valuesGen.newValue()

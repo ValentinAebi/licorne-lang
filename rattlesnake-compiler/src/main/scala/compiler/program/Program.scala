@@ -10,13 +10,12 @@ import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.TypeIdentifier
 import lang.*
-import lang.Types.{TypeVariable, *}
+import lang.Types.*
 import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
 
 import java.util
 import scala.collection.mutable
-import scala.compiletime.uninitialized
 import scala.reflect.ClassTag
 
 final case class Program(
@@ -210,7 +209,7 @@ final case class Program(
       val subTSig = resolveSignature(subT).get
       val superTSig = resolveSignature(superT).get
       (subTSig, superTSig) match {
-        case (subTSig: EncapsulatedTypeSignature, superTSig: EncapsulatedTypeSignature) =>
+        case (subTSig: Encapsulated, superTSig: Encapsulated) =>
           for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
               case None =>

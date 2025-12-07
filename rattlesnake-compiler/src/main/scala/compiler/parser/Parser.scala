@@ -223,9 +223,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case expressions => ExplicitCaptureSetTree(expressions)
     }
   } setName "explicitCaptureSetTree"
+  
+  private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
 
   private lazy val primOrNamedType: AnyTreeParser[BaseTypeTree] = recursive {
-    highName ::: opt(apostrophe) ::: opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
+    highName ::: opt(apostrophe) ::: typeArgsListOpt
       ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
       case baseTypeName ^: apostropheOpt ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
@@ -337,8 +339,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "parenthesizedExpr"
 
   private lazy val structOrModuleInstantiation = recursive {
-    kw(New).ignored ::: highName ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
-      case tid ^: initializers => StructOrClassInstantiation(tid, initializers)
+    kw(New).ignored ::: highName ::: typeArgsListOpt ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
+      case tid ^: tArgs ^: initializers => StructOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
     }
   } setName "structOrModuleInstantiation"
 

@@ -110,7 +110,7 @@ object Errors {
     def getErrors: List[CompilationError] = errors
 
     def displayErrors(): Unit = {
-      for error <- errors.reverse.sortBy(_.posOpt.map(_.line).getOrElse(-1)) do {
+      for error <- errors.reverse do {
         errorsConsumer(error)
         errorsConsumer("\n")
       }

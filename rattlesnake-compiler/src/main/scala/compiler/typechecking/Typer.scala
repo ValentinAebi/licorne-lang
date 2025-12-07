@@ -1,7 +1,7 @@
 package compiler.typechecking
 
 import compiler.irs.SSA
-import compiler.irs.SSA.{Instr, LoopVarInfo}
+import compiler.irs.SSA.*
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
@@ -19,20 +19,23 @@ import lang.Values.*
 import scala.util.boundary
 import scala.util.boundary.Label
 
-final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[FunctionSignature, SSA.Function], Program), (Map[FunctionSignature, SSA.Function], Program, TypeStore)] {
+// TODO also check that all paths eventually reach a terminating instruction (return, panic, Nothing-call, no possible type left for a value given the control-flow analysis results)
 
-  override def apply(input: (Map[FunctionSignature, SSA.Function], Program)): (Map[FunctionSignature, SSA.Function], Program, TypeStore) = {
-    val (functions, program) = input
+final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (Program, TypeStore)] {
+
+  override def apply(program: Program): (Program, TypeStore) = {
     val ts = new PartialTypeStore
-    for ((funSig, func) <- functions) {
+    for ((funSig, func) <- program.functions) {
       val (thisVal, thisType) = funSig.paramsInclThis.head
-      ts(thisVal) = thisType
+      for ((argVal, argType) <- funSig.paramsInclThis){
+        ts(argVal) = argType
+      }
       val tcCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false)
       func.bodyOpt.foreach { body =>
         traverseAll(body, tcCtx)(using ts, er, program)
       }
     }
-    (functions, program, ts)
+    (program, ts)
   }
 
   private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext =
@@ -41,7 +44,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     }
 
   private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
-    given Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
+    given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     instr match {
       case SSA.Loop(cond, body, variables) =>
@@ -83,7 +86,26 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         val rhsType = computeType(rhs)(using tcCtx)
         ts(assignedValue) = rhsType
         tcCtx
-      case SSA.Instantiate(assignedValue, classOrStructName) => ???
+      case SSA.Instantiate(assignedValue, classOrStructName, typeArgs, initialization) =>
+        program.resolveSignatureAs[RuntimeTypeSignature & UserInstantiable](classOrStructName) match {
+          case None =>
+            reportError(s"instantiable type not found: $classOrStructName", posOpt)
+          case Some(sig) =>
+            val typeParams = sig.typeParams.map(_._1)
+            val typeParamsMapping = generateTypeParamsMapping(typeParams, typeArgs)
+            val tpe = NamedType(classOrStructName, typeParams.map(typeParamsMapping.apply), List.empty)
+            val initializedFields = initialization.flatMap {
+              case FieldWrite(owner, fieldName, rhs) => Some(fieldName)
+              case _ => None
+            }.toSet
+            val requiredFields = sig.fields.keySet
+            val missingFields = requiredFields.diff(initializedFields)
+            if (missingFields.nonEmpty) {
+              reportError(s"field(s) ${missingFields.mkString(", ")} have not been initialized", posOpt)
+            }
+            traverseAll(initialization, tcCtx)
+        }
+        tcCtx
       case SSA.Cast(resultValue, castValue, targetType) =>
         val castValueType = computeType(castValue)(using tcCtx)
         reasonForIllegalDowncastTarget(castValueType, targetType).foreach {
@@ -96,7 +118,14 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
       case SSA.StaticAssert(formula) =>
         computeType(formula)(using tcCtx)
         tcCtx
-      case SSA.FieldWrite(owner, fieldName, rhs) => ???
+      case SSA.FieldWrite(owner, fieldName, rhs) =>
+        val ownerType = computeType(owner)(using tcCtx)
+        val rhsType = computeType(rhs)(using tcCtx)
+        checkFieldAndReturnItsType(ownerType.baseType, fieldName, posOpt,
+          checkIsReassignable = false, ownerThatMustBeThis = None)(using tcCtx).foreach { fieldType =>
+          enforceBaseSubtypingConstraint(rhsType, fieldType)(using "field assignment")
+        }
+        tcCtx
       case SSA.Return(None) =>
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Return(Some(retVal)) =>
@@ -139,13 +168,17 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
 
   private def computeType(formula: Formula)
                          (using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
-    val posOpt = if program.formulaPositions.containsKey(formula) then Some(program.formulaPositions.get(formula)) else None
+    val posOpt =
+      if program.formulaPositions.containsKey(formula)
+      then Some(program.formulaPositions.get(formula))
+      else None
     formula match {
       case idValue: IdValue =>
         ts.typeOfOpt(idValue) match {
           case Some(regularType) =>
             tcCtx.inferredTypeFor(idValue) match {
-              case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) => NamedType(typeId, List.empty, List.empty)
+              case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) =>
+                NamedType(typeId, List.empty, List.empty)
               case _ => regularType
             }
           // typically, the type of a missing value because of an illegal construct
@@ -191,9 +224,9 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
             program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
               case None =>
                 reportError(s"type not found: $typeName", posOpt)
-              case Some(_: UnencapsulatedTypeSignature) =>
+              case Some(_: Unencapsulated) =>
                 reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
-              case Some(receiverTypeSig: EncapsulatedTypeSignature) =>
+              case Some(receiverTypeSig: Encapsulated) =>
                 receiverTypeSig.functions.get(funId) match {
                   case None => reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
                   case Some(funSig) =>
@@ -201,14 +234,11 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
                     if (argsSizeMatch) {
                       reportError(s"wrong number of parameters for method $funId: expected ${funSig.paramsInclThis.size - 1}, was ${args.size}", posOpt)
                     }
-                    val substOpt = if (typeArgs.nonEmpty && typeArgs.size != funSig.typeParams.size) {
-                      reportError(s"wrong number of type parameters for method $funId: expected ${funSig.typeParams.size}, was ${typeArgs.size}", posOpt)
+                    val typeParams = funSig.typeParams
+                    val substOpt = if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
+                      reportError(s"wrong number of type parameters: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
                       None
-                    } else if (typeArgs.isEmpty && funSig.typeParams.nonEmpty) Option.when(argsSizeMatch) {
-                      funSig.typeParams.map(_ -> new TypeVariable).toMap
-                    } else Some {
-                      funSig.typeParams.zip(argTypes).toMap
-                    }
+                    } else Some(generateTypeParamsMapping(typeParams, typeArgs))
 
                     def substIfNeeded(tpe: Type): Type = {
                       substOpt match {
@@ -231,13 +261,22 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
         }
       case Select(owner, fieldName) =>
         val ownerType = computeType(owner)
-        findField(owner, ownerType.baseType, fieldName, posOpt, fieldShouldBeReassignable = false)
+        checkFieldAndReturnItsType(ownerType.baseType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
+          .getOrElse(NothingType)
       case HasType(formula, tpe) =>
         val formulaType = computeType(formula)
         reasonForIllegalDowncastTarget(formulaType, tpe).foreach {
           reportError(_, posOpt)
         }
         BoolType
+    }
+  }
+
+  private def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type]): Map[TypeIdentifier, Type] = {
+    if (typeArgs.isEmpty && typeParams.nonEmpty) {
+      typeParams.map(_ -> new TypeVariable).toMap
+    } else {
+      typeParams.zip(typeArgs).toMap
     }
   }
 
@@ -277,36 +316,43 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     } else None
   }
 
-  private def findField(owner: Formula, ownerType: BaseType, fieldName: FunOrVarId, posOpt: Option[Position], fieldShouldBeReassignable: Boolean)(using er: ErrorReporter, program: Program, tcCtx: TypeCheckingContext): Type = {
+  private def checkFieldAndReturnItsType(
+                                          ownerType: BaseType, fieldName: FunOrVarId,
+                                          posOpt: Option[Position],
+                                          checkIsReassignable: Boolean, ownerThatMustBeThis: Option[Formula]
+                                        )(using tcCtx: TypeCheckingContext, er: ErrorReporter, program: Program): Option[Type] = {
     forceComputeJoins(program.desugarType(ownerType).baseType) match {
       case Some(Types.NamedType(typeName, typeArgs, args)) =>
         program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
           case None =>
             reportError(s"type not found: $typeName", posOpt)
+            None
           case Some(structSig: StructSignature) =>
             structSig.fields.get(fieldName) match {
-              case Some(field) => field.tpe
+              case Some(field) => Some(field.tpe)
               case None =>
                 reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
             }
-          case Some(classSig: ClassSignature) if owner == tcCtx.thisVal =>
+          case Some(classSig: ClassSignature) if ownerThatMustBeThis.forall(_ == tcCtx.thisVal) =>
             classSig.fields.get(fieldName) match {
               case None =>
                 reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
               case Some(field) =>
-                if (fieldShouldBeReassignable && field.isStable) {
+                if (checkIsReassignable && field.isStable) {
                   reportError(s"field $fieldName is not reassignable", posOpt)
                 }
-                field.tpe
+                Some(field.tpe)
             }
           case Some(_: ClassSignature) =>
             reportError(s"field not found or not accessible in $typeName; note that class fields are always private and should be accessed from the outside through getters only", posOpt)
+            None
           case _ =>
             reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
         }
       case None =>
         val remarkAboutUnion = mkUnionReceiverRemark(ownerType)
         reportError(s"access to field $fieldName: cannot resolve receiver type$remarkAboutUnion", posOpt)
+        None
     }
   }
 
@@ -345,9 +391,11 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[(Map[Funct
     }
   }
 
-  private def reportFieldNotFoundInType(receiverType: BaseType, fieldId: FunOrVarId, posOpt: Option[Position])(using Program): NothingType.type = {
+  private def reportFieldNotFoundInType(receiverType: BaseType, fieldId: FunOrVarId, posOpt: Option[Position])
+                                       (using Program): None.type = {
     val receiverTypeDescr = mkReceiverTypeDescr(receiverType)
     reportError(s"field $fieldId not found in $receiverTypeDescr", posOpt)
+    None
   }
 
   private def mkReceiverTypeDescr(receiverType: BaseType)(using program: Program): String = {

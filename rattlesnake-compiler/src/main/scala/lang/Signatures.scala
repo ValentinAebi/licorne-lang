@@ -5,7 +5,7 @@ import lang.Field.StableField
 import lang.Types.{NamedType, Type}
 import lang.Values.{Formula, IdValue}
 
-import scala.collection.mutable
+import scala.collection.{SeqMap, mutable}
 
 final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
@@ -67,23 +67,29 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
   def directSupertypes: List[NamedType]
 }
 
-sealed trait ConcreteTypeSignature {
+sealed trait Concrete {
   this: RuntimeTypeSignature =>
 }
 
-sealed trait AbstractTypeSignature extends RuntimeTypeSignature {
+sealed trait UserInstantiable {
+  this: Concrete =>
+
+  def fields: SeqMap[FunOrVarId, Field]
+}
+
+sealed trait Abstract extends RuntimeTypeSignature {
   this: RuntimeTypeSignature =>
 }
 
-sealed trait EncapsulatedTypeSignature extends RuntimeTypeSignature {
+sealed trait Encapsulated extends RuntimeTypeSignature {
   def functions: Map[FunOrVarId, FunctionSignature]
 }
 
-sealed trait UnencapsulatedTypeSignature extends RuntimeTypeSignature {
+sealed trait Unencapsulated extends RuntimeTypeSignature {
   this: RuntimeTypeSignature =>
 }
 
-sealed trait TypeParametricTypeSignature extends RuntimeTypeSignature {
+sealed trait TypeParametric extends RuntimeTypeSignature {
   this: TypeSignature =>
 }
 
@@ -93,17 +99,17 @@ final case class InterfaceSignature(
                                      functions: Map[FunOrVarId, FunctionSignature],
                                      directSupertypes: List[NamedType]
                                    )
-  extends RuntimeTypeSignature, TypeParametricTypeSignature, EncapsulatedTypeSignature
+  extends RuntimeTypeSignature, TypeParametric, Encapsulated
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[(TypeIdentifier, Variance)],
-                                 fields: mutable.LinkedHashMap[FunOrVarId, Field],
+                                 fields: SeqMap[FunOrVarId, Field],
                                  importedObjects: mutable.LinkedHashSet[IdValue],
                                  functions: Map[FunOrVarId, FunctionSignature],
                                  directSupertypes: List[NamedType]
                                )
-  extends RuntimeTypeSignature, ConcreteTypeSignature, TypeParametricTypeSignature, EncapsulatedTypeSignature
+  extends RuntimeTypeSignature, Concrete, TypeParametric, Encapsulated, UserInstantiable
 
 final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
@@ -113,7 +119,7 @@ final case class ObjectSignature(
                                   functions: Map[FunOrVarId, FunctionSignature],
                                   directSupertypes: List[NamedType]
                                 )
-  extends RuntimeTypeSignature, AbstractTypeSignature, ConcreteTypeSignature, EncapsulatedTypeSignature {
+  extends RuntimeTypeSignature, Abstract, Concrete, Encapsulated {
   override def typeParams: List[(TypeIdentifier, Variance)] = List.empty
 }
 
@@ -123,15 +129,15 @@ final case class DatatypeSignature(
                                     directSupertypes: List[NamedType],
                                     directSubtypes: mutable.LinkedHashSet[TypeIdentifier]
                                   )
-  extends RuntimeTypeSignature, AbstractTypeSignature, UnencapsulatedTypeSignature, TypeParametricTypeSignature
+  extends RuntimeTypeSignature, Abstract, Unencapsulated, TypeParametric
 
 final case class StructSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[(TypeIdentifier, Variance)],
-                                  fields: mutable.LinkedHashMap[FunOrVarId, StableField],
+                                  fields: SeqMap[FunOrVarId, StableField],
                                   directSupertypes: List[NamedType]
                                 )
-  extends RuntimeTypeSignature, ConcreteTypeSignature, UnencapsulatedTypeSignature, TypeParametricTypeSignature
+  extends RuntimeTypeSignature, Concrete, Unencapsulated, TypeParametric, UserInstantiable
 
 enum Field {
   case ReassignableField(id: FunOrVarId, tpe: Type)

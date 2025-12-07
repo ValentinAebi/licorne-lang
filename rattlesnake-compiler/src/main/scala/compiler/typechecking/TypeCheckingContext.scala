@@ -16,15 +16,20 @@ final case class TypeCheckingContext(
                                       alwaysExitsFlag: Boolean
                                     ) {
 
-  def withTypeInfoRefined(newTypeInfos: Set[TypeInfo]): TypeCheckingContext =
-    copy(typeInfos = newTypeInfos.groupBy(_.value).map { (idValue, allInfos) =>
+  def withTypeInfoRefined(newTypeInfosSet: Set[TypeInfo]): TypeCheckingContext = {
+    var alwaysExits = alwaysExitsFlag
+    val newTypeInfosMap = for ((idValue, allInfos) <- newTypeInfosSet.groupBy(_.value)) yield {
       val knownIs = allInfos.flatMap(_.knownIs)
       val knownIsNot = allInfos.flatMap(_.knownIsNot)
-      idValue -> TypeInfo(idValue, allInfos.head.tpe, knownIs, knownIsNot)
-    })
+      val info = TypeInfo(idValue, allInfos.head.tpe, knownIs, knownIsNot)
+      alwaysExits |= info.mostPreciseType(using program).isEmpty
+      idValue -> info
+    }
+    copy(typeInfos = newTypeInfosMap, alwaysExitsFlag = alwaysExits)
+  }
 
   def withAlwaysExitsFlagRaised: TypeCheckingContext = copy(alwaysExitsFlag = true)
-  
+
   def inferredTypeFor(idValue: IdValue): Option[TypeIdentifier] =
     typeInfos.get(idValue).flatMap(_.mostPreciseType(using program))
 
