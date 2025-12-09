@@ -35,9 +35,9 @@ object Operators {
     override def toString: String = s"$leftOperandType $op $rightOperandType -> $retType"
   }
   
-  private val binopItVal = IdValue("it$", 0)
+  private val nzi$it = IdValue("nzi$it", 0)
   // TODO nonZeroDouble for / and % on Doubles
-  private val nonZeroInt = RefinedType(IntType, binopItVal, Not(Equal(binopItVal, IntConstant(0))))
+  private val nonZeroInt = RefinedType(IntType, nzi$it, Not(Equal(nzi$it, IntConstant(0))))
   
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),

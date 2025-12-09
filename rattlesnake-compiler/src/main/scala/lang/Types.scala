@@ -1,6 +1,7 @@
 package lang
 
 import identifiers.{ItId, TypeIdentifier}
+import lang.Types.PrimitiveType.NothingType
 import lang.Values.{And, Formula, IdValue}
 
 import java.util.Objects
@@ -8,13 +9,13 @@ import java.util.Objects
 
 object Types {
 
-  private val itForHashAndEquals = IdValue("it$", 1)
+  private val itForHashAndEquals = IdValue("it$hash", 1)
 
   sealed trait Type {
     def baseType: BaseType
   }
 
-  final case class RefinedType(baseType: NominalType, itValue: IdValue, predicate: Formula) extends Type {
+  final case class RefinedType private(baseType: NominalType, itValue: IdValue, predicate: Formula) extends Type {
 
     override def equals(other: Any): Boolean = other match {
       case RefinedType(otherBaseType, otherItValue, otherPredicate) =>
@@ -27,6 +28,14 @@ object Types {
     override def hashCode(): Int = Objects.hash(baseType, predicate.substitute(Map.empty, Map(itValue -> itForHashAndEquals)))
 
     override def toString: String = s"$baseType $itValue with $predicate"
+  }
+  
+  object RefinedType {
+    def apply(baseType: NominalType, itValue: IdValue, predicate: Formula): Type =
+      baseType match {
+        case NothingType => NothingType
+        case _ => new RefinedType(baseType, itValue, predicate)
+      }
   }
 
   final case class UnionType(types: Set[Type]) extends Type {

@@ -27,10 +27,10 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
     val ts = new PartialTypeStore
     for ((funSig, func) <- program.functions) {
       val (thisVal, thisType) = funSig.paramsInclThis.head
-      for ((argVal, argType) <- funSig.paramsInclThis){
+      for ((argVal, argType) <- funSig.paramsInclThis) {
         ts(argVal) = argType
       }
-      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false)
+      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
       func.bodyOpt.foreach { body =>
         traverseAll(body, tcCtx)(using ts, er, program)
       }
@@ -129,10 +129,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       case SSA.Return(None) =>
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Return(Some(retVal)) =>
-        computeType(retVal)(using tcCtx)
+        val retType = computeType(retVal)(using tcCtx)
+        enforceBaseSubtypingConstraint(retType, tcCtx.expectedReturnType)(using "return value")
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Panic(msg) =>
-        computeType(msg)(using tcCtx)
+        val msgType = computeType(msg)(using tcCtx)
+        enforceBaseSubtypingConstraint(msgType, StringType)(using "panic message")
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Evaluate(formula) =>
         computeType(formula)(using tcCtx)
@@ -192,27 +194,35 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       case op: BinOp =>
         val lhsType = computeType(op.lhs)
         val rhsType = computeType(op.rhs)
-        val candidateOperators = Operators.binaryOperators.filter { opSig =>
-          opSig.op == op.operator
-            && lhsType.baseType.trivialSubtypeOf(opSig.leftOperandType.baseType)
-            && rhsType.baseType.trivialSubtypeOf(opSig.rightOperandType.baseType)
-        }
-        resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt) match {
-          case Some(opSig) =>
-            enforceBaseSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
-            opSig.retType
-          case None => NothingType
+        if (lhsType.baseType == NothingType || rhsType.baseType == NothingType) {
+          NothingType
+        } else {
+          val candidateOperators = Operators.binaryOperators.filter { opSig =>
+            opSig.op == op.operator
+              && lhsType.baseType.trivialSubtypeOf(opSig.leftOperandType.baseType)
+              && rhsType.baseType.trivialSubtypeOf(opSig.rightOperandType.baseType)
+          }
+          resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt) match {
+            case Some(opSig) =>
+              enforceBaseSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
+              opSig.retType
+            case None => NothingType
+          }
         }
       case op: UnaryOp =>
         val operandType = computeType(op.operand)
-        val candidatesOperators = Operators.unaryOperators.filter { opSig =>
-          opSig.op == op.operator && operandType.baseType.trivialSubtypeOf(opSig.operandType.baseType)
-        }
-        resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt) match {
-          case Some(opSig) =>
-            enforceBaseSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
-            opSig.retType
-          case None => NothingType
+        if (operandType == NothingType) {
+          NothingType
+        } else {
+          val candidatesOperators = Operators.unaryOperators.filter { opSig =>
+            opSig.op == op.operator && operandType.baseType.trivialSubtypeOf(opSig.operandType.baseType)
+          }
+          resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt) match {
+            case Some(opSig) =>
+              enforceBaseSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
+              opSig.retType
+            case None => NothingType
+          }
         }
       case Call(receiver, funId, args) =>
         val receiverType = computeType(receiver)
@@ -261,7 +271,8 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         }
       case Select(owner, fieldName) =>
         val ownerType = computeType(owner)
-        checkFieldAndReturnItsType(ownerType.baseType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
+        if ownerType.baseType == NothingType then NothingType
+        else checkFieldAndReturnItsType(ownerType.baseType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
           .getOrElse(NothingType)
       case HasType(formula, tpe) =>
         val formulaType = computeType(formula)

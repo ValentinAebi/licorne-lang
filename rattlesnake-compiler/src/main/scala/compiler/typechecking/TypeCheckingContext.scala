@@ -3,6 +3,7 @@ package compiler.typechecking
 import compiler.program.Program
 import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.TypeIdentifier
+import lang.Types.Type
 import lang.Values.IdValue
 import lang.{DatatypeSignature, StructSignature}
 
@@ -13,7 +14,8 @@ final case class TypeCheckingContext(
                                       program: Program,
                                       typeInfos: Map[IdValue, TypeInfo],
                                       thisVal: IdValue,
-                                      alwaysExitsFlag: Boolean
+                                      alwaysExitsFlag: Boolean,
+                                      expectedReturnType: Type
                                     ) {
 
   def withTypeInfoRefined(newTypeInfosSet: Set[TypeInfo]): TypeCheckingContext = {

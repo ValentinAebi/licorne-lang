@@ -51,8 +51,7 @@ object TasksPipelines {
       .andThen(SSAGenerator(er))
       // FIXME this implementation is temporary
       .andThen(Typer(er))
-      .andThen(Mapper((program, typeStore) => program))
-      .andThen(SSAPrinter())
+      .andThen(SSAPrinter(_._1, _._2))
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))
   }

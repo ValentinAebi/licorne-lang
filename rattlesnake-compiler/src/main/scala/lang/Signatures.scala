@@ -32,7 +32,7 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
     while (iter.hasNext) {
       sb.append(paramsToStr(iter.next()))
       if (iter.hasNext) {
-        sb.append(",")
+        sb.append(", ")
       }
     }
     sb.append(closing)

@@ -3,12 +3,20 @@ package compiler.ssaprinter
 import compiler.irs.SSA
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
+import compiler.typechecking.TypeStore
 import compiler.valuesconversion.GlobalValuesContext
+import lang.Types.Type
 import lang.Values
+import lang.Values.IdValue
 
-final class SSAPrinter extends CompilerStep[Program, String] {
+final class SSAPrinter[T](
+                           private val getProgram: T => Program,
+                           private val getTypeStore: T => Option[TypeStore]
+                         ) extends CompilerStep[T, String] {
 
-  override def apply(program: Program): String = {
+  override def apply(input: T): String = {
+    val program = getProgram(input)
+    val tsOpt = getTypeStore(input)
 
     given pps: PrettyPrintString = PrettyPrintString(indentGranularity = 3)
 
@@ -25,7 +33,7 @@ final class SSAPrinter extends CompilerStep[Program, String] {
       }
       ssaFunc.bodyOpt match {
         case Some(body) =>
-          addAllInstr(body, printIfEmpty = true)
+          addAllInstr(body, printIfEmpty = true)(using tsOpt.map(_.typeOfOpt).getOrElse(_ => None))
         case None =>
           pps.add("/* abstract */")
       }
@@ -35,10 +43,10 @@ final class SSAPrinter extends CompilerStep[Program, String] {
   }
 
   private def add(instr: SSA.Instr)
-                 (using pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
+                 (using typeFunc: IdValue => Option[Type], pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
     instr match {
       case SSA.Loop(cond, body, variables) =>
-        pps.add("loop (").add(cond.toString).add(") ").startBlock()
+        pps.add("loop (").add(cond.str).add(") ").startBlock()
         addAllInstr(body, printIfEmpty = true)
         pps.endBlock().add(" with vars ").startBlock()
         val varsIter = variables.iterator
@@ -51,7 +59,7 @@ final class SSAPrinter extends CompilerStep[Program, String] {
         }
         pps.endBlock()
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
-        pps.add("if (").add(cond.toString).add(") ").startBlock()
+        pps.add("if (").add(cond.str).add(") ").startBlock()
         addAllInstr(thenBr, printIfEmpty = true)
         pps.endBlock().add(" else ").startBlock()
         addAllInstr(elseBr, printIfEmpty = true)
@@ -59,45 +67,50 @@ final class SSAPrinter extends CompilerStep[Program, String] {
         if (postMerges.nonEmpty) pps.newLine()
         addAllInstr(postMerges, printIfEmpty = false)
       case SSA.Phi(assignedValue, inValues) =>
-        pps.add(s"$assignedValue := phi ${inValues.mkString("{ ", ", ", " }")}")
+        pps.add(s"${assignedValue.str} := phi ${inValues.map(_.str).mkString("{ ", ", ", " }")}")
       case SSA.Assignment(assignedValue, rhs) =>
-        pps.add(assignedValue.toString).add(" := ").add(rhs.toString)
+        pps.add(assignedValue.str).add(" := ").add(rhs.str)
       case SSA.Instantiate(assignedValue, classOrStructName, typeArgs, initialization) =>
-        pps.add(s"$assignedValue := new $classOrStructName")
-        if (typeArgs.nonEmpty){
+        pps.add(s"${assignedValue.str} := new $classOrStructName")
+        if (typeArgs.nonEmpty) {
           pps.add("[")
           val tArgsIter = typeArgs.iterator
-          while (tArgsIter.hasNext){
+          while (tArgsIter.hasNext) {
             pps.add(tArgsIter.next().toString)
-            if (tArgsIter.hasNext){
+            if (tArgsIter.hasNext) {
               pps.add(",")
             }
           }
           pps.add("]")
         }
+        if (initialization.nonEmpty) {
+          pps.addSpace().startBlock()
+        }
         addAllInstr(initialization, printIfEmpty = false)
-        pps.newLine().add(s"end initialization of $assignedValue")
+        if (initialization.nonEmpty) {
+          pps.endBlock()
+        }
       case SSA.Cast(assignedValue, inValue, targetType) =>
-        pps.add(s"cast-dynamic $assignedValue := $inValue as $targetType")
+        pps.add(s"cast-dynamic ${assignedValue.str} := ${inValue.str} as $targetType")
       case SSA.StaticAssert(formula) =>
-        pps.add(s"assert-static $formula")
+        pps.add(s"assert-static ${formula.str}")
       case SSA.StaticTypeAssert(value, tpe) =>
         pps.add(s"type-assert-static $value : $tpe")
       case SSA.FieldWrite(owner, fieldName, value) =>
-        pps.add(s"$owner.$fieldName := $value")
+        pps.add(s"${owner.str}.$fieldName := ${value.str}")
       case SSA.Return(retVal) =>
-        pps.add(s"return ").add(retVal.getOrElse("<void>").toString)
+        pps.add(s"return ").add(retVal.map(_.str).getOrElse("<void>"))
       case SSA.Panic(msg) =>
-        pps.add("panic ").add(msg.toString)
+        pps.add("panic ").add(msg.str)
       case SSA.Evaluate(formula) =>
-        pps.add("evaluate ").add(formula.toString)
+        pps.add("evaluate ").add(formula.str)
       case SSA.DynamicAssert(formula) =>
-        pps.add(s"dynamic-assert $formula")
+        pps.add(s"dynamic-assert ${formula.str}")
     }
   }
 
   private def addAllInstr(instructions: List[SSA.Instr], printIfEmpty: Boolean)
-                         (using pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
+                         (using typeFunc: IdValue => Option[Type], pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
     if (printIfEmpty && instructions.isEmpty) {
       pps.add("/* empty */")
     }
@@ -109,6 +122,14 @@ final class SSAPrinter extends CompilerStep[Program, String] {
         pps.newLine()
       }
     }
+  }
+
+}
+
+object SSAPrinter {
+
+  def apply[T](getProgram: T => Program, getTypeStore: T => TypeStore): SSAPrinter[T] = {
+    new SSAPrinter(getProgram, t => Some(getTypeStore(t)))
   }
 
 }

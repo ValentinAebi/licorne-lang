@@ -5,20 +5,19 @@ import lang.Types.Type
 
 object Values {
 
-  sealed trait Formula
+  sealed trait Formula {
+    final override def toString: String = formulaToString(this)(using _ => None)
+    def str(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
+  }
 
   sealed trait Capturable
 
   sealed trait Value extends Formula
 
-  final class IdValue(val varId: String, idx: Long) extends Value, Capturable {
-    override def toString: String = s"$varId$$$idx"
-  }
+  final case class IdValue(varId: String, idx: Long) extends Value, Capturable
 
   sealed trait Constant extends Value {
     def value: Any
-
-    override def toString: String = value.toString
   }
 
   case object True extends Constant {
@@ -37,22 +36,16 @@ object Values {
 
   final case class DoubleConstant(value: Double) extends Constant
 
-  final case class StringConstant(value: String) extends Constant {
-    override def toString: String = s"\"$value\""
-  }
+  final case class StringConstant(value: String) extends Constant
 
   sealed trait BinOp(val operator: Operator) extends Formula {
     def lhs: Formula
 
     def rhs: Formula
-
-    override def toString: String = s"$lhs $operator $rhs"
   }
 
   sealed trait UnaryOp(val operator: Operator) extends Formula {
     def operand: Formula
-
-    override def toString: String = s"$operator$operand"
   }
 
   final case class Plus(lhs: Formula, rhs: Formula) extends BinOp(Operator.Plus)
@@ -79,17 +72,11 @@ object Values {
 
   final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality)
 
-  final case class Call(receiver: Formula, funId: FunOrVarId, args: List[Formula]) extends Formula, Capturable {
-    override def toString: String = s"$receiver.$funId(${args.mkString(",")})"
-  }
+  final case class Call(receiver: Formula, funId: FunOrVarId, args: List[Formula]) extends Formula, Capturable
 
-  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable {
-    override def toString: String = s"$owner.$fieldName"
-  }
+  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
 
-  final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula {
-    override def toString: String = s"$formula is $tpe"
-  }
+  final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula
 
   case object RootCapability extends Capturable {
     override def toString: String = "cap"
@@ -118,6 +105,29 @@ object Values {
     case Call(receiver, funId, args) => Call(receiver.substitute(typesSubst, valsSubst), funId, args.map(_.substitute(typesSubst, valsSubst)))
     case Select(owner, fieldName) => Select(owner.substitute(typesSubst, valsSubst), fieldName)
     case HasType(formula, tpe) => HasType(formula.substitute(typesSubst, valsSubst), tpe)
+  }
+
+  def formulaToString(formula: Formula)(using typeFunc: (IdValue => Option[Type])): String = formula match {
+    case idValue: IdValue =>
+      val strWithoutType = s"${idValue.varId}$$${idValue.idx}"
+      typeFunc(idValue) match {
+        case Some(tpe) => s"($strWithoutType : $tpe)"
+        case None => strWithoutType
+      }
+    case StringConstant(value) =>
+      s"\"$value\""
+    case constant: Constant =>
+      constant.value.toString
+    case op: BinOp =>
+      s"${formulaToString(op.lhs)} ${op.operator} ${formulaToString(op.rhs)}"
+    case op: UnaryOp =>
+      s"${op.operator} ${formulaToString(op.operand)}"
+    case Call(receiver, funId, args) =>
+      s"${formulaToString(receiver)}.$funId(${args.map(formulaToString).mkString(", ")})"
+    case Select(owner, fieldName) =>
+      s"${formulaToString(owner)}.$fieldName"
+    case HasType(formula, tpe) =>
+      s"${formulaToString(formula)} is $tpe"
   }
 
 }
