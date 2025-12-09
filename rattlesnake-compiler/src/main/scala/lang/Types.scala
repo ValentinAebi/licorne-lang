@@ -140,6 +140,13 @@ object Types {
 
   def join(types: Type*): Type = join(types.toSet)
 
-  def join(types: Set[Type]): Type = UnionType(types)
+  def join(typesRaw: Set[Type]): Type = {
+    val nonNothingTypes = typesRaw.filterNot(_.baseType == NothingType)
+    nonNothingTypes.size match {
+      case 0 => NothingType
+      case 1 => nonNothingTypes.head
+      case _ => UnionType(nonNothingTypes)
+    }
+  }
 
 }
