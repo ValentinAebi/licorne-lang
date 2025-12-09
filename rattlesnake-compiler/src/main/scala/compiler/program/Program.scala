@@ -31,7 +31,6 @@ final case class Program(
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.LinkedHashMap.empty[TypeIdentifier, mutable.LinkedHashMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
-  private var overrides = mutable.Map.empty[FunctionSignature, mutable.Set[FunctionSignature]]
 
   def checkDefinitions()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
     checkInterfaceSignatures()
@@ -215,7 +214,6 @@ final case class Program(
               case None =>
                 er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", typeDefPositions.get(subT))
               case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility)) =>
-                overrides.getOrElseUpdate(subFunSig, mutable.Set.empty).add(superFunSig)
                 val funPosOpt = functions.get(subFunSig).flatMap(_.posOpt)
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size

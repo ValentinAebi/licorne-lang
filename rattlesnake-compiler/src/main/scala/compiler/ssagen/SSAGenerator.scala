@@ -458,8 +458,10 @@ final class SSAGenerator(er: ErrorReporter)
           generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
     }
-    expr.getPosition.foreach {
-      formulaPositions.put(formula, _)
+    if (!formulaPositions.containsKey(formula)){
+      expr.getPosition.foreach {
+        formulaPositions.put(formula, _)
+      }
     }
     formula
   }

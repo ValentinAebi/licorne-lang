@@ -15,6 +15,7 @@ import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.Values.*
+import lang.Variance.{Contravariant, Invariant}
 
 import scala.util.boundary
 import scala.util.boundary.Label
@@ -108,8 +109,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         tcCtx
       case SSA.Cast(resultValue, castValue, targetType) =>
         val castValueType = computeType(castValue)(using tcCtx)
-        reasonForIllegalDowncastTarget(castValueType, targetType).foreach {
-          reportError(_, instr.getAstNodeOpt.flatMap(_.getPosition))
+        import DowncastTargetCheckResult.*
+        checkDowncastTarget(castValueType, targetType) match {
+          case CanDowncast(tpe) =>
+            ts(resultValue) = tpe
+          case CannotDowncast(reason) =>
+            reportError(reason, instr.getAstNodeOpt.flatMap(_.getPosition))
         }
         tcCtx.withTypeInfoRefined(Set(TypeInfo(castValue, targetType, Set(targetType), Set.empty)))
       case SSA.StaticTypeAssert(value, tpe) =>
@@ -160,7 +165,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       (infoWhenNotOperand, infoWhenOperand)
     case HasType(idValue: IdValue, testedType) =>
       ts.typeOfOpt(idValue) match {
-        case Some(NamedType(knownType, Nil, Nil)) =>
+        case Some(NamedType(knownType, _, Nil)) =>
           (Set(TypeInfo(idValue, knownType, Set(testedType), Set.empty)),
             Set(TypeInfo(idValue, knownType, Set.empty, Set(testedType))))
         case _ => (Set.empty, Set.empty)
@@ -179,8 +184,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         ts.typeOfOpt(idValue) match {
           case Some(regularType) =>
             tcCtx.inferredTypeFor(idValue) match {
-              case Some(typeId) if typeId.isValidDowncastTargetForType(regularType) =>
-                NamedType(typeId, List.empty, List.empty)
+              case Some(typeId) =>
+                import DowncastTargetCheckResult.*
+                checkDowncastTarget(regularType, typeId) match {
+                  case CanDowncast(tpe) => tpe
+                  case CannotDowncast(reason) => regularType
+                }
               case _ => regularType
             }
           // typically, the type of a missing value because of an illegal construct
@@ -275,9 +284,12 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         else checkFieldAndReturnItsType(ownerType.baseType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
           .getOrElse(NothingType)
       case HasType(formula, tpe) =>
+        import DowncastTargetCheckResult.*
         val formulaType = computeType(formula)
-        reasonForIllegalDowncastTarget(formulaType, tpe).foreach {
-          reportError(_, posOpt)
+        checkDowncastTarget(formulaType, tpe) match {
+          case CanDowncast(tpe) => ()
+          case CannotDowncast(reason) =>
+            reportError(reason, posOpt)
         }
         BoolType
     }
@@ -368,24 +380,47 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
   }
 
   extension (targetId: TypeIdentifier) private def isValidDowncastTargetForType(tpe: Type)(using program: Program): Boolean =
-    reasonForIllegalDowncastTarget(tpe, targetId).isEmpty
+    checkDowncastTarget(tpe, targetId).isInstanceOf[DowncastTargetCheckResult.CanDowncast]
 
-  private def reasonForIllegalDowncastTarget(originalType: Type, targetId: TypeIdentifier)
-                                            (using program: Program): Option[String] = {
+  private enum DowncastTargetCheckResult {
+    case CanDowncast(tpe: Type)
+    case CannotDowncast(reason: String)
+  }
+
+  private def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier)
+                                 (using program: Program): DowncastTargetCheckResult = {
+    import DowncastTargetCheckResult.*
     originalType.baseType match {
-      case NamedType(originId, _, Nil) =>
+      case NamedType(originId, originTypeArgs, Nil) =>
         program.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
           case None =>
-            Some(s"type $targetId not found")
-          case Some(sig) =>
-            if (sig.typeParams.nonEmpty) {
-              Some(s"$targetId takes type parameters")
-            } else if (program.subToSuperSubst(targetId, originId).isEmpty) {
-              Some(s"$targetId does not subtype of $originId")
-            } else None
+            CannotDowncast(s"type $targetId not found")
+          case Some(targetSig) =>
+            program.subToSuperSubst(targetId, originId) match {
+              case None => CannotDowncast(s"$targetId does not subtype $originId")
+              case Some(targetToOrigSubst) =>
+                val origSig = program.resolveSignatureAs[RuntimeTypeSignature](originId).get
+                val siteSubst = origSig.typeParams.map(_._1).zip(originTypeArgs).toMap
+                val remappingB = Map.newBuilder[TypeIdentifier, Type]
+                // TODO check soundness (because of variance)
+                for ((tInOrig, tInTarget) <- targetToOrigSubst if origSig.varianceOf(tInOrig).contains(Invariant)) {
+                  tInTarget match {
+                    case NamedType(tInTarget, Nil, Nil) if targetSig.varianceOf(tInTarget).exists(_ != Contravariant) =>
+                      remappingB.addOne(tInTarget -> siteSubst.apply(tInOrig))
+                    case _ => ()
+                  }
+                }
+                val remapping = remappingB.result()
+                val uncoveredTypeParams = targetSig.typeParams.map(_._1).toSet -- remapping.keySet
+                if (uncoveredTypeParams.isEmpty) {
+                  CanDowncast(targetSig.toType(remapping, Map.empty))
+                } else {
+                  CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")}")
+                }
+            }
         }
       case _ =>
-        Some("target is an unresolved or primitive type")
+        CannotDowncast("target is an unresolved or primitive type")
     }
   }
 

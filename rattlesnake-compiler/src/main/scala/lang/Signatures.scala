@@ -51,6 +51,9 @@ sealed trait TypeSignature {
       typeParams.map((tid, _) => NamedType(tid, List.empty, List.empty)),
       params.map(_._2._2).toList).substitute(typesSubst, valsSubst)
   }
+  
+  def varianceOf(tParam: TypeIdentifier): Option[Variance] =
+    typeParams.find(_._1 == tParam).map(_._2)
 }
 
 final case class TypeAliasSignature(
