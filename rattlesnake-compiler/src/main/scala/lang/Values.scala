@@ -72,7 +72,7 @@ object Values {
 
   final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality)
 
-  final case class Call(receiver: Formula, funId: FunOrVarId, args: List[Formula]) extends Formula, Capturable
+  final case class Call(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula]) extends Formula, Capturable
 
   final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
 
@@ -102,7 +102,9 @@ object Values {
     case Equal(lhs, rhs) => Equal(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
     case Neg(operand) => Neg(operand.substitute(typesSubst, valsSubst))
     case Not(operand) => Not(operand.substitute(typesSubst, valsSubst))
-    case Call(receiver, funId, args) => Call(receiver.substitute(typesSubst, valsSubst), funId, args.map(_.substitute(typesSubst, valsSubst)))
+    case Call(receiver, funId, typeArgs, args) =>
+      Call(receiver.substitute(typesSubst, valsSubst), funId,
+        typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
     case Select(owner, fieldName) => Select(owner.substitute(typesSubst, valsSubst), fieldName)
     case HasType(formula, tpe) => HasType(formula.substitute(typesSubst, valsSubst), tpe)
   }
@@ -122,7 +124,8 @@ object Values {
       s"${formulaToString(op.lhs)} ${op.operator} ${formulaToString(op.rhs)}"
     case op: UnaryOp =>
       s"${op.operator} ${formulaToString(op.operand)}"
-    case Call(receiver, funId, args) =>
+    case Call(receiver, funId, typeArgs, args) =>
+      val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       s"${formulaToString(receiver)}.$funId(${args.map(formulaToString).mkString(", ")})"
     case Select(owner, fieldName) =>
       s"${formulaToString(owner)}.$fieldName"

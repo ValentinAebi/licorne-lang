@@ -315,8 +315,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val objectRef = highName map (ObjectRef(_))
 
-  private lazy val varRefOrNonPrefixedCall = lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList) map {
-    case name ^: Some(exclMarkOpt ^: args) => Call(None, name, args, exclMarkOpt.isDefined)
+  private lazy val varRefOrNonPrefixedCall = lowName ::: opt(typeArgsListOpt ::: parenthArgsList) map {
+    case name ^: Some(typeArgsOpt ^: args) => Call(None, name, typeArgsOpt.getOrElse(List.empty), args)
     case name ^: None => VariableRef(name)
   } setName "varRefOrNonPrefixedCall"
 
@@ -325,10 +325,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat((dot ::: lowName ::: opt(opt(op(ExclamationMark)) ::: parenthArgsList))) map {
+    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) map {
       case atExpr ^: repeated =>
         repeated.foldLeft(atExpr) {
-          case (acc, name ^: Some(optExclMark ^: args)) => Call(Some(acc), name, args, optExclMark.isDefined)
+          case (acc, name ^: Some(typeArgsOpt ^: args)) => Call(Some(acc), name, typeArgsOpt.getOrElse(List.empty), args)
           case (acc, name ^: None) => Select(acc, name)
         }
     }

@@ -14,7 +14,7 @@ object BaseSubtypeRelation {
 
   def enforceBaseSubtypingConstraint(subT: Type, superT: Type)
                                     (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
-    checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected $superT, found $subT"), Some(er))
+    checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}"), Some(er))
 
   private def checkSubtypingConstraint(subT: Type, superT: Type)
                                       (using errorMsg: ErrorMessage, erOpt: Option[ErrorReporter], posOpt: Option[Position], program: Program): Boolean = {
@@ -54,11 +54,7 @@ object BaseSubtypeRelation {
                 val typeInSub = composedSubst.apply(typeParam)
                 val typeArgsMatch = variance match {
                   case Variance.Invariant =>
-                    val correct = typeInSub == typeInSuper
-                    if (!correct) {
-                      reportNotSubtype(subT, superT)
-                    }
-                    correct
+                    checkSubtypingConstraint(typeInSub, typeInSuper) && checkSubtypingConstraint(typeInSuper, typeInSub)
                   case Variance.Covariant =>
                     checkSubtypingConstraint(typeInSub, typeInSuper)
                   case Variance.Contravariant =>

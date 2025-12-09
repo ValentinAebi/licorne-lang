@@ -20,7 +20,7 @@ final case class TypeCheckingContext(
 
   def withTypeInfoRefined(newTypeInfosSet: Set[TypeInfo]): TypeCheckingContext = {
     var alwaysExits = alwaysExitsFlag
-    val newTypeInfosMap = for ((idValue, allInfos) <- newTypeInfosSet.groupBy(_.value)) yield {
+    val newTypeInfosMap = for ((idValue, allInfos) <- (typeInfos.values.toSet ++ newTypeInfosSet).groupBy(_.value)) yield {
       val knownIs = allInfos.flatMap(_.knownIs)
       val knownIsNot = allInfos.flatMap(_.knownIsNot)
       val info = TypeInfo(idValue, allInfos.head.tpe, knownIs, knownIsNot)
@@ -52,7 +52,8 @@ object TypeCheckingContext {
      */
     def mostPreciseType(using program: Program): Option[TypeIdentifier] = boundary {
 
-      @tailrec def narrowDown(front: Set[TypeIdentifier]): Set[TypeIdentifier] = {
+      @tailrec def narrowDown(front: Set[TypeIdentifier], oldLastBottleneck: TypeIdentifier): Option[TypeIdentifier] = {
+        val lastBottleneck = if front.size == 1 then front.head else oldLastBottleneck
         val narrowed = (front -- knownIsNot).flatMap {
           program.resolveSignature(_) match {
             case Some(datatypeSignature: DatatypeSignature) => datatypeSignature.directSubtypes
@@ -60,16 +61,11 @@ object TypeCheckingContext {
             case _ => Set.empty
           }
         }
-        if narrowed == front then front else narrowDown(narrowed)
+        if narrowed == front then Some(lastBottleneck) else narrowDown(narrowed, lastBottleneck)
       }
 
       val startFront = if knownIs.isEmpty then Set(tpe) else knownIs
-      val endFront = narrowDown(startFront)
-      endFront.size match {
-        case 0 => None
-        case 1 => Some(endFront.head)
-        case _ => Some(tpe)
-      }
+      narrowDown(startFront, tpe)
     }
 
   }

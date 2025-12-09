@@ -93,18 +93,27 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
             reportError(s"instantiable type not found: $classOrStructName", posOpt)
           case Some(sig) =>
             val typeParams = sig.typeParams.map(_._1)
-            val typeParamsMapping = generateTypeParamsMapping(typeParams, typeArgs)
-            val tpe = NamedType(classOrStructName, typeParams.map(typeParamsMapping.apply), List.empty)
-            val initializedFields = initialization.flatMap {
-              case FieldWrite(owner, fieldName, rhs) => Some(fieldName)
-              case _ => None
-            }.toSet
-            val requiredFields = sig.fields.keySet
-            val missingFields = requiredFields.diff(initializedFields)
-            if (missingFields.nonEmpty) {
-              reportError(s"field(s) ${missingFields.mkString(", ")} have not been initialized", posOpt)
+            generateTypeParamsMapping(typeParams, typeArgs, posOpt, "new", reportIfLengthMismatch = true) match {
+              case Some(typeParamsMapping) =>
+                ts(assignedValue) = NamedType(classOrStructName, typeParams.map(typeParamsMapping.apply), List.empty)
+                val initializedFields = initialization.flatMap {
+                  case FieldWrite(owner, fieldName, rhs) => Some(fieldName)
+                  case _ => None
+                }.toSet
+                val requiredFields = sig.fields.keySet
+                val missingFields = requiredFields.diff(initializedFields)
+                if (missingFields.nonEmpty) {
+                  reportError(s"field(s) ${missingFields.mkString(", ")} have not been initialized", posOpt)
+                }
+                traverseAll(initialization, tcCtx)
+              case None =>
+                // still report the errors we can
+                initialization.foreach {
+                  case FieldWrite(owner, fieldName, rhs) =>
+                    computeType(rhs)(using tcCtx)
+                  case _ => ()
+                }
             }
-            traverseAll(initialization, tcCtx)
         }
         tcCtx
       case SSA.Cast(resultValue, castValue, targetType) =>
@@ -179,7 +188,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       if program.formulaPositions.containsKey(formula)
       then Some(program.formulaPositions.get(formula))
       else None
-    formula match {
+    val tpeRaw = formula match {
       case idValue: IdValue =>
         ts.typeOfOpt(idValue) match {
           case Some(regularType) =>
@@ -233,31 +242,32 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
             case None => NothingType
           }
         }
-      case Call(receiver, funId, args) =>
+      case Call(receiver, funId, typeArgs, args) =>
         val receiverType = computeType(receiver)
         val argTypes = args.map(computeType)
 
         forceComputeJoins(program.desugarType(receiverType).baseType) match {
-          case Some(Types.NamedType(typeName, typeArgs, args)) =>
-            assert(args.isEmpty)
-            program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
+          case Some(Types.NamedType(receiverTypeName, receiverTypeArgs, receiverArgs)) =>
+            assert(receiverArgs.isEmpty)
+            program.resolveSignatureAs[RuntimeTypeSignature](receiverTypeName) match {
               case None =>
-                reportError(s"type not found: $typeName", posOpt)
+                reportError(s"type not found: $receiverTypeName", posOpt)
               case Some(_: Unencapsulated) =>
                 reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
               case Some(receiverTypeSig: Encapsulated) =>
                 receiverTypeSig.functions.get(funId) match {
                   case None => reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
                   case Some(funSig) =>
-                    val argsSizeMatch = args.size != funSig.paramsInclThis.size - 1
-                    if (argsSizeMatch) {
-                      reportError(s"wrong number of parameters for method $funId: expected ${funSig.paramsInclThis.size - 1}, was ${args.size}", posOpt)
+                    val argsSizeMatch = args.size == funSig.paramsInclThis.size - 1
+                    if (!argsSizeMatch) {
+                      reportError(s"wrong number of arguments for method $funId: expected ${funSig.paramsInclThis.size - 1}, was ${args.size}", posOpt)
                     }
-                    val typeParams = funSig.typeParams
-                    val substOpt = if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
-                      reportError(s"wrong number of type parameters: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
-                      None
-                    } else Some(generateTypeParamsMapping(typeParams, typeArgs))
+                    val substOpt = for {
+                      funcSubst <- generateTypeParamsMapping(funSig.typeParams, typeArgs, posOpt, s"$funId", reportIfLengthMismatch = true)
+                    } yield generateTypeParamsMapping(receiverTypeSig.typeParams.map(_._1), receiverTypeArgs, posOpt, "recverr", reportIfLengthMismatch = false) match {
+                      case Some(receiverSubst) => receiverSubst ++ funcSubst
+                      case None => funcSubst
+                    }
 
                     def substIfNeeded(tpe: Type): Type = {
                       substOpt match {
@@ -268,11 +278,11 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
 
                     if (argsSizeMatch) {
                       for (((_, paramTypeRaw), argType) <- funSig.paramsInclThis.tail zip argTypes) {
-                        val paramType = substIfNeeded(paramTypeRaw)
+                        val paramType = program.desugarType(substIfNeeded(paramTypeRaw))
                         enforceBaseSubtypingConstraint(paramType, argType)(using "method argument", posOpt)
                       }
                     }
-                    substIfNeeded(funSig.retType)
+                    program.desugarType(substIfNeeded(funSig.retType))
                 }
             }
           case None =>
@@ -293,50 +303,60 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         }
         BoolType
     }
+    tpeRaw.withTypeVarsExpanded
   }
 
-  private def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type]): Map[TypeIdentifier, Type] = {
-    if (typeArgs.isEmpty && typeParams.nonEmpty) {
-      typeParams.map(_ -> new TypeVariable).toMap
-    } else {
+  private def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type], posOpt: Option[Position], contextDescr: String, reportIfLengthMismatch: Boolean): Option[Map[TypeIdentifier, Type]] = {
+    if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
+      if (reportIfLengthMismatch) {
+        reportError(s"wrong number of type arguments: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
+      }
+      None
+    } else if (typeArgs.isEmpty && typeParams.nonEmpty) Some {
+      typeParams.map(tp => tp -> new TypeVariable(s"${contextDescr}_${tp}")).toMap
+    } else Some {
       typeParams.zip(typeArgs).toMap
     }
   }
 
-  private def forceComputeJoins(tpe: BaseType)(using program: Program): Option[NamedType] = boundary {
+  private def forceComputeJoins(tpe: BaseType)(using program: Program): Option[NamedType] = tpe match {
+    case namedType: NamedType => Some(namedType)
+    case _: BaseUnionType => boundary {
 
-    def extractTypeIds(tpe: BaseType)(using Label[Option[NamedType]]): Set[TypeIdentifier] = tpe match {
-      case NamedType(tid, _, _) => Set(tid)
-      case BaseUnionType(types) => types.flatMap(extractTypeIds)
-      case _ => boundary.break(None)
-    }
-
-    val allTypeIds = extractTypeIds(tpe)
-    val commonDirectSupertypes = allTypeIds.map { tid =>
-      val sig = program.resolveSignatureAs[RuntimeTypeSignature](tid).getOrElse {
-        boundary.break(None)
+      def extractTypeIds(tpe: BaseType)(using Label[Option[NamedType]]): Set[TypeIdentifier] = tpe match {
+        case NamedType(tid, _, _) => Set(tid)
+        case BaseUnionType(types) => types.flatMap(extractTypeIds)
+        case _ => boundary.break(None)
       }
-      sig.directSupertypes.toSet
-    }.reduce(_.intersect(_))
 
-    val possibleSubstitutions = {
-      for {
-        NamedType(superTypeId, _, _) <- commonDirectSupertypes
-        subst <- program.subToSuperSubst(allTypeIds.head, superTypeId)
-        if allTypeIds.tail.forall {
-          program.subToSuperSubst(_, superTypeId).contains(subst)
+      val allTypeIds = extractTypeIds(tpe)
+      val commonDirectSupertypes = allTypeIds.map { tid =>
+        val sig = program.resolveSignatureAs[RuntimeTypeSignature](tid).getOrElse {
+          boundary.break(None)
         }
-      } yield (superTypeId, subst)
-    }
-    if (possibleSubstitutions.size == 1) {
-      val (superTypeId, subst) = possibleSubstitutions.head
-      program.resolveSignatureAs[RuntimeTypeSignature](superTypeId).flatMap { sig =>
-        sig.toType(subst, Map.empty) match {
-          case namedType: NamedType => Some(namedType)
-          case _ => None
-        }
+        sig.directSupertypes.toSet
+      }.reduce(_.intersect(_))
+
+      val possibleSubstitutions = {
+        for {
+          NamedType(superTypeId, _, _) <- commonDirectSupertypes
+          subst <- program.subToSuperSubst(allTypeIds.head, superTypeId)
+          if allTypeIds.tail.forall {
+            program.subToSuperSubst(_, superTypeId).contains(subst)
+          }
+        } yield (superTypeId, subst)
       }
-    } else None
+      if (possibleSubstitutions.size == 1) {
+        val (superTypeId, subst) = possibleSubstitutions.head
+        program.resolveSignatureAs[RuntimeTypeSignature](superTypeId).flatMap { sig =>
+          sig.toType(subst, Map.empty) match {
+            case namedType: NamedType => Some(namedType)
+            case _ => None
+          }
+        }
+      } else None
+    }
+    case _ => None
   }
 
   private def checkFieldAndReturnItsType(
@@ -346,13 +366,19 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
                                         )(using tcCtx: TypeCheckingContext, er: ErrorReporter, program: Program): Option[Type] = {
     forceComputeJoins(program.desugarType(ownerType).baseType) match {
       case Some(Types.NamedType(typeName, typeArgs, args)) =>
+
+        def subst(sig: RuntimeTypeSignature, tpe: Type): Type = {
+          val subst = sig.typeParams.map(_._1).zip(typeArgs).toMap
+          tpe.substitute(subst, Map.empty)
+        }
+
         program.resolveSignatureAs[RuntimeTypeSignature](typeName) match {
           case None =>
             reportError(s"type not found: $typeName", posOpt)
             None
           case Some(structSig: StructSignature) =>
             structSig.fields.get(fieldName) match {
-              case Some(field) => Some(field.tpe)
+              case Some(field) => Some(subst(structSig, field.tpe))
               case None =>
                 reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
             }
@@ -364,7 +390,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
                 if (checkIsReassignable && field.isStable) {
                   reportError(s"field $fieldName is not reassignable", posOpt)
                 }
-                Some(field.tpe)
+                Some(subst(classSig, field.tpe))
             }
           case Some(_: ClassSignature) =>
             reportError(s"field not found or not accessible in $typeName; note that class fields are always private and should be accessed from the outside through getters only", posOpt)

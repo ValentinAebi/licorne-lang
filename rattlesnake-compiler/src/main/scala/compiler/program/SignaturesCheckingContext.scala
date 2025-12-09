@@ -69,8 +69,9 @@ final class SignaturesCheckingContext(
       checkTypesWellDefined(op.rhs, posOpt)
     case op: Values.UnaryOp =>
       checkTypesWellDefined(op.operand, posOpt)
-    case Values.Call(receiver, funId, args) =>
+    case Values.Call(receiver, funId, typeArgs, args) =>
       checkTypesWellDefined(receiver, posOpt)
+      typeArgs.foreach(checkTypesWellDefined(_, None, posOpt))
       args.foreach(checkTypesWellDefined(_, posOpt))
     case Values.Select(owner, fieldName) => checkTypesWellDefined(owner, posOpt)
     case Values.HasType(formula, tpe) =>

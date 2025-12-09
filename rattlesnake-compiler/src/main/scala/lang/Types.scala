@@ -5,6 +5,7 @@ import lang.Types.PrimitiveType.NothingType
 import lang.Values.{And, Formula, IdValue}
 
 import java.util.Objects
+import java.util.concurrent.atomic.AtomicLong
 
 
 object Types {
@@ -29,7 +30,7 @@ object Types {
 
     override def toString: String = s"$baseType $itValue with $predicate"
   }
-  
+
   object RefinedType {
     def apply(baseType: NominalType, itValue: IdValue, predicate: Formula): Type =
       baseType match {
@@ -84,7 +85,10 @@ object Types {
     }
   }
 
-  final class TypeVariable extends BaseType {
+  private val typeVarUidGen = new AtomicLong()
+
+  final class TypeVariable(descr: String) extends BaseType {
+    private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
 
     def tryToResolve(tpe: Type): Unit = {
@@ -98,7 +102,7 @@ object Types {
 
     def substitutedIfResolved: Type = actualTypeIfKnown.getOrElse(this)
 
-    override def toString: String = s"?${System.identityHashCode(this)}?"
+    override def toString: String = s"?${descr}_$uid"
 
     private def goUpPath(tpe: Type): Type = tpe match {
       case tVar: TypeVariable => tVar.actualTypeOpt match {
@@ -136,6 +140,21 @@ object Types {
         then BaseUnionType(substTypes.map(_.asInstanceOf[BaseType]))
         else UnionType(substTypes)
     }
+
+    def withTypeVarsExpanded: Type = tpe match {
+      case RefinedType(baseType, itValue, predicate) =>
+        baseType.withTypeVarsExpanded.baseType match {
+          case nominalType: NominalType => RefinedType(nominalType, itValue, predicate)
+          case otherType => otherType
+        }
+      case UnionType(types) => UnionType(types.map(_.withTypeVarsExpanded))
+      case BaseUnionType(types) =>
+        BaseUnionType(types.map(_.withTypeVarsExpanded.baseType))
+      case primitiveType: PrimitiveType => primitiveType
+      case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withTypeVarsExpanded), args)
+      case variable: TypeVariable => variable.substitutedIfResolved
+    }
+
   }
 
   def join(types: Type*): Type = join(types.toSet)

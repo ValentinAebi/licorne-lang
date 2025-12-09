@@ -418,7 +418,7 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
       case Asts.ItRef() => generateSSAExpr(Asts.VariableRef(ItId))
       case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
-      case call@Asts.Call(receiverOpt, funId, args, isTailrec) =>
+      case call@Asts.Call(receiverOpt, funId, typeArgs, args) =>
         val receiver = receiverOpt.map(generateSSAExpr).getOrElse {
           valsCtx.getThisValue match {
             case Some(recv) => recv
@@ -427,7 +427,7 @@ final class SSAGenerator(er: ErrorReporter)
               valsCtx.valuesGen.newValue(ThisId)
           }
         }
-        Call(receiver, funId, args.map(generateSSAExpr))
+        Call(receiver, funId, typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
       case Asts.UnaryOp(Operator.Minus, operand) => Neg(generateSSAExpr(operand))
       case Asts.UnaryOp(Operator.ExclamationMark, operand) => Not(generateSSAExpr(operand))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")

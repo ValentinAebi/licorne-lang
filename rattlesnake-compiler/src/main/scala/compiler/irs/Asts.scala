@@ -297,8 +297,8 @@ object Asts {
   /**
    * Function call: `callee(args)`
    */
-  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, args: List[Expr], isTailrec: Boolean) extends FormulaExpr {
-    override def children: List[Ast] = receiverOpt.toList ++ args
+  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, typeArgs: List[TypeTree], args: List[Expr]) extends FormulaExpr {
+    override def children: List[Ast] = receiverOpt.toList ++ typeArgs ++ args
   }
 
   final case class StructOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {

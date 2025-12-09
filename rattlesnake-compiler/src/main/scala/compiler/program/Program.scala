@@ -100,7 +100,7 @@ final case class Program(
             desugarType(rhs.substitute(typesSubst, valsSubst))
           case None => NamedType(typeName, typeArgsSubst, args)
         }
-      case typeVariable: TypeVariable => typeVariable.actualTypeIfKnown.getOrElse(typeVariable)
+      case typeVariable: TypeVariable => typeVariable.substitutedIfResolved
       case UnionType(types) => UnionType(types.map(desugarType))
       case BaseUnionType(types) => UnionType(types.map(desugarType))
     }
@@ -354,7 +354,7 @@ final case class Program(
     case value: Values.Value => Set.empty
     case op: Values.BinOp => findMentionedTypes(op.lhs) ++ findMentionedTypes(op.rhs)
     case op: Values.UnaryOp => findMentionedTypes(op.operand)
-    case Values.Call(receiver, funId, args) => findMentionedTypes(receiver) ++ args.flatMap(findMentionedTypes)
+    case Values.Call(receiver, funId, typeArgs, args) => findMentionedTypes(receiver) ++ typeArgs.flatMap(findMentionedTypes) ++ args.flatMap(findMentionedTypes)
     case Values.Select(owner, fieldName) => findMentionedTypes(owner)
     case Values.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
   }
