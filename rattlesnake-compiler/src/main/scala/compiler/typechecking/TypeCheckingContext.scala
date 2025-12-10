@@ -30,6 +30,20 @@ final case class TypeCheckingContext(
     copy(typeInfos = newTypeInfosMap, alwaysExitsFlag = alwaysExits)
   }
 
+  def withAlwaysExitsFlagRecomputed(using program: Program): TypeCheckingContext = {
+    if alwaysExitsFlag then this
+    else {
+      val iter = typeInfos.iterator
+      while (iter.hasNext) {
+        val (_, typeInfo) = iter.next()
+        if (typeInfo.mostPreciseType.isEmpty) {
+          return copy(alwaysExitsFlag = true)
+        }
+      }
+      this
+    }
+  }
+
   def withAlwaysExitsFlagRaised: TypeCheckingContext = copy(alwaysExitsFlag = true)
 
   def inferredTypeFor(idValue: IdValue): Option[TypeIdentifier] =
@@ -50,7 +64,7 @@ object TypeCheckingContext {
     /**
      * @return None if all possible types were excluded (in the typical context this implies that we are in an unreachable branch)
      */
-    def mostPreciseType(using program: Program): Option[TypeIdentifier] = boundary {
+    def mostPreciseType(using program: Program): Option[TypeIdentifier] = {
 
       @tailrec def narrowDown(front: Set[TypeIdentifier], oldLastBottleneck: TypeIdentifier): Option[TypeIdentifier] = {
         val lastBottleneck = if front.size == 1 then front.head else oldLastBottleneck
@@ -61,7 +75,9 @@ object TypeCheckingContext {
             case _ => Set.empty
           }
         }
-        if narrowed == front then Some(lastBottleneck) else narrowDown(narrowed, lastBottleneck)
+        if narrowed.isEmpty then None
+        else if narrowed == front then Some(lastBottleneck)
+        else narrowDown(narrowed, lastBottleneck)
       }
 
       val startFront = if knownIs.isEmpty then Set(tpe) else knownIs

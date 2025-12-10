@@ -15,14 +15,12 @@ import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.Values.*
-import lang.Variance.{Contravariant, Invariant}
 
 import scala.util.boundary
 import scala.util.boundary.Label
 
-// TODO also check that all paths eventually reach a terminating instruction (return, panic, Nothing-call, no possible type left for a value given the control-flow analysis results)
 
-final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (Program, TypeStore)] {
+final class Typer(private val er: ErrorReporter, private val continueIfErrors: Boolean = false) extends CompilerStep[Program, (Program, TypeStore)] {
 
   override def apply(program: Program): (Program, TypeStore) = {
     val ts = new PartialTypeStore
@@ -31,10 +29,16 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       for ((argVal, argType) <- funSig.paramsInclThis) {
         ts(argVal) = argType
       }
-      val tcCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
       func.bodyOpt.foreach { body =>
-        traverseAll(body, tcCtx)(using ts, er, program)
+        val startCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
+        val endCtx = traverseAll(body, startCtx)(using ts, er, program)
+        if (funSig.retType.baseType != VoidType && !endCtx.alwaysExitsFlag) {
+          reportError(s"missing return in non-$VoidType method", func.posOpt)
+        }
       }
+    }
+    if (!continueIfErrors) {
+      er.displayAndTerminateIfErrors()
     }
     (program, ts)
   }
@@ -47,7 +51,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
   private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
-    instr match {
+    val endCtxRaw = instr match {
       case SSA.Loop(cond, body, variables) =>
         val condType = computeType(cond)(using tcCtx)
         enforceBaseSubtypingConstraint(condType, BoolType)(using "loop condition")
@@ -141,20 +145,27 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
         }
         tcCtx
       case SSA.Return(None) =>
+        if (tcCtx.expectedReturnType.baseType != VoidType) {
+          reportError(s"non-$VoidType method should return a value", posOpt)
+        }
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Return(Some(retVal)) =>
         val retType = computeType(retVal)(using tcCtx)
         enforceBaseSubtypingConstraint(retType, tcCtx.expectedReturnType)(using "return value")
+        if (tcCtx.expectedReturnType == VoidType) {
+          reportError(s"$VoidType method returning a value", posOpt)
+        }
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Panic(msg) =>
         val msgType = computeType(msg)(using tcCtx)
         enforceBaseSubtypingConstraint(msgType, StringType)(using "panic message")
         tcCtx.withAlwaysExitsFlagRaised
       case SSA.Evaluate(formula) =>
-        computeType(formula)(using tcCtx)
-        tcCtx
+        val tpe = computeType(formula)(using tcCtx)
+        if tpe.baseType == NothingType then tcCtx.withAlwaysExitsFlagRaised else tcCtx
       case SSA.DynamicAssert(formula) => ???
     }
+    endCtxRaw.withAlwaysExitsFlagRecomputed
   }
 
   /**
@@ -313,7 +324,7 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
       }
       None
     } else if (typeArgs.isEmpty && typeParams.nonEmpty) Some {
-      typeParams.map(tp => tp -> new TypeVariable(s"${contextDescr}_${tp}")).toMap
+      typeParams.map(tp => tp -> new TypeVariable(s"${contextDescr}_$tp")).toMap
     } else Some {
       typeParams.zip(typeArgs).toMap
     }
@@ -427,19 +438,24 @@ final class Typer(private val er: ErrorReporter) extends CompilerStep[Program, (
               case Some(targetToOrigSubst) =>
                 val origSig = program.resolveSignatureAs[RuntimeTypeSignature](originId).get
                 val siteSubst = origSig.typeParams.map(_._1).zip(originTypeArgs).toMap
-                val remappingB = Map.newBuilder[TypeIdentifier, Type]
-                // TODO check soundness (because of variance)
-                for ((tInOrig, tInTarget) <- targetToOrigSubst if origSig.varianceOf(tInOrig).contains(Invariant)) {
+                val newTargetSubstB = Map.newBuilder[TypeIdentifier, Type]
+                for ((tInOrig, tInTarget) <- targetToOrigSubst) {
                   tInTarget match {
-                    case NamedType(tInTarget, Nil, Nil) if targetSig.varianceOf(tInTarget).exists(_ != Contravariant) =>
-                      remappingB.addOne(tInTarget -> siteSubst.apply(tInOrig))
+                    case NamedType(tInTarget, Nil, Nil) =>
+                      for {
+                        varianceInOrig <- origSig.varianceOf(tInOrig)
+                        varianceInTarget <- targetSig.varianceOf(tInTarget)
+                        if varianceInOrig == varianceInTarget
+                      } do {
+                        newTargetSubstB.addOne(tInTarget -> siteSubst.apply(tInOrig))
+                      }
                     case _ => ()
                   }
                 }
-                val remapping = remappingB.result()
-                val uncoveredTypeParams = targetSig.typeParams.map(_._1).toSet -- remapping.keySet
+                val newTargetSubst = newTargetSubstB.result()
+                val uncoveredTypeParams = targetSig.typeParams.map(_._1).toSet -- newTargetSubst.keySet
                 if (uncoveredTypeParams.isEmpty) {
-                  CanDowncast(targetSig.toType(remapping, Map.empty))
+                  CanDowncast(targetSig.toType(newTargetSubst, Map.empty))
                 } else {
                   CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")}")
                 }

@@ -1,39 +1,37 @@
 
-// additional implementation of Tree to make pattern match incomplete in sum
-struct ValuedFork : Tree { l: Tree, value: Int, r: Tree }
+datatype Tree[+T]
+struct Leaf : Tree[Nothing]
+struct Fork[+T] : Tree[T] { left: Tree[T], value: T, right: Tree[T] }
+struct Binary[+T] : Tree[T] { l: Tree[T], r: Tree[T] }
 
-datatype Tree
-struct Fork : Tree { l: Tree, r: Tree }
-struct Leaf : Tree { value: Int }
+object Trees {
 
-package Main {
+      fn sum1(tree: Tree[Int]) -> Int {
+         if tree is Fork {
+            return sum1(tree.left) + tree.value + sum1(tree.right);
+         } else if tree is Leaf {
+            return 0;
+         } else if tree is Binary {
+            return sum1(tree.l) + sum1(tree.r);
+         }
+      }
 
-    fn sum(tree: Tree) -> Int {     //> E : missing return in non-Void function
-        if tree is Fork {
-            return sum(tree.l) + sum(tree.r);
-        } else if tree is Leaf {
-            return tree.value;
-        }
-    }
+      fn sum2(tree: Tree[Int]) -> Int {
+         if tree is Fork {
+            return sum2(tree.left) + tree.value + sum2(tree.right);
+         } else if tree is Leaf {
+            return 0;
+         } else {
+            return sum2(tree.l) + sum2(tree.r);
+         }
+      }
 
-    fn product(tree: Tree) -> Int {     // OK
-        if tree is ValuedFork {
-            panic "unexpected Tree type"
-        } else if tree is Fork {
-            return product(tree.l) * product(tree.r);
-        } else if tree is Leaf {
-            return tree.value;
-        }
-    }
-
-    fn size(tree: Tree) -> Int {    //> E : missing return in non-Void function
-        if tree is ValuedFork {
-            return size(tree.l) + size(tree.r) + 1;
-        } else if tree is Fork && size(tree.l) == 0 {
-            return size(tree.r) + 1;
-        } else if tree is Leaf {
-            return 1;
-        }
-    }
+      fn sum3(tree: Tree[Int]) -> Int {   //> E : missing return in non-Void method
+         if tree is Fork {
+            return sum3(tree.left) + tree.value + sum3(tree.right);
+         } else if tree is Leaf {
+            return 0;
+         }
+      }
 
 }

@@ -5,6 +5,7 @@ import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
 import compiler.ssagen.SSAGenerator
+import compiler.typechecking.Typer
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -108,7 +109,7 @@ class AnalyzerTests(fileName: String) {
     }
 
     val er = ErrorReporter(errorsConsumer, exitCalled)
-    val pipeline = TasksPipelines.multiFrontEnd(er).andThen(SSAGenerator(er))
+    val pipeline = TasksPipelines.multiFrontEnd(er).andThen(SSAGenerator(er)).andThen(Typer(er))
     try {
       pipeline.apply(srcFiles)
     } catch {
