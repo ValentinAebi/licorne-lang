@@ -24,7 +24,7 @@ final case class Program(
                           classes: Map[TypeIdentifier, ClassSignature],
                           objects: Map[TypeIdentifier, ObjectSignature],
                           datatypes: Map[TypeIdentifier, DatatypeSignature],
-                          structs: Map[TypeIdentifier, StructSignature],
+                          records: Map[TypeIdentifier, RecordSignature],
                           typeAliases: Map[TypeIdentifier, TypeAliasSignature],
                           functions: Map[FunctionSignature, SSA.Function],
                           formulaPositions: util.IdentityHashMap[Formula, Position]
@@ -37,7 +37,7 @@ final case class Program(
     checkClassSignatures()
     checkObjectSignatures()
     checkDatatypeSignatures()
-    checkStructSignatures()
+    checkRecordSignatures()
     checkSubtypingCyclicity()
     checkObjectImportsCyclicity()
     checkTypeAliasesCyclicity()
@@ -57,7 +57,7 @@ final case class Program(
       orElse classes.get(typeId)
       orElse objects.get(typeId)
       orElse datatypes.get(typeId)
-      orElse structs.get(typeId)
+      orElse records.get(typeId)
       orElse typeAliases.get(typeId))
 
   def resolveSignatureAs[S <: TypeSignature : ClassTag](typeId: TypeIdentifier): Option[S] =
@@ -113,7 +113,7 @@ final case class Program(
 
   private def buildSubtypingGraph(): Graph[TypeIdentifier] = {
     val graphB = Graph.Builder[TypeIdentifier]()
-    for ((id, sig) <- interfaces ++ classes ++ objects ++ datatypes ++ structs) {
+    for ((id, sig) <- interfaces ++ classes ++ objects ++ datatypes ++ records) {
       graphB.addVertex(id)
       graphB.addDescendants(id, sig.directSupertypes.map(_.typeName))
     }
@@ -152,17 +152,17 @@ final case class Program(
     for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
       given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
-      checkSupertypesOfStructLike(id, directSupertypes, positions.get(id))
+      checkSupertypesOfUnencapsulated(id, directSupertypes, positions.get(id))
     }
   }
 
-  private def checkStructSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
-    for ((_, StructSignature(id, typeParams, fields, directSupertypes)) <- structs) {
+  private def checkRecordSignatures()(using er: ErrorReporter, positions: Map[TypeIdentifier, Position], compilationStep: CompilationStep): Unit = {
+    for ((_, RecordSignature(id, typeParams, fields, directSupertypes)) <- records) {
       given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, typeParams.toMap, Set.empty)
 
       val posOpt = positions.get(id)
       checkFields(fields.values, posOpt)
-      checkSupertypesOfStructLike(id, directSupertypes, posOpt)
+      checkSupertypesOfUnencapsulated(id, directSupertypes, posOpt)
     }
   }
 
@@ -261,7 +261,7 @@ final case class Program(
     }
   }
 
-  private def checkSupertypesOfStructLike(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
+  private def checkSupertypesOfUnencapsulated(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
                                          (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
       sigCheckCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
@@ -388,7 +388,7 @@ object Program {
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = Map.newBuilder[TypeIdentifier, ObjectSignature]
       val datatypes = Map.newBuilder[TypeIdentifier, DatatypeSignature]
-      val structsB = Map.newBuilder[TypeIdentifier, StructSignature]
+      val recordsB = Map.newBuilder[TypeIdentifier, RecordSignature]
       val typeAliasesB = Map.newBuilder[TypeIdentifier, TypeAliasSignature]
       for ((id, sig) <- signatures) {
         sig match {
@@ -396,7 +396,7 @@ object Program {
           case sig: ClassSignature => classesB.addOne(id, sig)
           case sig: ObjectSignature => packagesB.addOne(id, sig)
           case sig: DatatypeSignature => datatypes.addOne(id, sig)
-          case sig: StructSignature => structsB.addOne(id, sig)
+          case sig: RecordSignature => recordsB.addOne(id, sig)
           case sig: TypeAliasSignature => typeAliasesB.addOne(id, sig)
         }
       }
@@ -406,7 +406,7 @@ object Program {
         classesB.result(),
         packagesB.result(),
         datatypes.result(),
-        structsB.result(),
+        recordsB.result(),
         typeAliasesB.result(),
         allFunctions,
         formulaPositions

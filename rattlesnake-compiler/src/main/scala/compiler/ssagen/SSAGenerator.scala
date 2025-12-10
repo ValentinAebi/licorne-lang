@@ -81,7 +81,7 @@ final class SSAGenerator(er: ErrorReporter)
             ctxBuilder.saveSignature(sig, df.getPosition)
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(df)
-          case Asts.StructDef(id, typeParams, fields, directSupertypes) =>
+          case Asts.RecordDef(id, typeParams, fields, directSupertypes) =>
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
@@ -92,7 +92,7 @@ final class SSAGenerator(er: ErrorReporter)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = StructSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val sig = RecordSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
             ctxBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
               datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
@@ -471,7 +471,7 @@ final class SSAGenerator(er: ErrorReporter)
                                       ssaInstructionsList: mutable.ListBuffer[SSA.Instr],
                                       valsCtx: LocalValuesContext
                                     )(using util.IdentityHashMap[Formula, Position]): Formula = expr match {
-    case Asts.StructOrClassInstantiation(typeId, typeArgs, initializers) =>
+    case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) =>
       val instanceVal = valsCtx.valuesGen.newValue(typeId)
       val initializersSSAInstrList = ListBuffer.empty[Instr]
       initializers.foreach {

@@ -1,8 +1,8 @@
 
 datatype Tree[+T]
-struct Leaf : Tree[Nothing]
-struct Fork[+T] : Tree[T] { left: Tree[T], value: T, right: Tree[T] }
-struct Binary[+T] : Tree[T] { l: Tree[T], r: Tree[T] }
+record Leaf : Tree[Nothing]
+record Fork[+T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
+record Binary[+T](l: Tree[T], r: Tree[T]) : Tree[T]
 
 object Trees {
 

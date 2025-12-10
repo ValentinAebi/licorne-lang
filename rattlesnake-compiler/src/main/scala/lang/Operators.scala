@@ -10,9 +10,6 @@ import scala.annotation.targetName
 
 object Operators {
 
-  // Operators do not work on structs, hence the empty struct mapping
-  private given Map[TypeIdentifier, StructSignature] = Map.empty
-
   sealed trait OperatorSignature {
     def op: Operator
 

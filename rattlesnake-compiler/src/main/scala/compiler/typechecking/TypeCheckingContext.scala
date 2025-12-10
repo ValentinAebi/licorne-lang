@@ -5,7 +5,7 @@ import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.TypeIdentifier
 import lang.Types.Type
 import lang.Values.IdValue
-import lang.{DatatypeSignature, StructSignature}
+import lang.{DatatypeSignature, RecordSignature}
 
 import scala.annotation.tailrec
 import scala.util.boundary
@@ -71,7 +71,7 @@ object TypeCheckingContext {
         val narrowed = (front -- knownIsNot).flatMap {
           program.resolveSignature(_) match {
             case Some(datatypeSignature: DatatypeSignature) => datatypeSignature.directSubtypes
-            case Some(structSignature: StructSignature) => Set(structSignature.id)
+            case Some(recordSignature: RecordSignature) => Set(recordSignature.id)
             case _ => Set.empty
           }
         }

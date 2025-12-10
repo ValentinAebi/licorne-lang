@@ -139,23 +139,17 @@ object Asts {
     override def children: List[Ast] = typeParams
   }
 
-  /**
-   * Structure (`struct`) or datatype definition
-   */
-  final case class StructDef(
+  final case class RecordDef(
                               id: TypeIdentifier,
                               typeParams: List[TypeParam],
-                              fields: List[StructParam],
+                              fields: List[RecordParam],
                               directSupertypes: List[NamedTypeTree]
                             ) extends UnencapsulatedTypeDefTree {
-    override def description: String = s"struct $id"
+    override def description: String = s"record $id"
 
     override def children: List[Ast] = typeParams ++ fields
   }
 
-  /**
-   * Function definition
-   */
   final case class FunDef(id: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
                           visibility: Visibility, isMain: Boolean) extends Ast {
     override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
@@ -172,7 +166,7 @@ object Asts {
     val paramTypeTreeOpt: Option[TypeTree]
   }
 
-  sealed trait StructParam extends Ast {
+  sealed trait RecordParam extends Ast {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
@@ -191,7 +185,7 @@ object Asts {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, StructParam, NonThisFunctionParam, TypeAliasParam {
+  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, RecordParam, NonThisFunctionParam, TypeAliasParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
@@ -301,7 +295,7 @@ object Asts {
     override def children: List[Ast] = receiverOpt.toList ++ typeArgs ++ args
   }
 
-  final case class StructOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {
+  final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {
     override def children: List[Ast] = typeArgs ++ initializers
   }
 
@@ -316,24 +310,15 @@ object Asts {
   final case class ShorthandFieldInitializer(fieldName: FunOrVarId) extends FieldInitializer {
     override def children: List[Ast] = Nil
   }
-
-  /**
-   * Unary operator
-   */
+  
   final case class UnaryOp(operator: Operator, operand: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(operand)
   }
-
-  /**
-   * Binary operator
-   */
+  
   final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(lhs, rhs)
   }
-
-  /**
-   * Access to a struct field: `lhs.select`
-   */
+  
   final case class Select(lhs: Expr, selected: FunOrVarId) extends FormulaExpr {
     override def children: List[Ast] = List(lhs)
   }
@@ -345,18 +330,15 @@ object Asts {
 
     def typeAnnotOpt: Option[TypeTree]
   }
-
-  /**
-   * Assignment of a value to a variable (or struct field, or in an array): `lhs = rhs`
-   */
+  
   final case class VarAssig(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr) extends Assignment {
     override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)
   }
 
   /**
-   * In-place mutation of a variable (or struct field, or in an array), e.g. `x += 1`
+   * In-place mutation, e.g. `x += 1`
    *
-   * @param op the operator <b>without =</b>, e.g. `+` in a `+=` expression
+   * @param op the operator <b>without =</b>, e.g. `+` for a `+=` statement
    */
   final case class VarModif(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr, op: Operator) extends Assignment {
     override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)

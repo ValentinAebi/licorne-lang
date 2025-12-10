@@ -82,7 +82,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
   } setName "source"
 
-  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR structDef OR typeAliasDef
+  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef
 
   private lazy val interfaceDef: P[InterfaceDef] = {
     kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
@@ -115,17 +115,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "datatypeDef"
 
-  private lazy val structDef = {
-    kw(Struct).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt
-      ::: opt(openBrace ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeBrace) map {
-      case name ^: typeParams ^: supertypes ^: fieldsOpt =>
-        StructDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
+  private lazy val recordDef = {
+    kw(Record).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
+      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth) ::: supertypesListOpt map {
+      case name ^: typeParams ^: fieldsOpt ^: supertypes =>
+        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
     }
-  } setName "structDef"
+  } setName "recordDef"
 
   private lazy val typeAliasDef: P[TypeAliasDef] = {
     kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(structOrTypeAliasParam, comma) ::: closeParenth)
+      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth)
       ::: assig ::: typeTree map {
       case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs)
     }
@@ -164,11 +164,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "thisParam"
 
-  private lazy val structOrTypeAliasParam: P[StructParam & TypeAliasParam] = recursive {
+  private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
     lowName ::: colon ::: typeTree map {
       case name ^: tpe => SimpleParam(name, tpe)
     }
-  } setName "structOrTypeAliasParam"
+  } setName "recordOrTypeAliasParam"
 
   private lazy val methodsListOpt = {
     opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {
@@ -277,7 +277,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "noBinopExpr"
 
   private lazy val binopArg = recursive {
-    (noBinopExpr OR structOrModuleInstantiation)
+    (noBinopExpr OR recordOrModuleInstantiation)
       ::: opt((kw(As) OR kw(Is)) ::: primOrNamedType
     ) map {
       case expression ^: None => expression
@@ -338,11 +338,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     openParenth ::: expr ::: closeParenth
   } setName "parenthesizedExpr"
 
-  private lazy val structOrModuleInstantiation = recursive {
+  private lazy val recordOrModuleInstantiation = recursive {
     kw(New).ignored ::: highName ::: typeArgsListOpt ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
-      case tid ^: tArgs ^: initializers => StructOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
+      case tid ^: tArgs ^: initializers => RecordOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
     }
-  } setName "structOrModuleInstantiation"
+  } setName "recordOrModuleInstantiation"
 
   private lazy val fieldInitializer = recursive {
     lowName ::: opt(assig ::: expr) map {

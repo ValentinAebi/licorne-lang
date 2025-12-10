@@ -90,15 +90,15 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         val rhsType = computeType(rhs)(using tcCtx)
         ts(assignedValue) = rhsType
         tcCtx
-      case SSA.Instantiate(assignedValue, classOrStructName, typeArgs, initialization) =>
-        program.resolveSignatureAs[RuntimeTypeSignature & UserInstantiable](classOrStructName) match {
+      case SSA.Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) =>
+        program.resolveSignatureAs[RuntimeTypeSignature & UserInstantiable](classOrRecordName) match {
           case None =>
-            reportError(s"instantiable type not found: $classOrStructName", posOpt)
+            reportError(s"instantiable type not found: $classOrRecordName", posOpt)
           case Some(sig) =>
             val typeParams = sig.typeParams.map(_._1)
             generateTypeParamsMapping(typeParams, typeArgs, posOpt, "new", reportIfLengthMismatch = true) match {
               case Some(typeParamsMapping) =>
-                ts(assignedValue) = NamedType(classOrStructName, typeParams.map(typeParamsMapping.apply), List.empty)
+                ts(assignedValue) = NamedType(classOrRecordName, typeParams.map(typeParamsMapping.apply), List.empty)
                 val initializedFields = initialization.flatMap {
                   case FieldWrite(owner, fieldName, rhs) => Some(fieldName)
                   case _ => None
@@ -386,9 +386,9 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
           case None =>
             reportError(s"type not found: $typeName", posOpt)
             None
-          case Some(structSig: StructSignature) =>
-            structSig.fields.get(fieldName) match {
-              case Some(field) => Some(subst(structSig, field.tpe))
+          case Some(recordSig: RecordSignature) =>
+            recordSig.fields.get(fieldName) match {
+              case Some(field) => Some(subst(recordSig, field.tpe))
               case None =>
                 reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
             }

@@ -70,8 +70,8 @@ final class SSAPrinter[T](
         pps.add(s"${assignedValue.str} := phi ${inValues.map(_.str).mkString("{ ", ", ", " }")}")
       case SSA.Assignment(assignedValue, rhs) =>
         pps.add(assignedValue.str).add(" := ").add(rhs.str)
-      case SSA.Instantiate(assignedValue, classOrStructName, typeArgs, initialization) =>
-        pps.add(s"${assignedValue.str} := new $classOrStructName")
+      case SSA.Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) =>
+        pps.add(s"${assignedValue.str} := new $classOrRecordName")
         if (typeArgs.nonEmpty) {
           pps.add("[")
           val tArgsIter = typeArgs.iterator
