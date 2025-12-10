@@ -34,4 +34,15 @@ object Trees {
          }
       }
 
+      fn contains1[U](tree: Tree[U], u: U) -> Bool {
+         return tree is Fork && (contains1(tree.left, u) || tree.value == u || contains1(tree.right, u))
+            || tree is Binary && (contains1(tree.l, u) || contains1(tree.r, u))
+      }
+
+      fn contains2[U](tree: Tree[U], u: U) -> Bool {
+         return when tree is Fork then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))
+         else when tree is Binary then (contains2(tree.l, u) || contains2(tree.r, u))
+         else false
+      }
+
 }

@@ -219,10 +219,19 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       case IntConstant(value) => IntType
       case DoubleConstant(value) => DoubleType
       case StringConstant(value) => StringType
+      case Equal(lhs, rhs) =>
+        computeType(lhs)
+        computeType(rhs)
+        BoolType
       case op: BinOp =>
         val lhsType = computeType(op.lhs)
-        // TODO smartcasts for second branch
-        val rhsType = computeType(op.rhs)
+        val (lhsTrueInfos, lhsFalseInfos) = extractTypeInfos(op.lhs)
+        val rhsCtx = op match {
+          case and: And => tcCtx.withTypeInfoRefined(lhsTrueInfos)
+          case or: Or => tcCtx.withTypeInfoRefined(lhsFalseInfos)
+          case _ => tcCtx
+        }
+        val rhsType = computeType(op.rhs)(using rhsCtx)
         if (lhsType.baseType == NothingType || rhsType.baseType == NothingType) {
           NothingType
         } else {
