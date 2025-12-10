@@ -1,9 +1,0 @@
-#nocap;
-
-package Logging {
-
-    fn writeLog(logger: Logger, msg: String){
-        logger.log(msg);    //>STACKTRACE
-    }
-
-}

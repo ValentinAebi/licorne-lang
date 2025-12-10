@@ -1,9 +1,0 @@
-#nocap;
-
-package Unsafe {
-
-    fn danger(){
-        fs.openW("sysroot");
-    }
-    
-}

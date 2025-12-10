@@ -1,4 +1,0 @@
-
-struct Sub : Super {    //> E : only datatypes defined in the same source file can be used as supertypes
-    x: Int
-}

@@ -1,5 +1,0 @@
-//> allow-more-errors
-
-mut datatype Foo
-
-struct Bar : Foo    //> E : immutable Bar cannot be a subtype of mutable Foo

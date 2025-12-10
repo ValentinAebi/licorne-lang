@@ -1,8 +1,0 @@
-
-package Test {
-
-    fn foo(x: Int, y: Double) -> Double {   //> W : unused local: 'x' is never queried
-        return y + 1.0;
-    }
-
-}

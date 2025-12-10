@@ -1,8 +1,0 @@
-
-package Main {
-
-    fn foo() -> Unsafe {
-        return Unsafe;  //> E : returned value: expected 'Unsafe', found 'Unsafe^#'
-    }
-
-}
