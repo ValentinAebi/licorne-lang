@@ -15,7 +15,7 @@ import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
 
 import java.util
-import scala.collection.mutable
+import scala.collection.{SeqMap, mutable}
 import scala.reflect.ClassTag
 
 final case class Program(
@@ -26,7 +26,7 @@ final case class Program(
                           datatypes: Map[TypeIdentifier, DatatypeSignature],
                           records: Map[TypeIdentifier, RecordSignature],
                           typeAliases: Map[TypeIdentifier, TypeAliasSignature],
-                          functions: Map[FunctionSignature, SSA.Function],
+                          functions: SeqMap[FunctionSignature, SSA.Function],
                           formulaPositions: util.IdentityHashMap[Formula, Position]
                         ) {
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
@@ -368,7 +368,7 @@ final case class Program(
 object Program {
 
   final class Builder(er: ErrorReporter) {
-    private val signatures = mutable.Map.empty[TypeIdentifier, TypeSignature]
+    private val signatures = mutable.LinkedHashMap.empty[TypeIdentifier, TypeSignature]
 
     val globalValuesContext: GlobalValuesContext = GlobalValuesContext()
 
@@ -382,7 +382,7 @@ object Program {
       }
     }
 
-    def build(allFunctions: Map[FunctionSignature, SSA.Function],
+    def build(allFunctions: SeqMap[FunctionSignature, SSA.Function],
               formulaPositions: util.IdentityHashMap[Formula, Position]): Program = {
       val interfacesB = Map.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = Map.newBuilder[TypeIdentifier, ClassSignature]

@@ -22,7 +22,7 @@ import scala.util.boundary
 final class Typer(private val er: ErrorReporter, private val continueIfErrors: Boolean = false) extends CompilerStep[Program, (Program, TypeStore)] {
 
   override def apply(program: Program): (Program, TypeStore) = {
-    val ts = new PartialTypeStore
+    val ts = new MutableTypeStore
     for ((funSig, func) <- program.functions) {
       val (thisVal, thisType) = funSig.paramsInclThis.head
       for ((argVal, argType) <- funSig.paramsInclThis) {
@@ -42,23 +42,23 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     (program, ts)
   }
 
-  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext =
+  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext =
     instructions.foldLeft(tcCtx) { (ctx, instr) =>
       traverse(instr, ctx)
     }
 
-  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: PartialTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
+  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     val endCtxRaw = instr match {
       case SSA.Loop(cond, body, variables) =>
+        for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
+          ts(bodyStartVal) = computeType(beforeLoopVal)(using tcCtx)
+        }
         val condType = computeType(cond)(using tcCtx)
         enforceBaseSubtypingConstraint(condType, BoolType)(using "loop condition")
         val (bodyInfos, afterLoopInfos) = extractTypeInfos(cond)
         val bodyCtx = tcCtx.withTypeInfoRefined(bodyInfos)
-        for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
-          ts(bodyStartVal) = computeType(beforeLoopVal)(using bodyCtx)
-        }
         val afterBodyCtx = traverseAll(body, bodyCtx)
         for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
           val typeAtEndOfBody = computeType(bodyEndVal)(using afterBodyCtx)
@@ -126,7 +126,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
           case CanDowncast(tpe) =>
             ts(resultValue) = tpe
           case CannotDowncast(reason) =>
-            reportError(reason, instr.getAstNodeOpt.flatMap(_.getPosition))
+            reportError(s"illegal cast: $reason", instr.getAstNodeOpt.flatMap(_.getPosition))
         }
         tcCtx.withTypeInfoRefined(Set(TypeInfo(castValue, targetType, Set(targetType), Set.empty)))
       case SSA.StaticTypeAssert(value, tpe) =>
@@ -183,7 +183,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       val (infoWhenOperand, infoWhenNotOperand) = extractTypeInfos(operand)
       (infoWhenNotOperand, infoWhenOperand)
     case HasType(idValue: IdValue, testedType) =>
-      ts.typeOfOpt(idValue) match {
+      ts.baseTypeOfOpt(idValue) match {
         case Some(NamedType(knownType, _, Nil)) =>
           (Set(TypeInfo(idValue, knownType, Set(testedType), Set.empty)),
             Set(TypeInfo(idValue, knownType, Set.empty, Set(testedType))))
@@ -221,6 +221,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       case StringConstant(value) => StringType
       case op: BinOp =>
         val lhsType = computeType(op.lhs)
+        // TODO smartcasts for second branch
         val rhsType = computeType(op.rhs)
         if (lhsType.baseType == NothingType || rhsType.baseType == NothingType) {
           NothingType
@@ -255,7 +256,6 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       case Call(receiver, funId, typeArgs, args) =>
         val receiverType = computeType(receiver)
         val argTypes = args.map(computeType)
-
         forceComputeJoins(program.desugarType(receiverType).baseType) match {
           case Some(Types.NamedType(receiverTypeName, receiverTypeArgs, receiverArgs)) =>
             assert(receiverArgs.isEmpty)
@@ -309,7 +309,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         checkDowncastTarget(formulaType, tpe) match {
           case CanDowncast(tpe) => ()
           case CannotDowncast(reason) =>
-            reportError(reason, posOpt)
+            reportError(s"illegal type test: $reason", posOpt)
         }
         BoolType
     }
@@ -456,12 +456,12 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
                 if (uncoveredTypeParams.isEmpty) {
                   CanDowncast(targetSig.toType(newTargetSubst, Map.empty))
                 } else {
-                  CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")}")
+                  CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")} of tested type $targetId")
                 }
             }
         }
       case _ =>
-        CannotDowncast("target is an unresolved or primitive type")
+        CannotDowncast(s"tested type ${originalType.baseType} is unresolved or primitive")
     }
   }
 

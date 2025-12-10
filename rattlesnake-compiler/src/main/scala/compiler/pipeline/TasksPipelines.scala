@@ -50,7 +50,7 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(SSAGenerator(er))
       // FIXME this implementation is temporary
-      .andThen(Typer(er))
+      .andThen(Typer(er, /* FIXME */ continueIfErrors = true))
       .andThen(SSAPrinter(_._1, _._2))
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))

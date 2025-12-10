@@ -245,17 +245,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "block"
 
   private lazy val exprOrAssig = recursive {
-    expr ::: opt(opt(colon ::: typeTree) ::: assignmentOperator ::: expr) map {
+    expr ::: opt(assignmentOperator ::: expr) map {
       case singleExpr ^: None => singleExpr
-      case lhs ^: Some(optTypeAnnot ^: Assig ^: rhs) => VarAssig(lhs, optTypeAnnot, rhs)
-      case lhs ^: Some(optTypeAnnot ^: op ^: rhs) => VarModif(lhs, optTypeAnnot, rhs, Operators.assigOperators.apply(op))
+      case lhs ^: Some(Assig ^: rhs) => VarAssig(lhs, rhs)
+      case lhs ^: Some(op ^: rhs) => VarModif(lhs, rhs, Operators.assigOperators.apply(op))
     }
   } setName "exprOrAssig"
 
   private lazy val assignmentStat = recursive {
-    expr ::: opt(colon ::: typeTree) ::: assignmentOperator ::: expr map {
-      case lhs ^: optTypeAnnot ^: Assig ^: rhs => VarAssig(lhs, optTypeAnnot, rhs)
-      case lhs ^: optTypeAnnot ^: operator ^: rhs => VarModif(lhs, optTypeAnnot, rhs, Operators.assigOperators.apply(operator))
+    expr ::: assignmentOperator ::: expr map {
+      case lhs ^: Assig ^: rhs => VarAssig(lhs, rhs)
+      case lhs ^: operator ^: rhs => VarModif(lhs, rhs, Operators.assigOperators.apply(operator))
     }
   } setName "assignmentStat"
 
@@ -325,11 +325,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) map {
-      case atExpr ^: repeated =>
-        repeated.foldLeft(atExpr) {
+    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(colon ::: typeTree) map {
+      case atExpr ^: repeated ^: typeAnnotOpt =>
+        val chain = repeated.foldLeft(atExpr) {
           case (acc, name ^: Some(typeArgsOpt ^: args)) => Call(Some(acc), name, typeArgsOpt.getOrElse(List.empty), args)
           case (acc, name ^: None) => Select(acc, name)
+        }
+        typeAnnotOpt match {
+          case Some(tpe) => TypeAscription(chain, tpe)
+          case None => chain
         }
     }
   } setName "selectOrIndexingChain"

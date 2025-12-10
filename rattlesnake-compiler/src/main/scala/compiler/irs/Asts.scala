@@ -6,8 +6,6 @@ import lang.*
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 
-import scala.annotation.targetName
-
 
 object Asts {
 
@@ -28,8 +26,16 @@ object Asts {
       case None => this
     }
 
-    export positionMemo.setOpt as setPosition
-    export positionMemo.set as setPosition
+    def setPosition(pos: Position): this.type = {
+      positionMemo.set(pos)
+      this
+    }
+
+    def setPosition(posOpt: Option[Position]): this.type = {
+      positionMemo.setOpt(posOpt)
+      this
+    }
+
     export positionMemo.getOpt as getPosition
 
     export desugaringSource.set as setDesugaringSource
@@ -288,6 +294,10 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
+  final case class TypeAscription(expr: Expr, tpe: TypeTree) extends NonFormulaExpr {
+    override def children: List[Ast] = List(expr, tpe)
+  }
+
   /**
    * Function call: `callee(args)`
    */
@@ -310,15 +320,15 @@ object Asts {
   final case class ShorthandFieldInitializer(fieldName: FunOrVarId) extends FieldInitializer {
     override def children: List[Ast] = Nil
   }
-  
+
   final case class UnaryOp(operator: Operator, operand: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(operand)
   }
-  
+
   final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends FormulaExpr {
     override def children: List[Ast] = List(lhs, rhs)
   }
-  
+
   final case class Select(lhs: Expr, selected: FunOrVarId) extends FormulaExpr {
     override def children: List[Ast] = List(lhs)
   }
@@ -327,12 +337,29 @@ object Asts {
     def rhs: Expr
 
     def lhs: Expr
-
-    def typeAnnotOpt: Option[TypeTree]
   }
-  
-  final case class VarAssig(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr) extends Assignment {
-    override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)
+
+  final case class VarAssig(lhs: Expr, rhs: Expr) extends Assignment {
+    override def children: List[Ast] = List(lhs, rhs)
+  }
+
+  object VarAssig {
+
+    def apply(lhs: Expr, typeOpt: Option[TypeTree], rhs: Expr): VarAssig = {
+      val newLhs = typeOpt match {
+        case Some(tpe) => TypeAscription(lhs, tpe).setPosition(lhs.getPosition)
+        case None => lhs
+      }
+      new VarAssig(newLhs, rhs)
+    }
+
+    def unapply(assig: VarAssig): (Expr, Option[TypeTree], Expr) = {
+      assig.lhs match {
+        case TypeAscription(expr, tpe) => (expr, Some(tpe), assig.rhs)
+        case _ => (assig.lhs, None, assig.rhs)
+      }
+    }
+
   }
 
   /**
@@ -340,8 +367,17 @@ object Asts {
    *
    * @param op the operator <b>without =</b>, e.g. `+` for a `+=` statement
    */
-  final case class VarModif(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr, op: Operator) extends Assignment {
-    override def children: List[Ast] = List(lhs) ++ typeAnnotOpt ++ List(rhs)
+  final case class VarModif(lhs: Expr, rhs: Expr, op: Operator) extends Assignment {
+    override def children: List[Ast] = List(lhs, rhs)
+  }
+
+  object VarModif {
+    def unapply(varModif: VarModif): (Expr, Option[TypeTree], Expr, Operator) = {
+      varModif.lhs match {
+        case TypeAscription(expr, tpe) => (expr, Some(tpe), varModif.rhs, varModif.op)
+        case _ => (varModif.lhs, None, varModif.rhs, varModif.op)
+      }
+    }
   }
 
   /**
