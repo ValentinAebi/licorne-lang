@@ -17,7 +17,6 @@ import lang.Types.PrimitiveType.*
 import lang.Values.*
 
 import scala.util.boundary
-import scala.util.boundary.Label
 
 
 final class Typer(private val er: ErrorReporter, private val continueIfErrors: Boolean = false) extends CompilerStep[Program, (Program, TypeStore)] {
@@ -334,7 +333,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     case namedType: NamedType => Some(namedType)
     case _: BaseUnionType => boundary {
 
-      def extractTypeIds(tpe: BaseType)(using Label[Option[NamedType]]): Set[TypeIdentifier] = tpe match {
+      def extractTypeIds(tpe: BaseType): Set[TypeIdentifier] = tpe match {
         case NamedType(tid, _, _) => Set(tid)
         case BaseUnionType(types) => types.flatMap(extractTypeIds)
         case _ => boundary.break(None)
