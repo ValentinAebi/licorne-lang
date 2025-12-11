@@ -1,0 +1,37 @@
+
+interface Animal[Food] {
+   fn eat(this, food: Food)
+}
+
+interface Reptile[Food] : Animal[Food]
+interface ReptileEatingInsects : Reptile[List[Insect]]
+interface Lizard : ReptileEatingInsects
+
+class Glasworm : Lizard {
+   fn eat(this, insects: List[Insect]){
+      // ...
+   }
+}
+
+class Insect
+
+object Main {
+
+   main fn run() {
+      feed1(new Glasworm(), new Insect());
+      feed2(new Glasworm(), new Insect());
+   }
+
+   private fn feed1(lizard: Lizard, insect: Insect){
+      lizard.eat(insect)   //> E : method argument: expected List[Insect], found Insect
+   }
+
+   private fn feed2(lizard: Lizard, insect: Insect){
+      lizard.eat(new Cons(head = insect, tail = new Nil()))
+   }
+
+}
+
+datatype List[+T]
+record Cons[+T](head: T, tail: List[T]) : List[T]
+record Nil : List[Nothing]

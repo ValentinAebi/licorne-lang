@@ -15,6 +15,7 @@ import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.Values.*
+import lang.Visibility.Private
 
 import scala.util.boundary
 
@@ -29,7 +30,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         ts(argVal) = argType
       }
       func.bodyOpt.foreach { body =>
-        val startCtx = TypeCheckingContext(program, Map.empty, thisVal, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
+        val startCtx = TypeCheckingContext(program, Map.empty, thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
         val endCtx = traverseAll(body, startCtx)(using ts, er, program)
         if (funSig.retType.baseType != VoidType && !endCtx.alwaysExitsFlag) {
           reportError(s"missing return in non-$VoidType method", func.posOpt)
@@ -274,34 +275,27 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
               case Some(_: Unencapsulated) =>
                 reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
               case Some(receiverTypeSig: Encapsulated) =>
-                receiverTypeSig.functions.get(funId) match {
+                findMethod(receiverTypeName, funId) match {
                   case None => reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
                   case Some(funSig) =>
+                    if (funSig.visibility == Private && funSig.ownerName != tcCtx.ownerId) {
+                      reportError(s"$Private method $funId cannot be accessed from outside its defining class ${funSig.ownerName}", posOpt)
+                    }
                     val argsSizeMatch = args.size == funSig.paramsInclThis.size - 1
                     if (!argsSizeMatch) {
                       reportError(s"wrong number of arguments for method $funId: expected ${funSig.paramsInclThis.size - 1}, was ${args.size}", posOpt)
                     }
-                    val substOpt = for {
-                      funcSubst <- generateTypeParamsMapping(funSig.typeParams, typeArgs, posOpt, s"$funId", reportIfLengthMismatch = true)
-                    } yield generateTypeParamsMapping(receiverTypeSig.typeParams.map(_._1), receiverTypeArgs, posOpt, "recverr", reportIfLengthMismatch = false) match {
-                      case Some(receiverSubst) => receiverSubst ++ funcSubst
-                      case None => funcSubst
-                    }
-
-                    def substIfNeeded(tpe: Type): Type = {
-                      substOpt match {
-                        case None => tpe
-                        case Some(subst) => tpe.substitute(subst, Map.empty)
-                      }
-                    }
-
+                    val funcTParamsSubstOpt = generateTypeParamsMapping(funSig.typeParams, typeArgs, posOpt, s"$funId", reportIfLengthMismatch = true)
+                    val upcastRecvTParamsSubstOpt = generateTypeParamsMapping(receiverTypeSig.typeParams.map(_._1), receiverTypeArgs, posOpt, "recverr", reportIfLengthMismatch = false)
+                    val subToSuperSubstOpt = program.subToSuperSubst(receiverTypeName, funSig.ownerName)
+                    val subst = substComposition(subToSuperSubstOpt, upcastRecvTParamsSubstOpt).getOrElse(Map.empty) ++ funcTParamsSubstOpt.getOrElse(Map.empty)
                     if (argsSizeMatch) {
                       for (((_, paramTypeRaw), argType) <- funSig.paramsInclThis.tail zip argTypes) {
-                        val paramType = program.desugarType(substIfNeeded(paramTypeRaw))
-                        enforceBaseSubtypingConstraint(paramType, argType)(using "method argument", posOpt)
+                        val paramType = program.desugarType(paramTypeRaw.substitute(subst, Map.empty))
+                        enforceBaseSubtypingConstraint(argType, paramType)(using "method argument", posOpt)
                       }
                     }
-                    program.desugarType(substIfNeeded(funSig.retType))
+                    program.desugarType(funSig.retType.substitute(subst, Map.empty))
                 }
             }
           case None =>
@@ -323,6 +317,26 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         BoolType
     }
     tpeRaw.withTypeVarsExpanded
+  }
+
+  private def findMethod(receiverTypeId: TypeIdentifier, mthId: FunOrVarId)(using program: Program): Option[FunctionSignature] = {
+
+    def searchFrom(receiverId: TypeIdentifier): Option[FunctionSignature] = {
+      program.resolveSignatureAs[Encapsulated](receiverId) match {
+        case None => None
+        case Some(tSig) =>
+          tSig.functions.get(mthId) match {
+            case someFunc@Some(_) => someFunc
+            case None =>
+              tSig.directSupertypes.foldLeft[Option[FunctionSignature]](None) {
+                case (result@Some(_), _) => result
+                case (None, superT) => searchFrom(superT.typeName)
+              }
+          }
+      }
+    }
+
+    searchFrom(receiverTypeId)
   }
 
   private def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type], posOpt: Option[Position], contextDescr: String, reportIfLengthMismatch: Boolean): Option[Map[TypeIdentifier, Type]] = {
@@ -376,6 +390,23 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       } else None
     }
     case _ => None
+  }
+
+  private def substComposition(firstSubstOpt: Option[Map[TypeIdentifier, Type]], secondSubstOpt: Option[Map[TypeIdentifier, Type]]): Option[Map[TypeIdentifier, Type]] = (firstSubstOpt, secondSubstOpt) match {
+    case (Some(firstSubst), Some(secondSubst)) => Some(substComposition(firstSubst, secondSubst))
+    case (firstSubstOpt@Some(_), None) => firstSubstOpt
+    case (None, secondSubstOpt@Some(_)) => secondSubstOpt
+    case (None, None) => None
+  }
+
+  private def substComposition(firstSubst: Map[TypeIdentifier, Type], secondSubst: Map[TypeIdentifier, Type]): Map[TypeIdentifier, Type] = {
+    for ((tParam, tArg) <- firstSubst) yield {
+      tParam -> (tArg match {
+        case NamedType(tid, Nil, Nil) =>
+          secondSubst.getOrElse(tid, tArg)
+        case _ => tArg
+      })
+    }
   }
 
   private def checkFieldAndReturnItsType(

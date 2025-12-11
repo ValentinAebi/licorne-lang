@@ -8,11 +8,12 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
 import compiler.valuesconversion.GlobalValuesContext
-import identifiers.TypeIdentifier
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
 import lang.Types.*
 import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
+import lang.Visibility.Private
 
 import java.util
 import scala.collection.{SeqMap, mutable}
@@ -45,10 +46,10 @@ final case class Program(
 
     buildAndCheckFlattenedSubtypingMaps()
     er.displayAndTerminateIfErrors()
-    
+
     checkFunctionSignatures()
     analyzeOverrides()
-    
+
     er.displayAndTerminateIfErrors()
   }
 
@@ -192,6 +193,9 @@ final case class Program(
 
       given sigCheckCtx: SignaturesCheckingContext = SignaturesCheckingContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet)
 
+      if (funVisibility == Private && ownerSig.isInstanceOf[InterfaceSignature]) {
+        er.reportError(s"$Private methods are not allowed in interfaces", funPosOpt)
+      }
       val conflictingTypeParams = funTypeParams.intersect(ownerSig.typeParams)
       if (conflictingTypeParams.nonEmpty) {
         er.reportError(s"type parameters ${conflictingTypeParams.mkString(",")} conflict with type parameters of $ownerName", funPosOpt)
@@ -211,6 +215,8 @@ final case class Program(
         case (subTSig: Encapsulated, superTSig: Encapsulated) =>
           for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
+              // TODO allow method implementation in interfaces?
+              case None if subTSig.isInstanceOf[InterfaceSignature] => ()
               case None =>
                 er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", typeDefPositions.get(subT))
               case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility)) =>
@@ -262,7 +268,7 @@ final case class Program(
   }
 
   private def checkSupertypesOfUnencapsulated(id: TypeIdentifier, superTypes: List[NamedType], posOpt: Option[Position])
-                                         (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+                                             (using sigCheckCtx: SignaturesCheckingContext, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
       sigCheckCtx.checkTypesWellDefined(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
@@ -327,10 +333,9 @@ final case class Program(
         val supertype1Sig = resolveSignatureAs[RuntimeTypeSignature](supertype1.typeName).get
         val oneStepSubst = (supertype1Sig.typeParams.map(_._1) zip supertype1.typeArgs).toMap
         checkAndSave(supertype1.typeName, oneStepSubst)
-        for (supertype2 <- supertype1Sig.directSupertypes) {
-          val superSubst = flattenedSupertypesSubstitutions(supertype1.typeName)(supertype2.typeName)
+        for ((supertype2Id, superSubst) <- flattenedSupertypesSubstitutions(supertype1.typeName)) {
           val composedSubst = for (tid, tpe) <- superSubst yield tid -> tpe.substitute(oneStepSubst, Map.empty)
-          checkAndSave(supertype2.typeName, composedSubst)
+          checkAndSave(supertype2Id, composedSubst)
         }
       }
       flattenedSupertypesSubstitutions(subtypeId) = subtypeSupertypes

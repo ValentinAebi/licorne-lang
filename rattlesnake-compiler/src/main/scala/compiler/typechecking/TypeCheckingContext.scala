@@ -14,6 +14,7 @@ final case class TypeCheckingContext(
                                       program: Program,
                                       typeInfos: Map[IdValue, TypeInfo],
                                       thisVal: IdValue,
+                                      ownerId: TypeIdentifier,
                                       alwaysExitsFlag: Boolean,
                                       expectedReturnType: Type
                                     ) {
