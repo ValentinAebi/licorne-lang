@@ -11,6 +11,7 @@ import identifiers.*
 import lang.*
 import lang.Keyword.*
 import lang.Operator.*
+import lang.Types.PrimitiveType.IntType
 
 import scala.compiletime.uninitialized
 
@@ -207,6 +208,21 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val closureType = kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
     case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
   } setName "closureType"
+  
+  private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: (op(ClosingBracket) OR op(ClosingParenthesis)) map {
+    case lowOpt ^: highOpt ^: closingSymbol =>
+      val lowCondOpt = lowOpt map { low => BinaryOp(low, LessOrEq, ItRef()) }
+      val highCondOpt = highOpt map { high => BinaryOp(ItRef(), if closingSymbol == ClosingParenthesis then LessThan else LessOrEq, high) }
+      val predicateOpt = (lowCondOpt, highCondOpt) match {
+        case (Some(lowCond), Some(highCond)) => Some(BinaryOp(lowCond, And, highCond))
+        case _ => lowCondOpt.orElse(highCondOpt)
+      }
+      val intTypeTree = PrimitiveTypeTree(IntType)
+      predicateOpt match {
+        case Some(predicate) => RefinedTypeTree(intTypeTree, predicate)
+        case None => intTypeTree
+      }
+  }
 
   private lazy val primOrNamedTypeMaybeRefined = recursive {
     refinableTypeTree ::: opt(kw(With).ignored ::: expr) map {
@@ -218,7 +234,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "primOrNamedTypeMaybeRefined"
 
   private lazy val typeTree: P[TypeTree] = recursive {
-    primOrNamedTypeMaybeRefined OR closureType OR (openParenth ::: typeTree ::: closeParenth)
+    primOrNamedTypeMaybeRefined OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
   } setName "typeTree"
 
   private lazy val explicitCaptureSetTree = recursive {

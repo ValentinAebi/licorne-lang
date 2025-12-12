@@ -2,7 +2,7 @@ package lang
 
 import identifiers.{ItId, TypeIdentifier}
 import lang.Types.PrimitiveType.NothingType
-import lang.Values.{And, Formula, IdValue}
+import lang.Values.{And, Formula, IdValue, LessOrEq, LessThan}
 
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
@@ -28,7 +28,20 @@ object Types {
 
     override def hashCode(): Int = Objects.hash(baseType, predicate.substitute(Map.empty, Map(itValue -> itForHashAndEquals)))
 
-    override def toString: String = s"$baseType $itValue with $predicate"
+    override def toString: String = {
+
+      def maybeAsRange(predicate: Formula, alreadyInverted: Boolean): String = predicate match {
+        case And(LessOrEq(low, `itValue`), LessOrEq(`itValue`, up)) => s"[$low,$up]"
+        case And(LessOrEq(low, `itValue`), LessThan(`itValue`, up)) => s"[$low,$up)"
+        case And(lhs, rhs) if !alreadyInverted => maybeAsRange(And(rhs, lhs), alreadyInverted = true)
+        case LessOrEq(low, `itValue`) => s"[$low,]"
+        case LessOrEq(`itValue`, up) => s"[,$up]"
+        case LessThan(`itValue`, up) => s"[,$up)"
+        case _ => s"$baseType $itValue with $predicate"
+      }
+
+      maybeAsRange(predicate, alreadyInverted = false)
+    }
   }
 
   object RefinedType {
