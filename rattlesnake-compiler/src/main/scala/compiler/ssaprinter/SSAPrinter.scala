@@ -106,6 +106,21 @@ final class SSAPrinter[T](
         pps.add("evaluate ").add(formula.str)
       case SSA.DynamicAssert(formula) =>
         pps.add(s"dynamic-assert ${formula.str}")
+      case SSA.ClosureCreation(assignedValue, params, body) =>
+        pps.add(s"new-closure $assignedValue (")
+        val paramsIter = params.iterator
+        while (paramsIter.hasNext){
+          val (paramVal, paramType) = paramsIter.next()
+          pps.add(s"$paramVal: $paramType")
+          if (paramsIter.hasNext){
+            pps.add(", ")
+          }
+        }
+        pps.add(") -> ").startBlock()
+        addAllInstr(body, printIfEmpty = true)
+        pps.endBlock()
+      case SSA.ClosureInvocation(assignedValue, closure, args) =>
+        pps.add(s"$assignedValue := invoke-closure $closure@" + args.mkString("(", ", ", ")"))
     }
   }
 

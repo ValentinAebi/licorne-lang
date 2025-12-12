@@ -4,6 +4,7 @@ import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
+import compiler.util.zipCommons
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.{RuntimeTypeSignature, Variance}
@@ -67,6 +68,16 @@ object BaseSubtypeRelation {
               true
             }
         }
+      case (ClosureType(subParams, subResult), ClosureType(superParams, superResult)) =>
+        val sizeMatch = subParams.size == superParams.size
+        if (!sizeMatch) {
+          reportNotSubtype(subT, superT)
+        }
+        val argsMatch = subParams.zipCommons(superParams).forall { (subParamType, superParamType) =>
+          checkSubtypingConstraint(superParamType, subParamType)
+        }
+        val retMatch = checkSubtypingConstraint(subResult, superResult)
+        sizeMatch && argsMatch && retMatch
       case (BaseUnionType(subtypes), superT) =>
         val subtypesIter = subtypes.iterator
         var isCorrect = true

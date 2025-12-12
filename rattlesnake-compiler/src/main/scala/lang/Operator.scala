@@ -24,6 +24,7 @@ enum Operator(val str: String) {
   case ExclamationMark extends Operator("!")
 
   case Dot extends Operator(".")
+  case At extends Operator("@")
 
   case OpeningParenthesis extends Operator("(")
   case ClosingParenthesis extends Operator(")")
@@ -41,8 +42,6 @@ enum Operator(val str: String) {
   case TimesEq extends Operator("*=")
   case DivEq extends Operator("/=")
   case ModuloEq extends Operator("%=")
-  
-  case Apostrophe extends Operator("'")
   
   def isNamedOperator: Boolean = str.forall(_.isLetter)
 

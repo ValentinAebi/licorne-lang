@@ -7,6 +7,7 @@ import compiler.reporting.Position
 import identifiers.TypeIdentifier
 import lang.Types.*
 import lang.Values.Formula
+import lang.Variance.{Contravariant, Covariant}
 import lang.{RuntimeTypeSignature, Types, Values, Variance}
 
 final class SignaturesCheckingContext(
@@ -58,6 +59,11 @@ final class SignaturesCheckingContext(
         }
         args.foreach(checkTypesWellDefined(_, posOpt))
       }
+    case ClosureType(params, resultType) =>
+      for (paramType <- params){
+        checkTypesWellDefined(paramType, expVarianceOpt.map(_ * Contravariant), posOpt)
+      }
+      checkTypesWellDefined(resultType, expVarianceOpt.map(_ * Covariant), posOpt)
     case _: (UnionType | BaseUnionType | TypeVariable) =>
       assert(false)
   }

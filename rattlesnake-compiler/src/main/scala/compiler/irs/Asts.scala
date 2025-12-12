@@ -304,6 +304,10 @@ object Asts {
   final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, typeArgs: List[TypeTree], args: List[Expr]) extends FormulaExpr {
     override def children: List[Ast] = receiverOpt.toList ++ typeArgs ++ args
   }
+  
+  final case class ClosureCall(closureExpr: Expr, args: List[Expr]) extends NonFormulaExpr {
+    override def children: List[Ast] = closureExpr :: args
+  }
 
   final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {
     override def children: List[Ast] = typeArgs ++ initializers
@@ -331,6 +335,10 @@ object Asts {
 
   final case class Select(lhs: Expr, selected: FunOrVarId) extends FormulaExpr {
     override def children: List[Ast] = List(lhs)
+  }
+  
+  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block) extends NonFormulaExpr {
+    override def children: List[Ast] = params.flatMap(_._2) :+ body
   }
 
   sealed abstract class Assignment extends Statement {
@@ -467,18 +475,23 @@ object Asts {
 
   sealed trait TypeTree extends Ast
 
-  final case class RefinedTypeTree(baseType: BaseTypeTree, predicate: Expr) extends TypeTree {
+  final case class RefinedTypeTree(baseType: RefinableTypeTree, predicate: Expr) extends TypeTree {
     override def children: List[Ast] = List(baseType, predicate)
   }
 
   sealed trait BaseTypeTree extends TypeTree
+  sealed trait RefinableTypeTree extends BaseTypeTree
 
-  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends BaseTypeTree {
+  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends RefinableTypeTree {
     override def children: List[Ast] = Nil
   }
 
-  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends BaseTypeTree {
+  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends RefinableTypeTree {
     override def children: List[Ast] = typeArgs ++ args
+  }
+  
+  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends BaseTypeTree {
+    override def children: List[Ast] = paramTypes :+ resultType
   }
 
   sealed abstract class CaptureSetTree extends Ast

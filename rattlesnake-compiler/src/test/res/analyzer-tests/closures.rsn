@@ -1,0 +1,20 @@
+
+object Test {
+
+   fn test() {
+      ifDog(new Dog(), fn (dog, loudVolume) -> { dog.woof(loudVolume) })
+   }
+
+   private fn ifDog(animal: Animal, action: fn (Dog, Bool) -> Void) {
+      if animal is Dog {
+         action@(animal, 10)    //> E : closure argument: expected Bool, found Int
+      }
+   }
+
+}
+
+interface Animal
+
+class Dog : Animal {
+   fn woof(this, loud: Bool) {}
+}

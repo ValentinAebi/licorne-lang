@@ -17,6 +17,7 @@ import lang.Types.PrimitiveType.*
 import lang.Values.*
 import lang.Visibility.Private
 
+import scala.collection.mutable
 import scala.util.boundary
 
 
@@ -31,9 +32,14 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       }
       func.bodyOpt.foreach { body =>
         val startCtx = TypeCheckingContext(program, Map.empty, thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
-        val endCtx = traverseAll(body, startCtx)(using ts, er, program)
+        val closuresCollector = mutable.Queue.empty[(List[Instr], TypeCheckingContext)]
+        val endCtx = traverseAll(body, startCtx)(using ts, closuresCollector, er, program)
         if (funSig.retType.baseType != VoidType && !endCtx.alwaysExitsFlag) {
           reportError(s"missing return in non-$VoidType method", func.posOpt)
+        }
+        while (closuresCollector.nonEmpty) {
+          val (closureBody, tcCtx) = closuresCollector.dequeue()
+          traverseAll(closureBody, tcCtx)(using ts, closuresCollector, er, program)
         }
       }
     }
@@ -43,12 +49,12 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     (program, ts)
   }
 
-  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext =
+  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[(List[Instr], TypeCheckingContext)], er: ErrorReporter, program: Program): TypeCheckingContext =
     instructions.foldLeft(tcCtx) { (ctx, instr) =>
       traverse(instr, ctx)
     }
 
-  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, er: ErrorReporter, program: Program): TypeCheckingContext = {
+  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[(List[Instr], TypeCheckingContext)], er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     val endCtxRaw = instr match {
@@ -164,6 +170,27 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         val tpe = computeType(formula)(using tcCtx)
         if tpe.baseType == NothingType then tcCtx.withAlwaysExitsFlagRaised else tcCtx
       case SSA.DynamicAssert(formula) => ???
+      case SSA.ClosureCreation(assignedValue, params, body) =>
+        for ((paramId, paramType) <- params) {
+          ts(paramId) = paramType
+        }
+        val resultTypeVar = ClosureType(params.map(_._2), new TypeVariable(s"${assignedValue}_res"))
+        ts(assignedValue) = resultTypeVar
+        closuresCollector.enqueue(body -> tcCtx.copyForClosureBody(resultTypeVar))
+        tcCtx
+      case SSA.ClosureInvocation(assignedValue, closure, args) =>
+        val closureType = computeType(closure)(using tcCtx)
+        val argTypes = args.map(computeType(_)(using tcCtx))
+        closureType match {
+          case ClosureType(paramTypes, resultType) =>
+            for ((paramType, argType) <- paramTypes.zip(argTypes)) {
+              enforceBaseSubtypingConstraint(argType, paramType)(using "closure argument")
+            }
+            ts(assignedValue) = resultType
+          case _ =>
+            reportError("illegal invocation: not a closure", posOpt)
+        }
+        tcCtx
     }
     endCtxRaw.withAlwaysExitsFlagRecomputed
   }
@@ -547,8 +574,5 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     er.push(Err(TypeChecking, msg, posOpt))
     NothingType
   }
-
-  extension [T](l: Iterable[T]) private def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
-    l.take(r.size).zip(r.take(l.size))
 
 }

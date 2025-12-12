@@ -7,8 +7,9 @@ import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
+import compiler.util.zipCommons
 import compiler.valuesconversion.GlobalValuesContext
-import identifiers.{FunOrVarId, TypeIdentifier}
+import identifiers.TypeIdentifier
 import lang.*
 import lang.Types.*
 import lang.Values.{And, Formula, IdValue}
@@ -84,6 +85,7 @@ final case class Program(
             RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
           case baseTypeDes: NominalType =>
             RefinedType(baseTypeDes, itValueRaw, predicateRaw)
+          case closureType: ClosureType => closureType
           case _: (UnionType | BaseUnionType | TypeVariable) => assert(false)
         }
       case primitiveType: Types.PrimitiveType => primitiveType
@@ -104,13 +106,11 @@ final case class Program(
       case typeVariable: TypeVariable => typeVariable.substitutedIfResolved
       case UnionType(types) => UnionType(types.map(desugarType))
       case BaseUnionType(types) => UnionType(types.map(desugarType))
+      case ClosureType(params, resultType) => ClosureType(params.map(desugarType), desugarType(resultType))
     }
     if desugaredType == tpe then tpe
     else desugarType(desugaredType)
   }
-
-  extension [T](l: Iterable[T]) private def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
-    l.take(r.size).zip(r.take(l.size))
 
   private def buildSubtypingGraph(): Graph[TypeIdentifier] = {
     val graphB = Graph.Builder[TypeIdentifier]()
@@ -353,6 +353,8 @@ final case class Program(
       types.flatMap(findMentionedTypes)
     case BaseUnionType(types) =>
       types.flatMap(findMentionedTypes)
+    case ClosureType(params, resultType) =>
+      params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
   }
 
   private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {

@@ -19,6 +19,9 @@ final case class TypeCheckingContext(
                                       expectedReturnType: Type
                                     ) {
 
+  def copyForClosureBody(expectedResultType: Type): TypeCheckingContext =
+    copy(alwaysExitsFlag = false, expectedReturnType = expectedResultType)
+
   def withTypeInfoRefined(newTypeInfosSet: Set[TypeInfo]): TypeCheckingContext = {
     var alwaysExits = alwaysExitsFlag
     val newTypeInfosMap = for ((idValue, allInfos) <- (typeInfos.values.toSet ++ newTypeInfosSet).groupBy(_.value)) yield {
@@ -73,7 +76,7 @@ object TypeCheckingContext {
           program.resolveSignature(_) match {
             case Some(datatypeSignature: DatatypeSignature) => datatypeSignature.directSubtypes
             case Some(recordSignature: RecordSignature) => Set(recordSignature.id)
-            case _ => Set.empty
+            case _ => front
           }
         }
         if narrowed.isEmpty then None

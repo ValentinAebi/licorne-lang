@@ -1,6 +1,5 @@
 package compiler.ssagen
 
-import compiler.irs.Asts.{NamedTypeTree, VarParam}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -17,8 +16,8 @@ import lang.Types.*
 import lang.Values.*
 
 import java.util
-import scala.collection.{SeqMap, mutable}
 import scala.collection.mutable.ListBuffer
+import scala.collection.{SeqMap, mutable}
 
 
 final class SSAGenerator(er: ErrorReporter)
@@ -176,7 +175,7 @@ final class SSAGenerator(er: ErrorReporter)
                 mkType(paramTree.paramTypeTree, funcLocalValsCtx)
             }
             paramsInclThis(paramValue) = paramType
-            val reassigPermission = if paramTree.isInstanceOf[VarParam] then ReassigPermission.Var else ReassigPermission.Val
+            val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
           }
           isFirst = false
@@ -448,7 +447,7 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.BinaryOp(lhs, Operator.Or, rhs) => Or(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
       case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
-      case Asts.TypeTest(testedExpr, NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
+      case Asts.TypeTest(testedExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         valsCtx.valuesGen.newErrorValue()
@@ -460,7 +459,7 @@ final class SSAGenerator(er: ErrorReporter)
           generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
     }
-    if (!formulaPositions.containsKey(formula)){
+    if (!formulaPositions.containsKey(formula)) {
       expr.getPosition.foreach {
         formulaPositions.put(formula, _)
       }
@@ -499,7 +498,7 @@ final class SSAGenerator(er: ErrorReporter)
         List(Phi(resultVal, Set(thenResVal, elseResVal)))
       ), ternary)
       elseResVal
-    case cast@Asts.Cast(castExpr, NamedTypeTree(typeName, Nil, Nil)) =>
+    case cast@Asts.Cast(castExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       val resultVal = valsCtx.valuesGen.newValue()
       ssaInstructionsList.saveInstr(Cast(resultVal, castValue, typeName), cast)
@@ -512,6 +511,27 @@ final class SSAGenerator(er: ErrorReporter)
       val exprValue = generateSSAExprForcedAsVal(ascribedExpr, ssaInstructionsList, valsCtx)
       ssaInstructionsList.saveInstr(StaticTypeAssert(exprValue, mkType(tpe, valsCtx)), ascription)
       exprValue
+    case closureDef@Asts.ClosureDef(params, body) =>
+      val bodyCtx = valsCtx.deepCopyWithSameGlobalCtx
+      val paramValsAndTypesB = List.newBuilder[(IdValue, Type)]
+      for ((id, typeTreeOpt) <- params) {
+        val value = valsCtx.valuesGen.newValue(id)
+        val givenTypeOpt = typeTreeOpt.map(mkType(_, valsCtx))
+        val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId))
+        paramValsAndTypesB.addOne(value -> tpe)
+        bodyCtx.saveOrRemap(id, value, ReassigPermission.Val, givenTypeOpt)
+      }
+      val closureValue = valsCtx.valuesGen.newValue()
+      val bodyStats = mutable.ListBuffer.empty[Instr]
+      generateSSA(body, bodyCtx, bodyStats)
+      ssaInstructionsList.saveInstr(ClosureCreation(closureValue, paramValsAndTypesB.result(), bodyStats.toList), closureDef)
+      closureValue
+    case closureCall@Asts.ClosureCall(closureExpr, args) =>
+      val closureFormula = generateSSAExpr(closureExpr, Some(ssaInstructionsList), valsCtx)
+      val argFormulas = args.map(generateSSAExpr(_, Some(ssaInstructionsList), valsCtx))
+      val resultVal = valsCtx.valuesGen.newValue()
+      ssaInstructionsList.saveInstr(ClosureInvocation(resultVal, closureFormula, argFormulas), closureCall)
+      resultVal
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
@@ -522,12 +542,14 @@ final class SSAGenerator(er: ErrorReporter)
       val itVal = valsCtx.valuesGen.newValue(ItId)
       refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
       RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
-    case basicTypeTree: Asts.BaseTypeTree =>
+    case basicTypeTree: Asts.RefinableTypeTree =>
       mkNominalType(basicTypeTree, valsCtx)
+    case Asts.ClosureTypeTree(paramTypeTrees, resultTypeTree) =>
+      ClosureType(paramTypeTrees.map(mkType(_, valsCtx)), mkType(resultTypeTree, valsCtx))
   }
 
-  private def mkNominalType(basicTypeTree: Asts.BaseTypeTree, valsCtx: LocalValuesContext)
-                           (using util.IdentityHashMap[Formula, Position]): NominalType = basicTypeTree match {
+  private def mkNominalType(refinableTypeTree: Asts.RefinableTypeTree, valsCtx: LocalValuesContext)
+                           (using util.IdentityHashMap[Formula, Position]): NominalType = refinableTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
   }

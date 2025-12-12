@@ -52,7 +52,7 @@ object Types {
   sealed trait BaseType extends Type {
     override def baseType: BaseType = this
   }
-  
+
   sealed trait NominalType extends BaseType
 
   enum PrimitiveType(val str: String) extends NominalType {
@@ -83,6 +83,10 @@ object Types {
       val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")
       typeName.toString + typeParamsDescr + paramsDescr
     }
+  }
+
+  final case class ClosureType(params: List[Type], result: Type) extends BaseType {
+    override def toString: String = s"${params.mkString(",")} -> $result"
   }
 
   private val typeVarUidGen = new AtomicLong()
@@ -125,6 +129,7 @@ object Types {
             RefinedType(baseTypeRaw, itValueRaw, And(predicateRaw, predicateSubst.substitute(typesSubst, valsSubst ++ Map(itValueSubst -> itValueRaw))))
           case baseTypeSubst: NominalType =>
             RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
+          case closureType: ClosureType => closureType
           case _: (UnionType | BaseUnionType | TypeVariable) => throw new AssertionError("")
         }
       case primitiveType: PrimitiveType => primitiveType
@@ -139,6 +144,8 @@ object Types {
         if substTypes.forall(_.isInstanceOf[BaseType])
         then BaseUnionType(substTypes.map(_.asInstanceOf[BaseType]))
         else UnionType(substTypes)
+      case ClosureType(params, result) =>
+        ClosureType(params.map(_.substitute(typesSubst, valsSubst)), result.substitute(typesSubst, valsSubst))
     }
 
     def withTypeVarsExpanded: Type = tpe match {
@@ -152,6 +159,7 @@ object Types {
         BaseUnionType(types.map(_.withTypeVarsExpanded.baseType))
       case primitiveType: PrimitiveType => primitiveType
       case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withTypeVarsExpanded), args)
+      case ClosureType(params, result) => ClosureType(params.map(_.withTypeVarsExpanded), result.withTypeVarsExpanded)
       case variable: TypeVariable => variable.substitutedIfResolved
     }
 

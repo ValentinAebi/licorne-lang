@@ -69,7 +69,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val colon = op(Colon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = (op(Minus) ::: op(GreaterThan)).ignored
-  private val apostrophe = op(Apostrophe)
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
@@ -178,7 +177,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "methodsListOpt"
 
   private lazy val supertypesListOpt = {
-    opt(colon ::: repeatWithSepNonZero(primOrNamedType, comma)) map {
+    opt(colon ::: repeatWithSepNonZero(refinableTypeTree, comma)) map {
       case None => List.empty
       case Some(allSupertypes) =>
         allSupertypes.flatMap {
@@ -205,17 +204,21 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     possiblyNegativeNumericLiteralValue OR nonNumericLiteralValue
   } setName "constExprLiteralValue"
 
-  private lazy val noParenthType = recursive {
-    primOrNamedType ::: opt(kw(With).ignored ::: expr) map {
+  private lazy val closureType = kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
+    case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
+  } setName "closureType"
+
+  private lazy val primOrNamedTypeMaybeRefined = recursive {
+    refinableTypeTree ::: opt(kw(With).ignored ::: expr) map {
       case baseType ^: predicateOpt => predicateOpt match {
         case Some(predicate) => RefinedTypeTree(baseType, predicate)
         case None => baseType
       }
     }
-  } setName "noParenthType"
+  } setName "primOrNamedTypeMaybeRefined"
 
   private lazy val typeTree: P[TypeTree] = recursive {
-    noParenthType OR (openParenth ::: typeTree ::: closeParenth)
+    primOrNamedTypeMaybeRefined OR closureType OR (openParenth ::: typeTree ::: closeParenth)
   } setName "typeTree"
 
   private lazy val explicitCaptureSetTree = recursive {
@@ -223,20 +226,19 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case expressions => ExplicitCaptureSetTree(expressions)
     }
   } setName "explicitCaptureSetTree"
-  
+
   private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
 
-  private lazy val primOrNamedType: AnyTreeParser[BaseTypeTree] = recursive {
-    highName ::: opt(apostrophe) ::: typeArgsListOpt
-      ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
-      case baseTypeName ^: apostropheOpt ^: typeParamsOpt ^: paramsOpt =>
+  private lazy val refinableTypeTree: P[RefinableTypeTree] = recursive {
+    highName ::: typeArgsListOpt ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
+      case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
         if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
           errorReporter.push(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
         }
         primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
     }
-  } setName "primOrNamedType"
+  } setName "refinableTypeTree"
 
   private lazy val block = recursive {
     openBrace ::: repeatWithEnd(stat, semicolon) ::: closeBrace map {
@@ -260,12 +262,12 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "assignmentStat"
 
   private lazy val expr: P[Expr] = recursive {
-    noTernaryExpr OR ternary
+    simpleExpr OR ternary OR closure
   } setName "expr"
 
-  private lazy val noTernaryExpr: P[Expr] = recursive {
+  private lazy val simpleExpr: P[Expr] = recursive {
     BinaryOperatorsParser.buildFrom(Operator.operatorsByPriorityDecreasing, binopArg)
-  } setName "noTernaryExpr"
+  } setName "simpleExpr"
 
   private lazy val noBinopExpr = recursive {
     opt(unaryOperator) ::: selectOrIndexingChain map {
@@ -278,7 +280,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val binopArg = recursive {
     (noBinopExpr OR recordOrModuleInstantiation)
-      ::: opt((kw(As) OR kw(Is)) ::: primOrNamedType
+      ::: opt((kw(As) OR kw(Is)) ::: refinableTypeTree
     ) map {
       case expression ^: None => expression
       case expression ^: Some(As ^: tp) => Cast(expression, tp)
@@ -325,18 +327,31 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(colon ::: typeTree) map {
-      case atExpr ^: repeated ^: typeAnnotOpt =>
+    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(op(At).ignored ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
+      case atExpr ^: repeated ^: closureArgsOpt ^: typeAnnotOpt =>
         val chain = repeated.foldLeft(atExpr) {
           case (acc, name ^: Some(typeArgsOpt ^: args)) => Call(Some(acc), name, typeArgsOpt.getOrElse(List.empty), args)
           case (acc, name ^: None) => Select(acc, name)
         }
-        typeAnnotOpt match {
-          case Some(tpe) => TypeAscription(chain, tpe)
+        val maybeClosureInvocation = closureArgsOpt match {
+          case Some(closureArgs) => ClosureCall(chain, closureArgs)
           case None => chain
+        }
+        typeAnnotOpt match {
+          case Some(tpe) => TypeAscription(maybeClosureInvocation, tpe)
+          case None => maybeClosureInvocation
         }
     }
   } setName "selectOrIndexingChain"
+
+  private lazy val closure = recursive {
+    kw(Fn).ignored ::: openParenth ::: repeatWithSep(lowName ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
+      case params ^: (body: Block) =>
+        ClosureDef(params.toPairs, body)
+      case params ^: (expr: Expr) =>
+        ClosureDef(params.toPairs, Block(List(ReturnStat(Some(expr)))))
+    }
+  } setName "closure"
 
   private lazy val parenthesizedExpr = recursive {
     openParenth ::: expr ::: closeParenth
@@ -347,6 +362,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case tid ^: tArgs ^: initializers => RecordOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
     }
   } setName "recordOrModuleInstantiation"
+
+  private lazy val closureInvocation = selectOrIndexingChain ::: op(At).ignored ::: parenthArgsList map {
+    case closure ^: args => ClosureCall(closure, args)
+  } setName "closureInvocation"
 
   private lazy val fieldInitializer = recursive {
     lowName ::: opt(assig ::: expr) map {
@@ -404,6 +423,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val panicStat = {
     kw(Panic).ignored ::: expr map PanicStat.apply
   } setName "panicStat"
+
+  extension [L, R](params: List[L ^: R]) private def toPairs: List[(L, R)] = {
+    params.map { case id ^: tpe => (id, tpe) }
+  }
 
 
   override def apply(input: (List[PositionedToken], String)): Source = {
