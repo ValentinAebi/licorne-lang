@@ -12,12 +12,12 @@ object Asts {
   sealed abstract class Ast {
     // Positions are propagated by the TreeParser
     // Each AST is assigned the position of its leftmost token (by the map method of TreeParser)
-    private val positionMemo = new OptionalAttribute[Position]
+    private val position = new OptionalAttribute[Position]
     private val desugaringSource = new OptionalAttribute[Ast]
 
     def withDesugaringSource(desugaringSource: Ast): this.type = {
       setDesugaringSource(desugaringSource)
-      positionMemo.setOpt(desugaringSource.getPosition)
+      position.setOpt(desugaringSource.getPosition)
       this
     }
 
@@ -27,16 +27,16 @@ object Asts {
     }
 
     def setPosition(pos: Position): this.type = {
-      positionMemo.set(pos)
+      position.set(pos)
       this
     }
 
     def setPosition(posOpt: Option[Position]): this.type = {
-      positionMemo.setOpt(posOpt)
+      position.setOpt(posOpt)
       this
     }
 
-    export positionMemo.getOpt as getPosition
+    export position.getOpt as getPosition
 
     export desugaringSource.set as setDesugaringSource
     export desugaringSource.getOpt as getDesugaringSource

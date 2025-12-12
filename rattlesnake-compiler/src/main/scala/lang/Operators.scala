@@ -33,7 +33,7 @@ object Operators {
   }
   
   private val nzi$it = IdValue("nzi$it", 0)
-  // TODO nonZeroDouble for / and % on Doubles
+  // TODO NonZeroDouble for / and % on Doubles
   private val nonZeroInt = RefinedType(IntType, nzi$it, Not(Equal(nzi$it, IntConstant(0))))
   
   val unaryOperators: List[UnaryOpSignature] = List(
