@@ -353,8 +353,8 @@ object Asts {
 
   object VarAssig {
 
-    def apply(lhs: Expr, typeOpt: Option[TypeTree], rhs: Expr): VarAssig = {
-      val newLhs = typeOpt match {
+    def apply(lhs: Expr, typeAnnotOpt: Option[TypeTree], rhs: Expr): VarAssig = {
+      val newLhs = typeAnnotOpt match {
         case Some(tpe) => TypeAscription(lhs, tpe).setPosition(lhs.getPosition)
         case None => lhs
       }
