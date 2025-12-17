@@ -21,10 +21,10 @@ object BaseSubtypeRelation {
                                       (using errorMsg: ErrorMessage, erOpt: Option[ErrorReporter], posOpt: Option[Position], program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
       case (subT: TypeVariable, superT) =>
-        subT.tryToResolve(superT)
+        subT.resolve(superT)
         true
       case (subT, superT: TypeVariable) =>
-        superT.tryToResolve(subT)
+        superT.resolve(subT)
         true
       case (subT, superT) =>
         checkSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
@@ -96,7 +96,7 @@ object BaseSubtypeRelation {
   extension (subT: BaseType) def trivialSubtypeOf(superT: BaseType)(using program: Program): Boolean = (subT, superT) match {
     case _ if subT == superT => true
     case (NothingType, _) => true
-    case (_, VoidType) => false
+    case (_, VoidType) => true
     case (VoidType, _) => false
     case (_, NothingType) => false
     case (NullType, _) => true

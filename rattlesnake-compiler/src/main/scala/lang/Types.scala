@@ -99,7 +99,7 @@ object Types {
   }
 
   final case class ClosureType(params: List[Type], result: Type) extends BaseType {
-    override def toString: String = s"${params.mkString(",")} -> $result"
+    override def toString: String = s"(${params.mkString(", ")}) -> $result"
   }
 
   private val typeVarUidGen = new AtomicLong()
@@ -108,16 +108,21 @@ object Types {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
 
-    def tryToResolve(tpe: Type): Unit = {
+    def resolve(tpe: Type): Unit = {
+      if (isResolved) {
+        throw IllegalStateException("type variable was already resolved")
+      }
       val actualTpe = goUpPath(tpe)
       if (actualTpe != this) {
         actualTypeOpt = Some(actualTpe)
       }
     }
 
-    def actualTypeIfKnown: Option[Type] = actualTypeOpt.map(goUpPath)
+    def actualTypeIfResolved: Option[Type] = actualTypeOpt.map(goUpPath)
 
-    def substitutedIfResolved: Type = actualTypeIfKnown.getOrElse(this)
+    def isResolved: Boolean = actualTypeIfResolved.isDefined
+
+    def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
 
     override def toString: String = s"?${descr}_$uid"
 

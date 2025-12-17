@@ -13,6 +13,7 @@ import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
+import lang.Types.PrimitiveType.VoidType
 import lang.Values.*
 
 import java.util
@@ -63,14 +64,17 @@ final class SSAGenerator(er: ErrorReporter)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
             val importedObjects = mutable.LinkedHashSet.empty[IdValue]
             params.foreach {
-              case Asts.VarParam(paramId, paramTypeTree) =>
-                fields(paramId) = ReassignableField(paramId, mkType(paramTypeTree, paramsCtx))
-              case Asts.SimpleParam(paramId, paramTypeTree) =>
+              case param@Asts.VarParam(paramId, paramTypeTree) =>
+                val paramType = mkType(paramTypeTree, paramsCtx)
+                mustNotBeVoid(paramType, param.getPosition)
+                fields(paramId) = ReassignableField(paramId, paramType)
+              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(id)
                 val paramType = mkType(paramTypeTree, paramsCtx)
+                mustNotBeVoid(paramType, param.getPosition)
                 fields(paramId) = StableField(paramId, paramType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
-              case Asts.ObjectImport(objectId) =>
+              case param@Asts.ObjectImport(objectId) =>
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
             val noFunctionsSig = ClassSignature(id, typeParams.convert, fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
@@ -85,9 +89,10 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             fields.foreach {
-              case Asts.SimpleParam(paramId, paramTypeTree) =>
+              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
+                mustNotBeVoid(fieldType, param.getPosition)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
@@ -167,13 +172,14 @@ final class SSAGenerator(er: ErrorReporter)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funcLocalValsCtx)
                   if (actualThisType.baseType != expectedThisType) {
-                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (not that it may be omitted)", func.getPosition)
+                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", func.getPosition)
                   }
                   actualThisType
                 }.getOrElse(expectedThisType)
               case paramTree: Asts.NonThisFunctionParam =>
                 mkType(paramTree.paramTypeTree, funcLocalValsCtx)
             }
+            mustNotBeVoid(paramType, paramTree.getPosition)
             paramsInclThis(paramValue) = paramType
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
@@ -532,6 +538,12 @@ final class SSAGenerator(er: ErrorReporter)
       val resultVal = valsCtx.valuesGen.newValue()
       ssaInstructionsList.saveInstr(ClosureInvocation(resultVal, closureFormula, argFormulas), closureCall)
       resultVal
+  }
+
+  private def mustNotBeVoid(tpe: Type, posOpt: Option[Position]): Unit = {
+    if (tpe.baseType == VoidType){
+      reportError(s"$VoidType is not allowed in this position", posOpt)
+    }
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)

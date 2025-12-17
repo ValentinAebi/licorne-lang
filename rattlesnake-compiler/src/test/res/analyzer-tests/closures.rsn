@@ -1,14 +1,24 @@
 
 object Test {
 
-   fn test() {
-      ifDog(new Dog(), fn (dog, loudVolume) -> { dog.woof(loudVolume) })
+   fn test(animal: Animal) {
+      ifDog[Void](animal, fn (dog) -> { dog.woof() });
+      ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));               // OK, drop return value of eat
+      ifDog[Bool](animal, fn (dog) -> dog.isHungry());
+      ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });                   //> E : missing return in non-Void closure
+      val r: Bool = ifDogOrElse(animal, fn (dog) -> dog.woof(), false);      //> E : return value: expected Bool, found Void
    }
 
-   private fn ifDog(animal: Animal, action: fn (Dog, Bool) -> Void) {
+   private fn ifDog[T](animal: Animal, action: fn (Dog) -> T) {
       if animal is Dog {
-         action@(animal, 10)    //> E : closure argument: expected Bool, found Int
+         action@(animal)
       }
+   }
+
+   private fn ifDogOrElse[T](animal: Animal, f: fn (Dog) -> T, default: T) -> T {
+      return when animal is Dog
+        then f@(animal)
+        else default
    }
 
 }
@@ -16,5 +26,20 @@ object Test {
 interface Animal
 
 class Dog : Animal {
-   fn woof(this, loud: Bool) {}
+
+   fn woof(this) {}
+
+   fn isHungry(this) -> Bool {
+      return true
+   }
+
+   // returns true iff not hungry anymore
+   fn eat(this, food: Food) -> Bool {
+      // ...
+      return false
+   }
+
 }
+
+interface Food
+class Kibbles : Food

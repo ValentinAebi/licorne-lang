@@ -31,15 +31,20 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         ts(argVal) = argType
       }
       func.bodyOpt.foreach { body =>
-        val startCtx = TypeCheckingContext(program, Map.empty, thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
-        val closuresCollector = mutable.Queue.empty[(List[Instr], TypeCheckingContext)]
-        val endCtx = traverseAll(body, startCtx)(using ts, closuresCollector, er, program)
-        if (funSig.retType.baseType != VoidType && !endCtx.alwaysExitsFlag) {
-          reportError(s"missing return in non-$VoidType method", func.posOpt)
-        }
+        val funcStartCtx = TypeCheckingContext(program, Map.empty, thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
+        val closuresCollector = mutable.Queue.empty[ClosureInfo]
+        val funcEndCtx = traverseAll(body, funcStartCtx)(using ts, closuresCollector, er, program)
+        val retTypeBase = funSig.retType.baseType
+        checkReturnsIfNonVoid(retTypeBase, funcEndCtx, "method", func.posOpt)
         while (closuresCollector.nonEmpty) {
-          val (closureBody, tcCtx) = closuresCollector.dequeue()
-          traverseAll(closureBody, tcCtx)(using ts, closuresCollector, er, program)
+          val ClosureInfo(closureBody, closureStartCtx, closureExpRetTVar, closurePosOpt) = closuresCollector.dequeue()
+          val closureEndCtx = traverseAll(closureBody, closureStartCtx)(using ts, closuresCollector, er, program)
+          closureExpRetTVar.actualTypeIfResolved.foreach { expectedRetType =>
+            checkReturnsIfNonVoid(expectedRetType.baseType, closureEndCtx, "closure", closurePosOpt)
+          }
+          if (!closureExpRetTVar.isResolved){
+            closureExpRetTVar.resolve(VoidType)
+          }
         }
       }
     }
@@ -49,12 +54,18 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     (program, ts)
   }
 
-  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[(List[Instr], TypeCheckingContext)], er: ErrorReporter, program: Program): TypeCheckingContext =
+  private def checkReturnsIfNonVoid(retTypeBase: BaseType, endCtx: TypeCheckingContext, functionKindDescr: String, posOpt: Option[Position]) = {
+    if (retTypeBase != VoidType && !endCtx.alwaysExitsFlag) {
+      reportError(s"missing return in non-$VoidType $functionKindDescr", posOpt)
+    }
+  }
+
+  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext =
     instructions.foldLeft(tcCtx) { (ctx, instr) =>
       traverse(instr, ctx)
     }
 
-  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[(List[Instr], TypeCheckingContext)], er: ErrorReporter, program: Program): TypeCheckingContext = {
+  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     val endCtxRaw = instr match {
@@ -174,9 +185,9 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         for ((paramId, paramType) <- params) {
           ts(paramId) = paramType
         }
-        val resultTypeVar = ClosureType(params.map(_._2), new TypeVariable(s"${assignedValue}_res"))
-        ts(assignedValue) = resultTypeVar
-        closuresCollector.enqueue(body -> tcCtx.copyForClosureBody(resultTypeVar))
+        val resultTypeVar = new TypeVariable(s"${assignedValue}_res")
+        ts(assignedValue) = ClosureType(params.map(_._2), resultTypeVar)
+        closuresCollector.enqueue(ClosureInfo(body, tcCtx.copyForClosureBody(resultTypeVar), resultTypeVar, posOpt))
         tcCtx
       case SSA.ClosureInvocation(assignedValue, closure, args) =>
         val closureType = computeType(closure)(using tcCtx)
@@ -574,5 +585,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     er.push(Err(TypeChecking, msg, posOpt))
     NothingType
   }
+  
+  private case class ClosureInfo(body: List[Instr], startCtx: TypeCheckingContext, expectedRetTypeVar: TypeVariable, posOpt: Option[Position])
 
 }
