@@ -486,18 +486,18 @@ final class SSAGenerator(er: ErrorReporter)
         Instantiate(instanceVal, typeId, typeArgs.map(mkType(_, valsCtx)), initializersSSAInstrList.toList), expr)
       instanceVal
     case ternary@Asts.Ternary(cond, thenBr, elseBr) =>
-      val thenResVal = valsCtx.valuesGen.newValue()
-      val elseResVal = valsCtx.valuesGen.newValue()
-      val resultVal = valsCtx.valuesGen.newValue()
       val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), valsCtx)
-      val thenFormula = generateSSAExpr(thenBr, Some(ssaInstructionsList), valsCtx)
-      val elseFormula = generateSSAExpr(elseBr, Some(ssaInstructionsList), valsCtx)
+      val thenInstrList = mutable.ListBuffer.empty[Instr]
+      val elseInstrList = mutable.ListBuffer.empty[Instr]
+      val thenResVal = generateSSAExprForcedAsVal(thenBr, thenInstrList, valsCtx)
+      val elseResVal = generateSSAExprForcedAsVal(elseBr, elseInstrList, valsCtx)
+      val resultVal = valsCtx.valuesGen.newValue()
       ssaInstructionsList.saveInstr(Disjunction(condFormula,
-        List(Assignment(thenResVal, thenFormula)),
-        List(Assignment(elseResVal, elseFormula)),
+        thenInstrList.toList,
+        elseInstrList.toList,
         List(Phi(resultVal, Set(thenResVal, elseResVal)))
       ), ternary)
-      elseResVal
+      resultVal
     case cast@Asts.Cast(castExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       val resultVal = valsCtx.valuesGen.newValue()
