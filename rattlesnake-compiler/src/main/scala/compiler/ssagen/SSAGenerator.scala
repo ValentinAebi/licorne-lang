@@ -259,7 +259,7 @@ final class SSAGenerator(er: ErrorReporter)
           } else rhsOpt match {
             case Some(rhs) =>
               generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
-              generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), rhs)
+              generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
                 .withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
             case None =>
               valsCtx.saveNewLocal(localName, None, reassigPermission, typeAnnotOpt)
