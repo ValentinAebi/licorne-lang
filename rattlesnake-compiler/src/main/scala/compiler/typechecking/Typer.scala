@@ -286,40 +286,44 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         }
         BoolType
       case op: BinOp =>
-        val lhsType = computeType(op.lhs)
+        val lhsTypeRaw = computeType(op.lhs)
+        val lhsTypeDesBase = program.desugarType(lhsTypeRaw).baseType
         val (lhsTrueInfos, lhsFalseInfos) = extractTypeInfos(op.lhs)
         val rhsCtx = op match {
           case and: And => tcCtx.withTypeInfoRefined(lhsTrueInfos)
           case or: Or => tcCtx.withTypeInfoRefined(lhsFalseInfos)
           case _ => tcCtx
         }
-        val rhsType = computeType(op.rhs)(using rhsCtx)
-        if (lhsType.baseType == NothingType || rhsType.baseType == NothingType) {
+        val rhsTypeRaw = computeType(op.rhs)(using rhsCtx)
+        val rhsTypeDesBase = program.desugarType(rhsTypeRaw).baseType
+        if (lhsTypeDesBase == NothingType || rhsTypeDesBase == NothingType) {
           NothingType
         } else {
           val candidateOperators = Operators.binaryOperators.filter { opSig =>
             opSig.op == op.operator
-              && lhsType.baseType.trivialSubtypeOf(opSig.leftOperandType.baseType)
-              && rhsType.baseType.trivialSubtypeOf(opSig.rightOperandType.baseType)
+              && lhsTypeDesBase.trivialSubtypeOf(opSig.leftOperandType.baseType)
+              && rhsTypeDesBase.baseType.trivialSubtypeOf(opSig.rightOperandType.baseType)
           }
-          resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsType and $rhsType", posOpt) match {
+          resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsTypeDesBase and $rhsTypeDesBase", posOpt) match {
             case Some(opSig) =>
-              enforceBaseSubtypingConstraint(lhsType, opSig.leftOperandType)(using "operand", posOpt)
+              enforceBaseSubtypingConstraint(lhsTypeRaw, opSig.leftOperandType)(using "operand", posOpt)
+              enforceBaseSubtypingConstraint(rhsTypeRaw, opSig.rightOperandType)(using "operand", posOpt)
               opSig.retType
             case None => NothingType
           }
         }
       case op: UnaryOp =>
-        val operandType = computeType(op.operand)
-        if (operandType == NothingType) {
+        val operandTypeRaw = computeType(op.operand)
+        val operandTypeDesBase = program.desugarType(operandTypeRaw).baseType
+        if (operandTypeDesBase == NothingType) {
           NothingType
         } else {
           val candidatesOperators = Operators.unaryOperators.filter { opSig =>
-            opSig.op == op.operator && operandType.baseType.trivialSubtypeOf(opSig.operandType.baseType)
+            opSig.op == op.operator && operandTypeDesBase.trivialSubtypeOf(opSig.operandType.baseType)
           }
-          resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandType", posOpt) match {
+          resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandTypeDesBase", posOpt) match {
             case Some(opSig) =>
-              enforceBaseSubtypingConstraint(operandType, opSig.operandType)(using "operand", posOpt)
+              enforceBaseSubtypingConstraint(operandTypeRaw, opSig.operandType)(using "operand", posOpt)
               opSig.retType
             case None => NothingType
           }
@@ -351,6 +355,11 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
                     val subToSuperSubstOpt = program.subToSuperSubst(receiverTypeName, funSig.ownerName)
                     val subst = substComposition(subToSuperSubstOpt, upcastRecvTParamsSubstOpt).getOrElse(Map.empty) ++ funcTParamsSubstOpt.getOrElse(Map.empty)
                     val argsSubst = mutable.Map.empty[IdValue, Value]
+                    receiver match {
+                      case receiver: Value =>
+                        argsSubst(funSig.thisVal) = receiver
+                      case _ => ()
+                    }
                     if (argsSizeMatch) {
                       for (((paramVal, paramTypeRaw), arg) <- funSig.paramsInclThis.tail zip args) {
                         val argType = computeType(arg)

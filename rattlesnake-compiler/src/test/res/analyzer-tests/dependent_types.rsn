@@ -18,4 +18,16 @@ object Main {
       foo(42, "Hello")  //> E : method argument: expected MulOf(42), found String
    }
 
+   fn abc(ls: List[Bool]) {
+      ls.indexOf(true) : String     //> E : type ascription: expected String, found Idx(ls$0)
+   }
+
+}
+
+typealias Length = [0,]
+typealias Idx[T](ls: List[T]) = [ 0, ls.size() )
+
+interface List[T] {
+   fn size(this) -> Length
+   fn indexOf(this, elem: T) -> Idx(this)
 }
