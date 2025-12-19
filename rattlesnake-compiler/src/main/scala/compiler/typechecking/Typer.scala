@@ -327,7 +327,6 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       case Call(receiver, funId, typeArgs, args) =>
         val receiverType = computeType(receiver)
         typeArgs.foreach(tcCtx.checkType(_, None, posOpt))
-        val argTypes = args.map(computeType)
         forceComputeJoins(program.desugarType(receiverType).baseType) match {
           case Some(Types.NamedType(receiverTypeName, receiverTypeArgs, receiverArgs)) =>
             assert(receiverArgs.isEmpty)
@@ -351,13 +350,20 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
                     val upcastRecvTParamsSubstOpt = generateTypeParamsMapping(receiverTypeSig.typeParams.map(_._1), receiverTypeArgs, posOpt, "recverr", reportIfLengthMismatch = false)
                     val subToSuperSubstOpt = program.subToSuperSubst(receiverTypeName, funSig.ownerName)
                     val subst = substComposition(subToSuperSubstOpt, upcastRecvTParamsSubstOpt).getOrElse(Map.empty) ++ funcTParamsSubstOpt.getOrElse(Map.empty)
+                    val argsSubst = mutable.Map.empty[IdValue, Value]
                     if (argsSizeMatch) {
-                      for (((_, paramTypeRaw), argType) <- funSig.paramsInclThis.tail zip argTypes) {
-                        val paramType = program.desugarType(paramTypeRaw.substitute(subst, Map.empty))
+                      for (((paramVal, paramTypeRaw), arg) <- funSig.paramsInclThis.tail zip args) {
+                        val argType = computeType(arg)
+                        val paramType = paramTypeRaw.substitute(subst, argsSubst.toMap)
                         enforceBaseSubtypingConstraint(argType, paramType)(using "method argument", posOpt)
+                        arg match {
+                          case arg: Value =>
+                            argsSubst(paramVal) = arg
+                          case _ => ()
+                        }
                       }
                     }
-                    program.desugarType(funSig.retType.substitute(subst, Map.empty))
+                    funSig.retType.substitute(subst, argsSubst.toMap)
                 }
             }
           case None =>

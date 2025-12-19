@@ -1,0 +1,21 @@
+
+typealias MulOf(d: Int) = Int with it > 0 && it % d == 0
+
+object Main {
+
+   fn clamp(x: Int, min: Int, max: Int) -> [min, max] {
+      return
+        when x < min then min
+        else when x < max then x
+        else max
+   }
+
+   fn foo(a: Int, x: MulOf(a)) -> String {
+      return clamp(x, 0, 10)    //> E : return value: expected String, found [0,10]
+   }
+
+   fn bar() {
+      foo(42, "Hello")  //> E : method argument: expected MulOf(42), found String
+   }
+
+}

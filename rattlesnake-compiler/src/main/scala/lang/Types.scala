@@ -148,11 +148,14 @@ object Types {
       case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
         baseTypeRaw.substitute(typesSubst, valsSubst) match {
           case RefinedType(baseTypeSubst, itValueSubst, predicateSubst) =>
-            RefinedType(baseTypeRaw, itValueRaw, And(predicateRaw, predicateSubst.substitute(typesSubst, valsSubst ++ Map(itValueSubst -> itValueRaw))))
+            RefinedType(baseTypeSubst, itValueRaw, And(
+              predicateRaw.substitute(typesSubst, valsSubst),
+              predicateSubst.substitute(typesSubst, valsSubst ++ Map(itValueSubst -> itValueRaw))
+            ))
           case baseTypeSubst: NominalType =>
-            RefinedType(baseTypeSubst, itValueRaw, predicateRaw)
+            RefinedType(baseTypeSubst, itValueRaw, predicateRaw.substitute(typesSubst, valsSubst))
           case closureType: ClosureType => closureType
-          case _: (UnionType | BaseUnionType | TypeVariable) => throw new AssertionError("")
+          case _: (UnionType | BaseUnionType | TypeVariable) => throw new AssertionError(s"unexpected ${tpe.getClass.getSimpleName}")
         }
       case primitiveType: PrimitiveType => primitiveType
       case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
