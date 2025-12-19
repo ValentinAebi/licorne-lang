@@ -3,7 +3,7 @@ package compiler.typechecking
 import compiler.irs.SSA
 import compiler.irs.SSA.*
 import compiler.pipeline.CompilationStep.TypeChecking
-import compiler.pipeline.CompilerStep
+import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
@@ -23,15 +23,32 @@ import scala.util.boundary
 
 final class Typer(private val er: ErrorReporter, private val continueIfErrors: Boolean = false) extends CompilerStep[Program, (Program, TypeStore)] {
 
+  private given Typer = this
+
+  private given CompilationStep = TypeChecking
+
+  // TODO substitution of terms in types appearing as results
+
   override def apply(program: Program): (Program, TypeStore) = {
     val ts = new MutableTypeStore
+    program.checkDefinitions()(using this, ts, er, program.typeDeclPositions)
+    checkFunctions()(using program, ts)
+    if (!continueIfErrors) {
+      er.displayAndTerminateIfErrors()
+    }
+    (program, ts)
+  }
+
+  private def checkFunctions()(using program: Program, ts: MutableTypeStore): Unit = {
     for ((funSig, func) <- program.functions) {
+      val funOwnerSig = program.resolveSignature(funSig.ownerName).get
       val (thisVal, thisType) = funSig.paramsInclThis.head
       for ((argVal, argType) <- funSig.paramsInclThis) {
         ts(argVal) = argType
       }
       func.bodyOpt.foreach { body =>
-        val funcStartCtx = TypeCheckingContext(program, Map.empty, thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
+        val funcStartCtx = TypeCheckingContext(program, funOwnerSig.typeParams.toMap, funSig.typeParams.toSet, Map.empty,
+          thisVal, funSig.ownerName, alwaysExitsFlag = false, expectedReturnType = funSig.retType)
         val closuresCollector = mutable.Queue.empty[ClosureInfo]
         val funcEndCtx = traverseAll(body, funcStartCtx)(using ts, closuresCollector, er, program)
         val retTypeBase = funSig.retType.baseType
@@ -42,16 +59,12 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
           closureExpRetTVar.actualTypeIfResolved.foreach { expectedRetType =>
             checkReturnsIfNonVoid(expectedRetType.baseType, closureEndCtx, "closure", closurePosOpt)
           }
-          if (!closureExpRetTVar.isResolved){
+          if (!closureExpRetTVar.isResolved) {
             closureExpRetTVar.resolve(VoidType)
           }
         }
       }
     }
-    if (!continueIfErrors) {
-      er.displayAndTerminateIfErrors()
-    }
-    (program, ts)
   }
 
   private def checkReturnsIfNonVoid(retTypeBase: BaseType, endCtx: TypeCheckingContext, functionKindDescr: String, posOpt: Option[Position]) = {
@@ -60,12 +73,14 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     }
   }
 
-  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext =
+  private def traverseAll(instructions: List[Instr], tcCtx: TypeCheckingContext)
+                         (using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext =
     instructions.foldLeft(tcCtx) { (ctx, instr) =>
       traverse(instr, ctx)
     }
 
-  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)(using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext = {
+  private def traverse(instr: Instr, tcCtx: TypeCheckingContext)
+                      (using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     val endCtxRaw = instr match {
@@ -109,6 +124,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         ts(assignedValue) = rhsType
         tcCtx
       case SSA.Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) =>
+        typeArgs.foreach(tcCtx.checkType(_, None, posOpt))
         program.resolveSignatureAs[RuntimeTypeSignature & UserInstantiable](classOrRecordName) match {
           case None =>
             reportError(s"instantiable type not found: $classOrRecordName", posOpt)
@@ -148,6 +164,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         }
         tcCtx.withTypeInfoRefined(Set(TypeInfo(castValue, targetType, Set(targetType), Set.empty)))
       case SSA.StaticTypeAssert(value, tpe) =>
+        tcCtx.checkType(tpe, None, posOpt)
         enforceBaseSubtypingConstraint(computeType(value)(using tcCtx), tpe)(using "type ascription")
         tcCtx
       case SSA.StaticAssert(formula) =>
@@ -231,8 +248,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     case _ => (Set.empty, Set.empty)
   }
 
-  private def computeType(formula: Formula)
-                         (using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
+  private[typechecking] def computeType(formula: Formula)(using tcCtx: TypeCheckingContext, ts: TypeStore, er: ErrorReporter, program: Program): Type = {
     val posOpt =
       if program.formulaPositions.containsKey(formula)
       then Some(program.formulaPositions.get(formula))
@@ -259,8 +275,11 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
       case DoubleConstant(value) => DoubleType
       case StringConstant(value) => StringType
       case Equal(lhs, rhs) =>
-        computeType(lhs)
-        computeType(rhs)
+        val lhsType = computeType(lhs)
+        val rhsType = computeType(rhs)
+        if (areProvablyDisjointUnlessNull(lhsType.baseType, rhsType.baseType)) {
+          reportError(s"illegal equality test: ${lhsType.baseType} and ${rhsType.baseType} are incompatible types", posOpt)
+        }
         BoolType
       case op: BinOp =>
         val lhsType = computeType(op.lhs)
@@ -303,6 +322,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         }
       case Call(receiver, funId, typeArgs, args) =>
         val receiverType = computeType(receiver)
+        typeArgs.foreach(tcCtx.checkType(_, None, posOpt))
         val argTypes = args.map(computeType)
         forceComputeJoins(program.desugarType(receiverType).baseType) match {
           case Some(Types.NamedType(receiverTypeName, receiverTypeArgs, receiverArgs)) =>
@@ -377,14 +397,19 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     searchFrom(receiverTypeId)
   }
 
-  private def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type], posOpt: Option[Position], contextDescr: String, reportIfLengthMismatch: Boolean): Option[Map[TypeIdentifier, Type]] = {
+  private def areProvablyDisjointUnlessNull(type1: BaseType, type2: BaseType): Boolean = (type1, type2) match {
+    case (type1: Concrete, type2: Concrete) if type1 != type2 => true
+    case _ => false
+  }
+
+  private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeIdentifier], typeArgs: List[Type], posOpt: Option[Position], contextDescrForTypeVar: String, reportIfLengthMismatch: Boolean): Option[Map[TypeIdentifier, Type]] = {
     if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
       if (reportIfLengthMismatch) {
         reportError(s"wrong number of type arguments: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
       }
       None
     } else if (typeArgs.isEmpty && typeParams.nonEmpty) Some {
-      typeParams.map(tp => tp -> new TypeVariable(s"${contextDescr}_$tp")).toMap
+      typeParams.map(tp => tp -> new TypeVariable(s"${contextDescrForTypeVar}_$tp")).toMap
     } else Some {
       typeParams.zip(typeArgs).toMap
     }
@@ -585,7 +610,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
     er.push(Err(TypeChecking, msg, posOpt))
     NothingType
   }
-  
+
   private case class ClosureInfo(body: List[Instr], startCtx: TypeCheckingContext, expectedRetTypeVar: TypeVariable, posOpt: Option[Position])
 
 }

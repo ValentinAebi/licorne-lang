@@ -1,12 +1,14 @@
 
 object Test {
 
+   // TODO test with closure returning Nothing
+
    fn test(animal: Animal) {
       ifDog[Void](animal, fn (dog) -> { dog.woof() });
       ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));               // OK, drop return value of eat
       ifDog[Bool](animal, fn (dog) -> dog.isHungry());
       ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });                   //> E : missing return in non-Void closure
-      val r: Bool = ifDogOrElse(animal, fn (dog) -> dog.woof(), false);      //> E : return value: expected Bool, found Void
+      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());                        //> E : return value: expected Int, found Void
    }
 
    private fn ifDog[T](animal: Animal, action: fn (Dog) -> T) {
@@ -15,7 +17,7 @@ object Test {
       }
    }
 
-   private fn ifDogOrElse[T](animal: Animal, f: fn (Dog) -> T, default: T) -> T {
+   private fn ifDogOrElse[T](animal: Animal, default: T, f: fn (Dog) -> T) -> T {
       return when animal is Dog
         then f@(animal)
         else default

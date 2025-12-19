@@ -27,8 +27,8 @@ final class SSAGenerator(er: ErrorReporter)
   override def apply(input: List[Asts.Source]): Program = {
     given formulaPositions: util.IdentityHashMap[Formula, Position] = util.IdentityHashMap()
 
-    val ctxBuilder = Program.Builder(er)
-    val globalValuesContext = ctxBuilder.globalValuesContext
+    val programBuilder = Program.Builder(er)
+    val globalValuesContext = programBuilder.globalValuesContext
     val valuesGen = globalValuesContext.valuesGen
     val allFunctionsCollector = mutable.SeqMap.empty[FunctionSignature, SSA.Function]
     val positionsMapB = Map.newBuilder[TypeIdentifier, Position]
@@ -39,17 +39,18 @@ final class SSAGenerator(er: ErrorReporter)
         df.getPosition.foreach { pos =>
           positionsMapB.addOne(df.id -> pos)
         }
-        val thisValue = valuesGen.newValue(ThisId)
         df match {
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
+            val thisValue = valuesGen.newValue(ThisId)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val noFunctionsSig = InterfaceSignature(id, typeParams.convert, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
-            ctxBuilder.saveSignature(sig, df.getPosition)
+            programBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
+            val thisValue = valuesGen.newValue(ThisId)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
@@ -57,8 +58,9 @@ final class SSAGenerator(er: ErrorReporter)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
-            ctxBuilder.saveSignature(sig, df.getPosition)
+            programBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ClassDef(id, typeParams, params, functions, directSupertypes) =>
+            val thisValue = valuesGen.newValue(ThisId)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
@@ -81,10 +83,11 @@ final class SSAGenerator(er: ErrorReporter)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
-            ctxBuilder.saveSignature(sig, df.getPosition)
+            programBuilder.saveSignature(sig, df.getPosition)
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(df)
           case Asts.RecordDef(id, typeParams, fields, directSupertypes) =>
+            val thisValue = valuesGen.newValue(ThisId)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
@@ -97,13 +100,14 @@ final class SSAGenerator(er: ErrorReporter)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
             val sig = RecordSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
-            ctxBuilder.saveSignature(sig, df.getPosition)
+            programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
               datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
             }
           case df@Asts.TypeAliasDef(typeName, typeParams, params, rhs) =>
+            val itValue = valuesGen.newValue(ItId)
             val paramsCtx = LocalValuesContext(globalValuesContext)
-            paramsCtx.saveNewLocal(ItId, thisValue, ReassigPermission.Val, None)
+            paramsCtx.saveNewLocal(ItId, itValue, ReassigPermission.Val, None)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
             params.foreach {
               case Asts.SimpleParam(paramId, paramTypeTree) =>
@@ -112,21 +116,20 @@ final class SSAGenerator(er: ErrorReporter)
                 typeAliasParams(paramId) = (paramType, paramValue)
                 paramsCtx.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams.convert, thisValue, typeAliasParams, mkType(rhs, paramsCtx))
-            ctxBuilder.saveSignature(sig, df.getPosition)
+            val sig = TypeAliasSignature(typeName, typeParams.convert, itValue, typeAliasParams, mkType(rhs, paramsCtx))
+            programBuilder.saveSignature(sig, df.getPosition)
         }
       }
       for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
         val emptyValsCtx = LocalValuesContext(globalValuesContext)
         val sig = DatatypeSignature(id, typeParams.convert, directSupertypes.map(mkNamedType(_, emptyValsCtx)),
           datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
-        ctxBuilder.saveSignature(sig, df.getPosition)
+        programBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val ctx = ctxBuilder.build(allFunctionsCollector, formulaPositions)
-    ctx.checkDefinitions()(using er, positionsMapB.result(), SSAGeneration)
+    val program = programBuilder.build(allFunctionsCollector, positionsMapB.result(), formulaPositions)
     er.displayAndTerminateIfErrors()
-    ctx
+    program
   }
 
   private def collectFunctions(
@@ -148,11 +151,12 @@ final class SSAGenerator(er: ErrorReporter)
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
         val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
-        if (thisParamIsOmitted && isObject) {
+        if (thisParamIsOmitted){
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
           paramsInclThis(thisVal) = thisType
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
-        } else if (thisParamIsOmitted && !isObject) {
+        }
+        if (thisParamIsOmitted && !isObject) {
           reportError(s"parameters list of ${func.id} should start with the receiver parameter (syntax: 'this : Type')", func.getPosition)
         } else if (!thisParamIsOmitted && isObject) {
           warn("receiver parameter can be omitted inside objects", func.getPosition)
@@ -268,6 +272,7 @@ final class SSAGenerator(er: ErrorReporter)
               generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
                 .withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
             case None =>
+              // FIXME make sure the type gets checked for well-formedness
               valsCtx.saveNewLocal(localName, None, reassigPermission, typeAnnotOpt)
           }
         case assig@Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhs) =>
@@ -583,6 +588,7 @@ final class SSAGenerator(er: ErrorReporter)
           assigned.addOne(varId)
         case _ => ()
       }
+      case _ => ()
     }
     val assignedVars = assigned.toSet -- defined
     assignedVars

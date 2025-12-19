@@ -87,6 +87,7 @@ object Asts {
 
   sealed abstract class TopLevelDef extends Ast {
     def id: TypeIdentifier
+    def typeParams: List[TypeParam]
   }
 
   sealed trait TypeDefTree extends TopLevelDef {
@@ -119,6 +120,8 @@ object Asts {
                               directSupertypes: List[NamedTypeTree]
                             ) extends EncapsulatedTypeDefTree {
     override def description: String = s"object $id"
+
+    override def typeParams: List[TypeParam] = Nil
 
     override def children: List[Ast] = functions
   }

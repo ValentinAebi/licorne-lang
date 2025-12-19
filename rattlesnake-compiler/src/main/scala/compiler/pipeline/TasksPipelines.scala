@@ -6,7 +6,7 @@ import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
-import compiler.ssaprinter.SSAPrinter
+import compiler.ssaprinting.SSAPrinter
 import compiler.typechecking.Typer
 import identifiers.TypeIdentifier
 

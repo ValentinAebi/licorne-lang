@@ -1,26 +1,98 @@
 package compiler.typechecking
 
+import compiler.pipeline.CompilationStep
 import compiler.program.Program
+import compiler.reporting.Errors.{Err, ErrorReporter}
+import compiler.reporting.Position
+import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
 import compiler.typechecking.TypeCheckingContext.TypeInfo
 import identifiers.TypeIdentifier
-import lang.Types.Type
+import lang.*
+import lang.Types.*
+import lang.Types.PrimitiveType.BoolType
 import lang.Values.IdValue
-import lang.{DatatypeSignature, RecordSignature}
+import lang.Variance.{Contravariant, Covariant}
 
 import scala.annotation.tailrec
-import scala.util.boundary
+
+// TODO refactor: see if the methods of Typer invoked from here can be moved to a separate object (and pass less givens)
 
 final case class TypeCheckingContext(
                                       program: Program,
+                                      typeTypeParams: Map[TypeIdentifier, Variance],
+                                      functionTypeParams: Set[TypeIdentifier],
                                       typeInfos: Map[IdValue, TypeInfo],
                                       thisVal: IdValue,
                                       ownerId: TypeIdentifier,
                                       alwaysExitsFlag: Boolean,
                                       expectedReturnType: Type
-                                    ) {
+                                    )(using typer: Typer, ts: MutableTypeStore) {
+
+  private given TypeCheckingContext = this
+
+  private given Program = program
 
   def copyForClosureBody(expectedResultType: Type): TypeCheckingContext =
     copy(alwaysExitsFlag = false, expectedReturnType = expectedResultType)
+
+  def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
+    case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName)
+    case _ => None
+  }
+
+  def checkType(tpe: Type, expVarianceOpt: Option[Variance], posOpt: Option[Position])
+               (using er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
+    case Types.RefinedType(baseType, itValue, predicate) =>
+      checkType(baseType, expVarianceOpt, posOpt)
+      ts(itValue) = baseType
+      val predType = typer.computeType(predicate)
+      enforceBaseSubtypingConstraint(predType, BoolType)(using "type predicate", posOpt)
+    case primitiveType: Types.PrimitiveType => ()
+    case tpe@NamedType(typeName, typeArgs, args) =>
+      if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
+        if (typeArgs.nonEmpty || args.nonEmpty) {
+          reportError(s"type parameters cannot take parameters: $tpe", posOpt)
+        }
+        for {
+          expVariance <- expVarianceOpt
+          actVariance <- varianceOf(tpe)
+          if !actVariance.isAssignableTo(expVariance)
+        } {
+          reportError(s"variance error: $actVariance type parameter $typeName in $expVariance position", posOpt)
+        }
+      } else {
+        program.resolveSignature(typeName) match {
+          case None =>
+            reportError(s"type not found: $typeName", posOpt)
+            args.foreach(typer.computeType(_))
+          case Some(sig) =>
+            if (typeArgs.size == sig.typeParams.size) {
+              for (((typeParam, typeParamVariance), typeArg) <- sig.typeParams zip typeArgs) {
+                checkType(typeArg, expVarianceOpt.map(_ * typeParamVariance), posOpt)
+              }
+            }
+            typer.generateTypeParamsMapping(sig.typeParams.map(_._1), typeArgs, posOpt, s"tapp_${sig.id}", reportIfLengthMismatch = true).foreach { typeParamsSubst =>
+              val expParamsCnt = sig.params.size
+              if (args.size == expParamsCnt) {
+                for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
+                  val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
+                  val argType = typer.computeType(arg)
+                  enforceBaseSubtypingConstraint(argType, paramType)(using "type application", posOpt)
+                }
+              } else {
+                reportError(s"wrong number of arguments: expected $expParamsCnt, found ${args.size}", posOpt)
+              }
+            }
+        }
+      }
+    case ClosureType(params, resultType) =>
+      for (paramType <- params) {
+        checkType(paramType, expVarianceOpt.map(_ * Contravariant), posOpt)
+      }
+      checkType(resultType, expVarianceOpt.map(_ * Covariant), posOpt)
+    case _: (UnionType | BaseUnionType | TypeVariable) =>
+      assert(false)
+  }
 
   def withTypeInfoRefined(newTypeInfosSet: Set[TypeInfo]): TypeCheckingContext = {
     var alwaysExits = alwaysExitsFlag
@@ -52,6 +124,10 @@ final case class TypeCheckingContext(
 
   def inferredTypeFor(idValue: IdValue): Option[TypeIdentifier] =
     typeInfos.get(idValue).flatMap(_.mostPreciseType(using program))
+
+  private def reportError(msg: String, posOpt: Option[Position])(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+    er.push(Err(compilationStep, msg, posOpt))
+  }
 
 }
 

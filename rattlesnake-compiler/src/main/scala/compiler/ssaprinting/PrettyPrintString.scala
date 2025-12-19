@@ -1,4 +1,4 @@
-package compiler.ssaprinter
+package compiler.ssaprinting
 
 import identifiers.Identifier
 

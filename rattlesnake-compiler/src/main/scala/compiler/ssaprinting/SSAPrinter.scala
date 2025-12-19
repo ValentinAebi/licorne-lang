@@ -1,4 +1,4 @@
-package compiler.ssaprinter
+package compiler.ssaprinting
 
 import compiler.irs.SSA
 import compiler.pipeline.CompilerStep

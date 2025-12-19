@@ -15,6 +15,9 @@ final case class FunctionSignature(
                                     retType: Type,
                                     visibility: Visibility
                                   ) {
+  
+  val (thisVal: IdValue, thisType: Type) = paramsInclThis.head
+  
   override def toString: String = {
     val sb = StringBuilder()
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
@@ -59,7 +62,7 @@ sealed trait TypeSignature {
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[(TypeIdentifier, Variance)],
-                                     thisValue: IdValue,
+                                     itValue: IdValue,
                                      params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type
                                    ) extends TypeSignature
