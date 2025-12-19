@@ -13,7 +13,7 @@ import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
-import lang.Types.PrimitiveType.VoidType
+import lang.Types.PrimitiveType.{NothingType, VoidType}
 import lang.Values.*
 
 import java.util
@@ -264,6 +264,11 @@ final class SSAGenerator(er: ErrorReporter)
           }
         case localDef@Asts.LocalDef(localName, typeAnnotTreeOpt, rhsOpt, reassigPermission) =>
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
+          typeAnnotOpt.foreach {
+            case VoidType =>
+              reportError(s"a value cannot have type $VoidType", localDef.getPosition)
+            case _ => ()
+          }
           if (valsCtx.knows(localName)) {
             reportError(s"$localName is already defined in this scope", stat.getPosition)
           } else rhsOpt match {
@@ -272,7 +277,9 @@ final class SSAGenerator(er: ErrorReporter)
               generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
                 .withDesugaringSource(localDef), valsCtx, ssaInstructionsList, isRepeat)
             case None =>
-              // FIXME make sure the type gets checked for well-formedness
+              typeAnnotOpt.foreach { typeAnnot =>
+                ssaInstructionsList.saveInstr(LocalDecl(localName, typeAnnot), localDef)
+              }
               valsCtx.saveNewLocal(localName, None, reassigPermission, typeAnnotOpt)
           }
         case assig@Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhs) =>

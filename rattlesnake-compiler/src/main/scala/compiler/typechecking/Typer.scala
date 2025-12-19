@@ -199,6 +199,9 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         val tpe = computeType(formula)(using tcCtx)
         if tpe.baseType == NothingType then tcCtx.withAlwaysExitsFlagRaised else tcCtx
       case SSA.DynamicAssert(formula) => ???
+      case SSA.LocalDecl(localId, tpe) =>
+        tcCtx.checkType(tpe, None, posOpt)
+        tcCtx
       case SSA.ClosureCreation(assignedValue, params, body) =>
         for ((paramId, paramType) <- params) {
           ts(paramId) = paramType

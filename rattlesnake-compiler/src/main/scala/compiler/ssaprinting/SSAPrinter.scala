@@ -106,6 +106,8 @@ final class SSAPrinter[T](
         pps.add("evaluate ").add(formula.str)
       case SSA.DynamicAssert(formula) =>
         pps.add(s"dynamic-assert ${formula.str}")
+      case SSA.LocalDecl(localId, tpe) =>
+        pps.add(s"decl-local $localId : $tpe")
       case SSA.ClosureCreation(assignedValue, params, body) =>
         pps.add(s"new-closure $assignedValue (")
         val paramsIter = params.iterator

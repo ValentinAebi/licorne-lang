@@ -53,5 +53,7 @@ object SSA {
   final case class Panic(msg: Value) extends Instr
   final case class Evaluate(formula: Formula) extends Instr
   final case class DynamicAssert(formula: Formula) extends Instr
+  
+  final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
 
 }
