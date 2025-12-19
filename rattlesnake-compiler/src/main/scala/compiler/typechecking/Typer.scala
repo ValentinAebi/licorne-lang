@@ -168,7 +168,8 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         enforceBaseSubtypingConstraint(computeType(value)(using tcCtx), tpe)(using "type ascription")
         tcCtx
       case SSA.StaticAssert(formula) =>
-        computeType(formula)(using tcCtx)
+        val formulaType = computeType(formula)(using tcCtx)
+        enforceBaseSubtypingConstraint(formulaType, BoolType)(using "assertion")
         tcCtx
       case SSA.FieldWrite(owner, fieldName, rhs) =>
         val ownerType = computeType(owner)(using tcCtx)

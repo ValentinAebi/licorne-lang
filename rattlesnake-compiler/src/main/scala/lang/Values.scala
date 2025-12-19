@@ -14,7 +14,15 @@ object Values {
 
   sealed trait Value extends Formula
 
-  final case class IdValue(varId: String, idx: Long) extends Value, Capturable
+  trait IdValue extends Value, Capturable {
+    def completeDescr: String
+    def sourceLevelDescrIfAvail: String
+  }
+
+  final case class RegularIdValue(varId: String, idx: Long) extends IdValue {
+    override def completeDescr: String = s"$varId$$$idx"
+    override def sourceLevelDescrIfAvail: String = varId
+  }
 
   sealed trait Constant extends Value {
     def value: Any
@@ -111,7 +119,7 @@ object Values {
 
   def formulaToString(formula: Formula)(using typeFunc: (IdValue => Option[Type])): String = formula match {
     case idValue: IdValue =>
-      val strWithoutType = s"${idValue.varId}$$${idValue.idx}"
+      val strWithoutType = idValue.completeDescr
       typeFunc(idValue) match {
         case Some(tpe) => s"($strWithoutType : $tpe)"
         case None => strWithoutType

@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import identifiers.{Identifier, NormalFunOrVarId}
-import lang.Values.IdValue
+import lang.Values.{IdValue, RegularIdValue}
 
 import scala.collection.mutable
 
@@ -15,6 +15,6 @@ final class ValuesGenerator(globalValuesContext: GlobalValuesContext) {
   def newValue(id: Identifier): IdValue = {
     val uidIdx = uidGen.getOrElse(id, 0)
     uidGen(id) = uidIdx + 1
-    IdValue(id.toString, uidIdx)
+    RegularIdValue(id.toString, uidIdx)
   }
 }

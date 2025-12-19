@@ -31,11 +31,16 @@ object Operators {
     extends OperatorSignature {
     override def toString: String = s"$leftOperandType $op $rightOperandType -> $retType"
   }
-  
-  private val nzi$it = IdValue("nzi$it", 0)
+
+  private val nzi$it = new IdValue {
+    override def completeDescr: String = "nzi$it"
+
+    override def sourceLevelDescrIfAvail: String = completeDescr
+  }
+
   // TODO NonZeroDouble for / and % on Doubles
   private val nonZeroInt = RefinedType(IntType, nzi$it, Not(Equal(nzi$it, IntConstant(0))))
-  
+
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),
     UnaryOpSignature(Minus, DoubleType, DoubleType),

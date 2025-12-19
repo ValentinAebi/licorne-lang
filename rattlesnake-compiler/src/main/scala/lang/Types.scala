@@ -10,7 +10,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 object Types {
 
-  private val itForHashAndEquals = IdValue("it$hash", 1)
+  private val itForHashAndEquals = new IdValue {
+    override def completeDescr: String = "it$hash"
+
+    override def sourceLevelDescrIfAvail: String = "it"
+  }
 
   sealed trait Type {
     def baseType: BaseType
