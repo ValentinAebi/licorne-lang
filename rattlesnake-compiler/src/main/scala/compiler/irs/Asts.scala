@@ -304,12 +304,8 @@ object Asts {
   /**
    * Function call: `callee(args)`
    */
-  final case class Call(receiverOpt: Option[Expr], funId: FunOrVarId, typeArgs: List[TypeTree], args: List[Expr]) extends FormulaExpr {
-    override def children: List[Ast] = receiverOpt.toList ++ typeArgs ++ args
-  }
-  
-  final case class ClosureCall(closureExpr: Expr, args: List[Expr]) extends NonFormulaExpr {
-    override def children: List[Ast] = closureExpr :: args
+  final case class Call(callee: Expr, typeArgs: List[TypeTree], args: List[Expr]) extends FormulaExpr {
+    override def children: List[Ast] = callee :: typeArgs ++ args
   }
 
   final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {

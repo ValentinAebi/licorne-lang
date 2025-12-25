@@ -24,7 +24,6 @@ enum Operator(val str: String) {
   case ExclamationMark extends Operator("!")
 
   case Dot extends Operator(".")
-  case At extends Operator("@")
 
   case OpeningParenthesis extends Operator("(")
   case ClosingParenthesis extends Operator(")")

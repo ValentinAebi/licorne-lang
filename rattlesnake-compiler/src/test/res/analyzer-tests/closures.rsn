@@ -5,21 +5,21 @@ object Test {
 
    fn test(animal: Animal) {
       ifDog[Void](animal, fn (dog) -> { dog.woof() });
-      ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));               // OK, drop return value of eat
+      ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));  // OK, drop return value of eat
       ifDog[Bool](animal, fn (dog) -> dog.isHungry());
-      ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });                   //> E : missing return in non-Void closure
-      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());                        //> E : return value: expected Int, found Void
+      ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });      //> E : missing return in non-Void closure
+      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected Int, found Void
    }
 
    private fn ifDog[T](animal: Animal, action: fn (Dog) -> T) {
       if animal is Dog {
-         action@(animal)
+         action(animal)
       }
    }
 
    private fn ifDogOrElse[T](animal: Animal, default: T, f: fn (Dog) -> T) -> T {
       return when animal is Dog
-        then f@(animal)
+        then f(animal)
         else default
    }
 

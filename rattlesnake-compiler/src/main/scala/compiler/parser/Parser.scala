@@ -333,29 +333,24 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val objectRef = highName map (ObjectRef(_))
 
-  private lazy val varRefOrNonPrefixedCall = lowName ::: opt(typeArgsListOpt ::: parenthArgsList) map {
-    case name ^: Some(typeArgsOpt ^: args) => Call(None, name, typeArgsOpt.getOrElse(List.empty), args)
-    case name ^: None => VariableRef(name)
-  } setName "varRefOrNonPrefixedCall"
+  private lazy val varRef = lowName map (name => VariableRef(name)) setName "varRef"
 
-  private lazy val atomicExpr = recursive {
-    varRefOrNonPrefixedCall OR thisRef OR itRef OR objectRef OR literalValue OR parenthesizedExpr
+  private lazy val atomicExpr: P[Expr] = recursive {
+    varRef OR thisRef OR itRef OR objectRef OR literalValue OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat((dot ::: lowName ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(op(At).ignored ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
-      case atExpr ^: repeated ^: closureArgsOpt ^: typeAnnotOpt =>
-        val chain = repeated.foldLeft(atExpr) {
-          case (acc, name ^: Some(typeArgsOpt ^: args)) => Call(Some(acc), name, typeArgsOpt.getOrElse(List.empty), args)
-          case (acc, name ^: None) => Select(acc, name)
-        }
-        val maybeClosureInvocation = closureArgsOpt match {
-          case Some(closureArgs) => ClosureCall(chain, closureArgs)
-          case None => chain
+    atomicExpr ::: repeat(dot ::: lowName) ::: opt(typeArgsListOpt ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
+      case atExpr ^: selects ^: argsListOpt ^: typeAnnotOpt =>
+        val afterSelectsFolding = selects.foldLeft(atExpr)(Select(_, _))
+        val afterArgsAddition = argsListOpt match {
+          case Some(typeArgsOpt ^: args) =>
+            Call(afterSelectsFolding, typeArgsOpt.getOrElse(List.empty), args)
+          case None => afterSelectsFolding
         }
         typeAnnotOpt match {
-          case Some(tpe) => TypeAscription(maybeClosureInvocation, tpe)
-          case None => maybeClosureInvocation
+          case Some(tpe) => TypeAscription(afterArgsAddition, tpe)
+          case None => afterArgsAddition
         }
     }
   } setName "selectOrIndexingChain"
@@ -378,10 +373,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case tid ^: tArgs ^: initializers => RecordOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
     }
   } setName "recordOrModuleInstantiation"
-
-  private lazy val closureInvocation = selectOrIndexingChain ::: op(At).ignored ::: parenthArgsList map {
-    case closure ^: args => ClosureCall(closure, args)
-  } setName "closureInvocation"
 
   private lazy val fieldInitializer = recursive {
     lowName ::: opt(assig ::: expr) map {

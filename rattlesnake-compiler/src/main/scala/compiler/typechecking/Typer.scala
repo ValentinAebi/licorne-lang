@@ -210,19 +210,6 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
         ts(assignedValue) = ClosureType(params.map(_._2), resultTypeVar)
         closuresCollector.enqueue(ClosureInfo(body, tcCtx.copyForClosureBody(resultTypeVar), resultTypeVar, posOpt))
         tcCtx
-      case SSA.ClosureInvocation(assignedValue, closure, args) =>
-        val closureType = computeType(closure)(using tcCtx)
-        val argTypes = args.map(computeType(_)(using tcCtx))
-        closureType match {
-          case ClosureType(paramTypes, resultType) =>
-            for ((paramType, argType) <- paramTypes.zip(argTypes)) {
-              enforceBaseSubtypingConstraint(argType, paramType)(using "closure argument")
-            }
-            ts(assignedValue) = resultType
-          case _ =>
-            reportError("illegal invocation: not a closure", posOpt)
-        }
-        tcCtx
     }
     endCtxRaw.withAlwaysExitsFlagRecomputed
   }
@@ -377,6 +364,18 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
             }
           case None =>
             reportMethodNotFoundInType(receiverType.baseType, funId, posOpt)
+        }
+      case ClosureInvocation(closure, args) =>
+        val closureType = computeType(closure)(using tcCtx)
+        val argTypes = args.map(computeType(_)(using tcCtx))
+        closureType match {
+          case ClosureType(paramTypes, resultType) =>
+            for ((paramType, argType) <- paramTypes.zip(argTypes)) {
+              enforceBaseSubtypingConstraint(argType, paramType)(using "closure argument", posOpt)
+            }
+            resultType
+          case _ =>
+            reportError("illegal invocation: not a closure", posOpt)
         }
       case Select(owner, fieldName) =>
         val ownerType = computeType(owner)

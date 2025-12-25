@@ -121,8 +121,6 @@ final class SSAPrinter[T](
         pps.add(") -> ").startBlock()
         addAllInstr(body, printIfEmpty = true)
         pps.endBlock()
-      case SSA.ClosureInvocation(assignedValue, closure, args) =>
-        pps.add(s"$assignedValue := invoke-closure $closure@" + args.mkString("(", ", ", ")"))
     }
   }
 

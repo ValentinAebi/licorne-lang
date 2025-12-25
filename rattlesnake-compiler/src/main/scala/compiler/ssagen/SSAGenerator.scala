@@ -151,7 +151,7 @@ final class SSAGenerator(er: ErrorReporter)
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
         val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
-        if (thisParamIsOmitted){
+        if (thisParamIsOmitted) {
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
           paramsInclThis(thisVal) = thisType
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
@@ -437,16 +437,21 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
       case Asts.ItRef() => generateSSAExpr(Asts.VariableRef(ItId))
       case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
-      case call@Asts.Call(receiverOpt, funId, typeArgs, args) =>
-        val receiver = receiverOpt.map(generateSSAExpr).getOrElse {
-          valsCtx.getThisValue match {
-            case Some(recv) => recv
-            case None =>
-              reportError(s"no receiver found for call to $funId", call.getPosition)
-              valsCtx.valuesGen.newValue(ThisId)
-          }
+      case call@Asts.Call(Asts.Select(receiver, funId), typeArgs, args) =>
+        Call(generateSSAExpr(receiver), funId, typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
+      case call@Asts.Call(callee@Asts.VariableRef(funId), typeArgs, args) if !valsCtx.knows(funId) =>
+        val receiver = valsCtx.getThisValue match {
+          case Some(recv) => recv
+          case None =>
+            reportError(s"no receiver found for call to $funId", call.getPosition)
+            valsCtx.valuesGen.newValue(ThisId)
         }
         Call(receiver, funId, typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
+      case call@Asts.Call(callee, typeArgs, args) =>
+        if (typeArgs.nonEmpty) {
+          reportError("type arguments on closure invocation", call.getPosition)
+        }
+        ClosureInvocation(generateSSAExpr(callee), args.map(generateSSAExpr))
       case Asts.UnaryOp(Operator.Minus, operand) => Neg(generateSSAExpr(operand))
       case Asts.UnaryOp(Operator.ExclamationMark, operand) => Not(generateSSAExpr(operand))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
@@ -544,16 +549,10 @@ final class SSAGenerator(er: ErrorReporter)
       generateSSA(body, bodyCtx, bodyStats)
       ssaInstructionsList.saveInstr(ClosureCreation(closureValue, paramValsAndTypesB.result(), bodyStats.toList), closureDef)
       closureValue
-    case closureCall@Asts.ClosureCall(closureExpr, args) =>
-      val closureFormula = generateSSAExpr(closureExpr, Some(ssaInstructionsList), valsCtx)
-      val argFormulas = args.map(generateSSAExpr(_, Some(ssaInstructionsList), valsCtx))
-      val resultVal = valsCtx.valuesGen.newValue()
-      ssaInstructionsList.saveInstr(ClosureInvocation(resultVal, closureFormula, argFormulas), closureCall)
-      resultVal
   }
 
   private def mustNotBeVoid(tpe: Type, posOpt: Option[Position]): Unit = {
-    if (tpe.baseType == VoidType){
+    if (tpe.baseType == VoidType) {
       reportError(s"$VoidType is not allowed in this position", posOpt)
     }
   }

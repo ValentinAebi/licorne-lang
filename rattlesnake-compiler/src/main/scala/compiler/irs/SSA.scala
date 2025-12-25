@@ -45,7 +45,6 @@ object SSA {
   final case class Assignment(assignedValue: IdValue, rhs: Formula) extends AssigningInstr
   final case class Instantiate(assignedValue: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type], initialization: List[Instr]) extends AssigningInstr
   final case class ClosureCreation(assignedValue: IdValue, params: List[(IdValue, Type)], body: List[Instr]) extends AssigningInstr
-  final case class ClosureInvocation(assignedValue: IdValue, closure: Formula, args: List[Formula]) extends AssigningInstr
   final case class Cast(assignedValue: IdValue, inValue: IdValue, target: TypeIdentifier) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, rhs: Formula) extends Instr

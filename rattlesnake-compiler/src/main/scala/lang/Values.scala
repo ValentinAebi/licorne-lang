@@ -82,6 +82,8 @@ object Values {
 
   final case class Call(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula]) extends Formula, Capturable
 
+  final case class ClosureInvocation(closure: Formula, args: List[Formula]) extends Formula, Capturable
+
   final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
 
   final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula
@@ -113,6 +115,8 @@ object Values {
     case Call(receiver, funId, typeArgs, args) =>
       Call(receiver.substitute(typesSubst, valsSubst), funId,
         typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
+    case ClosureInvocation(closure, args) =>
+      ClosureInvocation(closure.substitute(typesSubst, valsSubst), args.map(_.substitute(typesSubst, valsSubst)))
     case Select(owner, fieldName) => Select(owner.substitute(typesSubst, valsSubst), fieldName)
     case HasType(formula, tpe) => HasType(formula.substitute(typesSubst, valsSubst), tpe)
   }
@@ -135,6 +139,8 @@ object Values {
     case Call(receiver, funId, typeArgs, args) =>
       val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       s"${formulaToString(receiver)}.$funId(${args.map(formulaToString).mkString(", ")})"
+    case ClosureInvocation(closure, args) =>
+      s"$closure" + args.mkString("(", ", ", ")")
     case Select(owner, fieldName) =>
       s"${formulaToString(owner)}.$fieldName"
     case HasType(formula, tpe) =>
