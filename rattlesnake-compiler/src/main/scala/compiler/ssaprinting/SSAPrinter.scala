@@ -92,6 +92,8 @@ final class SSAPrinter[T](
         }
       case SSA.Cast(assignedValue, inValue, targetType) =>
         pps.add(s"cast-dynamic ${assignedValue.str} := ${inValue.str} as $targetType")
+      case SSA.Conversion(assignedValue, inValue, targetType) =>
+        pps.add(s"convert ${assignedValue.str} := ${inValue.str} as $targetType")
       case SSA.StaticAssert(formula) =>
         pps.add(s"assert-static ${formula.str}")
       case SSA.StaticTypeAssert(value, tpe) =>

@@ -83,7 +83,7 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
                       (using ts: MutableTypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): TypeCheckingContext = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
-    val endCtxRaw = instr match {
+    val endCtxRaw: TypeCheckingContext = instr match {
       case SSA.Loop(cond, body, variables) =>
         for (LoopVarInfo(varId, beforeLoopVal, bodyStartVal, bodyEndVal, afterLoopVal) <- variables) {
           ts(bodyStartVal) = computeType(beforeLoopVal)(using tcCtx)
@@ -153,16 +153,24 @@ final class Typer(private val er: ErrorReporter, private val continueIfErrors: B
             }
         }
         tcCtx
-      case SSA.Cast(resultValue, castValue, targetType) =>
-        val castValueType = computeType(castValue)(using tcCtx)
+      case SSA.Cast(assignedValue, inValue, targetType) =>
+        val inValueType = computeType(inValue)(using tcCtx)
         import DowncastTargetCheckResult.*
-        checkDowncastTarget(castValueType, targetType) match {
+        checkDowncastTarget(inValueType, targetType) match {
           case CanDowncast(tpe) =>
-            ts(resultValue) = tpe
+            ts(assignedValue) = tpe
           case CannotDowncast(reason) =>
             reportError(s"illegal cast: $reason", instr.getAstNodeOpt.flatMap(_.getPosition))
         }
-        tcCtx.withTypeInfoRefined(Set(TypeInfo(castValue, targetType, Set(targetType), Set.empty)))
+        tcCtx.withTypeInfoRefined(Set(TypeInfo(inValue, targetType, Set(targetType), Set.empty)))
+      case SSA.Conversion(assignedValue, inValue, targetType) =>
+        val inValueType = computeType(inValue)(using tcCtx)
+        inValueType match {
+          case inValueType: BaseType if inValueType != targetType && TypeConversion.conversionFor(inValueType, targetType).isEmpty =>
+            reportError(s"impossible conversion: $inValueType to $targetType", posOpt)
+          case _ => ()
+        }
+        tcCtx
       case SSA.StaticTypeAssert(value, tpe) =>
         tcCtx.checkType(tpe, None, posOpt)
         enforceBaseSubtypingConstraint(computeType(value)(using tcCtx), tpe)(using "type ascription")

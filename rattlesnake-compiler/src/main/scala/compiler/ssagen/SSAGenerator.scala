@@ -526,6 +526,11 @@ final class SSAGenerator(er: ErrorReporter)
       val resultVal = valsCtx.valuesGen.newValue()
       ssaInstructionsList.saveInstr(Cast(resultVal, castValue, typeName), cast)
       resultVal
+    case conversion@Asts.Cast(castExpr, targetTypeTree: Asts.PrimitiveTypeTree) =>
+      val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
+      val resultVal = valsCtx.valuesGen.newValue()
+      ssaInstructionsList.saveInstr(Conversion(resultVal, castValue, targetTypeTree.primitiveType), conversion)
+      resultVal
     case cast@Asts.Cast(castExpr, tpe) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       reportError(s"illegal type for dynamic type test: $tpe", cast.getPosition)

@@ -4,7 +4,7 @@ import compiler.irs.Asts.Ast
 import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.FunctionSignature
-import lang.Types.Type
+import lang.Types.{PrimitiveType, Type}
 import lang.Values.*
 
 object SSA {
@@ -46,6 +46,7 @@ object SSA {
   final case class Instantiate(assignedValue: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type], initialization: List[Instr]) extends AssigningInstr
   final case class ClosureCreation(assignedValue: IdValue, params: List[(IdValue, Type)], body: List[Instr]) extends AssigningInstr
   final case class Cast(assignedValue: IdValue, inValue: IdValue, target: TypeIdentifier) extends AssigningInstr
+  final case class Conversion(assignedValue: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, rhs: Formula) extends Instr
   final case class Return(retValOpt: Option[Value]) extends Instr
