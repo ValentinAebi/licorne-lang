@@ -1,14 +1,18 @@
 
 object Test {
 
-   // TODO test with closure returning Nothing
-
    fn test(animal: Animal) {
+
       ifDog[Void](animal, fn (dog) -> { dog.woof() });
       ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));  // OK, drop return value of eat
       ifDog[Bool](animal, fn (dog) -> dog.isHungry());
       ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });      //> E : missing return in non-Void closure
       ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected Int, found Void
+
+      ifDogOrElse(animal, 0, fn (dog) -> { panic "test..." });  // OK
+      ifDogOrElse(animal, crash(), fn (dog) -> dog.woof());     //> E : return value: expected Nothing, found Void
+      ifDogOrElse(animal, crash(), fn (dog) -> { panic "test..." });  // OK
+
    }
 
    private fn ifDog[T](animal: Animal, action: fn (Dog) -> T) {
@@ -21,6 +25,10 @@ object Test {
       return when animal is Dog
         then f(animal)
         else default
+   }
+
+   private fn crash() -> Nothing {
+      panic "error..."
    }
 
 }
