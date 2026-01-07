@@ -134,9 +134,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funDef = {
     opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
-      ::: opt(-> ::: typeTree) ::: opt(block) map {
-      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOpt =>
-        FunDef(funName, typeParams, params, optRetType, bodyOpt,
+      ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
+      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
+        val bodyOptDesugared = bodyOptRaw.map {
+          case expr: Expr => Block(List(
+            ReturnStat(Some(expr)).withDesugaringSource(expr)
+          )).withDesugaringSource(expr)
+          case block: Block => block
+        }
+        FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           isMain = optModif.contains(Main)
         )
@@ -256,7 +262,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "refinableTypeTree"
 
-  private lazy val block = recursive {
+  private lazy val block: P[Block] = recursive {
     openBrace ::: repeatWithEnd(stat, semicolon) ::: closeBrace map {
       stats => Block(stats)
     }

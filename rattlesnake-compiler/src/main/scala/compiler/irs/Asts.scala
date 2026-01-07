@@ -22,7 +22,7 @@ object Asts {
     }
 
     def originalAst: Ast = desugaringSource.getOpt match {
-      case Some(source) => source
+      case Some(source) => source.originalAst
       case None => this
     }
 

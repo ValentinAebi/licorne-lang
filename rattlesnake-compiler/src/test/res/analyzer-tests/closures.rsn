@@ -21,11 +21,10 @@ object Test {
       }
    }
 
-   private fn ifDogOrElse[T](animal: Animal, default: T, f: fn (Dog) -> T) -> T {
-      return when animal is Dog
+   private fn ifDogOrElse[T](animal: Animal, default: T, f: fn (Dog) -> T) -> T =
+      when animal is Dog
         then f(animal)
         else default
-   }
 
    private fn crash() -> Nothing {
       panic "error..."
