@@ -68,13 +68,12 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val comma = op(Comma).ignored
   private val dot = op(Dot).ignored
   private val colon = op(Colon).ignored
+  private val semicolon = op(Semicolon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = (op(Minus) ::: op(GreaterThan)).ignored
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
-
-  private val semicolon = op(Semicolon).ignored
 
   // ---------- Syntax description -----------------------------------------------------------------------
 
@@ -134,15 +133,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funDef = {
     opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
-      ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
-      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
+      ::: opt(-> ::: typeTree ::: retMarkOpt) ::: opt(block OR assig ::: expr) map {
+      case optModif ^: funName ^: typeParams ^: params ^: optRetTypeAndMarking ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(
             ReturnStat(Some(expr)).withDesugaringSource(expr)
           )).withDesugaringSource(expr)
           case block: Block => block
         }
-        FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
+        val typeOpt = optRetTypeAndMarking.map { case t ^: m  => t }
+        val marking = optRetTypeAndMarking.map { case t ^: m => m }.getOrElse(ReturnMarking.NotMarked)
+        FunDef(funName, typeParams, params, typeOpt, marking, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           isMain = optModif.contains(Main)
         )
@@ -158,23 +159,33 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funParamTree = funOrClassParam OR thisParam
 
   private lazy val funOrClassParam: P[FunctionParam & ClassParam] = recursive {
-    opt(kw(Var)) ::: lowName ::: colon ::: typeTree map {
-      case Some(_) ^: name ^: tpe => VarParam(name, tpe)
-      case None ^: name ^: tpe => SimpleParam(name, tpe)
+    opt(kw(Var)) ::: paramMarkOpt ::: lowName ::: colon ::: typeTree map {
+      case Some(_) ^: marking ^: name ^: tpe => VarParam(name, tpe, marking)
+      case None ^: marking ^: name ^: tpe => SimpleParam(name, tpe, marking)
     }
   } setName "funOrClassParam"
 
   private lazy val thisParam: P[ThisParam] = {
-    kw(This).ignored ::: opt(colon ::: typeTree) map {
-      case tpeOpt => ThisParam(tpeOpt)
+    paramMarkOpt ::: kw(This).ignored ::: opt(colon ::: typeTree) map {
+      case marking ^: tpeOpt => ThisParam(tpeOpt, marking)
     }
   } setName "thisParam"
 
   private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
-    lowName ::: colon ::: typeTree map {
-      case name ^: tpe => SimpleParam(name, tpe)
+    paramMarkOpt ::: lowName ::: colon ::: typeTree map {
+      case marking ^: name ^: tpe => SimpleParam(name, tpe, marking)
     }
   } setName "recordOrTypeAliasParam"
+
+  private lazy val paramMarkOpt = opt(op(Sharp)) map {
+    case None => ParamMarking.Marked
+    case Some(_) => ParamMarking.NotMarked
+  } setName "paramMarkOpt"
+  
+  private lazy val retMarkOpt = opt(op(Apostrophe)) map {
+    case None => ReturnMarking.NotMarked
+    case Some(_) => ReturnMarking.Marked
+  } setName "retMarkOpt"
 
   private lazy val methodsListOpt = {
     opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {
@@ -189,10 +200,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case Some(allSupertypes) =>
         allSupertypes.flatMap {
           case primitiveTypeTree: PrimitiveTypeTree =>
-            errorReporter.push(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
+            errorReporter.report(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
             None
           case namedTypeTree@NamedTypeTree(name, typeArgs, args) if args.nonEmpty =>
-            errorReporter.push(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
+            errorReporter.report(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
             None
           case namedTypeTree: NamedTypeTree => Some(namedTypeTree)
         }
@@ -214,7 +225,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val closureType = kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
     case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
   } setName "closureType"
-  
+
   private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: (op(ClosingBracket) OR op(ClosingParenthesis)) map {
     case lowOpt ^: highOpt ^: closingSymbol =>
       val lowCondOpt = lowOpt map { low => BinaryOp(low, LessOrEq, ItRef()) }
@@ -256,7 +267,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
         if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
-          errorReporter.push(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
+          errorReporter.report(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
         }
         primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
     }

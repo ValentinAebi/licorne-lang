@@ -42,6 +42,9 @@ enum Operator(val str: String) {
   case DivEq extends Operator("/=")
   case ModuloEq extends Operator("%=")
   
+  case Apostrophe extends Operator("'")
+  case Sharp extends Operator("#")
+  
   def isNamedOperator: Boolean = str.forall(_.isLetter)
 
   override def toString: String = str

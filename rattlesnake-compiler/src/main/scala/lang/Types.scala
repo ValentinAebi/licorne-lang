@@ -13,7 +13,7 @@ object Types {
   private val itForHashAndEquals = new IdValue {
     override def completeDescr: String = "it$hash"
 
-    override def sourceLevelDescrIfAvail: String = "it"
+    override def sourceLevelDescrOrDefault: String = "it"
   }
 
   sealed trait Type {

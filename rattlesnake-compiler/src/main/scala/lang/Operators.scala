@@ -35,7 +35,7 @@ object Operators {
   private val nzi$it = new IdValue {
     override def completeDescr: String = "nzi$it"
 
-    override def sourceLevelDescrIfAvail: String = completeDescr
+    override def sourceLevelDescrOrDefault: String = completeDescr
   }
 
   // TODO NonZeroDouble for / and % on Doubles

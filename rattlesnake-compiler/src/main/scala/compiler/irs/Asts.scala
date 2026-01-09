@@ -3,6 +3,7 @@ package compiler.irs
 import compiler.reporting.Position
 import identifiers.*
 import lang.*
+import lang.ParamMarking.Marked
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 
@@ -159,7 +160,7 @@ object Asts {
     override def children: List[Ast] = typeParams ++ fields
   }
 
-  final case class FunDef(id: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
+  final case class FunDef(id: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], marking: ReturnMarking, bodyOpt: Option[Block],
                           visibility: Visibility, isMain: Boolean) extends Ast {
     override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
   }
@@ -167,20 +168,25 @@ object Asts {
   final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParam], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
     override def children: List[Ast] = params :+ rhs
   }
+  
+  sealed trait Param extends Ast
 
-  sealed trait ClassParam extends Ast
+  sealed trait ClassParam extends Param
 
-  sealed trait FunctionParam extends Ast {
+  sealed trait FunctionParam extends Param {
     val paramId: FunOrVarId
     val paramTypeTreeOpt: Option[TypeTree]
+    val marking: ParamMarking
+    
+    def isMarked: Boolean = (marking == Marked)
   }
 
-  sealed trait RecordParam extends Ast {
+  sealed trait RecordParam extends Param {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
 
-  sealed trait TypeAliasParam extends Ast {
+  sealed trait TypeAliasParam extends Param {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
@@ -190,15 +196,15 @@ object Asts {
     override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
   }
 
-  final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, NonThisFunctionParam {
+  final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree, marking: ParamMarking) extends ClassParam, NonThisFunctionParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, RecordParam, NonThisFunctionParam, TypeAliasParam {
+  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree, marking: ParamMarking) extends ClassParam, RecordParam, NonThisFunctionParam, TypeAliasParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class ThisParam(paramTypeTreeOpt: Option[TypeTree]) extends FunctionParam {
+  final case class ThisParam(paramTypeTreeOpt: Option[TypeTree], marking: ParamMarking) extends FunctionParam {
     override val paramId: FunOrVarId = ThisId
 
     override def children: List[Ast] = paramTypeTreeOpt.toList

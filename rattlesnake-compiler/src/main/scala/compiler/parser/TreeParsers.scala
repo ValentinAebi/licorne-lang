@@ -562,7 +562,7 @@ object TreeParsers {
   private def reportMismatch(errorReporter: ErrorReporter, expectedDescr: String,
                              found: String, pos: Position): Unit = {
     val msg = s"expected $expectedDescr, found $found"
-    errorReporter.push(Err(CompilationStep.Parsing, msg, Some(pos)))
+    errorReporter.report(Err(CompilationStep.Parsing, msg, Some(pos)))
   }
 
   private def reportNonLL1Error(ll1Iterator: LL1Iterator,

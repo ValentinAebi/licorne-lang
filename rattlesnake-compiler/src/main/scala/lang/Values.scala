@@ -16,12 +16,12 @@ object Values {
 
   trait IdValue extends Value, Capturable {
     def completeDescr: String
-    def sourceLevelDescrIfAvail: String
+    def sourceLevelDescrOrDefault: String
   }
 
   final case class RegularIdValue(varId: String, idx: Long) extends IdValue {
     override def completeDescr: String = s"$varId$$$idx"
-    override def sourceLevelDescrIfAvail: String = varId
+    override def sourceLevelDescrOrDefault: String = varId
   }
 
   sealed trait Constant extends Value {

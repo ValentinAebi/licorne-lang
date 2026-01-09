@@ -11,24 +11,30 @@ final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
                                     functionName: FunOrVarId,
                                     typeParams: List[TypeIdentifier],
-                                    paramsInclThis: mutable.LinkedHashMap[IdValue, Type],
+                                    paramsInclThis: SeqMap[IdValue, (Type, ParamMarking)],
                                     retType: Type,
+                                    retMarking: ReturnMarking,
                                     visibility: Visibility
                                   ) {
+
+  val (receiverVal: IdValue, (receiverType: Type, receiverMarking: ParamMarking)) = paramsInclThis.head
   
-  val (thisVal: IdValue, thisType: Type) = paramsInclThis.head
-  
+  def retIsMarked: Boolean = (retMarking == ReturnMarking.Marked)
+
   override def toString: String = {
     val sb = StringBuilder()
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
     printListIfNonEmpty(typeParams, "[", "]", sb)
-    printListIfNonEmpty(paramsInclThis, "(", ")", sb, (param, tpe) => s"$param: $tpe")
-    sb.append(" -> ").append(retType)
+    printListIfNonEmpty(paramsInclThis, "(", ")", sb) { case (param, (tpe, marking)) => s"${marking.str}$param: $tpe" }
+    sb.append(" -> ").append(retType).append(retMarking.str)
     sb.toString()
   }
 }
 
-private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: String, sb: StringBuilder, paramsToStr: T => String = (t: T) => t.toString): Unit = {
+private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: String, sb: StringBuilder): Unit =
+  printListIfNonEmpty(ls, opening, closing, sb)((t: T) => t.toString)
+
+private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: String, sb: StringBuilder)(paramsToStr: T => String): Unit = {
   if (ls.nonEmpty) {
     sb.append(opening)
     val iter = ls.iterator
@@ -42,12 +48,32 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
   }
 }
 
+enum ParamMarking {
+  case Marked
+  case NotMarked
+
+  override def str: String = this match {
+    case Marked => "#"
+    case NotMarked => ""
+  }
+}
+
+enum ReturnMarking {
+  case Marked
+  case NotMarked
+
+  override def str: String = this match {
+    case Marked => "'"
+    case NotMarked => ""
+  }
+}
+
 sealed trait TypeSignature {
   def id: TypeIdentifier
 
   def typeParams: List[(TypeIdentifier, Variance)]
 
-  def params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)]
+  def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
   def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
     NamedType(id,
@@ -63,12 +89,12 @@ final case class TypeAliasSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[(TypeIdentifier, Variance)],
                                      itValue: IdValue,
-                                     params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)],
+                                     params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type
                                    ) extends TypeSignature
 
 sealed trait RuntimeTypeSignature extends TypeSignature {
-  override def params: mutable.LinkedHashMap[FunOrVarId, (Type, IdValue)] = mutable.LinkedHashMap.empty
+  override def params: SeqMap[FunOrVarId, (Type, IdValue)] = mutable.LinkedHashMap.empty
 
   def directSupertypes: List[NamedType]
 }

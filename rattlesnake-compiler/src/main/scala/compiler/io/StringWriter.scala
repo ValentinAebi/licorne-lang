@@ -23,7 +23,7 @@ final class StringWriter(directoryPath: Path, filename: String, errorReporter: E
     val status = Using(new FileWriter(path.toFile))(_.write(input))
     status match
       case Failure(exception) =>
-        errorReporter.push(Err(CompilationStep.StringWriting, exception.getMessage, None))
+        errorReporter.report(Err(CompilationStep.StringWriting, exception.getMessage, None))
       case Success(_) => ()
   }
 

@@ -1,5 +1,6 @@
 package compiler.ssagen
 
+import compiler.irs.Asts.{FunctionParam, Param}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -7,11 +8,13 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
+import compiler.typechecking.Taint
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
+import lang.ParamMarking.Marked
 import lang.Types.*
 import lang.Types.PrimitiveType.{NothingType, VoidType}
 import lang.Values.*
@@ -66,11 +69,13 @@ final class SSAGenerator(er: ErrorReporter)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
             val importedObjects = mutable.LinkedHashSet.empty[IdValue]
             params.foreach {
-              case param@Asts.VarParam(paramId, paramTypeTree) =>
+              case param@Asts.VarParam(paramId, paramTypeTree, marking) =>
+                reportErrorIfMarked(param)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(paramType, param.getPosition)
                 fields(paramId) = ReassignableField(paramId, paramType)
-              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
+              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
+                reportErrorIfMarked(param)
                 val fieldValue = valuesGen.newValue(id)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(paramType, param.getPosition)
@@ -92,7 +97,8 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             fields.foreach {
-              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
+              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
+                reportErrorIfMarked(param)
                 val fieldValue = valuesGen.newValue(paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(fieldType, param.getPosition)
@@ -110,7 +116,8 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ItId, itValue, ReassigPermission.Val, None)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
             params.foreach {
-              case Asts.SimpleParam(paramId, paramTypeTree) =>
+              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
+                reportErrorIfMarked(param)
                 val paramValue = valuesGen.newValue(paramId)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 typeAliasParams(paramId) = (paramType, paramValue)
@@ -143,7 +150,7 @@ final class SSAGenerator(er: ErrorReporter)
       if (functions.contains(func.id)) {
         reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
       } else {
-        val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
+        val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, (Type, ParamMarking)]
         val thisVal = functionsProvider match {
           case Asts.ObjectDef(id, importedObjects, functions, directSupertypes) => globalValsCtx.resolveObject(id)
           case _ => globalValsCtx.valuesGen.newValue(ThisId)
@@ -153,7 +160,7 @@ final class SSAGenerator(er: ErrorReporter)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
         if (thisParamIsOmitted) {
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
-          paramsInclThis(thisVal) = thisType
+          paramsInclThis(thisVal) = (thisType, ParamMarking.Marked)
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
         }
         if (thisParamIsOmitted && !isObject) {
@@ -168,7 +175,7 @@ final class SSAGenerator(er: ErrorReporter)
           } else {
             val paramValue = globalValsCtx.valuesGen.newValue(paramTree.paramId)
             val paramType = paramTree match {
-              case Asts.ThisParam(paramTypeTreeOpt) =>
+              case Asts.ThisParam(paramTypeTreeOpt, marking) =>
                 if (!isFirst) {
                   reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
                 }
@@ -184,7 +191,7 @@ final class SSAGenerator(er: ErrorReporter)
                 mkType(paramTree.paramTypeTree, funcLocalValsCtx)
             }
             mustNotBeVoid(paramType, paramTree.getPosition)
-            paramsInclThis(paramValue) = paramType
+            paramsInclThis(paramValue) = (paramType, paramTree.marking)
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
           }
@@ -194,7 +201,7 @@ final class SSAGenerator(er: ErrorReporter)
           case Some(retTypeTree) => mkType(retTypeTree, funcLocalValsCtx)
           case None => PrimitiveType.VoidType
         }
-        val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
+        val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.marking, func.visibility)
         val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
         functions(func.id) = (sig, bodyOpt)
         allFunctionsCollector(sig) = bodyOpt
@@ -604,6 +611,12 @@ final class SSAGenerator(er: ErrorReporter)
     val assignedVars = assigned.toSet -- defined
     assignedVars
   }
+  
+  private def reportErrorIfMarked(param: Param): Unit = param match {
+    case param: FunctionParam if param.isMarked =>
+      reportError("marking parameters is not allowed at this position", param.getPosition)
+    case _ => ()
+  }
 
   extension (ssaInstructionsList: mutable.ListBuffer[SSA.Instr]) private def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
     instr.setAstNode(node.originalAst)
@@ -611,11 +624,11 @@ final class SSAGenerator(er: ErrorReporter)
   }
 
   private def reportError(msg: String, posOpt: Option[Position]): Unit = {
-    er.push(Err(SSAGeneration, msg, posOpt))
+    er.report(Err(SSAGeneration, msg, posOpt))
   }
 
   private def warn(msg: String, posOpt: Option[Position]): Unit = {
-    er.push(Warning(SSAGeneration, msg, posOpt))
+    er.report(Warning(SSAGeneration, msg, posOpt))
   }
 
 }

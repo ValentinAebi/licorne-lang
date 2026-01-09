@@ -109,7 +109,7 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
             tokenizeRemaining(newRem, (newTok, colZeroBased) :: tokensReversed, colZeroBased + len)
 
           case None => {
-            errorReporter.push(Err(CompilationStep.Lexing,
+            errorReporter.report(Err(CompilationStep.Lexing,
               s"syntax error: '${stringLengthLimited(20, rem)}'", Some(Position(srcCodeProvider, lineIdxZeroBased + 1, colZeroBased + 1))))
             val splitIdx = rem.indexOf(' ')
             if (splitIdx >= 0) {
@@ -136,7 +136,7 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
   override def apply(sourceCodeProvider: SourceCodeProvider): (List[PositionedToken], String) = {
     sourceCodeProvider.lines match {
 
-      case Failure(_) => errorReporter.pushFatal(Fatal(CompilationStep.Lexing,
+      case Failure(_) => errorReporter.reportFatal(Fatal(CompilationStep.Lexing,
         s"could not read source code from source '${sourceCodeProvider.name}'", None))
 
       case Success(lines) => {

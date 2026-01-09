@@ -4,6 +4,7 @@ import compiler.pipeline.CompilationStep
 
 import java.io.PrintStream
 import scala.runtime.Nothing$
+import scala.collection.mutable
 
 object Errors {
 
@@ -98,19 +99,40 @@ object Errors {
    * @param errorsConsumer to be called when errors need to be displayed
    */
   final class ErrorReporter(errorsConsumer: ErrorsConsumer, exit: => ExitCode => Nothing) {
-    private var errors: List[NonFatal] = Nil
+    private val errors = mutable.ListBuffer.empty[NonFatal]
+    private val speculationStack = mutable.Stack.empty[mutable.ListBuffer[NonFatal]]
+
+    def speculationEnabled(): Boolean = speculationStack.nonEmpty
+
+    def speculationDepth(): Int = speculationStack.size
+
+    def pushSpeculationLayer(): Unit = {
+      speculationStack.push(mutable.ListBuffer.empty)
+    }
+
+    def commitSpeculation(): Unit = {
+      errors.addAll(speculationStack.pop())
+    }
+    
+    def clearCurrentSpeculationLayer(): Unit = {
+      speculationStack.head.clear()
+    }
 
     /**
      * Add an error to the stack of non fatal errors
      */
-    def push(nonFatalError: NonFatal): Unit = {
-      errors = nonFatalError :: errors
+    def report(nonFatalError: NonFatal): Unit = {
+      if (speculationEnabled()) {
+        speculationStack.head.addOne(nonFatalError)
+      } else {
+        errors.addOne(nonFatalError)
+      }
     }
 
-    def getErrors: List[CompilationError] = errors
+    def getErrors: List[CompilationError] = errors.toList
 
     def displayErrors(): Unit = {
-      for error <- errors.reverse do {
+      for error <- errors do {
         errorsConsumer(error)
         errorsConsumer("\n")
       }
@@ -142,7 +164,10 @@ object Errors {
     /**
      * Display the given fatal error as well as all errors found until now and exit
      */
-    def pushFatal(fatalError: Fatal): Nothing = {
+    def reportFatal(fatalError: Fatal): Nothing = {
+      if (speculationEnabled()) {
+        throw IllegalStateException("fatal error with speculation mode enabled")
+      }
       errorsConsumer(fatalError)
       errorsConsumer("\n")
       if errors.nonEmpty then errorsConsumer("Previously found errors:\n")
@@ -152,11 +177,11 @@ object Errors {
     }
 
     private def displayAndDeleteWarnings(): Unit = {
-      for warning <- errors if warning.isWarning do {
-        errorsConsumer(warning)
+      for errors <- errors if errors.isWarning do {
+        errorsConsumer(errors)
         errorsConsumer("\n")
       }
-      errors = errors.filterNot(_.isWarning)
+      errors.filterInPlace(!_.isWarning)
     }
 
     private def displayExitMessage(): Unit = errorsConsumer("Rattlesnake compiler exiting\n")

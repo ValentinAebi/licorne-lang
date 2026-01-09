@@ -4,6 +4,8 @@ record Leaf : Tree[Nothing]
 record Fork[+T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
 record Binary[+T](l: Tree[T], r: Tree[T]) : Tree[T]
 
+// TODO similar tests with loops
+
 object Trees {
 
       fn sum1(tree: Tree[Int]) -> Int {
@@ -43,6 +45,17 @@ object Trees {
          return when tree is Fork then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))
          else when tree is Binary then (contains2(tree.l, u) || contains2(tree.r, u))
          else false
+      }
+
+      fn contains3[U](tree: Tree[U], u: U) -> Bool {
+         return when tree is Binary then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))   //> E : field value not found in Tree
+         else when tree is Fork then (contains2(tree.l, u) || contains2(tree.r, u))
+         else false
+      }
+
+      fn contains3[U](tree: Tree[U], u: U) -> Bool {
+         return when tree is Fork then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))
+         else contains2(tree.l, u) || contains2(tree.r, u)      //> E : field l not found in Tree <//> E : field r not found in Tree
       }
 
 }

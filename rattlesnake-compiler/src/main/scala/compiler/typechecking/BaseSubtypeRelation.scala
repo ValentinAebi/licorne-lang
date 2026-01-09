@@ -14,7 +14,7 @@ import scala.util.boundary
 object BaseSubtypeRelation {
 
   def enforceBaseSubtypingConstraint(subT: Type, superT: Type)
-                                    (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Unit =
+                                    (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean =
     checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}"), Some(er))
 
   private def checkSubtypingConstraint(subT: Type, superT: Type)
@@ -34,7 +34,7 @@ object BaseSubtypeRelation {
   private def checkSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
                                                           (using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter], program: Program): Boolean = {
     (subT, superT) match {
-      case (subT, superT) if subT.trivialSubtypeOf(superT) => true
+      case (subT, superT) if subT.trivialBaseSubtypeOf(superT) => true
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
         assert(subtypeArgs.isEmpty)
         assert(supertypeArgs.isEmpty)
@@ -93,7 +93,7 @@ object BaseSubtypeRelation {
 
   }
 
-  extension (subT: BaseType) def trivialSubtypeOf(superT: BaseType)(using program: Program): Boolean = (subT, superT) match {
+  extension (subT: BaseType) def trivialBaseSubtypeOf(superT: BaseType)(using program: Program): Boolean = (subT, superT) match {
     case _ if subT == superT => true
     case (NothingType, _) => true
     case (_, VoidType) => true
@@ -107,7 +107,7 @@ object BaseSubtypeRelation {
   }
 
   private def reportNotSubtype(subT: Type, superT: Type)(using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter]): Boolean = {
-    erOpt.foreach(_.push(Err(TypeChecking, errorMsg.msg, posOpt)))
+    erOpt.foreach(_.report(Err(TypeChecking, errorMsg.msg, posOpt)))
     false
   }
 
