@@ -11,22 +11,19 @@ final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
                                     functionName: FunOrVarId,
                                     typeParams: List[TypeIdentifier],
-                                    paramsInclThis: SeqMap[IdValue, (Type, ParamMarking)],
+                                    paramsInclThis: SeqMap[IdValue, Type],
                                     retType: Type,
-                                    retMarking: ReturnMarking,
                                     visibility: Visibility
                                   ) {
 
-  val (receiverVal: IdValue, (receiverType: Type, receiverMarking: ParamMarking)) = paramsInclThis.head
-  
-  def retIsMarked: Boolean = (retMarking == ReturnMarking.Marked)
+  val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
 
   override def toString: String = {
     val sb = StringBuilder()
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
     printListIfNonEmpty(typeParams, "[", "]", sb)
-    printListIfNonEmpty(paramsInclThis, "(", ")", sb) { case (param, (tpe, marking)) => s"${marking.str}$param: $tpe" }
-    sb.append(" -> ").append(retType).append(retMarking.str)
+    printListIfNonEmpty(paramsInclThis, "(", ")", sb) { case (param, tpe) => s"$param: $tpe" }
+    sb.append(" -> ").append(retType)
     sb.toString()
   }
 }
@@ -45,26 +42,6 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
       }
     }
     sb.append(closing)
-  }
-}
-
-enum ParamMarking {
-  case Marked
-  case NotMarked
-
-  override def str: String = this match {
-    case Marked => "#"
-    case NotMarked => ""
-  }
-}
-
-enum ReturnMarking {
-  case Marked
-  case NotMarked
-
-  override def str: String = this match {
-    case Marked => "'"
-    case NotMarked => ""
   }
 }
 

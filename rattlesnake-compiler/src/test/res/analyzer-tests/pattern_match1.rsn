@@ -48,14 +48,14 @@ object Trees {
       }
 
       fn contains3[U](tree: Tree[U], u: U) -> Bool {
-         return when tree is Binary then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))   //> E : field value not found in Tree
-         else when tree is Fork then (contains2(tree.l, u) || contains2(tree.r, u))
+         return when tree is Binary then (contains3(tree.l, u) || tree.value == u || contains3(tree.r, u))   //> E : field value not found in Binary[U]
+         else when tree is Fork then (contains3(tree.left, u) || contains3(tree.right, u))
          else false
       }
 
-      fn contains3[U](tree: Tree[U], u: U) -> Bool {
-         return when tree is Fork then (contains2(tree.left, u) || tree.value == u || contains2(tree.right, u))
-         else contains2(tree.l, u) || contains2(tree.r, u)      //> E : field l not found in Tree <//> E : field r not found in Tree
+      fn contains4[U](tree: Tree[U], u: U) -> Bool {
+         return when tree is Fork then (contains4(tree.left, u) || tree.value == u || contains4(tree.right, u))
+         else contains4(tree.l, u) || contains4(tree.r, u)      //> E : field l not found in Tree[U] <//> E : field r not found in Tree[U]
       }
 
 }

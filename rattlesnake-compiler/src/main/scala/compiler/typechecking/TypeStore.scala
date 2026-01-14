@@ -7,24 +7,17 @@ import lang.Types.{BaseType, Type}
 import lang.Values.IdValue
 
 final class TypeStore {
-  private val store = mutable.Map.empty[IdValue, (Type, Taint)]
+  private val store = mutable.Map.empty[IdValue, Type]
 
   export store.update
-
-  def query(idValue: IdValue): Option[(Type, Taint)] = store.get(idValue)
-
-  def typeQuery(idValue: IdValue): Option[Type] = query(idValue).map(_._1)
-
-  def taintQuery(idValue: IdValue): Option[Taint] = query(idValue).map(_._2)
+  
+  def typeOfOpt(idValue: IdValue): Option[Type] = store.get(idValue)
+  
+  def typeOf(idValue: IdValue): Type = store.apply(idValue)
 
   def widenType(idValue: IdValue, tpe: Type): Unit = {
-    val (prevType, taint) = query(idValue).get
-    this (idValue) = (Types.join(prevType, tpe), taint)
-  }
-  
-  def widenTaint(idValue: IdValue, taint: Taint): Unit = {
-    val (tpe, prevTaint) = query(idValue).get
-    this (idValue) = (tpe, prevTaint + taint)
+    val prevType = typeOf(idValue)
+    this (idValue) = Types.join(prevType, tpe)
   }
 
 }

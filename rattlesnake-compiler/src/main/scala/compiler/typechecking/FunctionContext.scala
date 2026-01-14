@@ -42,7 +42,7 @@ final case class FunctionContext(
     case Types.RefinedType(baseType, itValue, predicate) =>
       checkType(baseType, expVarianceOpt, posOpt)
       ts(itValue) = baseType
-      val predType = typer.analyze(predicate)
+      val (predType, _) = typer.analyze(predicate, ControlFlowInfo.empty)
       enforceBaseSubtypingConstraint(predType, BoolType)(using "type predicate", posOpt)
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
@@ -61,7 +61,7 @@ final case class FunctionContext(
         program.resolveSignature(typeName) match {
           case None =>
             reportError(s"type not found: $typeName", posOpt)
-            args.foreach(typer.analyze(_))
+            args.foreach(typer.analyze(_, ControlFlowInfo.empty))
           case Some(sig) =>
             if (typeArgs.size == sig.typeParams.size) {
               for (((typeParam, typeParamVariance), typeArg) <- sig.typeParams zip typeArgs) {
@@ -73,7 +73,7 @@ final case class FunctionContext(
               if (args.size == expParamsCnt) {
                 for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
                   val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
-                  val argType = typer.analyze(arg)
+                  val (argType, _) = typer.analyze(arg, ControlFlowInfo.empty)
                   enforceBaseSubtypingConstraint(argType, paramType)(using "type application", posOpt)
                 }
               } else {

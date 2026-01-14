@@ -4,7 +4,7 @@ import compiler.valuesconversion.ValuesContext.LocalInfo
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.ReassigPermission
 import lang.Types.Type
-import lang.Values.{Constant, Value}
+import lang.Values.{Constant, IdValue, Value}
 
 trait ValuesContext {
 
@@ -21,7 +21,7 @@ trait ValuesContext {
 
 object ValuesContext {
   private[valuesconversion] final case class LocalInfo(
-                                                        var value: Option[Value],
+                                                        var value: Option[IdValue],
                                                         reassigPermission: ReassigPermission,
                                                         typeUpperBoundOpt: Option[Type]
                                                       )

@@ -1,0 +1,26 @@
+
+datatype List[T]
+record Cons[T](head: T, tail: List[T]) : List[T]
+record Nil : List[Nothing]
+
+object Lists {
+
+   fn length[A](var ls: List[A]) -> Int {
+      var len = 0;
+      while ls is Cons {
+         len += 1;
+         ls = ls.tail;
+      };
+      return ls.head;   //> E : field head not found in Nil
+   }
+
+   fn tail[U](ls: List[U] with length(it) >= 1) -> List[U] {
+      // TODO can we use the predicate to deduce that ls is Cons? Note that it is a unary constraint, maybe we can do something in the Typer
+      if ls is Cons {
+         return ls.tail;
+      } else {
+         panic "cannot happen if predicate is enforced"
+      }
+   }
+
+}

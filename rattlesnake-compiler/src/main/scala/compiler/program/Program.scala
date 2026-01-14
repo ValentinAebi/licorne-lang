@@ -7,7 +7,7 @@ import compiler.pipeline.CompilationStep.{SSAGeneration, TypeChecking}
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
-import compiler.typechecking.{Taint, FunctionContext, TypeStore, Typer}
+import compiler.typechecking.{FunctionContext, TypeStore, Typer}
 import compiler.util.zipCommons
 import compiler.valuesconversion.GlobalValuesContext
 import identifiers.{ThisId, TypeIdentifier}
@@ -21,6 +21,7 @@ import lang.Visibility.Private
 import java.util
 import scala.collection.{SeqMap, mutable}
 import scala.reflect.ClassTag
+import scala.util.boundary
 
 final case class Program(
                           globalValuesContext: GlobalValuesContext,
@@ -39,6 +40,10 @@ final case class Program(
 
   private val subtypingGraph: Graph[TypeIdentifier] = buildSubtypingGraph()
   private val flattenedSupertypesSubstitutions = mutable.LinkedHashMap.empty[TypeIdentifier, mutable.LinkedHashMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
+  
+  private val typesReasoningCache = TypesReasoningCache(this)
+  
+  export typesReasoningCache.developUnencapsulated
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
 
@@ -88,6 +93,9 @@ final case class Program(
       superSubst <- subTSupers.get(superT)
     } yield superSubst
   }
+  
+  def isEnumCaseOf(subId: TypeIdentifier, superId: TypeIdentifier): Boolean =
+    subToSuperSubst(subId, superId).isDefined
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
@@ -132,6 +140,46 @@ final case class Program(
       graphB.addDescendants(id, sig.directSupertypes.map(_.typeName))
     }
     graphB.build()
+  }
+
+  def forceComputeJoins(tpe: BaseType)(using program: Program): Option[NamedType] = tpe match {
+    case namedType: NamedType => Some(namedType)
+    case _: BaseUnionType => boundary {
+
+      def extractTypeIds(tpe: BaseType): Set[TypeIdentifier] = tpe match {
+        case NamedType(tid, _, _) => Set(tid)
+        case BaseUnionType(types) => types.flatMap(extractTypeIds)
+        case _ => boundary.break(None)
+      }
+
+      val allTypeIds = extractTypeIds(tpe)
+      val commonDirectSupertypes = allTypeIds.map { tid =>
+        val sig = program.resolveSignatureAs[RuntimeTypeSignature](tid).getOrElse {
+          boundary.break(None)
+        }
+        sig.directSupertypes.toSet
+      }.reduce(_.intersect(_))
+
+      val possibleSubstitutions = {
+        for {
+          NamedType(superTypeId, _, _) <- commonDirectSupertypes
+          subst <- program.subToSuperSubst(allTypeIds.head, superTypeId)
+          if allTypeIds.tail.forall {
+            program.subToSuperSubst(_, superTypeId).contains(subst)
+          }
+        } yield (superTypeId, subst)
+      }
+      if (possibleSubstitutions.size == 1) {
+        val (superTypeId, subst) = possibleSubstitutions.head
+        program.resolveSignatureAs[RuntimeTypeSignature](superTypeId).flatMap { sig =>
+          sig.toType(subst, Map.empty) match {
+            case namedType: NamedType => Some(namedType)
+            case _ => None
+          }
+        }
+      } else None
+    }
+    case _ => None
   }
 
   private def checkInterfaceSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
@@ -185,10 +233,9 @@ final case class Program(
       given tcCtx: FunctionContext = mkTSigCheckingCtx(id, typeParams.toMap)
 
       val posOpt = positions.get(id)
-      ts(itValue) = (NothingType, Taint.ofParam(itValue))
       for ((paramId, (paramType, paramVal)) <- params) {
         tcCtx.checkType(paramType, None, posOpt)
-        ts(paramVal) = (paramType, Taint.ofParam(paramVal))
+        ts(paramVal) = paramType
       }
       tcCtx.checkType(rhs, None, posOpt)
     }
@@ -215,11 +262,10 @@ final case class Program(
   }
 
   private def checkFunctionSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter): Unit = {
-    for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, retMarking, funVisibility), SSA.Function(_, funBodyOpt, funPosOpt)) <- functions) {
+    for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, funBodyOpt, funPosOpt)) <- functions) {
       val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
 
-      given tcCtx: FunctionContext = FunctionContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet, funSig.receiverVal, ownerName,
-        alwaysExitsFlag = false, expectedReturnType = funRetType)
+      given tcCtx: FunctionContext = FunctionContext(this, ownerSig.typeParams.toMap, funTypeParams.toSet, funSig.receiverVal, ownerName, expectedReturnType = funRetType)
 
       if (funVisibility == Private && ownerSig.isInstanceOf[InterfaceSignature]) {
         reportError(s"$Private methods are not allowed in interfaces", funPosOpt)
@@ -228,10 +274,10 @@ final case class Program(
       if (conflictingTypeParams.nonEmpty) {
         reportError(s"type parameter(s) ${conflictingTypeParams.mkString(",")} conflict(s) with type parameter(s) of $ownerName that have the same name(s)", funPosOpt)
       }
-      ts(funSig.receiverVal) = (funSig.receiverType, Taint.ofParam(funSig.receiverVal))
-      for ((paramVal, (paramType, paramMarking)) <- funParamsInclThis.tail) {
+      ts(funSig.receiverVal) = funSig.receiverType
+      for ((paramVal, paramType) <- funParamsInclThis.tail) {
         tcCtx.checkType(paramType, Some(Contravariant), funPosOpt)
-        ts(paramVal) = (paramType, Taint.ofParam(paramVal))
+        ts(paramVal) = paramType
       }
       tcCtx.checkType(funRetType, Some(Covariant), funPosOpt)
     }
@@ -243,13 +289,13 @@ final case class Program(
       val superTSig = resolveSignature(superT).get
       (subTSig, superTSig) match {
         case (subTSig: Encapsulated, superTSig: Encapsulated) =>
-          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunRetMarking, superFunVisibility)) <- superTSig.functions) {
+          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
               // TODO allow method implementation in interfaces?
               case None if subTSig.isInstanceOf[InterfaceSignature] => ()
               case None =>
                 reportError(s"$subT does not implement method $funId declared in its supertype $superT", typeDefPositions.get(subT))
-              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunRetMarking, subFunVisibility)) =>
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility)) =>
                 val funPosOpt = functions.get(subFunSig).flatMap(_.posOpt)
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size
@@ -265,22 +311,16 @@ final case class Program(
                   val valsSubst = mutable.Map.empty[IdValue, IdValue]
                   // TODO do not forget to check refinements on the receiver (the base type is not checked here)
                   val superTSubst = superTSig.toType(typeParamsSubst, Map.empty)
-                  for (((subParamVal, (subParamType, subParamMarking)), (superParamVal, (superParamType, superParamMarking))) <- subFunParams.tail zip superFunParams.tail) {
+                  for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
                     val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
                     if (subParamType != expectedSubParamType) {
                       reportError(s"type mismatch on parameter ${subParamVal.sourceLevelDescrOrDefault} of method $funId: " +
                         s"type is $subParamType but should be $expectedSubParamType since the method overrides $funId in $superTSubst", funPosOpt)
                     }
-                    if (superParamMarking == ParamMarking.Marked && subParamMarking == ParamMarking.NotMarked) {
-                      reportError(s"marking of parameter ${subParamVal.sourceLevelDescrOrDefault} in $funId does not conform to the corresponding parameter in the method it overrides in $superT", funPosOpt)
-                    }
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
                   enforceBaseSubtypingConstraint(subFunRetType, expectedRetType)(using s"return type of method $funId that overrides $funId in $superT", funPosOpt, er, this)
-                  if (subFunSig.retIsMarked && !subFunSig.retIsMarked) {
-                    reportError(s"marking of $funId in $subT does not conform to the method it overrides in $superT", funPosOpt)
-                  }
                 }
                 if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
                   reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
@@ -403,7 +443,7 @@ final case class Program(
   }
 
   private def mkTSigCheckingCtx(id: TypeIdentifier, typeParamsMap: Map[TypeIdentifier, Variance])(using typer: Typer, ts: TypeStore): FunctionContext = {
-    FunctionContext(this, typeParamsMap, Set.empty, globalValuesContext.valuesGen.newValue(ThisId), id, alwaysExitsFlag = false, expectedReturnType = VoidType)
+    FunctionContext(this, typeParamsMap, Set.empty, globalValuesContext.valuesGen.newValue(ThisId), id, expectedReturnType = VoidType)
   }
 
   private def reportError(msg: String, posOpt: Option[Position])(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {

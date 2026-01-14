@@ -133,17 +133,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funDef = {
     opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
-      ::: opt(-> ::: typeTree ::: retMarkOpt) ::: opt(block OR assig ::: expr) map {
-      case optModif ^: funName ^: typeParams ^: params ^: optRetTypeAndMarking ^: bodyOptRaw =>
+      ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
+      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(
             ReturnStat(Some(expr)).withDesugaringSource(expr)
           )).withDesugaringSource(expr)
           case block: Block => block
         }
-        val typeOpt = optRetTypeAndMarking.map { case t ^: m  => t }
-        val marking = optRetTypeAndMarking.map { case t ^: m => m }.getOrElse(ReturnMarking.NotMarked)
-        FunDef(funName, typeParams, params, typeOpt, marking, bodyOptDesugared,
+        FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           isMain = optModif.contains(Main)
         )
@@ -159,33 +157,23 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funParamTree = funOrClassParam OR thisParam
 
   private lazy val funOrClassParam: P[FunctionParam & ClassParam] = recursive {
-    opt(kw(Var)) ::: paramMarkOpt ::: lowName ::: colon ::: typeTree map {
-      case Some(_) ^: marking ^: name ^: tpe => VarParam(name, tpe, marking)
-      case None ^: marking ^: name ^: tpe => SimpleParam(name, tpe, marking)
+    opt(kw(Var)) ::: lowName ::: colon ::: typeTree map {
+      case Some(_) ^: name ^: tpe => VarParam(name, tpe)
+      case None ^: name ^: tpe => SimpleParam(name, tpe)
     }
   } setName "funOrClassParam"
 
   private lazy val thisParam: P[ThisParam] = {
-    paramMarkOpt ::: kw(This).ignored ::: opt(colon ::: typeTree) map {
-      case marking ^: tpeOpt => ThisParam(tpeOpt, marking)
+    kw(This).ignored ::: opt(colon ::: typeTree) map {
+      case tpeOpt => ThisParam(tpeOpt)
     }
   } setName "thisParam"
 
   private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
-    paramMarkOpt ::: lowName ::: colon ::: typeTree map {
-      case marking ^: name ^: tpe => SimpleParam(name, tpe, marking)
+    lowName ::: colon ::: typeTree map {
+      case name ^: tpe => SimpleParam(name, tpe)
     }
   } setName "recordOrTypeAliasParam"
-
-  private lazy val paramMarkOpt = opt(op(Sharp)) map {
-    case None => ParamMarking.Marked
-    case Some(_) => ParamMarking.NotMarked
-  } setName "paramMarkOpt"
-  
-  private lazy val retMarkOpt = opt(op(Apostrophe)) map {
-    case None => ReturnMarking.NotMarked
-    case Some(_) => ReturnMarking.Marked
-  } setName "retMarkOpt"
 
   private lazy val methodsListOpt = {
     opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {

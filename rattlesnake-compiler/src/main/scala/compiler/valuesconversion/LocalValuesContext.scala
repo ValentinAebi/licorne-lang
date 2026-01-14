@@ -36,7 +36,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     copy
   }
 
-  def saveNewLocal(id: FunOrVarId, value: Option[Value], reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean = {
+  def saveNewLocal(id: FunOrVarId, value: Option[IdValue], reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean = {
     if (queryLocal(id).isDefined) {
       false
     } else {
@@ -45,10 +45,10 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def saveNewLocal(id: FunOrVarId, value: Value, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Boolean =
+  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Boolean =
     saveNewLocal(id, Some(value), reassigStatus, typeUpperBound)
 
-  def remap(id: FunOrVarId, value: Value): Boolean = {
+  def remap(id: FunOrVarId, value: IdValue): Boolean = {
     queryLocal(id) match {
       case Some(info) =>
         info.value = Some(value)
@@ -57,7 +57,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
   
-  def saveOrRemap(id: FunOrVarId, value: Value, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Unit = {
+  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Unit = {
     val saved = saveNewLocal(id, value, reassigStatus, typeUpperBound)
     if (!saved){
       remap(id, value)
@@ -155,7 +155,7 @@ object LocalValuesContext {
 
   final case class KnownButUninitialized(id: FunOrVarId, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ErrorValueQueryResult
 
-  final case class KnownAndInitialized(value: Value, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ValueQueryResult
+  final case class KnownAndInitialized(value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ValueQueryResult
 
   private enum ExitedStatus {
     case Active, HasExited, ReportedHasExited

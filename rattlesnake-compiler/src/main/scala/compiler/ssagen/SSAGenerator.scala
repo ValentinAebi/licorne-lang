@@ -8,13 +8,11 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.typechecking.Taint
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
-import lang.ParamMarking.Marked
 import lang.Types.*
 import lang.Types.PrimitiveType.{NothingType, VoidType}
 import lang.Values.*
@@ -69,13 +67,11 @@ final class SSAGenerator(er: ErrorReporter)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
             val importedObjects = mutable.LinkedHashSet.empty[IdValue]
             params.foreach {
-              case param@Asts.VarParam(paramId, paramTypeTree, marking) =>
-                reportErrorIfMarked(param)
+              case param@Asts.VarParam(paramId, paramTypeTree) =>
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(paramType, param.getPosition)
                 fields(paramId) = ReassignableField(paramId, paramType)
-              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
-                reportErrorIfMarked(param)
+              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(id)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(paramType, param.getPosition)
@@ -97,8 +93,7 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             fields.foreach {
-              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
-                reportErrorIfMarked(param)
+              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
                 mustNotBeVoid(fieldType, param.getPosition)
@@ -116,8 +111,7 @@ final class SSAGenerator(er: ErrorReporter)
             paramsCtx.saveNewLocal(ItId, itValue, ReassigPermission.Val, None)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
             params.foreach {
-              case param@Asts.SimpleParam(paramId, paramTypeTree, marking) =>
-                reportErrorIfMarked(param)
+              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val paramValue = valuesGen.newValue(paramId)
                 val paramType = mkType(paramTypeTree, paramsCtx)
                 typeAliasParams(paramId) = (paramType, paramValue)
@@ -150,7 +144,7 @@ final class SSAGenerator(er: ErrorReporter)
       if (functions.contains(func.id)) {
         reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
       } else {
-        val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, (Type, ParamMarking)]
+        val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
         val thisVal = functionsProvider match {
           case Asts.ObjectDef(id, importedObjects, functions, directSupertypes) => globalValsCtx.resolveObject(id)
           case _ => globalValsCtx.valuesGen.newValue(ThisId)
@@ -160,7 +154,7 @@ final class SSAGenerator(er: ErrorReporter)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
         if (thisParamIsOmitted) {
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
-          paramsInclThis(thisVal) = (thisType, ParamMarking.Marked)
+          paramsInclThis(thisVal) = thisType
           funcLocalValsCtx.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
         }
         if (thisParamIsOmitted && !isObject) {
@@ -175,7 +169,7 @@ final class SSAGenerator(er: ErrorReporter)
           } else {
             val paramValue = globalValsCtx.valuesGen.newValue(paramTree.paramId)
             val paramType = paramTree match {
-              case Asts.ThisParam(paramTypeTreeOpt, marking) =>
+              case Asts.ThisParam(paramTypeTreeOpt) =>
                 if (!isFirst) {
                   reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
                 }
@@ -191,7 +185,7 @@ final class SSAGenerator(er: ErrorReporter)
                 mkType(paramTree.paramTypeTree, funcLocalValsCtx)
             }
             mustNotBeVoid(paramType, paramTree.getPosition)
-            paramsInclThis(paramValue) = (paramType, paramTree.marking)
+            paramsInclThis(paramValue) = paramType
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
           }
@@ -201,7 +195,7 @@ final class SSAGenerator(er: ErrorReporter)
           case Some(retTypeTree) => mkType(retTypeTree, funcLocalValsCtx)
           case None => PrimitiveType.VoidType
         }
-        val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.marking, func.visibility)
+        val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
         val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
         functions(func.id) = (sig, bodyOpt)
         allFunctionsCollector(sig) = bodyOpt
@@ -333,18 +327,25 @@ final class SSAGenerator(er: ErrorReporter)
           val phiNodes = valsCtx.unifyAndReturnPhis(ite, thenBrCtx, elseBrCtx)
           ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
         case whileLoop@Asts.WhileLoop(cond, body) =>
-          val assignedVars = externalVarsAssignedInLoop(whileLoop).toList
-          val bodyStartValuesOfModifiedVars = assignedVars.map { varId =>
-            varId -> valsCtx.valuesGen.newValue(varId)
-          }.toMap
-          val loopCtx = valsCtx.deepCopyWithSameGlobalCtx
-          for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
-            loopCtx.remap(id, bodyStartVal)
+          val loopUpdatedVars = externalVarsAssignedInLoop(whileLoop).toList.flatMap { varId =>
+            valsCtx.valueOf(varId) match {
+              case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
+                val mkNewVal = () => valsCtx.valuesGen.newValue(varId)
+                Some(LoopVarData(varId, beforeLoopVal = value, condVal = mkNewVal(), bodyLastVal = valsCtx.valuesGen.newErrorValue()))
+              case _ => None
+            }
           }
-          val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), loopCtx)
+          val condAndBodyCtx = valsCtx.deepCopyWithSameGlobalCtx
+          for (LoopVarData(id, beforeLoopVal, condVal, _) <- loopUpdatedVars) {
+            condAndBodyCtx.remap(id, condVal)
+          }
+          val condFormula = generateSSAExpr(cond, Some(ssaInstructionsList), condAndBodyCtx)
+          if (condAndBodyCtx.hasExited) {
+            reportError("condition evaluation cannot terminate", cond.getPosition)
+          }
           val bodySSA = mutable.ListBuffer.empty[SSA.Instr]
-          generateSSA(body, loopCtx, bodySSA, isRepeat)
-          if (loopCtx.exitManager.hasExited) {
+          generateSSA(body, condAndBodyCtx, bodySSA, isRepeat)
+          if (condAndBodyCtx.exitManager.hasExited) {
             warn("loop body always exits, should be an if statement", whileLoop.getPosition)
             // give up and generate a disjunction instead
             generateSSA(
@@ -352,22 +353,11 @@ final class SSAGenerator(er: ErrorReporter)
               valsCtx, ssaInstructionsList, isRepeat = true
             )
           } else {
-            val loopVars = List.newBuilder[LoopVarInfo]
-            for ((id, bodyStartVal) <- bodyStartValuesOfModifiedVars) {
-              valsCtx.valueOf(id) match {
-                case _: LocalValuesContext.ErrorValueQueryResult => ()
-                case LocalValuesContext.KnownAndInitialized(preLoopVal, _, _) =>
-                  // if value is known before the loop then it is also known after its body
-                  val bodyEndVal = loopCtx.valueOf(id).asInstanceOf[KnownAndInitialized].value
-                  val postLoopVal = valsCtx.valuesGen.newValue(id)
-                  if (preLoopVal != bodyEndVal) {
-                    loopVars.addOne(LoopVarInfo(id, preLoopVal, bodyStartVal, bodyEndVal, postLoopVal))
-                  }
-                  val found = valsCtx.remap(id, postLoopVal)
-                  assert(found)
-              }
+            for (loopVarData <- loopUpdatedVars) {
+              loopVarData.bodyLastVal = condAndBodyCtx.valueOf(loopVarData.varId).asInstanceOf[KnownAndInitialized].value
+              valsCtx.remap(loopVarData.varId, loopVarData.condVal)
             }
-            ssaInstructionsList.saveInstr(Loop(condFormula, bodySSA.toList, loopVars.result()), whileLoop)
+            ssaInstructionsList.saveInstr(Loop(condFormula, bodySSA.toList, loopUpdatedVars), whileLoop)
           }
         case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
           generateSSA(Asts.Block(
@@ -530,9 +520,8 @@ final class SSAGenerator(er: ErrorReporter)
       resultVal
     case cast@Asts.Cast(castExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
-      val resultVal = valsCtx.valuesGen.newValue()
-      ssaInstructionsList.saveInstr(Cast(resultVal, castValue, typeName), cast)
-      resultVal
+      ssaInstructionsList.saveInstr(Cast(castValue, typeName), cast)
+      castValue
     case conversion@Asts.Cast(castExpr, targetTypeTree: Asts.PrimitiveTypeTree) =>
       val castValue = generateSSAExprForcedAsVal(castExpr, ssaInstructionsList, valsCtx)
       val resultVal = valsCtx.valuesGen.newValue()
@@ -610,12 +599,6 @@ final class SSAGenerator(er: ErrorReporter)
     }
     val assignedVars = assigned.toSet -- defined
     assignedVars
-  }
-  
-  private def reportErrorIfMarked(param: Param): Unit = param match {
-    case param: FunctionParam if param.isMarked =>
-      reportError("marking parameters is not allowed at this position", param.getPosition)
-    case _ => ()
   }
 
   extension (ssaInstructionsList: mutable.ListBuffer[SSA.Instr]) private def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
