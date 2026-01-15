@@ -466,11 +466,8 @@ object Asts {
   final case class TypeTest(expr: Expr, tpe: BaseTypeTree) extends FormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
-
-  /**
-   * `panic` statement
-   */
-  final case class PanicStat(msg: Expr) extends Statement {
+  
+  final case class PanicExpr(msg: Expr) extends NonFormulaExpr {
     override def children: List[Ast] = List(msg)
   }
 

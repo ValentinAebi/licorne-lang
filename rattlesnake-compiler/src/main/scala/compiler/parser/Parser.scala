@@ -300,9 +300,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "noBinopExpr"
 
   private lazy val binopArg = recursive {
-    (noBinopExpr OR recordOrModuleInstantiation)
-      ::: opt((kw(As) OR kw(Is)) ::: refinableTypeTree
-    ) map {
+    ((noBinopExpr OR recordOrModuleInstantiation OR panicExpr) ::: opt((kw(As) OR kw(Is)) ::: refinableTypeTree)) map {
       case expression ^: None => expression
       case expression ^: Some(As ^: tp) => Cast(expression, tp)
       case expression ^: Some(Is ^: tp) => TypeTest(expression, tp)
@@ -387,8 +385,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "fieldInitializer"
 
   private lazy val stat: P[Statement] = {
-    exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR
-      returnStat OR panicStat
+    exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR returnStat
   } setName "stat"
 
   private lazy val valDef = {
@@ -432,9 +429,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     kw(Return).ignored ::: opt(expr) map (optRetVal => ReturnStat(optRetVal))
   } setName "returnStat"
 
-  private lazy val panicStat = {
-    kw(Panic).ignored ::: expr map PanicStat.apply
-  } setName "panicStat"
+  private lazy val panicExpr = {
+    kw(Panic).ignored ::: expr map PanicExpr.apply
+  } setName "panicExpr"
 
   extension [L, R](params: List[L ^: R]) private def toPairs: List[(L, R)] = {
     params.map { case id ^: tpe => (id, tpe) }

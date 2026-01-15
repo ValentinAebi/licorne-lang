@@ -1,6 +1,5 @@
 package compiler.ssagen
 
-import compiler.irs.Asts.{FunctionParam, Param}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -14,7 +13,7 @@ import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
-import lang.Types.PrimitiveType.{NothingType, VoidType}
+import lang.Types.PrimitiveType.VoidType
 import lang.Values.*
 
 import java.util
@@ -371,10 +370,6 @@ final class SSAGenerator(er: ErrorReporter)
           }
           ssaInstructionsList.saveInstr(Return(optRetVal), stat)
           valsCtx.markHasExited()
-        case panic@Asts.PanicStat(msg) =>
-          val msgVal = generateSSAExprForcedAsVal(msg, ssaInstructionsList, valsCtx)
-          ssaInstructionsList.saveInstr(Panic(msgVal), panic)
-          valsCtx.markHasExited()
       }
     }
 
@@ -550,6 +545,10 @@ final class SSAGenerator(er: ErrorReporter)
       generateSSA(body, bodyCtx, bodyStats)
       ssaInstructionsList.saveInstr(ClosureCreation(closureValue, paramValsAndTypesB.result(), bodyStats.toList), closureDef)
       closureValue
+    case panic@Asts.PanicExpr(msg) =>
+      val msgVal = generateSSAExprForcedAsVal(msg, ssaInstructionsList, valsCtx)
+      ssaInstructionsList.saveInstr(Panic(msgVal), panic)
+      valsCtx.valuesGen.newValue()
   }
 
   private def mustNotBeVoid(tpe: Type, posOpt: Option[Position]): Unit = {
