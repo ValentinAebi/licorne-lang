@@ -96,8 +96,7 @@ object BaseSubtypeRelation {
   extension (subT: BaseType) def trivialBaseSubtypeOf(superT: BaseType)(using program: Program): Boolean = (subT, superT) match {
     case _ if subT == superT => true
     case (NothingType, _) => true
-    case (_, VoidType) => true
-    case (VoidType, _) => false
+    case (_, UnitType) => true
     case (_, NothingType) => false
     case (NullType, _) => true
     case (_, NullType) => false

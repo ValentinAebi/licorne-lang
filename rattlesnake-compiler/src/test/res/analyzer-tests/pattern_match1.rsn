@@ -28,7 +28,7 @@ object Trees {
          }
       }
 
-      fn sum3(tree: Tree[Int]) -> Int {   //> E : missing return in non-Void method
+      fn sum3(tree: Tree[Int]) -> Int {   //> E : missing return in non-Unit method
          if tree is Fork {
             return sum3(tree.left) + tree.value + sum3(tree.right);
          } else if tree is Leaf {

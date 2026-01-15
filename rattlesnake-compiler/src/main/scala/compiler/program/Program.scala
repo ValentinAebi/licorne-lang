@@ -13,7 +13,7 @@ import compiler.valuesconversion.GlobalValuesContext
 import identifiers.{ThisId, TypeIdentifier}
 import lang.*
 import lang.Types.*
-import lang.Types.PrimitiveType.{NothingType, VoidType}
+import lang.Types.PrimitiveType.{NothingType, UnitType}
 import lang.Values.{And, Formula, IdValue}
 import lang.Variance.*
 import lang.Visibility.Private
@@ -443,7 +443,7 @@ final case class Program(
   }
 
   private def mkTSigCheckingCtx(id: TypeIdentifier, typeParamsMap: Map[TypeIdentifier, Variance])(using typer: Typer, ts: TypeStore): FunctionContext = {
-    FunctionContext(this, typeParamsMap, Set.empty, globalValuesContext.valuesGen.newValue(ThisId), id, expectedReturnType = VoidType)
+    FunctionContext(this, typeParamsMap, Set.empty, globalValuesContext.valuesGen.newValue(ThisId), id, expectedReturnType = UnitType)
   }
 
   private def reportError(msg: String, posOpt: Option[Position])(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {

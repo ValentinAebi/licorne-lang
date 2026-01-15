@@ -228,17 +228,7 @@ object Asts {
   sealed abstract class NonFormulaExpr extends Expr
 
   sealed abstract class Literal extends FormulaExpr {
-    val value: Any
-
     final override def children: List[Ast] = Nil
-
-    def getTypeShapeOpt: Option[BaseType]
-
-    final def getTypeShape: BaseType = {
-      getTypeShapeOpt match
-        case Some(shape) => shape
-        case None => throw new NoSuchElementException(s"type missing in $this")
-    }
   }
 
   sealed trait NumericLiteral extends Literal
@@ -248,37 +238,29 @@ object Asts {
   /**
    * Integer literal
    */
-  final case class IntLit(value: Int) extends NumericLiteral {
-    override def getTypeShapeOpt: Option[BaseType] = Some(IntType)
-  }
+  final case class IntLit(value: Int) extends NumericLiteral
 
   /**
    * Double literal
    */
-  final case class DoubleLit(value: Double) extends NumericLiteral {
-    override def getTypeShapeOpt: Option[BaseType] = Some(DoubleType)
-  }
+  final case class DoubleLit(value: Double) extends NumericLiteral
+
+  final case class UnitLit() extends NonNumericLiteral
 
   /**
    * Char literal
    */
-  final case class CharLit(value: Char) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BaseType] = Some(CharType)
-  }
+  final case class CharLit(value: Char) extends NonNumericLiteral
 
   /**
    * Bool (boolean) literal
    */
-  final case class BoolLit(value: Boolean) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BaseType] = Some(BoolType)
-  }
+  final case class BoolLit(value: Boolean) extends NonNumericLiteral
 
   /**
    * String literal
    */
-  final case class StringLit(value: String) extends NonNumericLiteral {
-    override def getTypeShapeOpt: Option[BaseType] = Some(StringType)
-  }
+  final case class StringLit(value: String) extends NonNumericLiteral
 
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
@@ -466,7 +448,7 @@ object Asts {
   final case class TypeTest(expr: Expr, tpe: BaseTypeTree) extends FormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
-  
+
   final case class PanicExpr(msg: Expr) extends NonFormulaExpr {
     override def children: List[Ast] = List(msg)
   }

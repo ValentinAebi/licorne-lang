@@ -35,6 +35,9 @@ object Tokens {
     override def strValue: String = operator.str
   }
 
+  case object UnitLitToken extends Token {
+    override def strValue: String = "unit"
+  }
   final case class IntLitToken(value: Int) extends Token {
     override def strValue: String = value.toString
   }

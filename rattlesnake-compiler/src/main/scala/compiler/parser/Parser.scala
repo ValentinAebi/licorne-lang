@@ -45,6 +45,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   }
 
   private val nonNumericLiteralValue: FinalTreeParser[NonNumericLiteral] = treeParser("bool or char or string") {
+    case UnitLitToken => UnitLit()
     case BoolLitToken(value) => BoolLit(value)
     case CharLitToken(value) => CharLit(value)
     case StringLitToken(value) => StringLit(value)

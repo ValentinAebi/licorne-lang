@@ -50,6 +50,8 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
   private val explicitelyDefinedMatchersByPriorityOrder: List[String => Option[IntoResult]] = List(
 
     string(_.isWhitespace) into SpaceToken,
+    
+    string("unit") into UnitLitToken,
 
     string("true") | string("false") into {
       str => BoolLitToken(str.toBoolean)

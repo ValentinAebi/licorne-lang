@@ -5,7 +5,7 @@ import compiler.irs.SSA.*
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
-import compiler.reporting.Errors.{Err, ErrorReporter}
+import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.typechecking.BaseSubtypeRelation.*
 import compiler.typechecking.ControlFlowInfo.TypeInfo
@@ -60,24 +60,24 @@ final class Typer(
 
         val funcEndCtx = traverseAll(body, ControlFlowInfo.empty)
         val retTypeBase = funSig.retType.baseType
-        checkReturnsIfNonVoid(retTypeBase, funcEndCtx, "method", func.posOpt)
+        checkReturnsIfNonUnit(retTypeBase, funcEndCtx, "method", func.posOpt)
         while (closuresCollector.nonEmpty) {
           val ClosureInfo(closureBody, closureCtx, cfStartInfo, closureExpRetTVar, closurePosOpt) = closuresCollector.dequeue()
           val closureEndCtx = traverseAll(closureBody, cfStartInfo)(using closureCtx)
           closureExpRetTVar.actualTypeIfResolved.foreach { expectedRetType =>
-            checkReturnsIfNonVoid(expectedRetType.baseType, closureEndCtx, "closure", closurePosOpt)
+            checkReturnsIfNonUnit(expectedRetType.baseType, closureEndCtx, "closure", closurePosOpt)
           }
           if (!closureExpRetTVar.isResolved) {
-            closureExpRetTVar.resolve(VoidType)
+            closureExpRetTVar.resolve(UnitType)
           }
         }
       }
     }
   }
 
-  private def checkReturnsIfNonVoid(retTypeBase: BaseType, endCf: ControlFlowInfo, functionKindDescr: String, posOpt: Option[Position]) = {
-    if (retTypeBase != VoidType && !endCf.hasExited) {
-      reportError(s"missing return in non-$VoidType $functionKindDescr", posOpt)
+  private def checkReturnsIfNonUnit(retTypeBase: BaseType, endCf: ControlFlowInfo, functionKindDescr: String, posOpt: Option[Position]): Unit = {
+    if (retTypeBase != UnitType && !endCf.hasExited) {
+      reportError(s"missing return in non-$UnitType $functionKindDescr", posOpt)
     }
   }
 
@@ -217,16 +217,11 @@ final class Typer(
           enforceBaseSubtypingConstraint(rhsType, fieldType)(using "field assignment")
         }
         cfAfterRhsEval
-      case SSA.Return(None) =>
-        if (funCtx.expectedReturnType.baseType != VoidType) {
-          reportError(s"non-$VoidType method should return a value", posOpt)
-        }
-        ControlFlowInfo.exited
-      case SSA.Return(Some(retVal)) =>
+      case SSA.Return(retVal) =>
         val (retType, cfAfterRetValEval) = analyze(retVal, cfIn)
         enforceBaseSubtypingConstraint(retType, funCtx.expectedReturnType)(using "return value")
-        if (funCtx.expectedReturnType == VoidType) {
-          reportError(s"$VoidType method cannot return a value", posOpt)
+        if (funCtx.expectedReturnType == UnitType) {
+          warn(s"returning $UnitType", posOpt)
         }
         ControlFlowInfo.exited
       case SSA.Panic(msg) =>
@@ -282,6 +277,7 @@ final class Typer(
         (tpe, cfIn)
       case True | False => (BoolType, cfIn)
       case NullPtr => (NullType, cfIn)
+      case UnitVal => (UnitType, cfIn)
       case IntConstant(value) => (IntType, cfIn)
       case DoubleConstant(value) => (DoubleType, cfIn)
       case StringConstant(value) => (StringType, cfIn)
@@ -414,6 +410,7 @@ final class Typer(
             resultType
           case _ =>
             reportError("illegal invocation: not a closure", posOpt)
+            NothingType
         }
         // FIXME make sure the way taints are handled in closures is correct (we probably need to prevent closures from having a non-deterministic return value)
         (tpe, currCf)
@@ -659,9 +656,12 @@ final class Typer(
     case _ => false
   }
 
-  private def reportError(msg: String, posOpt: Option[Position]): NothingType.type = {
+  private def reportError(msg: String, posOpt: Option[Position]): Unit = {
     er.report(Err(TypeChecking, msg, posOpt))
-    NothingType
+  }
+
+  private def warn(msg: String, posOpt: Option[Position]): Unit = {
+    er.report(Warning(TypeChecking, msg, posOpt))
   }
 
   private case class ClosureInfo(body: List[Instr], funCtx: FunctionContext, startCf: ControlFlowInfo, expectedRetTypeVar: TypeVariable, posOpt: Option[Position])

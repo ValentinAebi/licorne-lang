@@ -3,15 +3,18 @@ object Test {
 
    fn test(animal: Animal) {
 
-      ifDog[Void](animal, fn (dog) -> { dog.woof() });
-      ifDog[Void](animal, fn (dog) -> dog.eat(new Kibbles()));  // OK, drop return value of eat
+      ifDog[Unit](animal, fn (dog) -> { dog.woof() });
+      ifDog[Unit](animal, fn (dog) -> dog.eat(new Kibbles()));  // OK, drop return value of eat
       ifDog[Bool](animal, fn (dog) -> dog.isHungry());
-      ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });      //> E : missing return in non-Void closure
-      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected Int, found Void
+      ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });      //> E : missing return in non-Unit closure
+      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected Int, found Unit
 
       ifDogOrElse(animal, 0, fn (dog) -> { panic "test..." });  // OK
-      ifDogOrElse(animal, crash(), fn (dog) -> dog.woof());     //> E : return value: expected Nothing, found Void
+      ifDogOrElse(animal, panic "crash", fn (dog) -> dog.woof());     //> E : return value: expected Nothing, found Unit
       ifDogOrElse(animal, crash(), fn (dog) -> { panic "test..." });  // OK
+
+      ifDogOrElse(animal, unit, fn (dog) -> dog.woof());        // OK
+      ifDogOrElse(animal, unit, fn (dog) -> dog);               // OK
 
    }
 

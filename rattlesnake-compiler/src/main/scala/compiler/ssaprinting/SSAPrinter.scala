@@ -101,7 +101,7 @@ final class SSAPrinter[T](
       case SSA.FieldWrite(owner, fieldName, value) =>
         pps.add(s"${owner.str}.$fieldName := ${value.str}")
       case SSA.Return(retVal) =>
-        pps.add(s"return ").add(retVal.map(_.str).getOrElse("<void>"))
+        pps.add(s"return ").add(retVal.str)
       case SSA.Panic(msg) =>
         pps.add("panic ").add(msg.str)
       case SSA.Evaluate(formula) =>

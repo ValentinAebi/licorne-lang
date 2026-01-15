@@ -81,7 +81,7 @@ object Types {
 
     case NullType extends PrimitiveType("Null")
     case AnyType extends PrimitiveType("Any")
-    case VoidType extends PrimitiveType("Void")
+    case UnitType extends PrimitiveType("Unit")
     case NothingType extends PrimitiveType("Nothing")
 
     override def toString: String = str

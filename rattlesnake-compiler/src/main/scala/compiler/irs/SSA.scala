@@ -48,7 +48,7 @@ object SSA {
   final case class Conversion(assignedValue: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
   
   final case class FieldWrite(owner: Value, fieldName: FunOrVarId, rhs: Formula) extends Instr
-  final case class Return(retValOpt: Option[Value]) extends Instr
+  final case class Return(retVal: Value) extends Instr
   final case class Panic(msg: Value) extends Instr
   final case class Evaluate(formula: Formula) extends Instr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends Instr

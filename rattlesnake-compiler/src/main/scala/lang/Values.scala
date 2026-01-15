@@ -1,6 +1,6 @@
 package lang
 
-import identifiers.{FunOrVarId, Identifier, TypeIdentifier}
+import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Types.Type
 
 object Values {
@@ -25,26 +25,36 @@ object Values {
   }
 
   sealed trait Constant extends Value {
-    def value: Any
+    def valueDescr: String
   }
 
   case object True extends Constant {
-    override def value: Any = true
+    override def valueDescr: String = "true"
   }
 
   case object False extends Constant {
-    override def value: Any = false
+    override def valueDescr: String = "false"
   }
 
   case object NullPtr extends Constant {
-    override def value: Any = null
+    override def valueDescr: String = "null"
+  }
+  
+  case object UnitVal extends Constant {
+    override def valueDescr: String = "unit"
   }
 
-  final case class IntConstant(value: Int) extends Constant
+  final case class IntConstant(value: Int) extends Constant {
+    override def valueDescr: String = value.toString
+  }
 
-  final case class DoubleConstant(value: Double) extends Constant
+  final case class DoubleConstant(value: Double) extends Constant {
+    override def valueDescr: String = value.toString
+  }
 
-  final case class StringConstant(value: String) extends Constant
+  final case class StringConstant(value: String) extends Constant {
+    override def valueDescr: String = s"\"$value\""
+  }
 
   sealed trait BinOp(val operator: Operator) extends Formula {
     def lhs: Formula
@@ -128,10 +138,8 @@ object Values {
         case Some(tpe) => s"($strWithoutType : $tpe)"
         case None => strWithoutType
       }
-    case StringConstant(value) =>
-      s"\"$value\""
     case constant: Constant =>
-      constant.value.toString
+      constant.valueDescr
     case op: BinOp =>
       s"${formulaToString(op.lhs)} ${op.operator} ${formulaToString(op.rhs)}"
     case op: UnaryOp =>

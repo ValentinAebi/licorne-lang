@@ -13,7 +13,7 @@ import identifiers.*
 import lang.*
 import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
-import lang.Types.PrimitiveType.VoidType
+import lang.Types.PrimitiveType.UnitType
 import lang.Values.*
 
 import java.util
@@ -68,12 +68,12 @@ final class SSAGenerator(er: ErrorReporter)
             params.foreach {
               case param@Asts.VarParam(paramId, paramTypeTree) =>
                 val paramType = mkType(paramTypeTree, paramsCtx)
-                mustNotBeVoid(paramType, param.getPosition)
+                mustNotBeUnit(paramType, param.getPosition)
                 fields(paramId) = ReassignableField(paramId, paramType)
               case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(id)
                 val paramType = mkType(paramTypeTree, paramsCtx)
-                mustNotBeVoid(paramType, param.getPosition)
+                mustNotBeUnit(paramType, param.getPosition)
                 fields(paramId) = StableField(paramId, paramType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
               case param@Asts.ObjectImport(objectId) =>
@@ -95,7 +95,7 @@ final class SSAGenerator(er: ErrorReporter)
               case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val fieldValue = valuesGen.newValue(paramId)
                 val fieldType = mkType(paramTypeTree, paramsCtx)
-                mustNotBeVoid(fieldType, param.getPosition)
+                mustNotBeUnit(fieldType, param.getPosition)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
@@ -183,7 +183,7 @@ final class SSAGenerator(er: ErrorReporter)
               case paramTree: Asts.NonThisFunctionParam =>
                 mkType(paramTree.paramTypeTree, funcLocalValsCtx)
             }
-            mustNotBeVoid(paramType, paramTree.getPosition)
+            mustNotBeUnit(paramType, paramTree.getPosition)
             paramsInclThis(paramValue) = paramType
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funcLocalValsCtx.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
@@ -192,7 +192,7 @@ final class SSAGenerator(er: ErrorReporter)
         }
         val retType = func.optRetType match {
           case Some(retTypeTree) => mkType(retTypeTree, funcLocalValsCtx)
-          case None => PrimitiveType.VoidType
+          case None => PrimitiveType.UnitType
         }
         val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
         val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
@@ -265,8 +265,8 @@ final class SSAGenerator(er: ErrorReporter)
         case localDef@Asts.LocalDef(localName, typeAnnotTreeOpt, rhsOpt, reassigPermission) =>
           val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, valsCtx))
           typeAnnotOpt.foreach {
-            case VoidType =>
-              reportError(s"a value cannot have type $VoidType", localDef.getPosition)
+            case UnitType =>
+              warn(s"value of type $UnitType", localDef.getPosition)
             case _ => ()
           }
           if (valsCtx.knows(localName)) {
@@ -368,7 +368,7 @@ final class SSAGenerator(er: ErrorReporter)
           val optRetVal = optValExpr.map {
             generateSSAExprForcedAsVal(_, ssaInstructionsList, valsCtx)
           }
-          ssaInstructionsList.saveInstr(Return(optRetVal), stat)
+          ssaInstructionsList.saveInstr(Return(optRetVal.getOrElse(UnitVal)), stat)
           valsCtx.markHasExited()
       }
     }
@@ -410,6 +410,7 @@ final class SSAGenerator(er: ErrorReporter)
     def generateSSAExpr(expr: Asts.Expr): Formula = this.generateSSAExpr(expr, ssaInstrListOpt, valsCtx)
 
     val formula = expr match {
+      case Asts.UnitLit() => UnitVal
       case Asts.IntLit(value) => IntConstant(value)
       case Asts.DoubleLit(value) => ???
       case Asts.CharLit(value) => ???
@@ -551,9 +552,9 @@ final class SSAGenerator(er: ErrorReporter)
       valsCtx.valuesGen.newValue()
   }
 
-  private def mustNotBeVoid(tpe: Type, posOpt: Option[Position]): Unit = {
-    if (tpe.baseType == VoidType) {
-      reportError(s"$VoidType is not allowed in this position", posOpt)
+  private def mustNotBeUnit(tpe: Type, posOpt: Option[Position]): Unit = {
+    if (tpe.baseType == UnitType) {
+      reportError(s"$UnitType is not allowed in this position", posOpt)
     }
   }
 
