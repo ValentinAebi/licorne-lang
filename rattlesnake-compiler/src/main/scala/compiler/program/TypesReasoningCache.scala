@@ -4,31 +4,31 @@ import identifiers.TypeIdentifier
 import lang.{DatatypeSignature, RecordSignature}
 
 import scala.collection.mutable
+import scala.util.boundary
 
 
 final class TypesReasoningCache(program: Program) {
   private val allRecords = mutable.Map.empty[TypeIdentifier, Option[List[RecordSignature]]]
 
   def developUnencapsulated(tpe: TypeIdentifier): Option[List[RecordSignature]] = {
-
-    def develop(tid: TypeIdentifier): Option[List[RecordSignature]] = {
-      program.resolveSignature(tid) match {
-        case Some(sig: DatatypeSignature) =>
-          sig.directSubtypes.toList.foldLeft(Option(List.empty[RecordSignature])) { (lsOpt, stid) =>
-            for {
-              ls <- lsOpt
-              newElems <- develop(stid)
-            } yield (ls ++ newElems).distinct
-          }
-        case Some(sig: RecordSignature) =>
-          Some(List(sig))
-        case _ =>
-          None
-      }
-    }
-
     allRecords.getOrElseUpdate(tpe, {
-      val recordsOpt = develop(tpe)
+      val recordsOpt = boundary {
+        program.resolveSignature(tpe) match {
+          case Some(sig: DatatypeSignature) =>
+            val possibilities = mutable.ListBuffer.empty[RecordSignature]
+            for (subT <- sig.directSubtypes) {
+              developUnencapsulated(subT) match {
+                case Some(records) =>
+                  possibilities.addAll(records)
+                case None =>
+                  boundary.break(None)
+              }
+            }
+            Some(possibilities.toList.distinct)
+          case Some(sig: RecordSignature) => Some(List(sig))
+          case _ => None
+        }
+      }
       allRecords(tpe) = recordsOpt
       recordsOpt
     })
