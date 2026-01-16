@@ -36,6 +36,12 @@ final case class FunctionContext(
     case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName).map(_.variance)
     case _ => None
   }
+  
+  def withNewTypeTypeParam(ttp: TypeTypeParamInfo): FunctionContext =
+    copy(typeTypeParams = typeTypeParams + (ttp.tid -> ttp))
+  
+  def withNewFunctionTypeParam(ftp: FunctionTypeParamInfo): FunctionContext =
+    copy(functionTypeParams = functionTypeParams + (ftp.tid -> ftp))
 
   def checkType(tpe: Type, expVarianceOpt: Option[Variance], posOpt: Option[Position])
                (using er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
@@ -43,7 +49,7 @@ final case class FunctionContext(
       checkType(baseType, expVarianceOpt, posOpt)
       ts(itValue) = baseType
       val (predType, _) = typer.analyze(predicate, ControlFlowInfo.empty)
-      enforceExpectedBaseSubtypingConstraint(predType, BoolType)(using "type predicate", posOpt)
+      enforceExpectedBaseSubtypingConstraint(predType, BoolType, "type predicate")(using posOpt)
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
       if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
@@ -74,7 +80,7 @@ final case class FunctionContext(
                 for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
                   val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
                   val (argType, _) = typer.analyze(arg, ControlFlowInfo.empty)
-                  enforceExpectedBaseSubtypingConstraint(argType, paramType)(using "type application", posOpt)
+                  enforceExpectedBaseSubtypingConstraint(argType, paramType, "type application")(using posOpt)
                 }
               } else {
                 reportError(s"wrong number of arguments: expected $expParamsCnt, found ${args.size}", posOpt)

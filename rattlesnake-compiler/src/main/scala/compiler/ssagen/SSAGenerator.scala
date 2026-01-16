@@ -130,6 +130,9 @@ final class SSAGenerator(er: ErrorReporter)
       }
     }
     val program = programBuilder.build(allFunctionsCollector, positionsMapB.result(), formulaPositions)
+    for ((tv, posOpt) <- globalValuesContext.getTypeVariables) {
+      program.saveTypeVariable(tv, posOpt)
+    }
     er.displayAndTerminateIfErrors()
     program
   }
@@ -543,7 +546,7 @@ final class SSAGenerator(er: ErrorReporter)
       for ((id, typeTreeOpt) <- params) {
         val value = valsCtx.valuesGen.newValue(id)
         val givenTypeOpt = typeTreeOpt.map(mkType(_, valsCtx))
-        val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId, None, None))
+        val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId, None, None)(valsCtx.globalCtx.saveTypeVariable(_, closureDef.getPosition)))
         paramValsAndTypesB.addOne(value -> tpe)
         bodyCtx.saveOrRemap(id, value, ReassigPermission.Val, givenTypeOpt)
       }

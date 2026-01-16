@@ -13,25 +13,26 @@ import scala.util.boundary
 
 object BaseSubtypeRelation {
 
-  // TODO refactor the system of error reporting and implicits
-  def enforceExpectedBaseSubtypingConstraint(subT: Type, superT: Type)
-                                            (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
-    checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}"), Some(er))
+  def enforceExpectedBaseSubtypingConstraint(subT: Type, superT: Type, positionDescr: String)
+                                            (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+    checkSubtypingConstraint(subT, superT)(using Reporting(er, s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}", posOpt))
   }
 
-  def enforceBaseSubtypingConstraintCustomMsg(subT: Type, superT: Type)
-                                             (using fullMsg: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
-    checkSubtypingConstraint(subT, superT)(using ErrorMessage(fullMsg), Some(er))
+  def enforceBaseSubtypingConstraintCustomMsg(subT: Type, superT: Type, fullMsg: String)
+                                             (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+    checkSubtypingConstraint(subT, superT)(using Reporting(er, fullMsg, posOpt))
   }
 
   private def checkSubtypingConstraint(subT: Type, superT: Type)
-                                      (using errorMsg: ErrorMessage, erOpt: Option[ErrorReporter], posOpt: Option[Position], program: Program): Boolean = {
+                                      (using reporting: Reporting, program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
       case (subT: TypeVariable, superT) =>
         subT.resolve(superT)
+        checkAssignmentIsValid(subT, superT)
         true
       case (subT, superT: TypeVariable) =>
         superT.resolve(subT)
+        checkAssignmentIsValid(superT, subT)
         true
       case (subT, superT) =>
         checkSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
@@ -39,7 +40,7 @@ object BaseSubtypeRelation {
   }
 
   private def checkSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
-                                                          (using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter], program: Program): Boolean = {
+                                                          (using reporting: Reporting, program: Program): Boolean = {
     (subT, superT) match {
       case (subT, superT) if subT.trivialBaseSubtypeOf(superT) => true
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
@@ -48,6 +49,7 @@ object BaseSubtypeRelation {
         program.subToSuperSubst(subtypeName, supertypeName) match {
           case None =>
             reportNotSubtype(subT, superT)
+            false
           case Some(declSubtypingSubst) =>
             val supertypeSig = program.resolveSignatureAs[RuntimeTypeSignature](supertypeName).get
             val subtypeSig = program.resolveSignatureAs[RuntimeTypeSignature](subtypeName).get
@@ -93,9 +95,10 @@ object BaseSubtypeRelation {
         }
         isCorrect
       case (subT, BaseUnionType(superTypes)) =>
-        superTypes.exists(checkSubtypingConstraint(subT, _)(using errorMsg, None))
+        superTypes.exists(checkSubtypingConstraint(subT, _))
       case _ =>
         reportNotSubtype(subT, superT)
+        false
     }
 
   }
@@ -112,11 +115,17 @@ object BaseSubtypeRelation {
     case _ => false
   }
 
-  private def reportNotSubtype(subT: Type, superT: Type)(using errorMsg: ErrorMessage, posOpt: Option[Position], erOpt: Option[ErrorReporter]): Boolean = {
-    erOpt.foreach(_.report(Err(TypeChecking, errorMsg.msg, posOpt)))
-    false
+  private def checkAssignmentIsValid(tv: TypeVariable, tpe: Type)(using program: Program, reporting: Reporting): Boolean = {
+    given Reporting = reporting.copy(msg = s"type variable $tv has been assigned to type $tpe, which violates its bounds")
+    
+    tv.upperBoundOpt.forall(checkSubtypingConstraint(tpe, _)) && tv.lowerBoundOpt.forall(checkSubtypingConstraint(_, tpe))
   }
 
-  private case class ErrorMessage(msg: String) extends AnyVal
+  private def reportNotSubtype(subT: Type, superT: Type)(using reporting: Reporting): Unit = {
+    val Reporting(er, msg, posOpt) = reporting
+    er.report(Err(TypeChecking, msg, posOpt))
+  }
+
+  private case class Reporting(er: ErrorReporter, msg: String, posOpt: Option[Position])
 
 }

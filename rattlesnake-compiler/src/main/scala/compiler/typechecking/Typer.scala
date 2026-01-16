@@ -42,6 +42,7 @@ final class Typer(
     if (!continueIfErrors) {
       er.displayAndTerminateIfErrors()
     }
+    program.checkAllTypeVariablesHaveBeenResolved()
     (program, ts)
   }
 
@@ -60,9 +61,9 @@ final class Typer(
 
         given closuresCollector: mutable.Queue[ClosureInfo] = mutable.Queue.empty
 
-        val funcEndCtx = traverseAll(body, ControlFlowInfo.empty)
+        val funcEndCf = traverseAll(body, ControlFlowInfo.empty)
         val retTypeBase = funSig.retType.baseType
-        checkReturnsIfNonUnit(retTypeBase, funcEndCtx, "method", func.posOpt)
+        checkReturnsIfNonUnit(retTypeBase, funcEndCf, "method", func.posOpt)
         while (closuresCollector.nonEmpty) {
           val ClosureInfo(closureBody, closureCtx, cfStartInfo, closureExpRetTVar, closurePosOpt) = closuresCollector.dequeue()
           val closureEndCtx = traverseAll(closureBody, cfStartInfo)(using closureCtx)
@@ -116,13 +117,13 @@ final class Typer(
             boundary.break(cfIn)
           }
           afterCondCf = cfAfterCond
-          enforceExpectedBaseSubtypingConstraint(condType, BoolType)(using "loop condition")
+          enforceExpectedBaseSubtypingConstraint(condType, BoolType, "loop condition")
           val bodyEndCf = traverseAll(body, cfAfterCond.refined(infoIfCondTrue))
           for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
             // check if the guessed types work; if they do not, retry
             val typeInCond = analyzeIdVal(condVal, cfIn)
             val bodyEndType = analyzeIdVal(condVal, bodyEndCf)
-            val typeIsValid = enforceExpectedBaseSubtypingConstraint(bodyEndType.baseType, typeInCond.baseType)(using s"base type of $varId at the end of loop body")
+            val typeIsValid = enforceExpectedBaseSubtypingConstraint(bodyEndType.baseType, typeInCond.baseType, s"base type of $varId at the end of loop body")
             if (!typeIsValid) {
               ts.widenType(condVal, bodyEndType)
             }
@@ -135,7 +136,7 @@ final class Typer(
       }
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
         val (condType, cfAfterCond) = analyze(cond, cfIn)
-        enforceExpectedBaseSubtypingConstraint(condType, BoolType)(using "condition")
+        enforceExpectedBaseSubtypingConstraint(condType, BoolType, "condition")
         val (thenInfos, elseInfos) = extractTypeInfos(cond)
         val thenStartCtx = cfAfterCond.refined(thenInfos)
         val thenEndCf = traverseAll(thenBr, thenStartCtx)
@@ -204,30 +205,30 @@ final class Typer(
       case SSA.StaticTypeAssert(value, tpe) =>
         funCtx.checkType(tpe, None, posOpt)
         val (valueType, cfAfterValueEval) = analyze(value, cfIn)
-        enforceExpectedBaseSubtypingConstraint(valueType, tpe)(using "type ascription")
+        enforceExpectedBaseSubtypingConstraint(valueType, tpe, "type ascription")
         cfAfterValueEval
       case SSA.StaticAssert(formula) =>
         val (formulaType, cfAfterFormulaEval) = analyze(formula, cfIn)
-        enforceExpectedBaseSubtypingConstraint(formulaType, BoolType)(using "assertion")
+        enforceExpectedBaseSubtypingConstraint(formulaType, BoolType, "assertion")
         cfAfterFormulaEval
       case SSA.FieldWrite(owner, fieldName, rhs) =>
         val (ownerType, cfAfterOwnerEval) = analyze(owner, cfIn)
         val (rhsType, cfAfterRhsEval) = analyze(rhs, cfAfterOwnerEval)
         checkFieldAndReturnType(owner, ownerType.baseType, fieldName, posOpt,
           checkIsReassignable = false, ownerThatMustBeThis = None).foreach { fieldType =>
-          enforceExpectedBaseSubtypingConstraint(rhsType, fieldType)(using "field assignment")
+          enforceExpectedBaseSubtypingConstraint(rhsType, fieldType, "field assignment")
         }
         cfAfterRhsEval
       case SSA.Return(retVal) =>
         val (retType, cfAfterRetValEval) = analyze(retVal, cfIn)
-        enforceExpectedBaseSubtypingConstraint(retType, funCtx.expectedReturnType)(using "return value")
+        enforceExpectedBaseSubtypingConstraint(retType, funCtx.expectedReturnType, "return value")
         if (funCtx.expectedReturnType == UnitType) {
           warn(s"returning $UnitType", posOpt)
         }
         ControlFlowInfo.exited
       case SSA.Panic(msg) =>
         val (msgType, cfAfterMsgEval) = analyze(msg, cfIn)
-        enforceExpectedBaseSubtypingConstraint(msgType, StringType)(using "panic message")
+        enforceExpectedBaseSubtypingConstraint(msgType, StringType, "panic message")
         ControlFlowInfo.exited
       case SSA.Evaluate(formula) =>
         val (tpe, cfAfterFormulaEval) = analyze(formula, cfIn)
@@ -240,7 +241,7 @@ final class Typer(
         for ((paramId, paramType) <- params) {
           ts(paramId) = paramType
         }
-        val resultTypeVar = new TypeVariable(s"${assignedValue}_res", None, None)
+        val resultTypeVar = TypeVariable(s"${assignedValue}_res", None, None)(program.saveTypeVariable(_, posOpt))
         ts(assignedValue) = ClosureType(params.map(_._2), resultTypeVar)
         closuresCollector.enqueue(ClosureInfo(body, funCtx.copyForClosureBody(resultTypeVar), cfIn, resultTypeVar, posOpt))
         cfIn
@@ -313,8 +314,8 @@ final class Typer(
           }
           resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsTypeDesBase and $rhsTypeDesBase", posOpt) match {
             case Some(opSig) =>
-              enforceExpectedBaseSubtypingConstraint(lhsTypeRaw, opSig.leftOperandType)(using "operand", posOpt)
-              enforceExpectedBaseSubtypingConstraint(rhsTypeRaw, opSig.rightOperandType)(using "operand", posOpt)
+              enforceExpectedBaseSubtypingConstraint(lhsTypeRaw, opSig.leftOperandType, "operand")(using posOpt)
+              enforceExpectedBaseSubtypingConstraint(rhsTypeRaw, opSig.rightOperandType, "operand")(using posOpt)
               opSig.retType
             case None => NothingType
           }
@@ -331,7 +332,7 @@ final class Typer(
           }
           resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandTypeDesBase", posOpt) match {
             case Some(opSig) =>
-              enforceExpectedBaseSubtypingConstraint(operandTypeRaw, opSig.operandType)(using "operand", posOpt)
+              enforceExpectedBaseSubtypingConstraint(operandTypeRaw, opSig.operandType, "operand")(using posOpt)
               opSig.retType
             case None => NothingType
           }
@@ -378,7 +379,7 @@ final class Typer(
                       for (((paramVal, paramTypeRaw), arg) <- funSig.paramsInclThis.tail zip args) {
                         val (argType, cfAfterParam) = analyze(arg, currCf)
                         val paramTypeSubst = paramTypeRaw.substitute(subst, argsSubst.toMap)
-                        enforceExpectedBaseSubtypingConstraint(argType, paramTypeSubst)(using "method argument", posOpt)
+                        enforceExpectedBaseSubtypingConstraint(argType, paramTypeSubst, "method argument")(using posOpt)
                         arg match {
                           case arg: Value =>
                             argsSubst(paramVal) = arg
@@ -406,14 +407,13 @@ final class Typer(
         val tpe = closureType match {
           case ClosureType(paramTypes, resultType) =>
             for ((paramType, argType) <- paramTypes.zip(argTypesB.result())) {
-              enforceExpectedBaseSubtypingConstraint(argType, paramType)(using "closure argument", posOpt)
+              enforceExpectedBaseSubtypingConstraint(argType, paramType, "closure argument")(using posOpt)
             }
             resultType
           case _ =>
             reportError("illegal invocation: not a closure", posOpt)
             NothingType
         }
-        // FIXME make sure the way taints are handled in closures is correct (we probably need to prevent closures from having a non-deterministic return value)
         (tpe, currCf)
       case Select(owner, fieldName) =>
         val (ownerType, cfAfterOwnerEval) = analyze(owner, cfIn)
@@ -485,26 +485,35 @@ final class Typer(
     case _ => false
   }
 
-  private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position], contextDescrForTypeVar: String, reportIfLengthMismatch: Boolean)(using Program): Option[Map[TypeIdentifier, Type]] = {
+  private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position], contextDescrForTypeVar: String, reportIfLengthMismatch: Boolean)(using program: Program): Option[Map[TypeIdentifier, Type]] = {
     if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
       if (reportIfLengthMismatch) {
         reportError(s"wrong number of type arguments: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
       }
       None
     } else if (typeArgs.isEmpty && typeParams.nonEmpty) Some {
-      typeParams.map(tp => tp.tid -> new TypeVariable(s"${contextDescrForTypeVar}_${tp.tid}", tp.upperBoundOpt, tp.lowerBoundOpt)).toMap
-    } else Some {
-      val typeParamsMapB = Map.newBuilder[TypeIdentifier, Type]
-      for ((info, typeArg) <- typeParams.zip(typeArgs)){
-        info.upperBoundOpt.foreach { upb =>
-          enforceBaseSubtypingConstraintCustomMsg(typeArg, upb)(using s"cannot instantiate ${info.tid} to $typeArg: violates upper bound $upb", posOpt)
-        }
-        info.lowerBoundOpt.foreach { lob =>
-          enforceExpectedBaseSubtypingConstraint(lob, typeArg)(using s"cannot instantiate ${info.tid} to $typeArg: violates lower bound $lob", posOpt)
-        }
-        typeParamsMapB.addOne(info.tid -> typeArg)
+      val subst = mutable.Map.empty[TypeIdentifier, Type]
+      for (tp <- typeParams) {
+        val substImmut = subst.toMap
+        val upperBoundOpt = tp.upperBoundOpt.map(_.substitute(substImmut, Map.empty))
+        val lowerBoundOpt = tp.lowerBoundOpt.map(_.substitute(substImmut, Map.empty))
+        subst(tp.tid) = TypeVariable(tp.tid.stringId, upperBoundOpt, lowerBoundOpt)(program.saveTypeVariable(_, posOpt))
       }
-      typeParamsMapB.result()
+      subst.toMap
+    } else Some {
+      val typeParamsMap = mutable.Map.empty[TypeIdentifier, Type]
+      for ((info, typeArg) <- typeParams.zip(typeArgs)) {
+        info.upperBoundOpt.foreach { upbRaw =>
+          val upb = upbRaw.substitute(typeParamsMap.toMap, Map.empty)
+          enforceBaseSubtypingConstraintCustomMsg(typeArg, upb, s"cannot instantiate ${info.tid} to $typeArg: violates upper bound $upb")(using posOpt)
+        }
+        info.lowerBoundOpt.foreach { lobRaw =>
+          val lob = lobRaw.substitute(typeParamsMap.toMap, Map.empty)
+          enforceExpectedBaseSubtypingConstraint(lob, typeArg, s"cannot instantiate ${info.tid} to $typeArg: violates lower bound $lob")(using posOpt)
+        }
+        typeParamsMap.addOne(info.tid -> typeArg)
+      }
+      typeParamsMap.toMap
     }
   }
 

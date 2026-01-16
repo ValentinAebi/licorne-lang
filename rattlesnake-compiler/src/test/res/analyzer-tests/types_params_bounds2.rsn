@@ -1,0 +1,16 @@
+interface Animal
+interface Vertebrate : Animal
+interface Mammal : Vertebrate
+interface Dog : Mammal
+interface Cat : Mammal
+
+record R[A, B sub A](a: A, b: B)
+
+object Test {
+
+   fn testF(animal: Animal, dog: Dog) -> Unit {
+      new R(a = animal, b = dog);
+      new R(a = dog, b = animal);    //> E : type variable B has been assigned to type Animal, which violates its bounds
+   }
+
+}

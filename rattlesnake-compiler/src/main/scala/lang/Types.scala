@@ -107,10 +107,8 @@ object Types {
   }
 
   private val typeVarUidGen = new AtomicLong()
-
-  // FIXME check that the resolved type conforms to the bounds
-  // FIXME keep track of all instantiated type variables and check that all of them are resolved at the end of the typing phase
-  final class TypeVariable(descr: String, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends BaseType {
+  
+  final class TypeVariable private(name: String, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends BaseType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
 
@@ -130,7 +128,7 @@ object Types {
 
     def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
 
-    override def toString: String = s"?${descr}_$uid"
+    override def toString: String = name
 
     private def goUpPath(tpe: Type): Type = tpe match {
       case tVar: TypeVariable => tVar.actualTypeOpt match {
@@ -141,6 +139,14 @@ object Types {
         case None => tpe
       }
       case _ => tpe
+    }
+  }
+
+  object TypeVariable {
+    def apply(name: String, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
+      val tv = new TypeVariable(name, upperBoundOpt, lowerBoundOpt)
+      tvRegistrator(tv)
+      tv
     }
   }
 

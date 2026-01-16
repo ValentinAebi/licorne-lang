@@ -1,6 +1,8 @@
 package compiler.valuesconversion
 
+import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
+import lang.Types.TypeVariable
 import lang.Values.{Constant, Formula, IdValue, Value}
 
 import java.util
@@ -9,6 +11,7 @@ import scala.collection.mutable
 final class GlobalValuesContext extends ValuesContext {
   private val idToObjName = mutable.Map.empty[TypeIdentifier, IdValue]
   private val objNameToId = mutable.Map.empty[IdValue, TypeIdentifier]
+  private val typeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
 
   override val globalCtx: GlobalValuesContext = this
   override val valuesGen: ValuesGenerator = ValuesGenerator(this)
@@ -22,6 +25,12 @@ final class GlobalValuesContext extends ValuesContext {
     
   def getNameOfObject(objectVal: IdValue): TypeIdentifier =
     objNameToId.apply(objectVal)
+    
+  def saveTypeVariable(tv: TypeVariable, posOpt: Option[Position]): Unit = {
+    typeVariables.addOne((tv, posOpt))
+  }
+  
+  def getTypeVariables: List[(TypeVariable, Option[Position])] = typeVariables.toList
 
   override def deepCopyWithSameGlobalCtx: ValuesContext = this
 
