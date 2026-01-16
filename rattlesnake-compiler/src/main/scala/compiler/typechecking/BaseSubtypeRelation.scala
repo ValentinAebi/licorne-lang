@@ -7,15 +7,22 @@ import compiler.reporting.Position
 import compiler.util.zipCommons
 import lang.Types.*
 import lang.Types.PrimitiveType.*
-import lang.{RuntimeTypeSignature, Variance}
+import lang.{RuntimeTypeSignature, TypeTypeParamInfo, Variance}
 
 import scala.util.boundary
 
 object BaseSubtypeRelation {
 
-  def enforceBaseSubtypingConstraint(subT: Type, superT: Type)
-                                    (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean =
+  // TODO refactor the system of error reporting and implicits
+  def enforceExpectedBaseSubtypingConstraint(subT: Type, superT: Type)
+                                            (using positionDescr: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     checkSubtypingConstraint(subT, superT)(using ErrorMessage(s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}"), Some(er))
+  }
+
+  def enforceBaseSubtypingConstraintCustomMsg(subT: Type, superT: Type)
+                                             (using fullMsg: String, posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+    checkSubtypingConstraint(subT, superT)(using ErrorMessage(fullMsg), Some(er))
+  }
 
   private def checkSubtypingConstraint(subT: Type, superT: Type)
                                       (using errorMsg: ErrorMessage, erOpt: Option[ErrorReporter], posOpt: Option[Position], program: Program): Boolean = {
@@ -51,7 +58,7 @@ object BaseSubtypeRelation {
               case other => other
             }
             boundary {
-              for (((typeParam, variance), typeInSuper) <- supertypeSig.typeParams zip supertypeTypeArgs) {
+              for ((TypeTypeParamInfo(typeParam, variance, _, _), typeInSuper) <- supertypeSig.typeParams zip supertypeTypeArgs) {
                 val typeInSub = composedSubst.apply(typeParam)
                 val typeArgsMatch = variance match {
                   case Variance.Invariant =>

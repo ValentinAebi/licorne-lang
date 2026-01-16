@@ -1,0 +1,19 @@
+
+interface Animal
+interface Vertebrate : Animal
+interface Mammal : Vertebrate
+interface Dog : Mammal
+interface Cat : Mammal
+
+interface I {
+   fn foo[T sub Animal super Mammal](this, t: T) -> Unit
+   fn bar[T sub Vertebrate super Dog](this, t: T) -> Unit
+}
+
+class C : I {
+
+   fn foo[T sub Mammal super Dog](this, t: T) -> Unit {}   //> E : upper bound of type parameter T of function foo in C does not conform to the signature of the overridden function in I
+
+   fn bar[T sub Animal super Mammal](this, t: T) -> Unit {}  //> E : lower bound of type parameter T of function bar in C does not conform to the signature of the overridden function in I
+
+}

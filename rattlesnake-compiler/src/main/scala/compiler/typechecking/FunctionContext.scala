@@ -4,7 +4,7 @@ import compiler.pipeline.CompilationStep
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.enforceBaseSubtypingConstraint
+import compiler.typechecking.BaseSubtypeRelation.enforceExpectedBaseSubtypingConstraint
 import identifiers.TypeIdentifier
 import lang.*
 import lang.Types.*
@@ -18,8 +18,8 @@ import scala.annotation.tailrec
 
 final case class FunctionContext(
                                       program: Program,
-                                      typeTypeParams: Map[TypeIdentifier, Variance],
-                                      functionTypeParams: Set[TypeIdentifier],
+                                      typeTypeParams: Map[TypeIdentifier, TypeTypeParamInfo],
+                                      functionTypeParams: Map[TypeIdentifier, FunctionTypeParamInfo],
                                       thisVal: IdValue,
                                       ownerId: TypeIdentifier,
                                       expectedReturnType: Type
@@ -33,7 +33,7 @@ final case class FunctionContext(
     copy(expectedReturnType = expectedResultType)
 
   def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
-    case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName)
+    case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName).map(_.variance)
     case _ => None
   }
 
@@ -43,7 +43,7 @@ final case class FunctionContext(
       checkType(baseType, expVarianceOpt, posOpt)
       ts(itValue) = baseType
       val (predType, _) = typer.analyze(predicate, ControlFlowInfo.empty)
-      enforceBaseSubtypingConstraint(predType, BoolType)(using "type predicate", posOpt)
+      enforceExpectedBaseSubtypingConstraint(predType, BoolType)(using "type predicate", posOpt)
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
       if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
@@ -64,17 +64,17 @@ final case class FunctionContext(
             args.foreach(typer.analyze(_, ControlFlowInfo.empty))
           case Some(sig) =>
             if (typeArgs.size == sig.typeParams.size) {
-              for (((typeParam, typeParamVariance), typeArg) <- sig.typeParams zip typeArgs) {
+              for ((TypeTypeParamInfo(typeParam, typeParamVariance, upperBounds, lowerBounds), typeArg) <- sig.typeParams zip typeArgs) {
                 checkType(typeArg, expVarianceOpt.map(_ * typeParamVariance), posOpt)
               }
             }
-            typer.generateTypeParamsMapping(sig.typeParams.map(_._1), typeArgs, posOpt, s"tapp_${sig.id}", reportIfLengthMismatch = true).foreach { typeParamsSubst =>
+            typer.generateTypeParamsMapping(sig.typeParams, typeArgs, posOpt, s"tapp_${sig.id}", reportIfLengthMismatch = true).foreach { typeParamsSubst =>
               val expParamsCnt = sig.params.size
               if (args.size == expParamsCnt) {
                 for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
                   val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
                   val (argType, _) = typer.analyze(arg, ControlFlowInfo.empty)
-                  enforceBaseSubtypingConstraint(argType, paramType)(using "type application", posOpt)
+                  enforceExpectedBaseSubtypingConstraint(argType, paramType)(using "type application", posOpt)
                 }
               } else {
                 reportError(s"wrong number of arguments: expected $expParamsCnt, found ${args.size}", posOpt)

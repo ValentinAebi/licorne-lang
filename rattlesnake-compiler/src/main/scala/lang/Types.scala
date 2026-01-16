@@ -108,7 +108,9 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong()
 
-  final class TypeVariable(descr: String) extends BaseType {
+  // FIXME check that the resolved type conforms to the bounds
+  // FIXME keep track of all instantiated type variables and check that all of them are resolved at the end of the typing phase
+  final class TypeVariable(descr: String, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends BaseType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
 

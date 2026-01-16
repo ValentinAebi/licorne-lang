@@ -87,7 +87,7 @@ object Asts {
 
   sealed abstract class TopLevelDef extends Ast {
     def id: TypeIdentifier
-    def typeParams: List[TypeParam]
+    def typeParams: List[TypeParamWithVariance]
   }
 
   sealed trait TypeDefTree extends TopLevelDef {
@@ -104,7 +104,7 @@ object Asts {
 
   final case class InterfaceDef(
                                  id: TypeIdentifier,
-                                 typeParams: List[TypeParam],
+                                 typeParams: List[TypeParamWithVariance],
                                  functions: List[FunDef],
                                  directSupertypes: List[NamedTypeTree]
                                ) extends EncapsulatedTypeDefTree {
@@ -121,14 +121,14 @@ object Asts {
                             ) extends EncapsulatedTypeDefTree {
     override def description: String = s"object $id"
 
-    override def typeParams: List[TypeParam] = Nil
+    override def typeParams: List[TypeParamWithVariance] = Nil
 
     override def children: List[Ast] = functions
   }
 
   final case class ClassDef(
                              id: TypeIdentifier,
-                             typeParams: List[TypeParam],
+                             typeParams: List[TypeParamWithVariance],
                              params: List[ClassParam],
                              functions: List[FunDef],
                              directSupertypes: List[NamedTypeTree]
@@ -140,7 +140,7 @@ object Asts {
 
   final case class DataTypeDef(
                                 id: TypeIdentifier,
-                                typeParams: List[TypeParam],
+                                typeParams: List[TypeParamWithVariance],
                                 directSupertypes: List[NamedTypeTree]
                               ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"datatype $id"
@@ -150,7 +150,7 @@ object Asts {
 
   final case class RecordDef(
                               id: TypeIdentifier,
-                              typeParams: List[TypeParam],
+                              typeParams: List[TypeParamWithVariance],
                               fields: List[RecordParam],
                               directSupertypes: List[NamedTypeTree]
                             ) extends UnencapsulatedTypeDefTree {
@@ -159,13 +159,13 @@ object Asts {
     override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
   }
 
-  final case class FunDef(id: FunOrVarId, typeParams: List[TypeIdentifier], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
+  final case class FunDef(id: FunOrVarId, typeParams: List[TypeParamWithoutVariance], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
                           visibility: Visibility, isMain: Boolean) extends Ast {
-    override def children: List[Ast] = params ++ optRetType.toList ++ bodyOpt
+    override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }
 
-  final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParam], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
-    override def children: List[Ast] = params :+ rhs
+  final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParamWithVariance], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+    override def children: List[Ast] = typeParams ++ params :+ rhs
   }
   
   sealed trait Param extends Ast
@@ -209,8 +209,12 @@ object Asts {
   final case class ObjectImport(objectId: TypeIdentifier) extends ClassParam {
     override def children: List[Ast] = Nil
   }
+  
+  final case class TypeParamWithoutVariance(id: TypeIdentifier, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
+    override def children: List[Ast] = Nil
+  }
 
-  final case class TypeParam(id: TypeIdentifier, variance: Variance) extends Ast {
+  final case class TypeParamWithVariance(id: TypeIdentifier, variance: Variance, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
     override def children: List[Ast] = Nil
   }
 

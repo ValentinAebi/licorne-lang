@@ -10,7 +10,7 @@ import scala.collection.{SeqMap, mutable}
 final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
                                     functionName: FunOrVarId,
-                                    typeParams: List[TypeIdentifier],
+                                    typeParams: List[FunctionTypeParamInfo],
                                     paramsInclThis: SeqMap[IdValue, Type],
                                     retType: Type,
                                     visibility: Visibility
@@ -48,13 +48,13 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
 sealed trait TypeSignature {
   def id: TypeIdentifier
 
-  def typeParams: List[(TypeIdentifier, Variance)]
+  def typeParams: List[TypeTypeParamInfo]
 
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
   def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
     NamedType(id,
-      typeParams.map((tid, _) => NamedType(tid, List.empty, List.empty)),
+      typeParams.map { case TypeTypeParamInfo(tid, _, _, _) => NamedType(tid, List.empty, List.empty) },
       params.map(_._2._2).toList).substitute(typesSubst, valsSubst)
   }
 
@@ -64,7 +64,7 @@ sealed trait TypeSignature {
 
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
-                                     typeParams: List[(TypeIdentifier, Variance)],
+                                     typeParams: List[TypeTypeParamInfo],
                                      itValue: IdValue,
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type
@@ -104,7 +104,7 @@ sealed trait TypeParametric extends RuntimeTypeSignature {
 
 final case class InterfaceSignature(
                                      id: TypeIdentifier,
-                                     typeParams: List[(TypeIdentifier, Variance)],
+                                     typeParams: List[TypeTypeParamInfo],
                                      functions: Map[FunOrVarId, FunctionSignature],
                                      directSupertypes: List[NamedType]
                                    )
@@ -112,7 +112,7 @@ final case class InterfaceSignature(
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
-                                 typeParams: List[(TypeIdentifier, Variance)],
+                                 typeParams: List[TypeTypeParamInfo],
                                  fields: SeqMap[FunOrVarId, Field],
                                  importedObjects: mutable.LinkedHashSet[IdValue],
                                  functions: Map[FunOrVarId, FunctionSignature],
@@ -129,12 +129,12 @@ final case class ObjectSignature(
                                   directSupertypes: List[NamedType]
                                 )
   extends RuntimeTypeSignature, Abstract, Concrete, Encapsulated {
-  override def typeParams: List[(TypeIdentifier, Variance)] = List.empty
+  override def typeParams: List[TypeTypeParamInfo] = List.empty
 }
 
 final case class DatatypeSignature(
                                     id: TypeIdentifier,
-                                    typeParams: List[(TypeIdentifier, Variance)],
+                                    typeParams: List[TypeTypeParamInfo],
                                     directSupertypes: List[NamedType],
                                     directSubtypes: mutable.LinkedHashSet[TypeIdentifier]
                                   )
@@ -142,7 +142,7 @@ final case class DatatypeSignature(
 
 final case class RecordSignature(
                                   id: TypeIdentifier,
-                                  typeParams: List[(TypeIdentifier, Variance)],
+                                  typeParams: List[TypeTypeParamInfo],
                                   fields: SeqMap[FunOrVarId, StableField],
                                   directSupertypes: List[NamedType]
                                 )
@@ -161,3 +161,13 @@ enum Field {
     case _: StableField => true
   }
 }
+
+sealed trait TypeParamInfo {
+  val tid: TypeIdentifier
+  val upperBoundOpt: Option[Type]
+  val lowerBoundOpt: Option[Type]
+}
+
+final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo
+
+final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo

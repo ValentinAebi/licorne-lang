@@ -42,19 +42,19 @@ final class SSAGenerator(er: ErrorReporter)
         df match {
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
             val thisValue = valuesGen.newValue(ThisId)
-            val paramsCtx = LocalValuesContext(globalValuesContext)
-            paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val noFunctionsSig = InterfaceSignature(id, typeParams.convert, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val valsCtx = LocalValuesContext(globalValuesContext)
+            valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
+            val noFunctionsSig = InterfaceSignature(id, typeParams.convert(valsCtx), Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)))
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
           case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
             val thisValue = valuesGen.newValue(ThisId)
-            val paramsCtx = LocalValuesContext(globalValuesContext)
-            paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
+            val valsCtx = LocalValuesContext(globalValuesContext)
+            valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
-            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)))
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -79,7 +79,7 @@ final class SSAGenerator(er: ErrorReporter)
               case param@Asts.ObjectImport(objectId) =>
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
-            val noFunctionsSig = ClassSignature(id, typeParams.convert, fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val noFunctionsSig = ClassSignature(id, typeParams.convert(paramsCtx), fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -99,7 +99,7 @@ final class SSAGenerator(er: ErrorReporter)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = RecordSignature(id, typeParams.convert, stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val sig = RecordSignature(id, typeParams.convert(paramsCtx), stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
             programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
               datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
@@ -116,13 +116,15 @@ final class SSAGenerator(er: ErrorReporter)
                 typeAliasParams(paramId) = (paramType, paramValue)
                 paramsCtx.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams.convert, itValue, typeAliasParams, mkType(rhs, paramsCtx))
+            val sig = TypeAliasSignature(typeName, typeParams.convert(paramsCtx), itValue, typeAliasParams, mkType(rhs, paramsCtx))
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
       for (df@Asts.DataTypeDef(id, typeParams, directSupertypes) <- datatypeDefs) {
-        val emptyValsCtx = LocalValuesContext(globalValuesContext)
-        val sig = DatatypeSignature(id, typeParams.convert, directSupertypes.map(mkNamedType(_, emptyValsCtx)),
+        val valsCtx = LocalValuesContext(globalValuesContext)
+        val thisValue = valuesGen.newValue(ThisId)
+        valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
+        val sig = DatatypeSignature(id, typeParams.convert(valsCtx), directSupertypes.map(mkNamedType(_, valsCtx)),
           datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
         programBuilder.saveSignature(sig, df.getPosition)
       }
@@ -194,7 +196,11 @@ final class SSAGenerator(er: ErrorReporter)
           case Some(retTypeTree) => mkType(retTypeTree, funcLocalValsCtx)
           case None => PrimitiveType.UnitType
         }
-        val sig = FunctionSignature(functionsProvider.id, func.id, func.typeParams, paramsInclThis, retType, func.visibility)
+        val convertedTypeParams = func.typeParams.map {
+          case Asts.TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt) =>
+            FunctionTypeParamInfo(id, upperBoundOpt.map(mkType(_, funcLocalValsCtx)), lowerBoundOpt.map(mkType(_, funcLocalValsCtx)))
+        }
+        val sig = FunctionSignature(functionsProvider.id, func.id, convertedTypeParams, paramsInclThis, retType, func.visibility)
         val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
         functions(func.id) = (sig, bodyOpt)
         allFunctionsCollector(sig) = bodyOpt
@@ -218,8 +224,8 @@ final class SSAGenerator(er: ErrorReporter)
     resultB.result()
   }
 
-  extension (typeParams: List[Asts.TypeParam]) private def convert: List[(TypeIdentifier, Variance)] = typeParams.map {
-    case Asts.TypeParam(id, variance) => (id, variance)
+  extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(valsCtx: LocalValuesContext)(using util.IdentityHashMap[Formula, Position]): List[TypeTypeParamInfo] = typeParams.map {
+    case Asts.TypeParamWithVariance(id, variance, upperBounds, lowerBounds) => TypeTypeParamInfo(id, variance, upperBounds.map(mkType(_, valsCtx)), lowerBounds.map(mkType(_, valsCtx)))
   }
 
   private def generateSSAFunc(
@@ -537,7 +543,7 @@ final class SSAGenerator(er: ErrorReporter)
       for ((id, typeTreeOpt) <- params) {
         val value = valsCtx.valuesGen.newValue(id)
         val givenTypeOpt = typeTreeOpt.map(mkType(_, valsCtx))
-        val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId))
+        val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId, None, None))
         paramValsAndTypesB.addOne(value -> tpe)
         bodyCtx.saveOrRemap(id, value, ReassigPermission.Val, givenTypeOpt)
       }

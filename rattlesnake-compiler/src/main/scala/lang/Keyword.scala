@@ -21,6 +21,8 @@ enum Keyword(val str: String) {
   case Private extends Keyword("private")
   case Record extends Keyword("record")
   case Return extends Keyword("return")
+  case Sub extends Keyword("sub")
+  case Super extends Keyword("super")
   case Then extends Keyword("then")
   case This extends Keyword("this")
   case Typealias extends Keyword("typealias")

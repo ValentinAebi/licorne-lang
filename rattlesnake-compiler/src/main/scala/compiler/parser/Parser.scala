@@ -313,23 +313,30 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     openParenth ::: repeatWithSep(expr, comma) ::: closeParenth
   } setName "parenthArgsList"
 
-  private lazy val typeParamsWithoutVarianceListOpt = recursive {
-    opt(openBracket ::: repeatWithSepNonZero(highName, comma) ::: closeBracket) map (_.getOrElse(List.empty))
+  private lazy val typeParamsWithoutVarianceListOpt = {
+    opt(openBracket ::: repeatWithSepNonZero(typeParamWithoutVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   } setName "typeParamsWithoutVarianceListOpt"
 
-  private lazy val typeParamsPossiblyWithVarianceListOpt = recursive {
-    opt(openBracket ::: repeatWithSepNonZero(typeParam, comma) ::: closeBracket) map (_.getOrElse(List.empty))
+  // TODO allow union and intersection types as bounds?
+  private lazy val typeParamWithoutVariance = highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
+    case id ^: upperBoundOpt ^: lowerBoundOpt =>
+      TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt)
+  } setName "typeParamWithoutVariance"
+
+  private lazy val typeParamsPossiblyWithVarianceListOpt = {
+    opt(openBracket ::: repeatWithSepNonZero(typeParamWithVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   } setName "typeParamsPossiblyWithVarianceListOpt"
 
-  private lazy val typeParam = opt(op(Plus, Minus)) ::: highName map {
-    case varianceSymbolOpt ^: typeParamName => TypeParam(typeParamName,
-      varianceSymbolOpt match {
+  private lazy val typeParamWithVariance = opt(op(Plus, Minus)) ::: highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
+    case varianceSymbolOpt ^: typeParamName ^: upperBoundOpt ^: lowerBoundOpt =>
+      val variance = varianceSymbolOpt match {
         case Some(Plus) => Variance.Covariant
         case Some(Minus) => Variance.Contravariant
         case Some(_) => assert(false)
         case None => Variance.Invariant
-      })
-  } setName "typeParam"
+      }
+      TypeParamWithVariance(typeParamName, variance, upperBoundOpt, lowerBoundOpt)
+  } setName "typeParamWithVariance"
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
 
