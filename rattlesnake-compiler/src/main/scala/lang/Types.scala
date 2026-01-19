@@ -1,8 +1,9 @@
 package lang
 
-import identifiers.{ItId, TypeIdentifier}
-import lang.Types.PrimitiveType.NothingType
-import lang.Values.{And, Formula, IdValue, LessOrEq, LessThan}
+import identifiers.TypeIdentifier
+import lang.Types.PrimitiveType.{IntType, NothingType}
+import lang.Values.*
+import symbolic.FormulaSimplifier
 
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
@@ -32,19 +33,60 @@ object Types {
 
     override def hashCode(): Int = Objects.hash(baseType, predicate.substitute(Map.empty, Map(itValue -> itForHashAndEquals)))
 
+    def maybeAsRange: (Option[IntRange], Option[Formula]) = {
+      if (baseType == IntType) {
+        val minsB = Set.newBuilder[Formula]
+        val maxsB = Set.newBuilder[Formula]
+        val othersB = List.newBuilder[Formula]
+
+        def traverse(formula: Formula): Unit = formula match {
+          case And(lhs, rhs) =>
+            traverse(lhs)
+            traverse(rhs)
+          case LessOrEq(low, `itValue`) =>
+            minsB.addOne(low)
+          case LessOrEq(`itValue`, up) =>
+            maxsB.addOne(up)
+          case LessThan(lb, `itValue`) =>
+            minsB.addOne(Plus(lb, IntConstant(1)))
+          case LessThan(`itValue`, up) =>
+            maxsB.addOne(Minus(up, IntConstant(1)))
+          case other =>
+            othersB.addOne(other)
+        }
+
+        traverse(predicate)
+        val mins = minsB.result()
+        val maxs = maxsB.result()
+        val others = othersB.result()
+        val rangeOpt =
+          if mins.nonEmpty || maxs.nonEmpty then Some(IntRange(mins, maxs))
+          else None
+        val restOpt =
+          if others.nonEmpty then Some(others.reduceLeft(And(_, _)))
+          else None
+        (rangeOpt, restOpt)
+      } else {
+        (None, Some(predicate))
+      }
+    }
+
     override def toString: String = {
 
-      def maybeAsRange(predicate: Formula, alreadyInverted: Boolean): String = predicate match {
-        case And(LessOrEq(low, `itValue`), LessOrEq(`itValue`, up)) => s"[$low,$up]"
-        case And(LessOrEq(low, `itValue`), LessThan(`itValue`, up)) => s"[$low,$up)"
-        case And(lhs, rhs) if !alreadyInverted => maybeAsRange(And(rhs, lhs), alreadyInverted = true)
-        case LessOrEq(low, `itValue`) => s"[$low,]"
-        case LessOrEq(`itValue`, up) => s"[,$up]"
-        case LessThan(`itValue`, up) => s"[,$up)"
-        case _ => s"$baseType $itValue with $predicate"
+      given (IdValue => Option[Type]) = _ => None
+      
+      maybeAsRange match {
+        case (Some(range), Some(pred)) =>
+          val formulaSimplifier = new FormulaSimplifier
+          s"$range with ${formulaSimplifier.formulaToStringSimplified(pred)}"
+        case (Some(range), None) =>
+          range.toString
+        case (None, Some(pred)) =>
+          val formulaSimplifier = new FormulaSimplifier
+          s"$baseType with ${formulaSimplifier.formulaToStringSimplified(pred)}"
+        case (None, None) =>
+          baseType.toString
       }
-
-      maybeAsRange(predicate, alreadyInverted = false)
     }
   }
 
@@ -54,6 +96,22 @@ object Types {
         case NothingType => NothingType
         case _ => new RefinedType(baseType, itValue, predicate)
       }
+  }
+
+  final case class IntRange(lowerBounds: Set[Formula], upperBounds: Set[Formula]) {
+    override def toString: String = {
+      
+      val formulaSimplifier = FormulaSimplifier()
+
+      def boundsRepr(bounds: List[Formula], minOrMax: String): String = bounds match {
+        case Nil => ""
+        case List(bound) =>
+          formulaSimplifier.formulaToStringSimplified(bound)
+        case bounds => minOrMax ++ bounds.map(formulaSimplifier.formulaToStringSimplified).mkString("(", ",", ")")
+      }
+
+      s"[${boundsRepr(lowerBounds.toList, "max")},${boundsRepr(upperBounds.toList, "min")}]"
+    }
   }
 
   final case class UnionType(types: Set[Type]) extends Type {
@@ -107,7 +165,7 @@ object Types {
   }
 
   private val typeVarUidGen = new AtomicLong()
-  
+
   final class TypeVariable private(name: String, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends BaseType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]

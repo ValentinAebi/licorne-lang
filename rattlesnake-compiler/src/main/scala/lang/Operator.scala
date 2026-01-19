@@ -1,46 +1,49 @@
 package lang
 
+import lang.Operator.Precedence
+import lang.Operator.Precedence.{Add, Comparison, Mul}
+
 /**
  * Operator or separator
  */
-enum Operator(val str: String) {
+enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence]) {
 
-  case Assig extends Operator("=")
+  case Assig extends Operator("=", None)
 
-  case Plus extends Operator("+")
-  case Minus extends Operator("-")
-  case Times extends Operator("*")
-  case Div extends Operator("/")
-  case Modulo extends Operator("%")
-  case Equality extends Operator("==")
-  case Inequality extends Operator("!=")
-  case LessThan extends Operator("<")
-  case LessOrEq extends Operator("<=")
-  case GreaterThan extends Operator(">")
-  case GreaterOrEq extends Operator(">=")
-  case And extends Operator("&&")
-  case Or extends Operator("||")
+  case Plus extends Operator("+", Some(Precedence.Add))
+  case Minus extends Operator("-", Some(Precedence.Add))
+  case Times extends Operator("*", Some(Precedence.Mul))
+  case Div extends Operator("/", Some(Precedence.Mul))
+  case Modulo extends Operator("%", Some(Precedence.Mul))
+  case Equality extends Operator("==", Some(Precedence.Comparison))
+  case Inequality extends Operator("!=", Some(Precedence.Comparison))
+  case LessThan extends Operator("<", Some(Precedence.Comparison))
+  case LessOrEq extends Operator("<=", Some(Precedence.Comparison))
+  case GreaterThan extends Operator(">", Some(Precedence.Comparison))
+  case GreaterOrEq extends Operator(">=", Some(Precedence.Comparison))
+  case And extends Operator("&&", Some(Precedence.And))
+  case Or extends Operator("||", Some(Precedence.Or))
 
-  case ExclamationMark extends Operator("!")
+  case ExclamationMark extends Operator("!", None)
 
-  case Dot extends Operator(".")
+  case Dot extends Operator(".", None)
 
-  case OpeningParenthesis extends Operator("(")
-  case ClosingParenthesis extends Operator(")")
-  case OpeningBracket extends Operator("[")
-  case ClosingBracket extends Operator("]")
-  case OpeningBrace extends Operator("{")
-  case ClosingBrace extends Operator("}")
+  case OpeningParenthesis extends Operator("(", None)
+  case ClosingParenthesis extends Operator(")", None)
+  case OpeningBracket extends Operator("[", None)
+  case ClosingBracket extends Operator("]", None)
+  case OpeningBrace extends Operator("{", None)
+  case ClosingBrace extends Operator("}", None)
 
-  case Colon extends Operator(":")
-  case Semicolon extends Operator(";")
-  case Comma extends Operator(",")
+  case Colon extends Operator(":", None)
+  case Semicolon extends Operator(";", None)
+  case Comma extends Operator(",", None)
   
-  case PlusEq extends Operator("+=")
-  case MinusEq extends Operator("-=")
-  case TimesEq extends Operator("*=")
-  case DivEq extends Operator("/=")
-  case ModuloEq extends Operator("%=")
+  case PlusEq extends Operator("+=", None)
+  case MinusEq extends Operator("-=", None)
+  case TimesEq extends Operator("*=", None)
+  case DivEq extends Operator("/=", None)
+  case ModuloEq extends Operator("%=", None)
   
   def isNamedOperator: Boolean = str.forall(_.isLetter)
 
@@ -68,6 +71,10 @@ object Operator {
         (op, priority)
       }
       .toMap
+  }
+  
+  enum Precedence {
+    case Mul, Add, Comparison, And, Or
   }
 
 }

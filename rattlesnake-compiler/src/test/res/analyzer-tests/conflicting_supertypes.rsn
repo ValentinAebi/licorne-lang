@@ -7,4 +7,4 @@ class Foo1 : J[Int], K[Int]          //> E : Foo1 subtypes both I[List[Int]] and
 class Foo2 : K[String], J[List[String]]
 class Foo3 : K[Int], J[List[String]] //> E : Foo3 subtypes both I[List[List[Int]]] and I[List[List[String]]]
 class Foo4 : I[String], List[Int]
-class Foo5 : I[String], I[Int with it > 0]  //> E : Foo5 subtypes both I[String] and I[Int it$0 with 0 < it$0]
+class Foo5 : I[String], I[Int with it > 0]  //> E : Foo5 subtypes both I[String] and I[[1,]]
