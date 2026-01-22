@@ -1,13 +1,14 @@
 package lang
 
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.Type
+import lang.Types.{BaseType, NominalType, RefinedType, Type, UnionType}
 
 object Values {
 
   sealed trait Formula {
     final override def toString: String = formulaToString(this)(using _ => None)
-    def str(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
+    def typedStr(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
+    def str: String = typedStr(using _ => None)
   }
 
   sealed trait Capturable
@@ -102,9 +103,119 @@ object Values {
     override def toString: String = "cap"
   }
 
+  val zero: IntConstant = IntConstant(0)
+  val one: IntConstant = IntConstant(1)
+
   extension (formula: Formula) def asCst: Option[Constant] = formula match {
     case cst: Constant => Some(cst)
     case _ => None
+  }
+
+  extension (formula: Formula) def simplified: Formula = formula match {
+    case value: Value => value
+    case Plus(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (l, r) if l == zero => r
+        case (l, r) if r == zero => l
+        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc + lr)
+        case (l, r) => Plus(l, r)
+      }
+    case Minus(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (l, r) if l == zero => Neg(r)
+        case (l, r) if r == zero => l
+        case (l: Value, r: Value) if l == r => zero
+        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc - lr)
+        case (l, r) => Minus(l, r)
+      }
+    case Times(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (l, r) if l == zero => zero
+        case (l, r) if r == zero => zero
+        case (l, r) if l == one => r
+        case (l, r) if r == one => l
+        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc * lr)
+        case (l, r) => Times(l, r)
+      }
+    case Div(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (l, r) if r == one => l
+        case (l: Value, r: Value) if r != zero && l == r => one
+        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => IntConstant(lc / lr)
+        case (l, r) => Div(l, r)
+      }
+    case Rem(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => IntConstant(lc % lr)
+        case (l, r) => Rem(l, r)
+      }
+    case And(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (True, r) => r
+        case (False, r) if r.isPureByConstruction => False
+        case (l, True) => l
+        case (l, False) if l.isPureByConstruction => False
+        case (l, r) => And(l, r)
+      }
+    case Or(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (True, r) if r.isPureByConstruction => True
+        case (False, r) => r
+        case (l, True) if l.isPureByConstruction => True
+        case (l, False) => l
+        case (l, r) => Or(l, r)
+      }
+    case LessThan(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (IntConstant(lc), IntConstant(lr)) =>
+          if lc < lr then True else False
+        case (l, r) => LessThan(l, r)
+      }
+    case LessOrEq(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (IntConstant(lc), IntConstant(lr)) =>
+          if lc <= lr then True else False
+        case (l, r) => LessOrEq(l, r)
+      }
+    case Equal(lhs, rhs) =>
+      (lhs.simplified, rhs.simplified) match {
+        case (l: Value, r: Value) =>
+          if l == r then True else False
+        case (l, r) => Equal(l, r)
+      }
+    case Neg(operand) =>
+      operand.simplified match {
+        case Neg(subOperand) => subOperand
+        case IntConstant(cst) => IntConstant(-cst)
+        case opSimplified => Neg(opSimplified)
+      }
+    case Not(operand) =>
+      operand.simplified match {
+        case Not(subOperand) => subOperand
+        case True => False
+        case False => True
+        case opSimplified => Not(opSimplified)
+      }
+    case Call(receiver, funId, typeArgs, args) =>
+      Call(receiver.simplified, funId, typeArgs.map(simplifyPredicates), args.map(_.simplified))
+    case ClosureInvocation(closure, args) =>
+      ClosureInvocation(closure.simplified, args.map(_.simplified))
+    case Select(owner, fieldName) =>
+      Select(owner.simplified, fieldName)
+    case HasType(formula, tpe) =>
+      HasType(formula.simplified, tpe)
+  }
+
+  extension (formula: Formula) def isPureByConstruction: Boolean = formula match {
+    case value: Value => true
+    case op: BinOp =>
+      op.lhs.isPureByConstruction && op.rhs.isPureByConstruction
+    case op: UnaryOp =>
+      op.operand.isPureByConstruction
+    case Call(receiver, funId, typeArgs, args) => false
+    case ClosureInvocation(closure, args) => false
+    case Select(owner, fieldName) => false
+    case HasType(formula, tpe) => formula.isPureByConstruction
   }
 
   extension (formula: Formula) def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Formula = formula match {
@@ -153,6 +264,15 @@ object Values {
       s"${formulaToString(owner)}.$fieldName"
     case HasType(formula, tpe) =>
       s"${formulaToString(formula)} is $tpe"
+  }
+
+  private def simplifyPredicates(tpe: Type): Type = tpe match {
+    case Types.RefinedType(baseType, itValue, predicate) =>
+      RefinedType(baseType, itValue, predicate.simplified)
+    case Types.UnionType(types) =>
+      UnionType(types.map(simplifyPredicates))
+    case baseType: Types.BaseType =>
+      simplifyPredicates(baseType)
   }
 
 }

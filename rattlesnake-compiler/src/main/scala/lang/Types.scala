@@ -3,7 +3,6 @@ package lang
 import identifiers.TypeIdentifier
 import lang.Types.PrimitiveType.{IntType, NothingType}
 import lang.Values.*
-import symbolic.FormulaSimplifier
 
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
@@ -72,18 +71,13 @@ object Types {
     }
 
     override def toString: String = {
-
-      given (IdValue => Option[Type]) = _ => None
-      
       maybeAsRange match {
         case (Some(range), Some(pred)) =>
-          val formulaSimplifier = new FormulaSimplifier
-          s"$range with ${formulaSimplifier.formulaToStringSimplified(pred)}"
+          s"$range with ${pred.simplified}"
         case (Some(range), None) =>
           range.toString
         case (None, Some(pred)) =>
-          val formulaSimplifier = new FormulaSimplifier
-          s"$baseType with ${formulaSimplifier.formulaToStringSimplified(pred)}"
+          s"$baseType with ${pred.simplified}"
         case (None, None) =>
           baseType.toString
       }
@@ -100,14 +94,11 @@ object Types {
 
   final case class IntRange(lowerBounds: Set[Formula], upperBounds: Set[Formula]) {
     override def toString: String = {
-      
-      val formulaSimplifier = FormulaSimplifier()
 
       def boundsRepr(bounds: List[Formula], minOrMax: String): String = bounds match {
         case Nil => ""
-        case List(bound) =>
-          formulaSimplifier.formulaToStringSimplified(bound)
-        case bounds => minOrMax ++ bounds.map(formulaSimplifier.formulaToStringSimplified).mkString("(", ",", ")")
+        case List(bound) => bound.simplified.str
+        case bounds => minOrMax ++ bounds.map(_.simplified.str).mkString("(", ",", ")")
       }
 
       s"[${boundsRepr(lowerBounds.toList, "max")},${boundsRepr(upperBounds.toList, "min")}]"

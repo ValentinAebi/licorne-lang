@@ -46,7 +46,7 @@ final class SSAPrinter[T](
                  (using typeFunc: IdValue => Option[Type], pps: PrettyPrintString, globalValsCtx: GlobalValuesContext): Unit = {
     instr match {
       case SSA.Loop(cond, body, variables) =>
-        pps.add("loop (").add(cond.str).add(") ").startBlock()
+        pps.add("loop (").add(cond.typedStr).add(") ").startBlock()
         addAllInstr(body, printIfEmpty = true)
         pps.endBlock().add(" with vars ").startBlock()
         val varsIter = variables.iterator
@@ -59,7 +59,7 @@ final class SSAPrinter[T](
         }
         pps.endBlock()
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
-        pps.add("if (").add(cond.str).add(") ").startBlock()
+        pps.add("if (").add(cond.typedStr).add(") ").startBlock()
         addAllInstr(thenBr, printIfEmpty = true)
         pps.endBlock().add(" else ").startBlock()
         addAllInstr(elseBr, printIfEmpty = true)
@@ -67,11 +67,11 @@ final class SSAPrinter[T](
         if (postMerges.nonEmpty) pps.newLine()
         addAllInstr(postMerges, printIfEmpty = false)
       case SSA.Phi(assignedValue, inValues) =>
-        pps.add(s"${assignedValue.str} := phi ${inValues.map(_.str).mkString("{ ", ", ", " }")}")
+        pps.add(s"${assignedValue.typedStr} := phi ${inValues.map(_.typedStr).mkString("{ ", ", ", " }")}")
       case SSA.Assignment(assignedValue, rhs) =>
-        pps.add(assignedValue.str).add(" := ").add(rhs.str)
+        pps.add(assignedValue.typedStr).add(" := ").add(rhs.typedStr)
       case SSA.Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) =>
-        pps.add(s"${assignedValue.str} := new $classOrRecordName")
+        pps.add(s"${assignedValue.typedStr} := new $classOrRecordName")
         if (typeArgs.nonEmpty) {
           pps.add("[")
           val tArgsIter = typeArgs.iterator
@@ -91,23 +91,23 @@ final class SSAPrinter[T](
           pps.endBlock()
         }
       case SSA.Cast(inValue, targetType) =>
-        pps.add(s"cast-dynamic ${inValue.str} as $targetType")
+        pps.add(s"cast-dynamic ${inValue.typedStr} as $targetType")
       case SSA.Conversion(assignedValue, inValue, targetType) =>
-        pps.add(s"convert ${assignedValue.str} := ${inValue.str} as $targetType")
+        pps.add(s"convert ${assignedValue.typedStr} := ${inValue.typedStr} as $targetType")
       case SSA.StaticAssert(formula) =>
-        pps.add(s"assert-static ${formula.str}")
+        pps.add(s"assert-static ${formula.typedStr}")
       case SSA.StaticTypeAssert(value, tpe) =>
         pps.add(s"type-assert-static $value : $tpe")
       case SSA.FieldWrite(owner, fieldName, value) =>
-        pps.add(s"${owner.str}.$fieldName := ${value.str}")
+        pps.add(s"${owner.typedStr}.$fieldName := ${value.typedStr}")
       case SSA.Return(retVal) =>
-        pps.add(s"return ").add(retVal.str)
+        pps.add(s"return ").add(retVal.typedStr)
       case SSA.Panic(msg) =>
-        pps.add("panic ").add(msg.str)
+        pps.add("panic ").add(msg.typedStr)
       case SSA.Evaluate(formula) =>
-        pps.add("evaluate ").add(formula.str)
+        pps.add("evaluate ").add(formula.typedStr)
       case SSA.DynamicAssert(formula) =>
-        pps.add(s"dynamic-assert ${formula.str}")
+        pps.add(s"dynamic-assert ${formula.typedStr}")
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"decl-local $localId : $tpe")
       case SSA.ClosureCreation(assignedValue, params, body) =>

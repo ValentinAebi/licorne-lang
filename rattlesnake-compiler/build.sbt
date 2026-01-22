@@ -6,7 +6,6 @@ scalaVersion := "3.7.3"
 javacOptions ++= Seq("-source", "21", "-target", "21")
 
 libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test"
-libraryDependencies += "org.matheclipse" % "matheclipse-core" % "3.0.0"
 
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", _*) => MergeStrategy.discard
