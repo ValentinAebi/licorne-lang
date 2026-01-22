@@ -7,7 +7,9 @@ object Formulas {
 
   sealed trait Formula {
     final override def toString: String = formulaToString(this)(using _ => None)
+
     def typedStr(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
+
     def str: String = typedStr(using _ => None)
   }
 
@@ -17,11 +19,13 @@ object Formulas {
 
   trait IdValue extends Value, Capturable {
     def completeDescr: String
+
     def sourceLevelDescrOrDefault: String
   }
 
   final case class RegularIdValue(varId: String, idx: Long) extends IdValue {
     override def completeDescr: String = s"$varId$$$idx"
+
     override def sourceLevelDescrOrDefault: String = varId
   }
 
@@ -40,7 +44,7 @@ object Formulas {
   case object NullPtr extends Constant {
     override def valueDescr: String = "null"
   }
-  
+
   case object UnitVal extends Constant {
     override def valueDescr: String = "unit"
   }
@@ -117,7 +121,8 @@ object Formulas {
       (lhs.simplified, rhs.simplified) match {
         case (l, r) if l == zero => r
         case (l, r) if r == zero => l
-        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc + lr)
+        case (IntConstant(lc), IntConstant(lr)) => mkIntConst(lc + lr)
+        case (l, Neg(subR)) => Minus(l, subR)
         case (l, r) => Plus(l, r)
       }
     case Minus(lhs, rhs) =>
@@ -125,7 +130,9 @@ object Formulas {
         case (l, r) if l == zero => Neg(r)
         case (l, r) if r == zero => l
         case (l: Value, r: Value) if l == r => zero
-        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc - lr)
+        case (IntConstant(lc), IntConstant(lr)) => mkIntConst(lc - lr)
+        case (l, Neg(subR)) => Plus(l, subR)
+        case (l, Minus(rl, rr)) => Plus(Minus(l, rl), rr)
         case (l, r) => Minus(l, r)
       }
     case Times(lhs, rhs) =>
@@ -134,19 +141,25 @@ object Formulas {
         case (l, r) if r == zero => zero
         case (l, r) if l == one => r
         case (l, r) if r == one => l
-        case (IntConstant(lc), IntConstant(lr)) => IntConstant(lc * lr)
+        case (IntConstant(lc), IntConstant(lr)) => mkIntConst(lc * lr)
+        case (Neg(subL), Neg(subR)) => Times(subL, subR)
+        case (Neg(subL), r) => Neg(Times(subL, r))
+        case (l, Neg(subR)) => Neg(Times(l, subR))
         case (l, r) => Times(l, r)
       }
     case Div(lhs, rhs) =>
       (lhs.simplified, rhs.simplified) match {
         case (l, r) if r == one => l
         case (l: Value, r: Value) if r != zero && l == r => one
-        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => IntConstant(lc / lr)
+        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => mkIntConst(lc / lr)
+        case (Neg(subL), Neg(subR)) => Div(subL, subR)
+        case (Neg(subL), r) => Neg(Div(subL, r))
+        case (l, Neg(subR)) => Neg(Div(l, subR))
         case (l, r) => Div(l, r)
       }
     case Rem(lhs, rhs) =>
       (lhs.simplified, rhs.simplified) match {
-        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => IntConstant(lc % lr)
+        case (IntConstant(lc), IntConstant(lr)) if lr != 0 => mkIntConst(lc % lr)
         case (l, r) => Rem(l, r)
       }
     case And(lhs, rhs) =>
@@ -155,6 +168,15 @@ object Formulas {
         case (False, r) if r.isPureByConstruction => False
         case (l, True) => l
         case (l, False) if l.isPureByConstruction => False
+        case (LessOrEq(x1, y1), Not(Equal(x2, y2)))
+          if x1 == y1 && x2 == y2 && x1.isPureByConstruction && y1.isPureByConstruction =>
+          LessThan(x1, y1)
+        case (Not(Equal(x1, y1)), LessOrEq(x2, y2))
+          if x1 == y1 && x2 == y2 && x1.isPureByConstruction && y1.isPureByConstruction =>
+          LessThan(x1, y1)
+        case (LessOrEq(x1, y1), LessOrEq(y2, x2))
+          if x1 == y1 && x2 == y2 && x1.isPureByConstruction && y1.isPureByConstruction =>
+          Equal(x1, y1)
         case (l, r) => And(l, r)
       }
     case Or(lhs, rhs) =>
@@ -163,6 +185,12 @@ object Formulas {
         case (False, r) => r
         case (l, True) if l.isPureByConstruction => True
         case (l, False) => l
+        case (LessThan(x1, y1), Equal(x2, y2))
+          if x1 == x2 && y1 == y2 && x1.isPureByConstruction && y1.isPureByConstruction =>
+          LessOrEq(x1, y1)
+        case (Equal(x1, y1), LessThan(x2, y2))
+          if x1 == x2 && y1 == y2 && x1.isPureByConstruction && y1.isPureByConstruction =>
+          LessOrEq(x1, y1)
         case (l, r) => Or(l, r)
       }
     case LessThan(lhs, rhs) =>
@@ -186,7 +214,7 @@ object Formulas {
     case Neg(operand) =>
       operand.simplified match {
         case Neg(subOperand) => subOperand
-        case IntConstant(cst) => IntConstant(-cst)
+        case IntConstant(cst) => mkIntConst(-cst)
         case opSimplified => Neg(opSimplified)
       }
     case Not(operand) =>
@@ -252,7 +280,9 @@ object Formulas {
     case constant: Constant =>
       constant.valueDescr
     case op: BinOp =>
-      s"${formulaToString(op.lhs)} ${op.operator} ${formulaToString(op.rhs)}"
+      val l = parenthesizeIfNeeded(formulaToString(op.lhs), needsParenthesesLeft(op))
+      val r = parenthesizeIfNeeded(formulaToString(op.rhs), needsParenthesesRight(op))
+      s"$l ${op.operator} $r"
     case op: UnaryOp =>
       s"${op.operator} ${formulaToString(op.operand)}"
     case Call(receiver, funId, typeArgs, args) =>
@@ -273,6 +303,35 @@ object Formulas {
       UnionType(types.map(simplifyPredicates))
     case baseType: Types.BaseType =>
       simplifyPredicates(baseType)
+  }
+
+  private def mkIntConst(cst: Int): Formula =
+    if cst < 0 then Neg(IntConstant(-cst)) else IntConstant(cst)
+
+  private def parenthesizeIfNeeded(formulaStr: String, needsParentheses: Boolean): String =
+    if needsParentheses then s"($formulaStr)" else formulaStr
+
+  private def needsParenthesesLeft(binOp: BinOp): Boolean = {
+    binOp.lhs match {
+      case lhsOp: BinOp =>
+        !(lhsOp.operator == binOp.operator && operatorIsAssoc(binOp.operator)) &&
+          lhsOp.bindsWeakerThan(binOp)
+      case _ => false
+    }
+  }
+
+  private def needsParenthesesRight(binOp: BinOp): Boolean = {
+    binOp.rhs match {
+      case rhsOp: BinOp =>
+        !(rhsOp.operator == binOp.operator && operatorIsAssoc(binOp.operator)) &&
+          rhsOp.bindsNoMoreThan(binOp)
+      case _ => false
+    }
+  }
+
+  private def operatorIsAssoc(op: Operator): Boolean = op match {
+    case Operator.Plus | Operator.Times | Operator.And | Operator.Or => true
+    case _ => false
   }
 
 }
