@@ -4,7 +4,7 @@ import lang.Types
 
 import scala.collection.mutable
 import lang.Types.{BaseType, Type}
-import lang.Values.IdValue
+import lang.Formulas.IdValue
 
 final class TypeStore {
   private val store = mutable.Map.empty[IdValue, Type]

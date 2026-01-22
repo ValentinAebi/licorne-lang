@@ -10,7 +10,7 @@ import compiler.valuesconversion.ValuesContext.LocalInfo
 import identifiers.{FunOrVarId, ThisId}
 import lang.ReassigPermission
 import lang.Types.Type
-import lang.Values.*
+import lang.Formulas.*
 
 import scala.annotation.tailrec
 import scala.collection.mutable

@@ -9,7 +9,7 @@ import identifiers.TypeIdentifier
 import lang.*
 import lang.Types.*
 import lang.Types.PrimitiveType.BoolType
-import lang.Values.IdValue
+import lang.Formulas.IdValue
 import lang.Variance.{Contravariant, Covariant}
 
 import scala.annotation.tailrec

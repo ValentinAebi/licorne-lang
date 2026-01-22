@@ -14,7 +14,7 @@ import lang.*
 import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
-import lang.Values.*
+import lang.Formulas.*
 import lang.Visibility.Private
 
 import scala.collection.mutable

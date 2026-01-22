@@ -5,7 +5,7 @@ import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.FunctionSignature
 import lang.Types.{PrimitiveType, Type}
-import lang.Values.*
+import lang.Formulas.*
 
 object SSA {
 

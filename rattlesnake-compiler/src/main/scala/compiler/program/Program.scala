@@ -14,7 +14,7 @@ import identifiers.{ThisId, TypeIdentifier}
 import lang.*
 import lang.Types.*
 import lang.Types.PrimitiveType.UnitType
-import lang.Values.{And, Formula, IdValue}
+import lang.Formulas.{And, Formula, IdValue}
 import lang.Variance.*
 import lang.Visibility.Private
 
@@ -497,12 +497,12 @@ final case class Program(
   }
 
   private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {
-    case value: Values.Value => Set.empty
-    case op: Values.BinOp => findMentionedTypes(op.lhs) ++ findMentionedTypes(op.rhs)
-    case op: Values.UnaryOp => findMentionedTypes(op.operand)
-    case Values.Call(receiver, funId, typeArgs, args) => findMentionedTypes(receiver) ++ typeArgs.flatMap(findMentionedTypes) ++ args.flatMap(findMentionedTypes)
-    case Values.Select(owner, fieldName) => findMentionedTypes(owner)
-    case Values.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
+    case value: Formulas.Value => Set.empty
+    case op: Formulas.BinOp => findMentionedTypes(op.lhs) ++ findMentionedTypes(op.rhs)
+    case op: Formulas.UnaryOp => findMentionedTypes(op.operand)
+    case Formulas.Call(receiver, funId, typeArgs, args) => findMentionedTypes(receiver) ++ typeArgs.flatMap(findMentionedTypes) ++ args.flatMap(findMentionedTypes)
+    case Formulas.Select(owner, fieldName) => findMentionedTypes(owner)
+    case Formulas.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
   }
 
   private def checkTypeParamsAndMkTSigCheckingCtx(id: TypeIdentifier, typeParams: Iterable[TypeTypeParamInfo])(using typer: Typer, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): FunctionContext = {

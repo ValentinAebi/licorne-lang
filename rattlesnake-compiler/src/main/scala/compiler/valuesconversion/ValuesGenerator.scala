@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import identifiers.{Identifier, NormalFunOrVarId}
-import lang.Values.{IdValue, RegularIdValue}
+import lang.Formulas.{IdValue, RegularIdValue}
 
 import scala.collection.mutable
 

@@ -4,7 +4,7 @@ import identifiers.{ItId, TypeIdentifier}
 import lang.Operator.*
 import lang.Types.PrimitiveType.*
 import lang.Types.{BaseType, RefinedType, Type}
-import lang.Values.{Equal, IdValue, IntConstant, Not}
+import lang.Formulas.{Equal, IdValue, IntConstant, Not}
 
 import scala.annotation.targetName
 

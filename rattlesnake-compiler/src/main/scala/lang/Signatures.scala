@@ -3,7 +3,7 @@ package lang
 import identifiers.*
 import lang.Field.StableField
 import lang.Types.{NamedType, Type}
-import lang.Values.{Formula, IdValue}
+import lang.Formulas.{Formula, IdValue}
 
 import scala.collection.{SeqMap, mutable}
 

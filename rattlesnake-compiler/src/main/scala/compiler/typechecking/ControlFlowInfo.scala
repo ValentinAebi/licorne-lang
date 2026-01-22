@@ -5,7 +5,7 @@ import compiler.typechecking.ControlFlowInfo.{TypeInfo, exited}
 import identifiers.TypeIdentifier
 import lang.Types.{BaseUnionType, NamedType}
 import lang.{DatatypeSignature, Encapsulated, RecordSignature, Unencapsulated}
-import lang.Values.IdValue
+import lang.Formulas.IdValue
 
 import scala.annotation.tailrec
 import scala.collection.mutable

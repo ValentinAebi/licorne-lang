@@ -2,7 +2,7 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.Types.PrimitiveType.{IntType, NothingType}
-import lang.Values.*
+import lang.Formulas.*
 
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong

@@ -14,7 +14,7 @@ import lang.*
 import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
 import lang.Types.PrimitiveType.UnitType
-import lang.Values.*
+import lang.Formulas.*
 
 import java.util
 import scala.collection.mutable.ListBuffer

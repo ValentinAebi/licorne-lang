@@ -3,7 +3,7 @@ package compiler.valuesconversion
 import compiler.reporting.Position
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Types.TypeVariable
-import lang.Values.{Constant, Formula, IdValue, Value}
+import lang.Formulas.{Constant, Formula, IdValue, Value}
 
 import java.util
 import scala.collection.mutable

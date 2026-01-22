@@ -3,7 +3,7 @@ package lang
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.Types.{BaseType, NominalType, RefinedType, Type, UnionType}
 
-object Values {
+object Formulas {
 
   sealed trait Formula {
     final override def toString: String = formulaToString(this)(using _ => None)

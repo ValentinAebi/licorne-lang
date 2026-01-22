@@ -6,8 +6,8 @@ import compiler.program.Program
 import compiler.typechecking.TypeStore
 import compiler.valuesconversion.GlobalValuesContext
 import lang.Types.Type
-import lang.Values
-import lang.Values.IdValue
+import lang.Formulas
+import lang.Formulas.IdValue
 
 final class SSAPrinter[T](
                            private val getProgram: T => Program,
