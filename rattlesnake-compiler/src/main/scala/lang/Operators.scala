@@ -1,10 +1,10 @@
 package lang
 
 import identifiers.{ItId, TypeIdentifier}
+import lang.Formulas.{Equal, IdValue, IntConstant, Not}
 import lang.Operator.*
 import lang.Types.PrimitiveType.*
-import lang.Types.{BaseType, RefinedType, Type}
-import lang.Formulas.{Equal, IdValue, IntConstant, Not}
+import lang.Types.Type
 
 import scala.annotation.targetName
 
@@ -37,9 +37,9 @@ object Operators {
 
     override def sourceLevelDescrOrDefault: String = completeDescr
   }
-
-  // TODO NonZeroDouble for / and % on Doubles
-  private val nonZeroInt = RefinedType(IntType, nzi$it, Not(Equal(nzi$it, IntConstant(0))))
+  
+  private val nonZeroInt = IntType  // FIXME use refinements
+  // TODO also NonZeroDouble for / and % on Doubles?
 
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),
@@ -93,7 +93,7 @@ object Operators {
   }
 
   private case class PartialBinop2(leftOperandType: Type, op: Operator, rightOperandType: Type) {
-    infix def is(retType: BaseType): BinaryOpSignature = {
+    infix def is(retType: Type): BinaryOpSignature = {
       BinaryOpSignature(leftOperandType, op, rightOperandType, retType)
     }
   }

@@ -1,7 +1,7 @@
 package lang
 
 import lang.Types.PrimitiveType.*
-import lang.Types.{PrimitiveType, Type, BaseType}
+import lang.Types.{PrimitiveType, Type}
 
 enum TypeConversion(val from: PrimitiveType, val to: PrimitiveType) {
   
@@ -18,8 +18,8 @@ enum TypeConversion(val from: PrimitiveType, val to: PrimitiveType) {
 
 object TypeConversion {
   
-  def conversionFor(from: BaseType, to: BaseType): Option[TypeConversion] = {
-    TypeConversion.values.find(conv => conv.from == from && conv.to == to)
+  def conversionFor(from: Type, to: Type): Option[TypeConversion] = {
+    TypeConversion.values.find(conv => conv.from == from.principalType && conv.to == to.principalType)
   }
   
 }

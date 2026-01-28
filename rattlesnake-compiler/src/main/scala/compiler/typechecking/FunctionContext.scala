@@ -4,12 +4,13 @@ import compiler.pipeline.CompilationStep
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.enforceExpectedBaseSubtypingConstraint
+import compiler.typechecking.SubtypeRelation.enforceExpectedSubtypingConstraint
 import identifiers.TypeIdentifier
 import lang.*
 import lang.Types.*
-import lang.Types.PrimitiveType.BoolType
+import lang.Types.PrimitiveType.{BoolType, IntType}
 import lang.Formulas.IdValue
+import lang.Types.IntRangeType.Bound
 import lang.Variance.{Contravariant, Covariant}
 
 import scala.annotation.tailrec
@@ -32,7 +33,7 @@ final case class FunctionContext(
   def copyForClosureBody(expectedResultType: Type): FunctionContext =
     copy(expectedReturnType = expectedResultType)
 
-  def varianceOf(tpe: BaseType): Option[Variance] = tpe match {
+  def varianceOf(tpe: Type): Option[Variance] = tpe.principalType match {
     case NamedType(typeName, Nil, Nil) => typeTypeParams.get(typeName).map(_.variance)
     case _ => None
   }
@@ -45,11 +46,6 @@ final case class FunctionContext(
 
   def checkType(tpe: Type, expVarianceOpt: Option[Variance], posOpt: Option[Position])
                (using er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
-    case Types.RefinedType(baseType, itValue, predicate) =>
-      checkType(baseType, expVarianceOpt, posOpt)
-      ts(itValue) = baseType
-      val (predType, _) = typer.analyze(predicate, ControlFlowInfo.empty)
-      enforceExpectedBaseSubtypingConstraint(predType, BoolType, "type predicate")(using posOpt)
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
       if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
@@ -80,7 +76,7 @@ final case class FunctionContext(
                 for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
                   val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
                   val (argType, _) = typer.analyze(arg, ControlFlowInfo.empty)
-                  enforceExpectedBaseSubtypingConstraint(argType, paramType, "type application")(using posOpt)
+                  enforceExpectedSubtypingConstraint(argType, paramType, "type application")(using posOpt)
                 }
               } else {
                 reportError(s"wrong number of arguments: expected $expParamsCnt, found ${args.size}", posOpt)
@@ -93,8 +89,24 @@ final case class FunctionContext(
         checkType(paramType, expVarianceOpt.map(_ * Contravariant), posOpt)
       }
       checkType(resultType, expVarianceOpt.map(_ * Covariant), posOpt)
-    case _: (UnionType | BaseUnionType | TypeVariable) =>
+    case UnionType(types) =>
+      for (tpe <- types){
+        checkType(tpe, expVarianceOpt, posOpt)
+      }
+    case IntersectionType(types) =>
+      for (tpe <- types){
+        checkType(tpe, expVarianceOpt, posOpt)
+      }
+    case IntRangeType(lowerBound, upperBound) =>
+      checkBound(lowerBound)(using typer, ts, er, posOpt)
+      checkBound(upperBound)(using typer, ts, er, posOpt)
+    case _: TypeVariable =>
       assert(false)
+  }
+
+  private def checkBound(bound: IntRangeType.Bound)(using typer: Typer, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): Unit = bound.collectFormulas { bound =>
+    val (boundType, _) = typer.analyze(bound, ControlFlowInfo.empty)
+    enforceExpectedSubtypingConstraint(boundType, IntType, "range bound")
   }
 
   private def reportError(msg: String, posOpt: Option[Position])(using er: ErrorReporter, compilationStep: CompilationStep): Unit = {

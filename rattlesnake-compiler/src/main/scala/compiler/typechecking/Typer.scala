@@ -7,14 +7,14 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.*
+import compiler.typechecking.SubtypeRelation.*
 import compiler.typechecking.ControlFlowInfo.TypeInfo
 import identifiers.{FunOrVarId, TypeIdentifier}
 import lang.*
+import lang.Formulas.*
 import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
-import lang.Formulas.*
 import lang.Visibility.Private
 
 import scala.collection.mutable
@@ -62,13 +62,12 @@ final class Typer(
         given closuresCollector: mutable.Queue[ClosureInfo] = mutable.Queue.empty
 
         val funcEndCf = traverseAll(body, ControlFlowInfo.empty)
-        val retTypeBase = funSig.retType.baseType
-        checkReturnsIfNonUnit(retTypeBase, funcEndCf, "method", func.posOpt)
+        checkReturnsIfNonUnit(funSig.retType, funcEndCf, "method", func.posOpt)
         while (closuresCollector.nonEmpty) {
           val ClosureInfo(closureBody, closureCtx, cfStartInfo, closureExpRetTVar, closurePosOpt) = closuresCollector.dequeue()
           val closureEndCtx = traverseAll(closureBody, cfStartInfo)(using closureCtx)
           closureExpRetTVar.actualTypeIfResolved.foreach { expectedRetType =>
-            checkReturnsIfNonUnit(expectedRetType.baseType, closureEndCtx, "closure", closurePosOpt)
+            checkReturnsIfNonUnit(expectedRetType, closureEndCtx, "closure", closurePosOpt)
           }
           if (!closureExpRetTVar.isResolved) {
             closureExpRetTVar.resolve(UnitType)
@@ -78,8 +77,8 @@ final class Typer(
     }
   }
 
-  private def checkReturnsIfNonUnit(retTypeBase: BaseType, endCf: ControlFlowInfo, functionKindDescr: String, posOpt: Option[Position]): Unit = {
-    if (retTypeBase != UnitType && !endCf.hasExited) {
+  private def checkReturnsIfNonUnit(retType: Type, endCf: ControlFlowInfo, functionKindDescr: String, posOpt: Option[Position]): Unit = {
+    if (retType != UnitType && !endCf.hasExited) {
       reportError(s"missing return in non-$UnitType $functionKindDescr", posOpt)
     }
   }
@@ -117,13 +116,13 @@ final class Typer(
             boundary.break(cfIn)
           }
           afterCondCf = cfAfterCond
-          enforceExpectedBaseSubtypingConstraint(condType, BoolType, "loop condition")
+          enforceExpectedSubtypingConstraint(condType, BoolType, "loop condition")
           val bodyEndCf = traverseAll(body, cfAfterCond.refined(infoIfCondTrue))
           for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
             // check if the guessed types work; if they do not, retry
             val typeInCond = analyzeIdVal(condVal, cfIn)
             val bodyEndType = analyzeIdVal(condVal, bodyEndCf)
-            val typeIsValid = enforceExpectedBaseSubtypingConstraint(bodyEndType.baseType, typeInCond.baseType, s"base type of $varId at the end of loop body")
+            val typeIsValid = enforceExpectedSubtypingConstraint(bodyEndType, typeInCond, s"base type of $varId at the end of loop body")
             if (!typeIsValid) {
               ts.widenType(condVal, bodyEndType)
             }
@@ -136,7 +135,7 @@ final class Typer(
       }
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
         val (condType, cfAfterCond) = analyze(cond, cfIn)
-        enforceExpectedBaseSubtypingConstraint(condType, BoolType, "condition")
+        enforceExpectedSubtypingConstraint(condType, BoolType, "condition")
         val (thenInfos, elseInfos) = extractTypeInfos(cond)
         val thenStartCtx = cfAfterCond.refined(thenInfos)
         val thenEndCf = traverseAll(thenBr, thenStartCtx)
@@ -195,40 +194,38 @@ final class Typer(
         }
         cfIn.refined(Set(TypeInfo(castValue, targetType, List(targetType), List.empty)))
       case SSA.Conversion(assignedValue, inValue, targetType) =>
-        val inValueType = analyzeIdVal(inValue, cfIn)
-        inValueType match {
-          case inValueType: BaseType if inValueType != targetType && TypeConversion.conversionFor(inValueType, targetType).isEmpty =>
-            reportError(s"impossible conversion: $inValueType to $targetType", posOpt)
-          case _ => ()
+        val inValueType = analyzeIdVal(inValue, cfIn).principalType
+        if (inValueType != targetType && TypeConversion.conversionFor(inValueType, targetType).isEmpty) {
+          reportError(s"impossible conversion: $inValueType to $targetType", posOpt)
         }
         cfIn
       case SSA.StaticTypeAssert(value, tpe) =>
         funCtx.checkType(tpe, None, posOpt)
         val (valueType, cfAfterValueEval) = analyze(value, cfIn)
-        enforceExpectedBaseSubtypingConstraint(valueType, tpe, "type ascription")
+        enforceExpectedSubtypingConstraint(valueType, tpe, "type ascription")
         cfAfterValueEval
       case SSA.StaticAssert(formula) =>
         val (formulaType, cfAfterFormulaEval) = analyze(formula, cfIn)
-        enforceExpectedBaseSubtypingConstraint(formulaType, BoolType, "assertion")
+        enforceExpectedSubtypingConstraint(formulaType, BoolType, "assertion")
         cfAfterFormulaEval
       case SSA.FieldWrite(owner, fieldName, rhs) =>
         val (ownerType, cfAfterOwnerEval) = analyze(owner, cfIn)
         val (rhsType, cfAfterRhsEval) = analyze(rhs, cfAfterOwnerEval)
-        checkFieldAndReturnType(owner, ownerType.baseType, fieldName, posOpt,
+        checkFieldAndReturnType(owner, ownerType.principalType, fieldName, posOpt,
           checkIsReassignable = false, ownerThatMustBeThis = None).foreach { fieldType =>
-          enforceExpectedBaseSubtypingConstraint(rhsType, fieldType, "field assignment")
+          enforceExpectedSubtypingConstraint(rhsType, fieldType, "field assignment")
         }
         cfAfterRhsEval
       case SSA.Return(retVal) =>
         val (retType, cfAfterRetValEval) = analyze(retVal, cfIn)
-        enforceExpectedBaseSubtypingConstraint(retType, funCtx.expectedReturnType, "return value")
+        enforceExpectedSubtypingConstraint(retType, funCtx.expectedReturnType, "return value")
         if (funCtx.expectedReturnType == UnitType) {
           warn(s"returning $UnitType", posOpt)
         }
         ControlFlowInfo.exited
       case SSA.Panic(msg) =>
         val (msgType, cfAfterMsgEval) = analyze(msg, cfIn)
-        enforceExpectedBaseSubtypingConstraint(msgType, StringType, "panic message")
+        enforceExpectedSubtypingConstraint(msgType, StringType, "panic message")
         ControlFlowInfo.exited
       case SSA.Evaluate(formula) =>
         val (tpe, cfAfterFormulaEval) = analyze(formula, cfIn)
@@ -286,13 +283,11 @@ final class Typer(
       case Equal(lhs, rhs) =>
         val (lhsType, cfBetweenMembers) = analyze(lhs, cfIn)
         val (rhsType, cfOut) = analyze(rhs, cfBetweenMembers)
-        if (areProvablyDisjointUnlessNull(lhsType.baseType, rhsType.baseType)) {
-          reportError(s"illegal equality test: ${lhsType.baseType} and ${rhsType.baseType} are incompatible types", posOpt)
-        }
+        // TODO check if lhs and rhs have compatible types
         (BoolType, cfOut)
       case op: BinOp =>
         val (lhsTypeRaw, lhsOutCf) = analyze(op.lhs, cfIn)
-        val lhsTypeDesBase = program.desugarType(lhsTypeRaw).baseType
+        val lhsTypeDesPrinc = program.desugarType(lhsTypeRaw).principalType
         // TODO make this a lazy val?
         val (lhsTrueInfos, lhsFalseInfos) = extractTypeInfos(op.lhs)
         val rhsStartCf = op.operator match {
@@ -303,19 +298,19 @@ final class Typer(
           case _ => lhsOutCf
         }
         val (rhsTypeRaw, rhsOutCf) = analyze(op.rhs, rhsStartCf)
-        val rhsTypeDesBase = program.desugarType(rhsTypeRaw).baseType
-        val tpe = if (lhsTypeDesBase == NothingType || rhsTypeDesBase == NothingType) {
+        val rhsTypeDesPrinc = program.desugarType(rhsTypeRaw).principalType
+        val tpe = if (lhsTypeDesPrinc == NothingType || rhsTypeDesPrinc == NothingType) {
           NothingType
         } else {
           val candidateOperators = Operators.binaryOperators.filter { opSig =>
             opSig.op == op.operator
-              && lhsTypeDesBase.trivialBaseSubtypeOf(opSig.leftOperandType.baseType)
-              && rhsTypeDesBase.baseType.trivialBaseSubtypeOf(opSig.rightOperandType.baseType)
+              && lhsTypeDesPrinc.trivialSubtypeOf(opSig.leftOperandType)
+              && rhsTypeDesPrinc.trivialSubtypeOf(opSig.rightOperandType)
           }
-          resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsTypeDesBase and $rhsTypeDesBase", posOpt) match {
+          resolveCandidatesOp(candidateOperators, op.operator, s"operand types $lhsTypeDesPrinc and $rhsTypeDesPrinc", posOpt) match {
             case Some(opSig) =>
-              enforceExpectedBaseSubtypingConstraint(lhsTypeRaw, opSig.leftOperandType, "operand")(using posOpt)
-              enforceExpectedBaseSubtypingConstraint(rhsTypeRaw, opSig.rightOperandType, "operand")(using posOpt)
+              enforceExpectedSubtypingConstraint(lhsTypeRaw, opSig.leftOperandType, "operand")(using posOpt)
+              enforceExpectedSubtypingConstraint(rhsTypeRaw, opSig.rightOperandType, "operand")(using posOpt)
               opSig.retType
             case None => NothingType
           }
@@ -323,16 +318,16 @@ final class Typer(
         (tpe, lhsOutCf.merged(rhsOutCf))
       case op: UnaryOp =>
         val (operandTypeRaw, cfOut) = analyze(op.operand, cfIn)
-        val operandTypeDesBase = program.desugarType(operandTypeRaw).baseType
-        val tpe = if (operandTypeDesBase == NothingType) {
+        val operandTypeDes = program.desugarType(operandTypeRaw)
+        val tpe = if (operandTypeDes == NothingType) {
           NothingType
         } else {
           val candidatesOperators = Operators.unaryOperators.filter { opSig =>
-            opSig.op == op.operator && operandTypeDesBase.trivialBaseSubtypeOf(opSig.operandType.baseType)
+            opSig.op == op.operator && operandTypeDes.trivialSubtypeOf(opSig.operandType)
           }
-          resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandTypeDesBase", posOpt) match {
+          resolveCandidatesOp(candidatesOperators, op.operator, s"operand type $operandTypeDes", posOpt) match {
             case Some(opSig) =>
-              enforceExpectedBaseSubtypingConstraint(operandTypeRaw, opSig.operandType, "operand")(using posOpt)
+              enforceExpectedSubtypingConstraint(operandTypeRaw, opSig.operandType, "operand")(using posOpt)
               opSig.retType
             case None => NothingType
           }
@@ -341,7 +336,7 @@ final class Typer(
       case Call(receiverArg, funId, typeArgs, args) =>
         val (receiverArgType, cfAfterReceiver) = analyze(receiverArg, cfIn)
         typeArgs.foreach(funCtx.checkType(_, None, posOpt))
-        program.forceComputeJoins(program.desugarType(receiverArgType).baseType) match {
+        program.forceComputeJoins(program.desugarType(receiverArgType)) match {
           case Some(Types.NamedType(receiverTypeName, receiverTypeArgs, receiverArgs)) =>
             assert(receiverArgs.isEmpty)
             program.resolveSignatureAs[RuntimeTypeSignature](receiverTypeName) match {
@@ -349,12 +344,12 @@ final class Typer(
                 reportError(s"type not found: $receiverTypeName", posOpt)
                 (NothingType, cfAfterReceiver)
               case Some(_: Unencapsulated) =>
-                reportMethodNotFoundInType(receiverArgType.baseType, funId, posOpt)
+                reportMethodNotFoundInType(receiverArgType, funId, posOpt)
                 (NothingType, cfAfterReceiver)
               case Some(receiverTypeSig: Encapsulated) =>
                 findMethod(receiverTypeName, funId) match {
                   case None =>
-                    reportMethodNotFoundInType(receiverArgType.baseType, funId, posOpt)
+                    reportMethodNotFoundInType(receiverArgType, funId, posOpt)
                     (NothingType, cfAfterReceiver)
                   case Some(funSig) =>
                     if (funSig.visibility == Private && funSig.ownerName != funCtx.ownerId) {
@@ -379,7 +374,7 @@ final class Typer(
                       for (((paramVal, paramTypeRaw), arg) <- funSig.paramsInclThis.tail zip args) {
                         val (argType, cfAfterParam) = analyze(arg, currCf)
                         val paramTypeSubst = paramTypeRaw.substitute(subst, argsSubst.toMap)
-                        enforceExpectedBaseSubtypingConstraint(argType, paramTypeSubst, "method argument")(using posOpt)
+                        enforceExpectedSubtypingConstraint(argType, paramTypeSubst, "method argument")(using posOpt)
                         arg match {
                           case arg: Value =>
                             argsSubst(paramVal) = arg
@@ -392,7 +387,7 @@ final class Typer(
                 }
             }
           case None =>
-            reportMethodNotFoundInType(receiverArgType.baseType, funId, posOpt)
+            reportMethodNotFoundInType(receiverArgType, funId, posOpt)
             (NothingType, cfAfterReceiver)
         }
       case ClosureInvocation(closure, args) =>
@@ -407,7 +402,7 @@ final class Typer(
         val tpe = closureType match {
           case ClosureType(paramTypes, resultType) =>
             for ((paramType, argType) <- paramTypes.zip(argTypesB.result())) {
-              enforceExpectedBaseSubtypingConstraint(argType, paramType, "closure argument")(using posOpt)
+              enforceExpectedSubtypingConstraint(argType, paramType, "closure argument")(using posOpt)
             }
             resultType
           case _ =>
@@ -417,8 +412,8 @@ final class Typer(
         (tpe, currCf)
       case Select(owner, fieldName) =>
         val (ownerType, cfAfterOwnerEval) = analyze(owner, cfIn)
-        val tpe = if ownerType.baseType == NothingType then NothingType
-        else checkFieldAndReturnType(funCtx.thisVal, ownerType.baseType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
+        val tpe = if ownerType == NothingType then NothingType
+        else checkFieldAndReturnType(funCtx.thisVal, ownerType.principalType, fieldName, posOpt, checkIsReassignable = false, Some(owner))
           .getOrElse(NothingType)
         (tpe, cfAfterOwnerEval)
       case HasType(formula, tpe) =>
@@ -451,7 +446,7 @@ final class Typer(
       val (infoWhenOperand, infoWhenNotOperand) = extractTypeInfos(operand)
       (infoWhenNotOperand, infoWhenOperand)
     case HasType(idValue: IdValue, testedType) =>
-      ts.typeOfOpt(idValue).map(_.baseType) match {
+      ts.typeOfOpt(idValue).map(_.principalType) match {
         case Some(NamedType(knownType, _, Nil)) =>
           (Set(TypeInfo(idValue, knownType, List(testedType), List.empty)),
             Set(TypeInfo(idValue, knownType, List.empty, List(testedType))))
@@ -480,11 +475,6 @@ final class Typer(
     searchFrom(receiverTypeId)
   }
 
-  private def areProvablyDisjointUnlessNull(type1: BaseType, type2: BaseType): Boolean = (type1, type2) match {
-    case (type1: Concrete, type2: Concrete) if type1 != type2 => true
-    case _ => false
-  }
-
   private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position], contextDescrForTypeVar: String, reportIfLengthMismatch: Boolean)(using program: Program): Option[Map[TypeIdentifier, Type]] = {
     if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
       if (reportIfLengthMismatch) {
@@ -505,11 +495,11 @@ final class Typer(
       for ((info, typeArg) <- typeParams.zip(typeArgs)) {
         info.upperBoundOpt.foreach { upbRaw =>
           val upb = upbRaw.substitute(typeParamsMap.toMap, Map.empty)
-          enforceBaseSubtypingConstraintCustomMsg(typeArg, upb, s"cannot instantiate ${info.tid} to $typeArg: violates upper bound $upb")(using posOpt)
+          enforceSubtypingConstraintCustomMsg(typeArg, upb, s"cannot instantiate ${info.tid} to $typeArg: violates upper bound $upb")(using posOpt)
         }
         info.lowerBoundOpt.foreach { lobRaw =>
           val lob = lobRaw.substitute(typeParamsMap.toMap, Map.empty)
-          enforceExpectedBaseSubtypingConstraint(lob, typeArg, s"cannot instantiate ${info.tid} to $typeArg: violates lower bound $lob")(using posOpt)
+          enforceExpectedSubtypingConstraint(lob, typeArg, s"cannot instantiate ${info.tid} to $typeArg: violates lower bound $lob")(using posOpt)
         }
         typeParamsMap.addOne(info.tid -> typeArg)
       }
@@ -536,13 +526,13 @@ final class Typer(
 
   private def checkFieldAndReturnType(
                                        ownerVal: Value,
-                                       ownerType: BaseType,
+                                       ownerType: Type,
                                        fieldName: FunOrVarId,
                                        posOpt: Option[Position],
                                        checkIsReassignable: Boolean,
                                        ownerThatMustBeThis: Option[Formula]
                                      )(using er: ErrorReporter, program: Program): Option[Type] = {
-    program.forceComputeJoins(program.desugarType(ownerType).baseType) match {
+    program.forceComputeJoins(program.desugarType(ownerType)) match {
       case Some(Types.NamedType(typeName, typeArgs, args)) =>
 
         def subst(sig: RuntimeTypeSignature, tpe: Type): Type = {
@@ -555,12 +545,12 @@ final class Typer(
             recordSig.fields.get(fieldName) match {
               case Some(field) => Some(subst(recordSig, field.tpe))
               case None =>
-                reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
+                reportFieldNotFoundInType(ownerType, fieldName, posOpt)
             }
           case classSig: ClassSignature if ownerThatMustBeThis.forall(_ == ownerVal) =>
             classSig.fields.get(fieldName) match {
               case None =>
-                reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
+                reportFieldNotFoundInType(ownerType, fieldName, posOpt)
               case Some(field) =>
                 if (checkIsReassignable && field.isStable) {
                   reportError(s"field $fieldName is not reassignable", posOpt)
@@ -571,7 +561,7 @@ final class Typer(
             reportError(s"field $fieldName not found or not accessible in $typeName; note that class fields are always private and should be accessed from the outside through getters only", posOpt)
             None
           case _ =>
-            reportFieldNotFoundInType(ownerType.baseType, fieldName, posOpt)
+            reportFieldNotFoundInType(ownerType, fieldName, posOpt)
         }
       case None =>
         val remarkAboutUnion = mkUnionReceiverRemark(ownerType)
@@ -591,7 +581,7 @@ final class Typer(
   private def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier)
                                  (using program: Program): DowncastTargetCheckResult = {
     import DowncastTargetCheckResult.*
-    originalType.baseType match {
+    originalType.principalType match {
       case NamedType(originId, originTypeArgs, Nil) =>
         program.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
           case None =>
@@ -629,31 +619,31 @@ final class Typer(
             }
         }
       case _ =>
-        CannotDowncast(s"tested type ${originalType.baseType} is unresolved or primitive")
+        CannotDowncast(s"tested type $originalType is unresolved or primitive")
     }
   }
 
-  private def reportMethodNotFoundInType(receiverType: BaseType, funId: FunOrVarId, posOpt: Option[Position])(using Program): Unit = {
+  private def reportMethodNotFoundInType(receiverType: Type, funId: FunOrVarId, posOpt: Option[Position])(using Program): Unit = {
     val receiverTypeDescr = mkReceiverTypeDescr(receiverType)
     val remarkAboutUnion = mkUnionReceiverRemark(receiverType)
     reportError(s"method $funId not found in $receiverTypeDescr$remarkAboutUnion", posOpt)
   }
 
-  private def mkUnionReceiverRemark(receiverType: BaseType): String = {
+  private def mkUnionReceiverRemark(receiverType: Type): String = {
     receiverType match {
-      case BaseUnionType(types) => ", you may want to explicitize the type of the receiver using a type ascription"
+      case UnionType(types) => ", you may want to explicitize the type of the receiver using a type ascription"
       case _ => ""
     }
   }
 
-  private def reportFieldNotFoundInType(receiverType: BaseType, fieldId: FunOrVarId, posOpt: Option[Position])
+  private def reportFieldNotFoundInType(receiverType: Type, fieldId: FunOrVarId, posOpt: Option[Position])
                                        (using Program): None.type = {
     val receiverTypeDescr = mkReceiverTypeDescr(receiverType)
     reportError(s"field $fieldId not found in $receiverTypeDescr", posOpt)
     None
   }
 
-  private def mkReceiverTypeDescr(receiverType: BaseType)(using program: Program): String = {
+  private def mkReceiverTypeDescr(receiverType: Type)(using program: Program): String = {
     val desugaredReceiverType = program.desugarType(receiverType)
     desugaredReceiverType.toString + (if desugaredReceiverType == receiverType then "" else s"( = $desugaredReceiverType)")
   }

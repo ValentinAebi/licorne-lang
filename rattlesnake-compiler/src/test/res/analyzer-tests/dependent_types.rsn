@@ -1,5 +1,5 @@
 
-typealias MulOf(d: Int) = Int with it > 0 && it % d == 0
+typealias AtLeast(i: Int) = [i,]
 
 object Main {
 
@@ -10,12 +10,12 @@ object Main {
         else max
    }
 
-   fn foo(a: Int, x: MulOf(a)) -> String {
+   fn foo(a: Int, x: AtLeast(a)) -> String {
       return clamp(x, 0, 10)    //> E : return value: expected String, found [0,10]
    }
 
    fn bar() {
-      foo(42, "Hello")  //> E : method argument: expected MulOf(42), found String
+      foo(42, "Hello")  //> E : method argument: expected AtLeast(42), found String
    }
 
    fn abc(ls: List[Bool]) {
@@ -24,8 +24,8 @@ object Main {
 
 }
 
-typealias Length = [0,]
-typealias Idx[T](ls: List[T]) = [ 0, ls.size() )
+typealias Length = AtLeast(0)
+typealias Idx[T](ls: List[T]) = [ 0, ls.size()-1 ]
 
 interface List[T] {
    fn size(this) -> Length

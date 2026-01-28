@@ -1,7 +1,7 @@
 package lang
 
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.{BaseType, NominalType, RefinedType, Type, UnionType}
+import lang.Types.{ClosureType, IntersectionType, NamedType, NominalType, RefinedType, Type, TypeVariable, UnionType}
 
 object Formulas {
 
@@ -297,12 +297,16 @@ object Formulas {
   }
 
   private def simplifyPredicates(tpe: Type): Type = tpe match {
-    case Types.RefinedType(baseType, itValue, predicate) =>
-      RefinedType(baseType, itValue, predicate.simplified)
-    case Types.UnionType(types) =>
+    case primitiveType: Types.PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) =>
+      NamedType(typeName, typeArgs.map(simplifyPredicates), args.map(_.simplified))
+    case ClosureType(params, result) =>
+      ClosureType(params.map(simplifyPredicates), simplifyPredicates(result))
+    case UnionType(types) =>
       UnionType(types.map(simplifyPredicates))
-    case baseType: Types.BaseType =>
-      simplifyPredicates(baseType)
+    case IntersectionType(types) =>
+      IntersectionType(types.map(simplifyPredicates))
+    case tv: TypeVariable => tv
   }
 
   private def mkIntConst(cst: Int): Formula =

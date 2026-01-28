@@ -1,5 +1,6 @@
 package compiler.ssagen
 
+import compiler.irs.Asts.{Expr, PrincipalTypeTree, RefinedTypeTree}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -15,6 +16,7 @@ import lang.Field.{ReassignableField, StableField}
 import lang.Types.*
 import lang.Types.PrimitiveType.UnitType
 import lang.Formulas.*
+import lang.Types.IntRangeType.Bound.{NoBound, Simple}
 
 import java.util
 import scala.collection.mutable.ListBuffer
@@ -180,7 +182,7 @@ final class SSAGenerator(er: ErrorReporter)
                 val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funcLocalValsCtx)
-                  if (actualThisType.baseType != expectedThisType) {
+                  if (actualThisType.principalType != expectedThisType) {
                     reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", func.getPosition)
                   }
                   actualThisType
@@ -562,29 +564,38 @@ final class SSAGenerator(er: ErrorReporter)
   }
 
   private def mustNotBeUnit(tpe: Type, posOpt: Option[Position]): Unit = {
-    if (tpe.baseType == UnitType) {
+    if (tpe == UnitType) {
       reportError(s"$UnitType is not allowed in this position", posOpt)
     }
   }
 
   private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
                     (using util.IdentityHashMap[Formula, Position]): Type = typeTree match {
-    case Asts.RefinedTypeTree(baseType, predicate) =>
-      val baseT = mkNominalType(baseType, valsCtx)
-      val refinementCtx = valsCtx.deepCopyWithSameGlobalCtx
-      val itVal = valsCtx.valuesGen.newValue(ItId)
-      refinementCtx.saveOrRemap(ItId, itVal, ReassigPermission.Val, None)
-      RefinedType(baseT, itVal, generateSSAExpr(predicate, None, refinementCtx))
-    case basicTypeTree: Asts.RefinableTypeTree =>
-      mkNominalType(basicTypeTree, valsCtx)
-    case Asts.ClosureTypeTree(paramTypeTrees, resultTypeTree) =>
-      ClosureType(paramTypeTrees.map(mkType(_, valsCtx)), mkType(resultTypeTree, valsCtx))
+    case typeTree: Asts.PrincipalTypeTree => mkPrincipalType(typeTree, valsCtx)
+    case typeTree: Asts.RefinedTypeTree => mkRefinedType(typeTree, valsCtx)
   }
 
-  private def mkNominalType(refinableTypeTree: Asts.RefinableTypeTree, valsCtx: LocalValuesContext)
-                           (using util.IdentityHashMap[Formula, Position]): NominalType = refinableTypeTree match {
+  private def mkPrincipalType(principalTypeTree: PrincipalTypeTree, valsCtx: LocalValuesContext)
+                             (using util.IdentityHashMap[Formula, Position]): PrincipalType = principalTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
+    case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, valsCtx)), mkType(resultType, valsCtx))
+  }
+  
+  private def mkRefinedType(refinedTypeTree: RefinedTypeTree, valsCtx: LocalValuesContext)
+                           (using util.IdentityHashMap[Formula, Position]): RefinedType = refinedTypeTree match {
+    case Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
+      
+      def convertBound(boundOpt: Option[Expr]): IntRangeType.Bound = boundOpt match {
+        case Some(bound) => Simple(generateSSAExpr(bound, None, valsCtx))
+        case None => NoBound
+      }
+      
+      IntRangeType(convertBound(lowerBoundOpt), convertBound(upperBoundOpt))
+    case Asts.UnionTypeTree(types) =>
+      UnionType(types.map(mkType(_, valsCtx)).toSet)
+    case Asts.IntersectionTypeTree(types) =>
+      IntersectionType(types.map(mkType(_, valsCtx)).toSet)
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext)

@@ -11,15 +11,15 @@ import lang.{RuntimeTypeSignature, TypeTypeParamInfo, Variance}
 
 import scala.util.boundary
 
-object BaseSubtypeRelation {
+object SubtypeRelation {
 
-  def enforceExpectedBaseSubtypingConstraint(subT: Type, superT: Type, positionDescr: String)
-                                            (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+  def enforceExpectedSubtypingConstraint(subT: Type, superT: Type, positionDescr: String)
+                                        (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     checkSubtypingConstraint(subT, superT)(using Reporting(er, s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}", posOpt))
   }
 
-  def enforceBaseSubtypingConstraintCustomMsg(subT: Type, superT: Type, fullMsg: String)
-                                             (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+  def enforceSubtypingConstraintCustomMsg(subT: Type, superT: Type, fullMsg: String)
+                                         (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
     checkSubtypingConstraint(subT, superT)(using Reporting(er, fullMsg, posOpt))
   }
 
@@ -35,14 +35,14 @@ object BaseSubtypeRelation {
         checkAssignmentIsValid(superT, subT)
         true
       case (subT, superT) =>
-        checkSubtypingConstraintOnDesugaredBaseTypes(subT.baseType, superT.baseType)
+        checkSubtypingConstraintOnDesugaredTypes(subT, superT)
     }
   }
 
-  private def checkSubtypingConstraintOnDesugaredBaseTypes(subT: BaseType, superT: BaseType)
+  private def checkSubtypingConstraintOnDesugaredTypes(subT: Type, superT: Type)
                                                           (using reporting: Reporting, program: Program): Boolean = {
     (subT, superT) match {
-      case (subT, superT) if subT.trivialBaseSubtypeOf(superT) => true
+      case (subT, superT) if subT.trivialSubtypeOf(superT) => true
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
         assert(subtypeArgs.isEmpty)
         assert(supertypeArgs.isEmpty)
@@ -87,14 +87,14 @@ object BaseSubtypeRelation {
         }
         val retMatch = checkSubtypingConstraint(subResult, superResult)
         sizeMatch && argsMatch && retMatch
-      case (BaseUnionType(subtypes), superT) =>
+      case (UnionType(subtypes), superT) =>
         val subtypesIter = subtypes.iterator
         var isCorrect = true
         while (isCorrect && subtypesIter.hasNext) {
           isCorrect = checkSubtypingConstraint(subtypesIter.next(), superT)
         }
         isCorrect
-      case (subT, BaseUnionType(superTypes)) =>
+      case (subT, UnionType(superTypes)) =>
         superTypes.exists(checkSubtypingConstraint(subT, _))
       case _ =>
         reportNotSubtype(subT, superT)
@@ -103,8 +103,8 @@ object BaseSubtypeRelation {
 
   }
 
-  extension (subT: BaseType) def trivialBaseSubtypeOf(superT: BaseType)(using program: Program): Boolean = (subT, superT) match {
-    case _ if subT == superT => true
+  extension (subT: Type) def trivialSubtypeOf(superT: Type)(using program: Program): Boolean = (subT.principalType, superT) match {
+    case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (_, UnitType) => true
     case (_, NothingType) => false

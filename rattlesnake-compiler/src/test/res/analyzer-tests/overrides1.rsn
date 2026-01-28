@@ -4,7 +4,7 @@ interface Producer[+T, -A] {
 }
 
 class DogProducer : Producer[Animal, Int] {
-    fn produce(this, name: String) -> Dog with it.name() == name {      //> E : type mismatch on parameter name of method produce: type is String but should be Int since the method overrides produce in Producer[Animal,Int]
+    fn produce(this, name: String) -> Dog {      //> E : type mismatch on parameter name of method produce: type is String but should be Int since the method overrides produce in Producer[Animal,Int]
         return new Dog(name);
     }
 }

@@ -442,14 +442,14 @@ object Asts {
   /**
    * Cast, e.g. `x as Int`
    */
-  final case class Cast(expr: Expr, tpe: BaseTypeTree) extends NonFormulaExpr {
+  final case class Cast(expr: Expr, tpe: TypeTree) extends NonFormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
   /**
    * Type test, e.g. `x is Foo`
    */
-  final case class TypeTest(expr: Expr, tpe: BaseTypeTree) extends FormulaExpr {
+  final case class TypeTest(expr: Expr, tpe: TypeTree) extends FormulaExpr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
@@ -459,33 +459,33 @@ object Asts {
 
   sealed trait TypeTree extends Ast
 
-  final case class RefinedTypeTree(baseType: RefinableTypeTree, predicate: Expr) extends TypeTree {
-    override def children: List[Ast] = List(baseType, predicate)
+  sealed trait PrincipalTypeTree extends TypeTree
+  sealed trait RefinedTypeTree extends TypeTree
+  
+  final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends RefinedTypeTree {
+    override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
   }
+  
+  final case class UnionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
+    override def children: List[Ast] = types
+  }
+  
+  final case class IntersectionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
+    override def children: List[Ast] = types
+  }
+  
+  sealed trait NominalTypeTree extends PrincipalTypeTree
 
-  sealed trait BaseTypeTree extends TypeTree
-  sealed trait RefinableTypeTree extends BaseTypeTree
-
-  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends RefinableTypeTree {
+  final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends NominalTypeTree {
     override def children: List[Ast] = Nil
   }
 
-  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends RefinableTypeTree {
+  final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends NominalTypeTree {
     override def children: List[Ast] = typeArgs ++ args
   }
   
-  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends BaseTypeTree {
+  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends PrincipalTypeTree {
     override def children: List[Ast] = paramTypes :+ resultType
-  }
-
-  sealed abstract class CaptureSetTree extends Ast
-
-  final case class ExplicitCaptureSetTree(capturedExpressions: List[Expr]) extends CaptureSetTree {
-    override def children: List[Ast] = capturedExpressions
-  }
-
-  final case class ImplicitRootCaptureSetTree() extends CaptureSetTree {
-    override def children: List[Ast] = Nil
   }
 
   sealed trait Conditional {

@@ -184,7 +184,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "methodsListOpt"
 
   private lazy val supertypesListOpt = {
-    opt(colon ::: repeatWithSepNonZero(refinableTypeTree, comma)) map {
+    opt(colon ::: repeatWithSepNonZero(nominalTypeTree, comma)) map {
       case None => List.empty
       case Some(allSupertypes) =>
         allSupertypes.flatMap {
@@ -215,43 +215,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
   } setName "closureType"
 
-  private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: (op(ClosingBracket) OR op(ClosingParenthesis)) map {
-    case lowOpt ^: highOpt ^: closingSymbol =>
-      val lowCondOpt = lowOpt map { low => BinaryOp(low, LessOrEq, ItRef()) }
-      val highCondOpt = highOpt map { high => BinaryOp(ItRef(), if closingSymbol == ClosingParenthesis then LessThan else LessOrEq, high) }
-      val predicateOpt = (lowCondOpt, highCondOpt) match {
-        case (Some(lowCond), Some(highCond)) => Some(BinaryOp(lowCond, And, highCond))
-        case _ => lowCondOpt.orElse(highCondOpt)
-      }
-      val intTypeTree = PrimitiveTypeTree(IntType)
-      predicateOpt match {
-        case Some(predicate) => RefinedTypeTree(intTypeTree, predicate)
-        case None => intTypeTree
-      }
-  }
-
-  private lazy val primOrNamedTypeMaybeRefined = recursive {
-    refinableTypeTree ::: opt(kw(With).ignored ::: expr) map {
-      case baseType ^: predicateOpt => predicateOpt match {
-        case Some(predicate) => RefinedTypeTree(baseType, predicate)
-        case None => baseType
-      }
-    }
-  } setName "primOrNamedTypeMaybeRefined"
+  private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: op(ClosingBracket).ignored map {
+    case lowOpt ^: highOpt => IntRangeTypeTree(lowOpt, highOpt)
+  } setName "intRangeType"
 
   private lazy val typeTree: P[TypeTree] = recursive {
-    primOrNamedTypeMaybeRefined OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
+    nominalTypeTree OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
   } setName "typeTree"
-
-  private lazy val explicitCaptureSetTree = recursive {
-    openBrace ::: repeatWithSep(expr, comma) ::: closeBrace map {
-      case expressions => ExplicitCaptureSetTree(expressions)
-    }
-  } setName "explicitCaptureSetTree"
 
   private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
 
-  private lazy val refinableTypeTree: P[RefinableTypeTree] = recursive {
+  private lazy val nominalTypeTree: P[NominalTypeTree] = recursive {
     highName ::: typeArgsListOpt ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
       case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
@@ -301,7 +275,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "noBinopExpr"
 
   private lazy val binopArg = recursive {
-    ((noBinopExpr OR recordOrModuleInstantiation OR panicExpr) ::: opt((kw(As) OR kw(Is)) ::: refinableTypeTree)) map {
+    ((noBinopExpr OR recordOrModuleInstantiation OR panicExpr) ::: opt((kw(As) OR kw(Is)) ::: typeTree)) map {
       case expression ^: None => expression
       case expression ^: Some(As ^: tp) => Cast(expression, tp)
       case expression ^: Some(Is ^: tp) => TypeTest(expression, tp)

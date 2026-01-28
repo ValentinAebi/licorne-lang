@@ -3,7 +3,7 @@ package compiler.typechecking
 import lang.Types
 
 import scala.collection.mutable
-import lang.Types.{BaseType, Type}
+import lang.Types.Type
 import lang.Formulas.IdValue
 
 final class TypeStore {

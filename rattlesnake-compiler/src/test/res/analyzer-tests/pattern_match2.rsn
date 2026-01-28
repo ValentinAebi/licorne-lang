@@ -14,10 +14,10 @@ object Lists {
       return ls.head;   //> E : field head not found in Nil
    }
 
-   fn tail[U](ls: List[U] with length(it) >= 1) -> List[U] =
+   fn tail[U](ls: List[U]) -> List[U] =
       // TODO can we use the predicate to deduce that ls is Cons? Note that it is a unary constraint, maybe we can do something in the Typer
       when ls is Cons
          then ls.tail
-         else panic "cannot happen if predicate is enforced"
+         else panic "empty list"
 
 }

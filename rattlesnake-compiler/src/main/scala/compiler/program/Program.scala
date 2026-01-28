@@ -6,7 +6,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.{SSAGeneration, TypeChecking}
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.BaseSubtypeRelation.{enforceBaseSubtypingConstraintCustomMsg, enforceExpectedBaseSubtypingConstraint}
+import compiler.typechecking.SubtypeRelation.{enforceSubtypingConstraintCustomMsg, enforceExpectedSubtypingConstraint}
 import compiler.typechecking.{FunctionContext, TypeStore, Typer}
 import compiler.util.zipCommons
 import compiler.valuesconversion.GlobalValuesContext
@@ -104,15 +104,6 @@ final case class Program(
 
   def desugarType(tpe: Type): Type = {
     val desugaredType = tpe match {
-      case RefinedType(baseTypeRaw, itValueRaw, predicateRaw) =>
-        desugarType(baseTypeRaw) match {
-          case RefinedType(baseTypeDes, itValueDes, predicateDes) =>
-            RefinedType(baseTypeDes, itValueRaw, And(predicateRaw, predicateDes.substitute(Map.empty, Map(itValueDes -> itValueRaw))))
-          case baseTypeDes: NominalType =>
-            RefinedType(baseTypeDes, itValueRaw, predicateRaw)
-          case closureType: ClosureType => closureType
-          case _: (UnionType | BaseUnionType | TypeVariable) => assert(false)
-        }
       case primitiveType: Types.PrimitiveType => primitiveType
       case NamedType(typeName, typeArgsRaw, args) =>
         val typeArgsSubst = typeArgsRaw.map(desugarType)
@@ -130,8 +121,9 @@ final case class Program(
         }
       case typeVariable: TypeVariable => typeVariable.substitutedIfResolved
       case UnionType(types) => UnionType(types.map(desugarType))
-      case BaseUnionType(types) => UnionType(types.map(desugarType))
+      case IntersectionType(types) => IntersectionType(types.map(desugarType))
       case ClosureType(params, resultType) => ClosureType(params.map(desugarType), desugarType(resultType))
+      case intRangeType: IntRangeType => intRangeType
     }
     if desugaredType == tpe then tpe
     else desugarType(desugaredType)
@@ -159,13 +151,13 @@ final case class Program(
     graphB.build()
   }
 
-  def forceComputeJoins(tpe: BaseType)(using program: Program): Option[NamedType] = tpe match {
+  def forceComputeJoins(tpe: Type)(using program: Program): Option[NamedType] = tpe match {
     case namedType: NamedType => Some(namedType)
-    case _: BaseUnionType => boundary {
+    case _: UnionType => boundary {
 
-      def extractTypeIds(tpe: BaseType): Set[TypeIdentifier] = tpe match {
+      def extractTypeIds(tpe: Type): Set[TypeIdentifier] = tpe match {
         case NamedType(tid, _, _) => Set(tid)
-        case BaseUnionType(types) => types.flatMap(extractTypeIds)
+        case UnionType(types) => types.flatMap(extractTypeIds)
         case _ => boundary.break(None)
       }
 
@@ -355,7 +347,7 @@ final case class Program(
                     subFunTp.upperBoundOpt.foreach { subFunUpperBound =>
                       superFunTp.upperBoundOpt match {
                         case Some(superFunUpperBound) =>
-                          enforceBaseSubtypingConstraintCustomMsg(superFunUpperBound, subFunUpperBound, mkErrorMsg("upper"))(using funPosOpt)
+                          enforceSubtypingConstraintCustomMsg(superFunUpperBound, subFunUpperBound, mkErrorMsg("upper"))(using funPosOpt)
                         case None =>
                           reportError(mkErrorMsg("upper"), funPosOpt)
                       }
@@ -363,7 +355,7 @@ final case class Program(
                     subFunTp.lowerBoundOpt.foreach { subFunLowerBound =>
                       superFunTp.lowerBoundOpt match {
                         case Some(superFunLowerBound) =>
-                          enforceBaseSubtypingConstraintCustomMsg(subFunLowerBound, superFunLowerBound, mkErrorMsg("lower"))(using funPosOpt)
+                          enforceSubtypingConstraintCustomMsg(subFunLowerBound, superFunLowerBound, mkErrorMsg("lower"))(using funPosOpt)
                         case None =>
                           reportError(mkErrorMsg("lower"), funPosOpt)
                       }
@@ -383,7 +375,7 @@ final case class Program(
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  enforceExpectedBaseSubtypingConstraint(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT")(using funPosOpt, er, this)
+                  enforceExpectedSubtypingConstraint(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT")(using funPosOpt, er, this)
                 }
                 if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
                   reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
@@ -482,18 +474,18 @@ final case class Program(
   }
 
   private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = tpe match {
-    case RefinedType(baseType, itValue, predicate) =>
-      findMentionedTypes(baseType) ++ findMentionedTypes(predicate)
     case primitiveType: Types.PrimitiveType => Set.empty
     case NamedType(typeName, typeParams, params) =>
       Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
     case _: TypeVariable => Set.empty
     case UnionType(types) =>
       types.flatMap(findMentionedTypes)
-    case BaseUnionType(types) =>
+    case IntersectionType(types) =>
       types.flatMap(findMentionedTypes)
     case ClosureType(params, resultType) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
+    case IntRangeType(lowerBound, upperBound) =>
+      lowerBound.collectFormulas(findMentionedTypes).flatten ++ upperBound.collectFormulas(findMentionedTypes).flatten
   }
 
   private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {
@@ -501,6 +493,7 @@ final case class Program(
     case op: Formulas.BinOp => findMentionedTypes(op.lhs) ++ findMentionedTypes(op.rhs)
     case op: Formulas.UnaryOp => findMentionedTypes(op.operand)
     case Formulas.Call(receiver, funId, typeArgs, args) => findMentionedTypes(receiver) ++ typeArgs.flatMap(findMentionedTypes) ++ args.flatMap(findMentionedTypes)
+    case Formulas.ClosureInvocation(closure, args) => findMentionedTypes(closure) ++ args.flatMap(findMentionedTypes)
     case Formulas.Select(owner, fieldName) => findMentionedTypes(owner)
     case Formulas.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
   }

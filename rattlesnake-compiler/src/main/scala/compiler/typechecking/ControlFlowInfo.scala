@@ -3,7 +3,7 @@ package compiler.typechecking
 import compiler.program.Program
 import compiler.typechecking.ControlFlowInfo.{TypeInfo, exited}
 import identifiers.TypeIdentifier
-import lang.Types.{BaseUnionType, NamedType}
+import lang.Types.NamedType
 import lang.{DatatypeSignature, Encapsulated, RecordSignature, Unencapsulated}
 import lang.Formulas.IdValue
 
