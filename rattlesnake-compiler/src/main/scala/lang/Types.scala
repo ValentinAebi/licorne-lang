@@ -2,11 +2,10 @@ package lang
 
 import identifiers.TypeIdentifier
 import lang.Formulas.*
-import lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import lang.Types.IntRangeType.Bound
 import lang.Types.IntRangeType.Bound.*
+import lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 
-import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -201,7 +200,14 @@ object Types {
     nonNothingTypes.size match {
       case 0 => NothingType
       case 1 => nonNothingTypes.head
-      case _ => UnionType(nonNothingTypes)
+      case _ =>
+        val ranges = nonNothingTypes.flatMap {
+          case rangeType: IntRangeType => Some(rangeType)
+          case _ => None
+        }
+        val intCnt = nonNothingTypes.count(_ == IntType)
+        
+        UnionType(nonNothingTypes)
     }
   }
 

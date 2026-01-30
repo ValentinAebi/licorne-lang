@@ -18,6 +18,8 @@ class GraphTests {
      3 -> 4 -> 5 -> 6    10 <- 12 <- 13 -> 14
      */
 
+    // SCCs: {1}, {3}, {2,4,5,6,7,8,9,10}, {11}, {12}, {13}, {14}, {15}
+
     1 -> 2
     1 -> 3
     2 -> 4
@@ -52,6 +54,8 @@ class GraphTests {
      v    v         ^    v              ^
      C -> D -> E -> F    J -> L -> M -> N
      */
+
+    // SCCs: {A}, {B,D,E,F,G,H}, {C}, {I,J,L,M,N,O,P,K}
 
     "A" -> "B"
     "A" -> "C"
@@ -102,29 +106,25 @@ class GraphTests {
     gb.build()
   }
 
-  @Test
-  def findShortestCycleTest1(): Unit = {
+  @Test def findShortestCycleTest1(): Unit = {
     val acceptableSolutions = rotationsOf(7, 9, 10)
     val res = graph1.findShortestCycle().get
     assertTrue(s"incorrect: $res", acceptableSolutions.contains(res))
   }
 
-  @Test
-  def findShortestCycleTest2(): Unit = {
+  @Test def findShortestCycleTest2(): Unit = {
     val acceptableSolutions = rotationsOf("B", "D", "E", "F", "G", "H")
     val res = graph2.findShortestCycle().get
     assertTrue(s"incorrect: $res", acceptableSolutions.contains(res))
   }
 
-  @Test
-  def findShortestPathTest(): Unit = {
+  @Test def findShortestPathTest(): Unit = {
     val exp = Seq(15, 12, 10, 7, 8)
     val act = graph1.shortestPath(15, 8).get
     assertEquals(exp, act)
   }
 
-  @Test
-  def topologicalSortTest(): Unit = {
+  @Test def topologicalSortTest(): Unit = {
     val result = graph3.topologicalSort()
     assertEquals(graph3.vertices, result.toSet)
     assertEquals(graph3.vertices.size, result.size)
@@ -135,6 +135,24 @@ class GraphTests {
         assertTrue(s"edge from $from to $to but topological order says $result", fromIdx <= toIdx)
       }
     }
+  }
+
+  @Test def sccsTest1(): Unit = {
+    val exp = Set(Set(1), Set(3), Set(2, 4, 5, 6, 7, 8, 9, 10), Set(11), Set(12), Set(13), Set(14), Set(15))
+    val act = graph1.sccs()
+    assertEquals(exp, act)
+  }
+
+  @Test def sccsTest2(): Unit = {
+    val exp = Set(Set("A"), Set("B", "D", "E", "F", "G", "H"), Set("C"), Set("I", "J", "L", "M", "N", "O", "P", "K"))
+    val act = graph2.sccs()
+    assertEquals(exp, act)
+  }
+
+  @Test def sccsTest3(): Unit = {
+    val exp = "ABCDEFGHI".toSet.map(c => Set(c.toString))
+    val act = graph3.sccs()
+    assertEquals(exp, act)
   }
 
   private def rotationsOf[T](seq: T*): Set[Seq[T]] = {
