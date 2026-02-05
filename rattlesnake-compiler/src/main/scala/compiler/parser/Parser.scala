@@ -227,12 +227,12 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val nominalTypeTree: P[NominalTypeTree] = recursive {
     highName ::: typeArgsListOpt ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
-      case baseTypeName ^: typeParamsOpt ^: paramsOpt =>
+      case baseTypeName ^: typeArgsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
-        if (primTypeOpt.isDefined && typeParamsOpt.exists(_.nonEmpty)) {
-          errorReporter.report(Err(Parsing, "primitive types cannot take type parameters", typeParamsOpt.get.head.getPosition))
+        if (primTypeOpt.isDefined && typeArgsOpt.exists(_.nonEmpty)) {
+          errorReporter.report(Err(Parsing, "primitive types cannot take type parameters", typeArgsOpt.get.head.getPosition))
         }
-        primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeParamsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
+        primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeArgsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
     }
   } setName "refinableTypeTree"
 
@@ -298,10 +298,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "typeParamWithoutVariance"
 
   private lazy val typeParamsPossiblyWithVarianceListOpt = {
-    opt(openBracket ::: repeatWithSepNonZero(typeParamWithVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
+    opt(openBracket ::: repeatWithSepNonZero(typeParamPossiblyWithVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   } setName "typeParamsPossiblyWithVarianceListOpt"
 
-  private lazy val typeParamWithVariance = opt(op(Plus, Minus)) ::: highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
+  private lazy val typeParamPossiblyWithVariance = opt(op(Plus, Minus)) ::: highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
     case varianceSymbolOpt ^: typeParamName ^: upperBoundOpt ^: lowerBoundOpt =>
       val variance = varianceSymbolOpt match {
         case Some(Plus) => Variance.Covariant
@@ -310,7 +310,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         case None => Variance.Invariant
       }
       TypeParamWithVariance(typeParamName, variance, upperBoundOpt, lowerBoundOpt)
-  } setName "typeParamWithVariance"
+  } setName "typeParamPossiblyWithVariance"
 
   private lazy val thisRef = kw(This) map (_ => ThisRef())
 
