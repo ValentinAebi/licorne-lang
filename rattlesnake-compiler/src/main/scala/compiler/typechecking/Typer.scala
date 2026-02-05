@@ -10,15 +10,18 @@ import compiler.reporting.Position
 import compiler.typechecking.SubtypeRelation.*
 import compiler.typechecking.ControlFlowInfo.TypeInfo
 import identifiers.{FunOrVarId, TypeIdentifier}
+import io.ksmt.KContext
+import io.ksmt.solver.z3.KZ3Solver
 import lang.*
 import lang.Formulas.*
 import lang.Operators.OperatorSignature
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.Visibility.Private
+import solver.{SMTBasedSolver, Solver}
 
 import scala.collection.mutable
-import scala.util.boundary
+import scala.util.{Using, boundary}
 
 
 final class Typer(
@@ -37,8 +40,17 @@ final class Typer(
 
   override def apply(program: Program): (Program, TypeStore) = {
     val ts = new TypeStore
-    program.checkDefinitions()(using this, program, ts, er, program.typeDeclPositions)
-    checkFunctions()(using program, ts)
+    Using(KContext()) { kCtx =>
+      Using(KZ3Solver(kCtx)) { kSolver =>
+        val solver = SMTBasedSolver(kCtx, kSolver)
+        solver.onNewStackFrameWithAssumptions() {
+          program.checkDefinitions()(using this, solver, program, ts, er, program.typeDeclPositions)
+        }
+        solver.onNewStackFrameWithAssumptions() {
+          checkFunctions()(using solver, program, ts)
+        }
+      }.get
+    }.get
     if (!continueIfErrors) {
       er.displayAndTerminateIfErrors()
     }
@@ -46,7 +58,7 @@ final class Typer(
     (program, ts)
   }
 
-  private def checkFunctions()(using program: Program, ts: TypeStore): Unit = {
+  private def checkFunctions()(using solver: Solver, program: Program, ts: TypeStore): Unit = {
     for ((funSig, func) <- program.functions) {
       val funOwnerSig = program.resolveSignature(funSig.ownerName).get
       val (thisVal, thisType) = funSig.paramsInclThis.head
@@ -84,13 +96,13 @@ final class Typer(
   }
 
   private def traverseAll(instructions: List[Instr], cfInfo: ControlFlowInfo)
-                         (using FunctionContext, TypeStore, mutable.Queue[ClosureInfo], ErrorReporter, Program): ControlFlowInfo =
+                         (using FunctionContext, Solver, TypeStore, mutable.Queue[ClosureInfo], ErrorReporter, Program): ControlFlowInfo =
     instructions.foldLeft(cfInfo) { (cfInfo, instr) =>
       traverse(instr, cfInfo)
     }
 
   private def traverse(instr: Instr, cfIn: ControlFlowInfo)
-                      (using funCtx: FunctionContext, ts: TypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): ControlFlowInfo = {
+                      (using solver: Solver, funCtx: FunctionContext, ts: TypeStore, closuresCollector: mutable.Queue[ClosureInfo], er: ErrorReporter, program: Program): ControlFlowInfo = {
     given posOpt: Option[Position] = instr.getAstNodeOpt.flatMap(_.getPosition)
 
     instr match {
@@ -117,7 +129,9 @@ final class Typer(
           }
           afterCondCf = cfAfterCond
           enforceExpectedSubtypingConstraint(condType, BoolType, "loop condition")
-          val bodyEndCf = traverseAll(body, cfAfterCond.refined(infoIfCondTrue))
+          val bodyEndCf = solver.onNewStackFrameWithAssumptions(cond) {
+            traverseAll(body, cfAfterCond.refined(infoIfCondTrue))
+          }
           for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
             // check if the guessed types work; if they do not, retry
             val typeInCond = analyzeIdVal(condVal, cfIn)
@@ -131,6 +145,7 @@ final class Typer(
           typingAttemptsCnt += 1
         }
         er.commitSpeculation()
+        solver.offerAssertion(Not(cond))
         afterCondCf.refined(infoIfCondFalse)
       }
       case SSA.Disjunction(cond, thenBr, elseBr, postMerges) =>
@@ -138,9 +153,13 @@ final class Typer(
         enforceExpectedSubtypingConstraint(condType, BoolType, "condition")
         val (thenInfos, elseInfos) = extractTypeInfos(cond)
         val thenStartCtx = cfAfterCond.refined(thenInfos)
-        val thenEndCf = traverseAll(thenBr, thenStartCtx)
+        val thenEndCf = solver.onNewStackFrameWithAssumptions(cond) {
+          traverseAll(thenBr, thenStartCtx)
+        }
         val elseStartCf = cfAfterCond.refined(elseInfos)
-        val elseEndCf = traverseAll(elseBr, elseStartCf)
+        val elseEndCf = solver.onNewStackFrameWithAssumptions(Not(cond)) {
+          traverseAll(elseBr, elseStartCf)
+        }
         val cfAfterMerge = thenEndCf.merged(elseEndCf)
         traverseAll(postMerges, cfAfterMerge)
       case SSA.Phi(assignedValue, inValues) =>
@@ -265,7 +284,7 @@ final class Typer(
   }
 
   private[typechecking] def analyze(formula: Formula, cfIn: ControlFlowInfo)
-                                   (using funCtx: FunctionContext, ts: TypeStore, er: ErrorReporter, program: Program): (Type, ControlFlowInfo) = {
+                                   (using funCtx: FunctionContext, solver: Solver, ts: TypeStore, er: ErrorReporter, program: Program): (Type, ControlFlowInfo) = {
     val posOpt =
       if program.formulaPositions.containsKey(formula)
       then Some(program.formulaPositions.get(formula))
@@ -475,7 +494,10 @@ final class Typer(
     searchFrom(receiverTypeId)
   }
 
-  private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position], contextDescrForTypeVar: String, reportIfLengthMismatch: Boolean)(using program: Program): Option[Map[TypeIdentifier, Type]] = {
+  private[typechecking] def generateTypeParamsMapping(typeParams: List[TypeParamInfo], typeArgs: List[Type],
+                                                      posOpt: Option[Position], contextDescrForTypeVar: String,
+                                                      reportIfLengthMismatch: Boolean)
+                                                     (using solver: Solver, program: Program): Option[Map[TypeIdentifier, Type]] = {
     if (typeArgs.nonEmpty && typeArgs.size != typeParams.size) {
       if (reportIfLengthMismatch) {
         reportError(s"wrong number of type arguments: expected ${typeParams.size}, was ${typeArgs.size}", posOpt)
@@ -485,8 +507,8 @@ final class Typer(
       val subst = mutable.Map.empty[TypeIdentifier, Type]
       for (tp <- typeParams) {
         val substImmut = subst.toMap
-        val upperBoundOpt = tp.upperBoundOpt.map(_.substitute(substImmut, Map.empty))
-        val lowerBoundOpt = tp.lowerBoundOpt.map(_.substitute(substImmut, Map.empty))
+        val upperBoundOpt = tp.upperBoundOpt.map(_.substituteTypes(substImmut))
+        val lowerBoundOpt = tp.lowerBoundOpt.map(_.substituteTypes(substImmut))
         subst(tp.tid) = TypeVariable(tp.tid.stringId, upperBoundOpt, lowerBoundOpt)(program.saveTypeVariable(_, posOpt))
       }
       subst.toMap
@@ -494,11 +516,11 @@ final class Typer(
       val typeParamsMap = mutable.Map.empty[TypeIdentifier, Type]
       for ((info, typeArg) <- typeParams.zip(typeArgs)) {
         info.upperBoundOpt.foreach { upbRaw =>
-          val upb = upbRaw.substitute(typeParamsMap.toMap, Map.empty)
+          val upb = upbRaw.substituteTypes(typeParamsMap.toMap)
           enforceSubtypingConstraintCustomMsg(typeArg, upb, s"cannot instantiate ${info.tid} to $typeArg: violates upper bound $upb")(using posOpt)
         }
         info.lowerBoundOpt.foreach { lobRaw =>
-          val lob = lobRaw.substitute(typeParamsMap.toMap, Map.empty)
+          val lob = lobRaw.substituteTypes(typeParamsMap.toMap)
           enforceExpectedSubtypingConstraint(lob, typeArg, s"cannot instantiate ${info.tid} to $typeArg: violates lower bound $lob")(using posOpt)
         }
         typeParamsMap.addOne(info.tid -> typeArg)
@@ -537,7 +559,7 @@ final class Typer(
 
         def subst(sig: RuntimeTypeSignature, tpe: Type): Type = {
           val subst = sig.typeParams.map(_._1).zip(typeArgs).toMap
-          tpe.substitute(subst, Map.empty)
+          tpe.substituteTypes(subst)
         }
 
         program.resolveSignatureAs[RuntimeTypeSignature](typeName).flatMap {

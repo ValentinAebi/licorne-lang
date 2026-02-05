@@ -1,20 +1,25 @@
-package compiler.solver
+package solver
 
-import compiler.datastructures.Graph
+import datastructures.Graph
 import lang.Formulas.{Formula, LessOrEq, LessThan}
 import lang.Types.{IntRangeType, Type}
 import lang.Types.IntRangeType.Bound
+import lang.Types.IntRangeType.Bound.{Max, Min, Simple}
 import lang.Types.PrimitiveType.NothingType
 
 import scala.util.boundary
 
 trait Solver {
+  
+  def onNewStackFrameWithAssumptions[T](assumptions: Formula*)(action: => T): T
 
-  def assert(formula: Formula): Unit
+  def offerAssertion(formula: Formula): Unit
 
   def canProve(formula: Formula): Boolean
 
   def isSatisfiable(formula: Formula): Boolean
+
+  def canProveIntRangeSubtyping(subT: IntRangeType, superT: IntRangeType): Boolean
 
   def simplifyRange(range: IntRangeType): Type = {
     val IntRangeType(low, up) = range
@@ -35,16 +40,16 @@ trait Solver {
   }
 
   def simplifyBound(bound: IntRangeType.Bound): IntRangeType.Bound = bound match {
-    case Bound.Max(bounds) =>
+    case Max(bounds) =>
       val leqGraph = mkLessOrEqGraph(bounds)
       val sccLeqGraph = leqGraph.sccGraph()
       val dominators = sccLeqGraph.verticesOfOutDegree(0).map(_.head)
-      Bound.Max(dominators)
-    case Bound.Min(bounds) =>
+      if dominators.size == 1 then Simple(dominators.head) else Max(dominators)
+    case Min(bounds) =>
       val leqGraph = mkLessOrEqGraph(bounds)
       val sccLeqGraph = leqGraph.sccGraph()
       val dominated = sccLeqGraph.verticesOfInDegree(0).map(_.head)
-      Bound.Min(dominated)
+      if dominated.size == 1 then Simple(dominated.head) else Min(dominated)
     case bound => bound
   }
 

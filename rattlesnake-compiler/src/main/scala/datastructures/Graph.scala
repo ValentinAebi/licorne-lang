@@ -1,4 +1,4 @@
-package compiler.datastructures
+package datastructures
 
 import scala.annotation.tailrec
 import scala.collection.mutable

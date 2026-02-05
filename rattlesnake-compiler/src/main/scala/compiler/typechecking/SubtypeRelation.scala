@@ -5,26 +5,29 @@ import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.util.zipCommons
+import lang.Formulas.Formula
 import lang.Types.*
 import lang.Types.PrimitiveType.*
 import lang.{RuntimeTypeSignature, TypeTypeParamInfo, Variance}
+import solver.Solver
 
 import scala.util.boundary
 
+// TODO also pass the subject (formula whose type is being asserted) to the subtype checking methods, to be used by the SMT solver
 object SubtypeRelation {
 
   def enforceExpectedSubtypingConstraint(subT: Type, superT: Type, positionDescr: String)
-                                        (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+                                        (using posOpt: Option[Position], er: ErrorReporter, solver: Solver, program: Program): Boolean = {
     checkSubtypingConstraint(subT, superT)(using Reporting(er, s"$positionDescr: expected ${superT.withTypeVarsExpanded}, found ${subT.withTypeVarsExpanded}", posOpt))
   }
 
   def enforceSubtypingConstraintCustomMsg(subT: Type, superT: Type, fullMsg: String)
-                                         (using posOpt: Option[Position], er: ErrorReporter, program: Program): Boolean = {
+                                         (using posOpt: Option[Position], er: ErrorReporter, solver: Solver, program: Program): Boolean = {
     checkSubtypingConstraint(subT, superT)(using Reporting(er, fullMsg, posOpt))
   }
 
   private def checkSubtypingConstraint(subT: Type, superT: Type)
-                                      (using reporting: Reporting, program: Program): Boolean = {
+                                      (using reporting: Reporting, solver: Solver, program: Program): Boolean = {
     (program.desugarType(subT), program.desugarType(superT)) match {
       case (subT: TypeVariable, superT) =>
         subT.resolve(superT)
@@ -40,7 +43,7 @@ object SubtypeRelation {
   }
 
   private def checkSubtypingConstraintOnDesugaredTypes(subT: Type, superT: Type)
-                                                          (using reporting: Reporting, program: Program): Boolean = {
+                                                      (using reporting: Reporting, solver: Solver, program: Program): Boolean = {
     (subT, superT) match {
       case (subT, superT) if subT.trivialSubtypeOf(superT) => true
       case (NamedType(subtypeName, subtypeTypeArgs, subtypeArgs), NamedType(supertypeName, supertypeTypeArgs, supertypeArgs)) =>
@@ -77,6 +80,8 @@ object SubtypeRelation {
               true
             }
         }
+      case (subT: IntRangeType, superT: IntRangeType) =>
+        solver.canProveIntRangeSubtyping(subT, superT)
       case (ClosureType(subParams, subResult), ClosureType(superParams, superResult)) =>
         val sizeMatch = subParams.size == superParams.size
         if (!sizeMatch) {
@@ -115,9 +120,9 @@ object SubtypeRelation {
     case _ => false
   }
 
-  private def checkAssignmentIsValid(tv: TypeVariable, tpe: Type)(using program: Program, reporting: Reporting): Boolean = {
+  private def checkAssignmentIsValid(tv: TypeVariable, tpe: Type)(using solver: Solver, program: Program, reporting: Reporting): Boolean = {
     given Reporting = reporting.copy(msg = s"type variable $tv has been assigned to type $tpe, which violates its bounds")
-    
+
     tv.upperBoundOpt.forall(checkSubtypingConstraint(tpe, _)) && tv.lowerBoundOpt.forall(checkSubtypingConstraint(_, tpe))
   }
 

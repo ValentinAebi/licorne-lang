@@ -5,6 +5,7 @@ import lang.Types
 import scala.collection.mutable
 import lang.Types.Type
 import lang.Formulas.IdValue
+import solver.Solver
 
 final class TypeStore {
   private val store = mutable.Map.empty[IdValue, Type]
@@ -15,7 +16,7 @@ final class TypeStore {
   
   def typeOf(idValue: IdValue): Type = store.apply(idValue)
 
-  def widenType(idValue: IdValue, tpe: Type): Unit = {
+  def widenType(idValue: IdValue, tpe: Type)(using Solver): Unit = {
     val prevType = typeOf(idValue)
     this (idValue) = Types.join(prevType, tpe)
   }

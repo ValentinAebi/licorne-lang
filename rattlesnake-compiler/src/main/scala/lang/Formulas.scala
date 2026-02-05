@@ -1,7 +1,7 @@
 package lang
 
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.{ClosureType, IntersectionType, NamedType, NominalType, RefinedType, Type, TypeVariable, UnionType}
+import lang.Types.*
 
 object Formulas {
 
@@ -246,28 +246,37 @@ object Formulas {
     case HasType(formula, tpe) => formula.isPureByConstruction
   }
 
-  extension (formula: Formula) def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Formula = formula match {
-    case value: IdValue => valsSubst.getOrElse(value, value)
-    case constant: Constant => constant
-    case Plus(lhs, rhs) => Plus(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Minus(lhs, rhs) => Minus(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Times(lhs, rhs) => Times(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Div(lhs, rhs) => Div(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Rem(lhs, rhs) => Rem(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case And(lhs, rhs) => And(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Or(lhs, rhs) => Or(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case LessThan(lhs, rhs) => LessThan(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Equal(lhs, rhs) => Equal(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
-    case Neg(operand) => Neg(operand.substitute(typesSubst, valsSubst))
-    case Not(operand) => Not(operand.substitute(typesSubst, valsSubst))
-    case Call(receiver, funId, typeArgs, args) =>
-      Call(receiver.substitute(typesSubst, valsSubst), funId,
-        typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
-    case ClosureInvocation(closure, args) =>
-      ClosureInvocation(closure.substitute(typesSubst, valsSubst), args.map(_.substitute(typesSubst, valsSubst)))
-    case Select(owner, fieldName) => Select(owner.substitute(typesSubst, valsSubst), fieldName)
-    case HasType(formula, tpe) => HasType(formula.substitute(typesSubst, valsSubst), tpe)
+  extension (formula: Formula) {
+    
+    def substituteTypes(typesSubst: Map[TypeIdentifier, Type]): Formula =
+      substitute(typesSubst, Map.empty)
+      
+    def substituteVals(valsSubst: Map[IdValue, Formula]): Formula =
+      substitute(Map.empty, valsSubst)
+    
+    def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Formula = formula match {
+      case value: IdValue => valsSubst.getOrElse(value, value)
+      case constant: Constant => constant
+      case Plus(lhs, rhs) => Plus(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Minus(lhs, rhs) => Minus(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Times(lhs, rhs) => Times(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Div(lhs, rhs) => Div(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Rem(lhs, rhs) => Rem(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case And(lhs, rhs) => And(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Or(lhs, rhs) => Or(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case LessThan(lhs, rhs) => LessThan(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Equal(lhs, rhs) => Equal(lhs.substitute(typesSubst, valsSubst), rhs.substitute(typesSubst, valsSubst))
+      case Neg(operand) => Neg(operand.substitute(typesSubst, valsSubst))
+      case Not(operand) => Not(operand.substitute(typesSubst, valsSubst))
+      case Call(receiver, funId, typeArgs, args) =>
+        Call(receiver.substitute(typesSubst, valsSubst), funId,
+          typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
+      case ClosureInvocation(closure, args) =>
+        ClosureInvocation(closure.substitute(typesSubst, valsSubst), args.map(_.substitute(typesSubst, valsSubst)))
+      case Select(owner, fieldName) => Select(owner.substitute(typesSubst, valsSubst), fieldName)
+      case HasType(formula, tpe) => HasType(formula.substitute(typesSubst, valsSubst), tpe)
+    }
   }
 
   def formulaToString(formula: Formula)(using typeFunc: (IdValue => Option[Type])): String = formula match {
@@ -306,6 +315,8 @@ object Formulas {
       UnionType(types.map(simplifyPredicates))
     case IntersectionType(types) =>
       IntersectionType(types.map(simplifyPredicates))
+    case IntRangeType(lowerBound, upperBound) =>
+      IntRangeType(lowerBound.formulasMapped(_.simplified), upperBound.formulasMapped(_.simplified))
     case tv: TypeVariable => tv
   }
 

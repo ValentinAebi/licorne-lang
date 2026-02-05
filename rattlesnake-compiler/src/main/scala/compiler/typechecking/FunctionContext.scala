@@ -12,6 +12,7 @@ import lang.Types.PrimitiveType.{BoolType, IntType}
 import lang.Formulas.IdValue
 import lang.Types.IntRangeType.Bound
 import lang.Variance.{Contravariant, Covariant}
+import solver.Solver
 
 import scala.annotation.tailrec
 
@@ -45,7 +46,7 @@ final case class FunctionContext(
     copy(functionTypeParams = functionTypeParams + (ftp.tid -> ftp))
 
   def checkType(tpe: Type, expVarianceOpt: Option[Variance], posOpt: Option[Position])
-               (using er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
+               (using solver: Solver, er: ErrorReporter, compilationStep: CompilationStep): Unit = tpe match {
     case primitiveType: Types.PrimitiveType => ()
     case tpe@NamedType(typeName, typeArgs, args) =>
       if (functionTypeParams.contains(typeName) || typeTypeParams.contains(typeName)) {
@@ -74,7 +75,7 @@ final case class FunctionContext(
               val expParamsCnt = sig.params.size
               if (args.size == expParamsCnt) {
                 for (((paramId, (paramTypeRaw, paramValue)), arg) <- sig.params zip args) {
-                  val paramType = program.desugarType(paramTypeRaw.substitute(typeParamsSubst, Map.empty))
+                  val paramType = program.desugarType(paramTypeRaw.substituteTypes(typeParamsSubst))
                   val (argType, _) = typer.analyze(arg, ControlFlowInfo.empty)
                   enforceExpectedSubtypingConstraint(argType, paramType, "type application")(using posOpt)
                 }
@@ -98,13 +99,13 @@ final case class FunctionContext(
         checkType(tpe, expVarianceOpt, posOpt)
       }
     case IntRangeType(lowerBound, upperBound) =>
-      checkBound(lowerBound)(using typer, ts, er, posOpt)
-      checkBound(upperBound)(using typer, ts, er, posOpt)
+      checkBound(lowerBound)(using typer, solver, ts, er, posOpt)
+      checkBound(upperBound)(using typer, solver, ts, er, posOpt)
     case _: TypeVariable =>
       assert(false)
   }
 
-  private def checkBound(bound: IntRangeType.Bound)(using typer: Typer, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): Unit = bound.collectFormulas { bound =>
+  private def checkBound(bound: IntRangeType.Bound)(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): Unit = bound.collectFormulas { bound =>
     val (boundType, _) = typer.analyze(bound, ControlFlowInfo.empty)
     enforceExpectedSubtypingConstraint(boundType, IntType, "range bound")
   }

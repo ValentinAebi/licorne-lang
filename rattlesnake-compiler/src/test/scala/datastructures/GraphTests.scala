@@ -1,5 +1,6 @@
-package compiler.datastructures
+package datastructures
 
+import datastructures.Graph
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 

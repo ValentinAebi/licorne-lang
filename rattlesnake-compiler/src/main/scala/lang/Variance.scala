@@ -1,5 +1,7 @@
 package lang
 
+import lang.Operator.{Minus, Plus}
+
 enum Variance(private val value: Int, val descr: String) {
   case Invariant extends Variance(0, "invariant")
   case Covariant extends Variance(1, "covariant")
@@ -16,6 +18,12 @@ enum Variance(private val value: Int, val descr: String) {
     case 1 => Covariant
     case -1 => Contravariant
     case _ => assert(false)
+  }
+
+  def symbolOpt: Option[Operator] = this match {
+    case Invariant => None
+    case Covariant => Some(Plus)
+    case Contravariant => Some(Minus)
   }
 
   override def toString: String = descr

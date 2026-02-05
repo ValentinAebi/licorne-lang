@@ -168,6 +168,28 @@ sealed trait TypeParamInfo {
   val lowerBoundOpt: Option[Type]
 }
 
-final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo
+final case class TypeTypeParamInfo(
+                                    tid: TypeIdentifier,
+                                    variance: Variance,
+                                    upperBoundOpt: Option[Type],
+                                    lowerBoundOpt: Option[Type]
+                                  ) extends TypeParamInfo {
 
-final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo
+  override def toString: String = {
+    val varianceStr = variance.symbolOpt.getOrElse("")
+    val upperBoundStr = upperBoundOpt.map(u => s" sub $u").getOrElse("")
+    val lowerBoundStr = lowerBoundOpt.map(l => s" super $l").getOrElse("")
+    s"$varianceStr$tid$upperBoundStr$lowerBoundStr"
+  }
+
+}
+
+final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
+
+  override def toString: String = {
+    val upperBoundStr = upperBoundOpt.map(u => s" sub $u").getOrElse("")
+    val lowerBoundStr = lowerBoundOpt.map(l => s" super $l").getOrElse("")
+    s"$tid$upperBoundStr$lowerBoundStr"
+  }
+
+}

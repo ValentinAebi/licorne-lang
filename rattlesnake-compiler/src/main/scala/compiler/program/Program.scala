@@ -1,22 +1,23 @@
 package compiler.program
 
-import compiler.datastructures.Graph
 import compiler.irs.SSA
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.{SSAGeneration, TypeChecking}
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
-import compiler.typechecking.SubtypeRelation.{enforceSubtypingConstraintCustomMsg, enforceExpectedSubtypingConstraint}
+import compiler.typechecking.SubtypeRelation.{enforceExpectedSubtypingConstraint, enforceSubtypingConstraintCustomMsg}
 import compiler.typechecking.{FunctionContext, TypeStore, Typer}
 import compiler.util.zipCommons
 import compiler.valuesconversion.GlobalValuesContext
+import datastructures.Graph
 import identifiers.{ThisId, TypeIdentifier}
 import lang.*
+import lang.Formulas.{Formula, IdValue}
 import lang.Types.*
 import lang.Types.PrimitiveType.UnitType
-import lang.Formulas.{And, Formula, IdValue}
 import lang.Variance.*
 import lang.Visibility.Private
+import solver.Solver
 
 import java.util
 import scala.collection.{SeqMap, mutable}
@@ -51,7 +52,7 @@ final case class Program(
 
   def allTypeSignatures: Iterable[TypeSignature] = runtimeSignatures ++ typeAliases.values
 
-  def checkDefinitions()(using typer: Typer, program: Program, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  def checkDefinitions()(using typer: Typer, solver: Solver, program: Program, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     checkInterfaceSignatures()
     checkClassSignatures()
     checkObjectSignatures()
@@ -191,7 +192,7 @@ final case class Program(
     case _ => None
   }
 
-  private def checkInterfaceSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkInterfaceSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, InterfaceSignature(id, typeParams, functions, directSupertypes)) <- interfaces) {
       given Option[Position] = positions.get(id)
 
@@ -201,7 +202,7 @@ final case class Program(
     }
   }
 
-  private def checkClassSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkClassSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, ClassSignature(id, typeParams, fields, importedObjects, functions, directSupertypes)) <- classes) {
       given Option[Position] = positions.get(id)
 
@@ -214,7 +215,7 @@ final case class Program(
     }
   }
 
-  private def checkObjectSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkObjectSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, ObjectSignature(id, importedObjects, functions, directSupertypes)) <- objects) {
       given Option[Position] = positions.get(id)
 
@@ -225,7 +226,7 @@ final case class Program(
     }
   }
 
-  private def checkDatatypeSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkDatatypeSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, DatatypeSignature(id, typeParams, directSupertypes, directSubtypes)) <- datatypes) {
       given Option[Position] = positions.get(id)
 
@@ -235,7 +236,7 @@ final case class Program(
     }
   }
 
-  private def checkRecordSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkRecordSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, RecordSignature(id, typeParams, fields, directSupertypes)) <- records) {
       given Option[Position] = positions.get(id)
 
@@ -246,7 +247,7 @@ final case class Program(
     }
   }
 
-  private def checkTypeAliasSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
+  private def checkTypeAliasSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, positions: Map[TypeIdentifier, Position]): Unit = {
     for ((_, TypeAliasSignature(id, typeParams, itValue, params, rhs)) <- typeAliases) {
       given posOpt: Option[Position] = positions.get(id)
 
@@ -273,14 +274,14 @@ final case class Program(
   }
 
   private def checkFields(fields: Iterable[Field])
-                         (using funCtx: FunctionContext, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
+                         (using funCtx: FunctionContext, solver: Solver, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
     fields.foreach { field =>
       val variance = if field.isStable then Covariant else Invariant
       funCtx.checkType(field.tpe, Some(variance), posOpt)
     }
   }
 
-  private def checkFunctionSignatures()(using typer: Typer, ts: TypeStore, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
+  private def checkFunctionSignatures()(using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, compilationStep: CompilationStep): Unit = {
     for ((funSig@FunctionSignature(ownerName, functionName, funTypeParams, funParamsInclThis, funRetType, funVisibility), SSA.Function(_, funBodyOpt, funPosOpt)) <- functions) {
       val ownerSig = resolveSignatureAs[RuntimeTypeSignature](ownerName).get
 
@@ -315,7 +316,7 @@ final case class Program(
     }
   }
 
-  private def analyzeOverrides()(using program: Program, er: ErrorReporter, compilationStep: CompilationStep, typeDefPositions: Map[TypeIdentifier, Position]): Unit = {
+  private def analyzeOverrides()(using solver: Solver, program: Program, er: ErrorReporter, compilationStep: CompilationStep, typeDefPositions: Map[TypeIdentifier, Position]): Unit = {
     for ((subT, subTSupertypes) <- flattenedSupertypesSubstitutions; (superT, typeTypeParamsSubst) <- subTSupertypes) {
       val subTSig = resolveSignature(subT).get
       val superTSig = resolveSignature(superT).get
@@ -375,7 +376,7 @@ final case class Program(
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  enforceExpectedSubtypingConstraint(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT")(using funPosOpt, er, this)
+                  enforceExpectedSubtypingConstraint(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT")(using funPosOpt, er, solver, this)
                 }
                 if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
                   reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", funPosOpt)
@@ -388,7 +389,7 @@ final case class Program(
   }
 
   private def checkSuperinterfaces(childTypeId: TypeIdentifier, superTypes: List[NamedType])
-                                  (using funCtx: FunctionContext, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
+                                  (using funCtx: FunctionContext, solver: Solver, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
       funCtx.checkType(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
@@ -399,7 +400,7 @@ final case class Program(
   }
 
   private def checkSupertypesOfUnencapsulated(id: TypeIdentifier, superTypes: List[NamedType])
-                                             (using funCtx: FunctionContext, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
+                                             (using funCtx: FunctionContext, solver: Solver, er: ErrorReporter, posOpt: Option[Position], compilationStep: CompilationStep): Unit = {
     for (superT <- superTypes) {
       funCtx.checkType(superT, Some(Covariant), posOpt)
       resolveSignature(superT.typeName).foreach {
@@ -465,7 +466,7 @@ final case class Program(
         val oneStepSubst = (supertype1Sig.typeParams.map(_._1) zip supertype1.typeArgs).toMap
         checkAndSave(supertype1.typeName, oneStepSubst)
         for ((supertype2Id, superSubst) <- flattenedSupertypesSubstitutions(supertype1.typeName)) {
-          val composedSubst = for (tid, tpe) <- superSubst yield tid -> tpe.substitute(oneStepSubst, Map.empty)
+          val composedSubst = for (tid, tpe) <- superSubst yield tid -> tpe.substituteTypes(oneStepSubst)
           checkAndSave(supertype2Id, composedSubst)
         }
       }
@@ -498,7 +499,8 @@ final case class Program(
     case Formulas.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
   }
 
-  private def checkTypeParamsAndMkTSigCheckingCtx(id: TypeIdentifier, typeParams: Iterable[TypeTypeParamInfo])(using typer: Typer, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): FunctionContext = {
+  private def checkTypeParamsAndMkTSigCheckingCtx(id: TypeIdentifier, typeParams: Iterable[TypeTypeParamInfo])
+                                                 (using typer: Typer, solver: Solver, ts: TypeStore, er: ErrorReporter, posOpt: Option[Position]): FunctionContext = {
     val noTypeParamsCtx = FunctionContext(this, Map.empty, Map.empty, globalValuesContext.valuesGen.newValue(ThisId), id, expectedReturnType = UnitType)
     typeParams.foldLeft(noTypeParamsCtx) {
       case (ctx, ttp@TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt)) =>
