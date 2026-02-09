@@ -4,6 +4,7 @@ import identifiers.*
 import lang.Field.StableField
 import lang.Types.{NamedType, Type}
 import lang.Formulas.{Formula, IdValue}
+import lang.Keyword.{Sub, Super}
 
 import scala.collection.{SeqMap, mutable}
 
@@ -168,6 +169,23 @@ sealed trait TypeParamInfo {
   val lowerBoundOpt: Option[Type]
 }
 
-final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo
+final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
+  override def toString: String =
+    s"${varianceDescr(variance)}$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
+}
 
-final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo
+final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
+  override def toString: String =
+    s"$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
+}
+
+private def varianceDescr(variance: Variance): String = variance match {
+  case Variance.Invariant => ""
+  case Variance.Covariant => Operator.Plus.toString
+  case Variance.Contravariant => Operator.Minus.toString
+}
+
+private def boundDescr(subOrSuper: Keyword, boundOpt: Option[Type]): String = boundOpt match {
+  case Some(bound) => s" $subOrSuper $bound"
+  case None => ""
+}
