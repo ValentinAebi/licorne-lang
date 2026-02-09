@@ -1,7 +1,7 @@
 package lang
 
 import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.{ClosureType, IntersectionType, NamedType, NominalType, RefinedType, Type, TypeVariable, UnionType}
+import lang.Types.*
 
 object Formulas {
 
@@ -13,11 +13,9 @@ object Formulas {
     def str: String = typedStr(using _ => None)
   }
 
-  sealed trait Capturable
-
   sealed trait Value extends Formula
 
-  trait IdValue extends Value, Capturable {
+  trait IdValue extends Value {
     def completeDescr: String
 
     def sourceLevelDescrOrDefault: String
@@ -95,15 +93,15 @@ object Formulas {
 
   final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality)
 
-  final case class Call(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula]) extends Formula, Capturable
+  final case class Call(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula]) extends Formula
 
-  final case class ClosureInvocation(closure: Formula, args: List[Formula]) extends Formula, Capturable
+  final case class ClosureInvocation(closure: Formula, args: List[Formula]) extends Formula
 
-  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula, Capturable
+  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula
 
   final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula
 
-  case object RootCapability extends Capturable {
+  case object RootCapability {
     override def toString: String = "cap"
   }
 
