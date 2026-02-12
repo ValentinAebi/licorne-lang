@@ -2,21 +2,23 @@ package compiler.typing.smartcasting
 
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
+import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.{DatatypeSignature, Unencapsulated}
-import compiler.typing.contexts.ResolutionContext
-import compiler.lang.Types.NamedType
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
 
 import scala.collection.mutable
 
 final class UnencapsulatedSmartcastingData(
                                             val subject: Formula,
-                                            rawType: TypeIdentifier,
+                                            val rawType: NamedType,
                                             knownIs: Set[TypeIdentifier],
                                             knownIsNot: Set[TypeIdentifier],
-                                            resolutionCtx: ResolutionContext
+                                            resolutionCtx: ResolutionContext,
+                                            subtypingCtx: SubtypingContext
                                           ) extends SmartcastingData {
   private val canProveIsCache = mutable.Map.empty[TypeIdentifier, Boolean]
   private var mostPreciseTypeCache = Option.empty[Option[TypeIdentifier]]
+  private var canProveIsNothingCache = Option.empty[Boolean]
 
   def canProveIs(tid: TypeIdentifier): Boolean = {
 
@@ -43,12 +45,27 @@ final class UnencapsulatedSmartcastingData(
       case None =>
         val mostPreciseTypeOpt =
           resolutionCtx.typesReasoningCache
-            .developUnencapsulated(rawType)
+            .developUnencapsulated(rawType.typeName)
             .flatMap { recordSignatures =>
               recordSignatures.find(sig => canProveIs(sig.id)).map(_.id)
             }
         mostPreciseTypeCache = Some(mostPreciseTypeOpt)
         mostPreciseTypeOpt
+    }
+  }
+  
+  def canProveIsNothing: Boolean = {
+    canProveIsNothingCache match {
+      case Some(value) => value
+      case None =>
+        val result =
+          resolutionCtx.typesReasoningCache.developUnencapsulated(rawType.typeName) match {
+            case Some(signatures) =>
+              signatures.forall(sig => subtypingCtx.subToSuperSubst(sig.id, rawType.typeName).isEmpty)
+            case None => false
+          }
+        canProveIsNothingCache = Some(result)
+        result
     }
   }
   
@@ -58,7 +75,8 @@ final class UnencapsulatedSmartcastingData(
       rawType,
       this.knownIs ++ knownIs,
       this.knownIsNot ++ knownIsNot,
-      resolutionCtx
+      resolutionCtx,
+      subtypingCtx
     )
 
 }
