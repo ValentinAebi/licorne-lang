@@ -1,10 +1,9 @@
-package compiler.typechecking
+package compiler.typing
 
-import lang.Types
-
+import compiler.lang.Types
 import scala.collection.mutable
-import lang.Types.Type
-import lang.Formulas.IdValue
+import Types.Type
+import compiler.lang.Formulas.IdValue
 
 final class TypeStore {
   private val store = mutable.Map.empty[IdValue, Type]
@@ -14,10 +13,5 @@ final class TypeStore {
   def typeOfOpt(idValue: IdValue): Option[Type] = store.get(idValue)
   
   def typeOf(idValue: IdValue): Type = store.apply(idValue)
-
-  def widenType(idValue: IdValue, tpe: Type): Unit = {
-    val prevType = typeOf(idValue)
-    this (idValue) = Types.join(prevType, tpe)
-  }
 
 }

@@ -1,7 +1,7 @@
 package compiler.parser
 
 import compiler.irs.Tokens.*
-import lang.Operator.Semicolon
+import compiler.lang.Operator.Semicolon
 
 import scala.compiletime.uninitialized
 

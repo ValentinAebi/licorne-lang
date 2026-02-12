@@ -2,12 +2,12 @@ package compiler.lexer
 
 import compiler.io.SourceCodeProvider
 import compiler.irs.Tokens.*
+import compiler.lang.{Keyword, Operator}
 import compiler.lexer.Matchers.*
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.reporting.Errors.{CompilationError, Err, ErrorReporter, Fatal}
 import compiler.reporting.Position
-import lang.Types.PrimitiveType
-import lang.{Keyword, Operator}
+import compiler.lang.Types.PrimitiveType
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success}

@@ -1,9 +1,9 @@
 package compiler.valuesconversion
 
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.reporting.Position
-import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.TypeVariable
-import lang.Formulas.{Constant, Formula, IdValue, Value}
+import compiler.lang.Types.TypeVariable
+import compiler.lang.Formulas.{Constant, Formula, IdValue, Value}
 
 import java.util
 import scala.collection.mutable

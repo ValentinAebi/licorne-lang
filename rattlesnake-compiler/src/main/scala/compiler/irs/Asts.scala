@@ -1,10 +1,9 @@
 package compiler.irs
 
+import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
+import compiler.lang.Types.PrimitiveType
+import compiler.lang.{Operator, ReassigPermission, Variance, Visibility}
 import compiler.reporting.Position
-import identifiers.*
-import lang.*
-import lang.Types.*
-import lang.Types.PrimitiveType.*
 
 
 object Asts {

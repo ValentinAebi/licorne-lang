@@ -1,7 +1,6 @@
 package compiler.ssaprinting
 
-import identifiers.Identifier
-
+import compiler.identifiers.Identifier
 import scala.collection.mutable
 
 /**

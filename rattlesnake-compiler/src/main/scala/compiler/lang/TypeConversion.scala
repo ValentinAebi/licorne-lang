@@ -1,7 +1,7 @@
-package lang
+package compiler.lang
 
-import lang.Types.PrimitiveType.*
-import lang.Types.{PrimitiveType, Type}
+import Types.PrimitiveType.*
+import Types.{PrimitiveType, Type}
 
 enum TypeConversion(val from: PrimitiveType, val to: PrimitiveType) {
   

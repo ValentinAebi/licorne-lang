@@ -1,5 +1,6 @@
 package compiler.ssagen
 
+import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.Asts.{Expr, PrincipalTypeTree, RefinedTypeTree}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
@@ -10,13 +11,14 @@ import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
-import identifiers.*
-import lang.*
-import lang.Field.{ReassignableField, StableField}
-import lang.Types.*
-import lang.Types.PrimitiveType.UnitType
-import lang.Formulas.*
-import lang.Types.IntRangeType.Bound.{NoBound, Simple}
+import compiler.lang.Field.{ReassignableField, StableField}
+import compiler.lang.Types.PrimitiveType.UnitType
+import compiler.lang.*
+import compiler.lang.Formulas.*
+import compiler.lang.Formulas.CallTarget.UnresolvedCallTarget
+import compiler.lang.Formulas.SelectedField.UnresolvedField
+import compiler.lang.Types.*
+import compiler.typing.contexts.TypeVariablesContext
 
 import java.util
 import scala.collection.mutable.ListBuffer
@@ -24,29 +26,23 @@ import scala.collection.{SeqMap, mutable}
 
 
 final class SSAGenerator(er: ErrorReporter)
-  extends CompilerStep[List[Asts.Source], Program] {
+  extends CompilerStep[List[Asts.Source], (Program, TypeVariablesContext)] {
 
-  override def apply(input: List[Asts.Source]): Program = {
-    given formulaPositions: util.IdentityHashMap[Formula, Position] = util.IdentityHashMap()
-
+  override def apply(input: List[Asts.Source]): (Program, TypeVariablesContext) = {
     val programBuilder = Program.Builder(er)
     val globalValuesContext = programBuilder.globalValuesContext
     val valuesGen = globalValuesContext.valuesGen
     val allFunctionsCollector = mutable.SeqMap.empty[FunctionSignature, SSA.Function]
-    val positionsMapB = Map.newBuilder[TypeIdentifier, Position]
     for (src <- input) {
       val datatypeDefs = mutable.ListBuffer.empty[Asts.DataTypeDef]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
       for (df <- src.defs) {
-        df.getPosition.foreach { pos =>
-          positionsMapB.addOne(df.id -> pos)
-        }
         df match {
           case df@Asts.InterfaceDef(id, typeParams, functions, directSupertypes) =>
             val thisValue = valuesGen.newValue(ThisId)
             val valsCtx = LocalValuesContext(globalValuesContext)
             valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val noFunctionsSig = InterfaceSignature(id, typeParams.convert(valsCtx), Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)))
+            val noFunctionsSig = InterfaceSignature(id, typeParams.convert(valsCtx), Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)), df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -56,7 +52,7 @@ final class SSAGenerator(er: ErrorReporter)
             val valsCtx = LocalValuesContext(globalValuesContext)
             valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
-            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)))
+            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)), df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -81,7 +77,7 @@ final class SSAGenerator(er: ErrorReporter)
               case param@Asts.ObjectImport(objectId) =>
                 importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
-            val noFunctionsSig = ClassSignature(id, typeParams.convert(paramsCtx), fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val noFunctionsSig = ClassSignature(id, typeParams.convert(paramsCtx), fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)), df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -101,7 +97,7 @@ final class SSAGenerator(er: ErrorReporter)
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = RecordSignature(id, typeParams.convert(paramsCtx), stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)))
+            val sig = RecordSignature(id, typeParams.convert(paramsCtx), stableFields, directSupertypes.map(mkNamedType(_, paramsCtx)), df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
               datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
@@ -118,7 +114,7 @@ final class SSAGenerator(er: ErrorReporter)
                 typeAliasParams(paramId) = (paramType, paramValue)
                 paramsCtx.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams.convert(paramsCtx), itValue, typeAliasParams, mkType(rhs, paramsCtx))
+            val sig = TypeAliasSignature(typeName, typeParams.convert(paramsCtx), itValue, typeAliasParams, mkType(rhs, paramsCtx), df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
@@ -127,16 +123,17 @@ final class SSAGenerator(er: ErrorReporter)
         val thisValue = valuesGen.newValue(ThisId)
         valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
         val sig = DatatypeSignature(id, typeParams.convert(valsCtx), directSupertypes.map(mkNamedType(_, valsCtx)),
-          datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
+          datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty), df.getPosition)
         programBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val program = programBuilder.build(allFunctionsCollector, positionsMapB.result(), formulaPositions)
+    val program = programBuilder.build(allFunctionsCollector)
+    val typeVarsCtx = TypeVariablesContext()
     for ((tv, posOpt) <- globalValuesContext.getTypeVariables) {
-      program.saveTypeVariable(tv, posOpt)
+      typeVarsCtx.saveTypeVariable(tv, posOpt)
     }
     er.displayAndTerminateIfErrors()
-    program
+    (program, typeVarsCtx)
   }
 
   private def collectFunctions(
@@ -144,7 +141,7 @@ final class SSAGenerator(er: ErrorReporter)
                                 functionsProviderIncompleteSig: Encapsulated,
                                 globalValsCtx: GlobalValuesContext,
                                 allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
-                              )(using util.IdentityHashMap[Formula, Position]): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              ): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (func <- functionsProvider.functions) {
       if (functions.contains(func.id)) {
@@ -205,7 +202,7 @@ final class SSAGenerator(er: ErrorReporter)
           case Asts.TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt) =>
             FunctionTypeParamInfo(id, upperBoundOpt.map(mkType(_, funcLocalValsCtx)), lowerBoundOpt.map(mkType(_, funcLocalValsCtx)))
         }
-        val sig = FunctionSignature(functionsProvider.id, func.id, convertedTypeParams, paramsInclThis, retType, func.visibility)
+        val sig = FunctionSignature(functionsProvider.id, func.id, convertedTypeParams, paramsInclThis, retType, func.visibility, func.getPosition)
         val bodyOpt = generateSSAFunc(sig, func.bodyOpt, funcLocalValsCtx, func.getPosition)
         functions(func.id) = (sig, bodyOpt)
         allFunctionsCollector(sig) = bodyOpt
@@ -229,7 +226,7 @@ final class SSAGenerator(er: ErrorReporter)
     resultB.result()
   }
 
-  extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(valsCtx: LocalValuesContext)(using util.IdentityHashMap[Formula, Position]): List[TypeTypeParamInfo] = typeParams.map {
+  extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(valsCtx: LocalValuesContext): List[TypeTypeParamInfo] = typeParams.map {
     case Asts.TypeParamWithVariance(id, variance, upperBounds, lowerBounds) => TypeTypeParamInfo(id, variance, upperBounds.map(mkType(_, valsCtx)), lowerBounds.map(mkType(_, valsCtx)))
   }
 
@@ -238,7 +235,7 @@ final class SSAGenerator(er: ErrorReporter)
                                bodyOpt: Option[Asts.Block],
                                valsCtx: LocalValuesContext,
                                posOpt: Option[Position]
-                             )(using util.IdentityHashMap[Formula, Position]): SSA.Function = bodyOpt match {
+                             ): SSA.Function = bodyOpt match {
     case Some(body) =>
       val ssaInstructionsList = mutable.ListBuffer.empty[SSA.Instr]
       for (stat <- body.stats) {
@@ -253,7 +250,7 @@ final class SSAGenerator(er: ErrorReporter)
                            stat: Asts.Statement,
                            valsCtx: LocalValuesContext,
                            ssaInstructionsList: mutable.ListBuffer[Instr]
-                         )(using util.IdentityHashMap[Formula, Position]): Unit = {
+                         ): Unit = {
 
     def generateSSA(stat: Asts.Statement, valsCtx: LocalValuesContext, ssaInstructionsList: mutable.ListBuffer[SSA.Instr], isRepeat: Boolean): Unit = {
       // @formatter:off
@@ -334,10 +331,23 @@ final class SSAGenerator(er: ErrorReporter)
           elseBrOpt.foreach { elseBr =>
             generateSSA(elseBr, elseBrCtx, elseBrSSA, isRepeat)
           }
-          val phiNodes = valsCtx.unifyAndReturnPhis(ite, thenBrCtx, elseBrCtx)
-          ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, phiNodes), stat)
+          val variablesB = List.newBuilder[DisjunctionVarData]
+          for (varId <- externalVarsAssignedIn(ite)){
+            (thenBrCtx.valueOf(varId), elseBrCtx.valueOf(varId)) match {
+              case (KnownAndInitialized(thenEndVal, _, _), KnownAndInitialized(elseEndVal, _, _)) if !thenBrCtx.hasExited && elseBrCtx.hasExited =>
+                val joinVal = valsCtx.valuesGen.newValue(varId)
+                variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
+                valsCtx.remap(varId, joinVal)
+              case (KnownAndInitialized(thenEndVal, _, _), _) if !thenBrCtx.hasExited =>
+                valsCtx.remap(varId, thenEndVal)
+              case (_, KnownAndInitialized(elseEndVal, _, _)) if !elseBrCtx.hasExited =>
+                valsCtx.remap(varId, elseEndVal)
+              case _ => ()
+            }
+          }
+          ssaInstructionsList.saveInstr(Disjunction(condFormula, thenBrSSA.toList, elseBrSSA.toList, variablesB.result()), stat)
         case whileLoop@Asts.WhileLoop(cond, body) =>
-          val loopUpdatedVars = externalVarsAssignedInLoop(whileLoop).toList.flatMap { varId =>
+          val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
             valsCtx.valueOf(varId) match {
               case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
                 val mkNewVal = () => valsCtx.valuesGen.newValue(varId)
@@ -391,7 +401,7 @@ final class SSAGenerator(er: ErrorReporter)
                                           expr: Asts.Expr,
                                           ssaInstructionsList: mutable.ListBuffer[Instr],
                                           valsCtx: LocalValuesContext
-                                        )(using util.IdentityHashMap[Formula, Position]): IdValue =
+                                        ): IdValue =
     generateSSAExpr(expr, Some(ssaInstructionsList), valsCtx) match {
       case value: IdValue => value
       case formula =>
@@ -401,7 +411,7 @@ final class SSAGenerator(er: ErrorReporter)
     }
 
   private def generateTypeCheckForAnnotIfAny(
-                                              rhsValue: Value,
+                                              rhsValue: IdValue,
                                               typeAnnotOpt: Option[Type],
                                               valsCtx: LocalValuesContext,
                                               ssaInstructionsList: mutable.ListBuffer[Instr],
@@ -416,7 +426,7 @@ final class SSAGenerator(er: ErrorReporter)
                                expr: Asts.Expr,
                                ssaInstrListOpt: Option[mutable.ListBuffer[SSA.Instr]],
                                valsCtx: LocalValuesContext
-                             )(using formulaPositions: util.IdentityHashMap[Formula, Position]): Formula = {
+                             ): Formula = {
 
     def generateSSAExpr(expr: Asts.Expr): Formula = this.generateSSAExpr(expr, ssaInstrListOpt, valsCtx)
 
@@ -442,7 +452,7 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.ItRef() => generateSSAExpr(Asts.VariableRef(ItId))
       case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
       case call@Asts.Call(Asts.Select(receiver, funId), typeArgs, args) =>
-        Call(generateSSAExpr(receiver), funId, typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
+        Call(generateSSAExpr(receiver), UnresolvedCallTarget(funId), typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
       case call@Asts.Call(callee@Asts.VariableRef(funId), typeArgs, args) if !valsCtx.knows(funId) =>
         val receiver = valsCtx.getThisValue match {
           case Some(recv) => recv
@@ -450,7 +460,7 @@ final class SSAGenerator(er: ErrorReporter)
             reportError(s"no receiver found for call to $funId", call.getPosition)
             valsCtx.valuesGen.newValue(ThisId)
         }
-        Call(receiver, funId, typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
+        Call(receiver, UnresolvedCallTarget(funId), typeArgs.map(mkType(_, valsCtx)), args.map(generateSSAExpr))
       case call@Asts.Call(callee, typeArgs, args) =>
         if (typeArgs.nonEmpty) {
           reportError("type arguments on closure invocation", call.getPosition)
@@ -473,7 +483,7 @@ final class SSAGenerator(er: ErrorReporter)
       case Asts.BinaryOp(lhs, Operator.And, rhs) => And(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, Operator.Or, rhs) => Or(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case Asts.BinaryOp(lhs, operator, rhs) => throw AssertionError(s"unexpected $operator as binary operator")
-      case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), selected)
+      case Asts.Select(lhs, selected) => Select(generateSSAExpr(lhs), UnresolvedField(selected))
       case Asts.TypeTest(testedExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) => HasType(generateSSAExpr(testedExpr), typeName)
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
@@ -486,11 +496,7 @@ final class SSAGenerator(er: ErrorReporter)
           generateNonFormulaExpr(expr, ssaInstructionsList, valsCtx)
       }
     }
-    if (!formulaPositions.containsKey(formula)) {
-      expr.getPosition.foreach {
-        formulaPositions.put(formula, _)
-      }
-    }
+    formula.offerPosition(expr.getPosition)
     formula
   }
 
@@ -498,7 +504,7 @@ final class SSAGenerator(er: ErrorReporter)
                                       expr: Asts.NonFormulaExpr,
                                       ssaInstructionsList: mutable.ListBuffer[SSA.Instr],
                                       valsCtx: LocalValuesContext
-                                    )(using util.IdentityHashMap[Formula, Position]): Formula = expr match {
+                                    ): Formula = expr match {
     case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) =>
       val instanceVal = valsCtx.valuesGen.newValue(typeId)
       val initializersSSAInstrList = ListBuffer.empty[Instr]
@@ -522,7 +528,7 @@ final class SSAGenerator(er: ErrorReporter)
       ssaInstructionsList.saveInstr(Disjunction(condFormula,
         thenInstrList.toList,
         elseInstrList.toList,
-        List(Phi(resultVal, Set(thenResVal, elseResVal)))
+        List(DisjunctionVarData(None, thenResVal, elseResVal, resultVal))
       ), ternary)
       resultVal
     case cast@Asts.Cast(castExpr, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
@@ -569,45 +575,35 @@ final class SSAGenerator(er: ErrorReporter)
     }
   }
 
-  private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext)
-                    (using util.IdentityHashMap[Formula, Position]): Type = typeTree match {
+  private def mkType(typeTree: Asts.TypeTree, valsCtx: LocalValuesContext): Type = typeTree match {
     case typeTree: Asts.PrincipalTypeTree => mkPrincipalType(typeTree, valsCtx)
     case typeTree: Asts.RefinedTypeTree => mkRefinedType(typeTree, valsCtx)
   }
 
-  private def mkPrincipalType(principalTypeTree: PrincipalTypeTree, valsCtx: LocalValuesContext)
-                             (using util.IdentityHashMap[Formula, Position]): PrincipalType = principalTypeTree match {
+  private def mkPrincipalType(principalTypeTree: PrincipalTypeTree, valsCtx: LocalValuesContext): PrincipalType = principalTypeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, valsCtx)
     case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, valsCtx)), mkType(resultType, valsCtx))
   }
   
-  private def mkRefinedType(refinedTypeTree: RefinedTypeTree, valsCtx: LocalValuesContext)
-                           (using util.IdentityHashMap[Formula, Position]): RefinedType = refinedTypeTree match {
+  private def mkRefinedType(refinedTypeTree: RefinedTypeTree, valsCtx: LocalValuesContext): RefinedType = refinedTypeTree match {
     case Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
-      
-      def convertBound(boundOpt: Option[Expr]): IntRangeType.Bound = boundOpt match {
-        case Some(bound) => Simple(generateSSAExpr(bound, None, valsCtx))
-        case None => NoBound
-      }
-      
-      IntRangeType(convertBound(lowerBoundOpt), convertBound(upperBoundOpt))
+      IntRangeType(lowerBoundOpt.map(generateSSAExpr(_, None, valsCtx)), upperBoundOpt.map(generateSSAExpr(_, None, valsCtx)))
     case Asts.UnionTypeTree(types) =>
       UnionType(types.map(mkType(_, valsCtx)).toSet)
     case Asts.IntersectionTypeTree(types) =>
       IntersectionType(types.map(mkType(_, valsCtx)).toSet)
   }
 
-  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext)
-                         (using util.IdentityHashMap[Formula, Position]): NamedType = {
+  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, valsCtx: LocalValuesContext): NamedType = {
     val Asts.NamedTypeTree(name, typeParams, params) = namedTypeTree
     NamedType(name, typeParams.map(mkType(_, valsCtx)), params.map(generateSSAExpr(_, None, valsCtx)))
   }
 
-  private def externalVarsAssignedInLoop(loop: Asts.Loop): Set[FunOrVarId] = {
+  private def externalVarsAssignedIn(ast: Asts.Ast): Set[FunOrVarId] = {
     val assigned = mutable.Set.empty[FunOrVarId]
     val defined = mutable.Set.empty[FunOrVarId]
-    loop.preorderWalk {
+    ast.preorderWalk {
       case localDef: Asts.LocalDef =>
         defined.addOne(localDef.localName)
       case assignment: Asts.Assignment => assignment.lhs match {

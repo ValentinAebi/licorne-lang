@@ -1,4 +1,4 @@
-package lang
+package compiler.lang
 
 enum Variance(private val value: Int, val descr: String) {
   case Invariant extends Variance(0, "invariant")

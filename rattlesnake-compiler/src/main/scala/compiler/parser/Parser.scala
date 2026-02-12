@@ -1,17 +1,15 @@
 package compiler.parser
 
+import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
 import compiler.irs.Asts.*
 import compiler.irs.Tokens.*
 import compiler.parser.ParseTree.^:
-import compiler.parser.TreeParsers.{opt, opt as :::, *}
+import compiler.parser.TreeParsers.{opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
-import identifiers.*
-import lang.*
-import lang.Keyword.*
-import lang.Operator.*
-import lang.Types.PrimitiveType.IntType
+import compiler.lang.{Keyword, Operator, Operators, ReassigPermission, Types, Variance, Visibility}
+import compiler.lang.Types.PrimitiveType.IntType
 
 import scala.compiletime.uninitialized
 

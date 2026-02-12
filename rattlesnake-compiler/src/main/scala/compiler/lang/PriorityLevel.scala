@@ -1,7 +1,7 @@
-package lang
+package compiler.lang
 
-import lang.Formulas.*
-import lang.PriorityLevel.*
+import Formulas.*
+import PriorityLevel.*
 
 enum PriorityLevel {
   case Atomic, TypeTest, Mul, Linear, Comparison, Conj, Disj

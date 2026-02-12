@@ -1,10 +1,10 @@
-package lang
+package compiler.lang
 
-import identifiers.{ItId, TypeIdentifier}
-import lang.Formulas.{Equal, IdValue, IntConstant, Not}
-import lang.Operator.*
-import lang.Types.PrimitiveType.*
-import lang.Types.Type
+import Formulas.{Equal, IdValue, IntConstant, Not}
+import Operator.*
+import Types.PrimitiveType.*
+import Types.Type
+import compiler.identifiers.{ItId, TypeIdentifier}
 
 import scala.annotation.targetName
 

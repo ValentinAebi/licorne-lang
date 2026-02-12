@@ -1,4 +1,4 @@
-package lang
+package compiler.lang
 
 enum ReassigPermission(val kw: Keyword) {
   case Val extends ReassigPermission(Keyword.Val)

@@ -1,7 +1,7 @@
-package lang
+package compiler.lang
 
-import lang.Operator.Precedence
-import lang.Operator.Precedence.{Add, Comparison, Mul}
+import Operator.Precedence
+import Operator.Precedence.{Add, Comparison, Mul}
 
 /**
  * Operator or separator

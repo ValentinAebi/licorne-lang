@@ -1,6 +1,6 @@
-package identifiers
+package compiler.identifiers
 
-import lang.Keyword
+import compiler.lang.Keyword
 
 sealed trait Identifier {
 

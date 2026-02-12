@@ -1,10 +1,11 @@
-package lang
+package compiler.lang
 
-import identifiers.*
-import lang.Field.StableField
-import lang.Types.{NamedType, Type}
-import lang.Formulas.{Formula, IdValue}
-import lang.Keyword.{Sub, Super}
+import Field.StableField
+import Types.{NamedType, Type}
+import Formulas.{Formula, IdValue}
+import Keyword.{Sub, Super}
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.reporting.Position
 
 import scala.collection.{SeqMap, mutable}
 
@@ -14,7 +15,8 @@ final case class FunctionSignature(
                                     typeParams: List[FunctionTypeParamInfo],
                                     paramsInclThis: SeqMap[IdValue, Type],
                                     retType: Type,
-                                    visibility: Visibility
+                                    visibility: Visibility,
+                                    declPosOpt: Option[Position]
                                   ) {
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
@@ -53,6 +55,8 @@ sealed trait TypeSignature {
 
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
+  def declPosOpt: Option[Position]
+
   def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
     NamedType(id,
       typeParams.map { case TypeTypeParamInfo(tid, _, _, _) => NamedType(tid, List.empty, List.empty) },
@@ -68,7 +72,8 @@ final case class TypeAliasSignature(
                                      typeParams: List[TypeTypeParamInfo],
                                      itValue: IdValue,
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
-                                     rhs: Type
+                                     rhs: Type,
+                                     declPosOpt: Option[Position]
                                    ) extends TypeSignature
 
 sealed trait RuntimeTypeSignature extends TypeSignature {
@@ -97,6 +102,7 @@ sealed trait Encapsulated extends RuntimeTypeSignature {
 
 sealed trait Unencapsulated extends RuntimeTypeSignature {
   this: RuntimeTypeSignature =>
+  def directSupertypes: List[NamedType]
 }
 
 sealed trait TypeParametric extends RuntimeTypeSignature {
@@ -107,17 +113,20 @@ final case class InterfaceSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[TypeTypeParamInfo],
                                      functions: Map[FunOrVarId, FunctionSignature],
-                                     directSupertypes: List[NamedType]
+                                     directSupertypes: List[NamedType],
+                                     declPosOpt: Option[Position]
                                    )
   extends RuntimeTypeSignature, TypeParametric, Encapsulated
 
+// TODO maybe remove importedObjects?
 final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[TypeTypeParamInfo],
                                  fields: SeqMap[FunOrVarId, Field],
                                  importedObjects: mutable.LinkedHashSet[IdValue],
                                  functions: Map[FunOrVarId, FunctionSignature],
-                                 directSupertypes: List[NamedType]
+                                 directSupertypes: List[NamedType],
+                                 declPosOpt: Option[Position]
                                )
   extends RuntimeTypeSignature, Concrete, TypeParametric, Encapsulated, UserInstantiable
 
@@ -127,7 +136,8 @@ final case class ObjectSignature(
                                   id: TypeIdentifier,
                                   importedObjects: mutable.LinkedHashSet[IdValue],
                                   functions: Map[FunOrVarId, FunctionSignature],
-                                  directSupertypes: List[NamedType]
+                                  directSupertypes: List[NamedType],
+                                  declPosOpt: Option[Position]
                                 )
   extends RuntimeTypeSignature, Abstract, Concrete, Encapsulated {
   override def typeParams: List[TypeTypeParamInfo] = List.empty
@@ -137,7 +147,8 @@ final case class DatatypeSignature(
                                     id: TypeIdentifier,
                                     typeParams: List[TypeTypeParamInfo],
                                     directSupertypes: List[NamedType],
-                                    directSubtypes: mutable.LinkedHashSet[TypeIdentifier]
+                                    directSubtypes: mutable.LinkedHashSet[TypeIdentifier],
+                                    declPosOpt: Option[Position]
                                   )
   extends RuntimeTypeSignature, Abstract, Unencapsulated, TypeParametric
 
@@ -145,7 +156,8 @@ final case class RecordSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[TypeTypeParamInfo],
                                   fields: SeqMap[FunOrVarId, StableField],
-                                  directSupertypes: List[NamedType]
+                                  directSupertypes: List[NamedType],
+                                  declPosOpt: Option[Position]
                                 )
   extends RuntimeTypeSignature, Concrete, Unencapsulated, TypeParametric, UserInstantiable
 

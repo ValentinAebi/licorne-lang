@@ -1,10 +1,8 @@
-package lang
+package compiler.lang
 
-import identifiers.TypeIdentifier
-import lang.Formulas.*
-import lang.Types.IntRangeType.Bound
-import lang.Types.IntRangeType.Bound.*
-import lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
+import Formulas.*
+import Types.PrimitiveType.{AnyType, IntType, NothingType}
+import compiler.identifiers.TypeIdentifier
 
 import java.util.concurrent.atomic.AtomicLong
 
@@ -20,11 +18,11 @@ object Types {
   sealed trait Type {
     def principalType: PrincipalType
   }
-  
+
   sealed trait PrincipalType extends Type {
     override final def principalType: PrincipalType = this
   }
-  
+
   sealed trait RefinedType extends Type
 
   sealed trait NominalType extends PrincipalType
@@ -62,50 +60,26 @@ object Types {
   final case class ClosureType(params: List[Type], result: Type) extends PrincipalType {
     override def toString: String = s"(${params.mkString(", ")}) -> $result"
   }
-  
+
   final case class UnionType(types: Set[Type]) extends RefinedType {
     override def principalType: PrincipalType = if types.size == 1 then types.head.principalType else AnyType
 
     override def toString: String = types.mkString(" | ")
   }
-  
+
   final case class IntersectionType(types: Set[Type]) extends RefinedType {
     override def principalType: PrincipalType = AnyType
 
     override def toString: String = types.mkString(" & ")
   }
 
-  final case class IntRangeType(lowerBound: Bound, upperBound: Bound) extends RefinedType {
+  final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends RefinedType {
     override def principalType: PrincipalType = IntType
 
-    override def toString: String = s"[$lowerBound,$upperBound]"
-  }
+    override def toString: String = {
+      def boundDescr(bound: Option[Formula]): String = bound.map(_.toString).getOrElse("")
 
-  object IntRangeType {
-
-    def apply(low: Formula, up: Formula): IntRangeType =
-      new IntRangeType(Max(Set(low)), Min(Set(up)))
-
-    enum Bound {
-      case Simple(bound: Formula)
-      case Max(bounds: Set[Formula])
-      case Min(bounds: Set[Formula])
-      case NoBound
-
-      def collectFormulas[T](action: Formula => T): Set[T] = this match {
-        case Bound.Simple(bound) => Set(action(bound))
-        case Bound.Max(bounds) => bounds.map(action)
-        case Bound.Min(bounds) => bounds.map(action)
-        case Bound.NoBound => Set.empty
-      }
-
-      override def toString: String = this match {
-        case Bound.Simple(bound) => bound.toString
-        case Bound.Max(bounds) => bounds.mkString("max{", ",", "}")
-        case Bound.Min(bounds) => bounds.mkString("min{", ",", "}")
-        case Bound.NoBound => ""
-      }
-
+      s"[${boundDescr(lowerBoundOpt)},${boundDescr(upperBoundOpt)}]"
     }
   }
 
@@ -168,8 +142,11 @@ object Types {
         UnionType(types.map(_.substitute(typesSubst, valsSubst)))
       case IntersectionType(types) =>
         IntersectionType(types.map(_.substitute(typesSubst, valsSubst)))
-      case IntRangeType(lowerBound, upperBound) =>
-        IntRangeType(lowerBound.substitute(typesSubst, valsSubst), upperBound.substitute(typesSubst, valsSubst))
+      case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+        IntRangeType(
+          lowerBoundOpt.map(_.substitute(typesSubst, valsSubst)),
+          upperBoundOpt.map(_.substitute(typesSubst, valsSubst))
+        )
     }
 
     def withTypeVarsExpanded: Type = tpe match {
@@ -186,13 +163,6 @@ object Types {
 
   }
 
-  extension (bound: Bound) private def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Bound = bound match {
-    case Bound.Simple(bound) => Bound.Simple(bound.substitute(typesSubst, valsSubst))
-    case Bound.Max(bounds) => Bound.Max(bounds.map(_.substitute(typesSubst, valsSubst)))
-    case Bound.Min(bounds) => Bound.Min(bounds.map(_.substitute(typesSubst, valsSubst)))
-    case Bound.NoBound => Bound.NoBound
-  }
-
   def join(types: Type*): Type = join(types.toSet)
 
   def join(typesRaw: Set[Type]): Type = {
@@ -206,7 +176,7 @@ object Types {
           case _ => None
         }
         val intCnt = nonNothingTypes.count(_ == IntType)
-        
+
         UnionType(nonNothingTypes)
     }
   }

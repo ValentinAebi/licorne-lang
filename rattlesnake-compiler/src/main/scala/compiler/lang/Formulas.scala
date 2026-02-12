@@ -1,16 +1,39 @@
-package lang
+package compiler.lang
 
-import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.Types.*
+import Types.*
+import Types.PrimitiveType.NothingType
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.reporting.Position
 
 object Formulas {
 
-  sealed trait Formula {
+  sealed abstract class Formula {
+    private var pos = PositionStatus.Unset
+    
+    def offerPosition(posOpt: Option[Position]): Unit = pos match {
+      case PositionStatus.Unset =>
+        pos = PositionStatus.Set(posOpt)
+      case PositionStatus.Set(posOpt) =>
+        pos = PositionStatus.Blocked
+      case PositionStatus.Blocked => ()
+    }
+    
+    def getPosition: Option[Position] = pos match {
+      case PositionStatus.Set(posOpt) => posOpt
+      case _ => None
+    }
+    
     final override def toString: String = formulaToString(this)(using _ => None)
 
     def typedStr(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
 
     def str: String = typedStr(using _ => None)
+  }
+  
+  private enum PositionStatus {
+    case Unset
+    case Set(posOpt: Option[Position])
+    case Blocked
   }
 
   sealed trait Value extends Formula
@@ -93,16 +116,33 @@ object Formulas {
 
   final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality)
 
-  final case class Call(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula]) extends Formula
+  final case class Call(receiver: Formula, callTarget: CallTarget, typeArgs: List[Type], args: List[Formula]) extends Formula
 
   final case class ClosureInvocation(closure: Formula, args: List[Formula]) extends Formula
 
-  final case class Select(owner: Formula, fieldName: FunOrVarId) extends Formula
+  final case class Select(owner: Formula, selectedField: SelectedField) extends Formula
 
   final case class HasType(formula: Formula, tpe: TypeIdentifier) extends Formula
 
-  case object RootCapability {
-    override def toString: String = "cap"
+  sealed trait TypedFormula extends Formula {
+    val formula: Formula
+    var tpe: Type
+  }
+  
+  final case class RegularlyTypedFormula(formula: Formula, var tpe: Type) extends TypedFormula
+  
+  final case class SmartcastTypedFormula(formula: Formula, var tpe: Type) extends TypedFormula
+
+  enum CallTarget {
+    case UnresolvedCallTarget(funId: FunOrVarId)
+    case ResolvedCallTarget(functionSignature: FunctionSignature)
+  }
+
+  enum SelectedField {
+    case UnresolvedField(fieldId: FunOrVarId)
+    case ResolvedField(owner: UserInstantiable, field: Field)
+
+    val fieldId: FunOrVarId
   }
 
   val zero: IntConstant = IntConstant(0)

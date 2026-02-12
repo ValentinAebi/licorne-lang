@@ -2,7 +2,7 @@ package compiler.runners
 
 import compiler.backend.JarFinder
 import compiler.gennames.ClassesAndDirectoriesNames.{agentSubdirName, outDirName}
-import identifiers.TypeIdentifier
+import compiler.identifiers.TypeIdentifier
 
 import java.io.File
 import java.nio.file.Path

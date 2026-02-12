@@ -1,4 +1,4 @@
-package lang
+package compiler.lang
 
 enum Visibility extends Enum[Visibility] {
   case Private, Public

@@ -1,16 +1,15 @@
 package compiler.valuesconversion
 
+import compiler.identifiers.{FunOrVarId, ThisId}
 import compiler.irs.Asts
-import compiler.irs.SSA.Phi
+import compiler.lang.Formulas.IdValue
+import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
-import identifiers.{FunOrVarId, ThisId}
-import lang.ReassigPermission
-import lang.Types.Type
-import lang.Formulas.*
+import compiler.lang.Types.Type
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -72,7 +71,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case None => Unknown(id)
   }
   
-  def getThisValue: Option[Value] = valueOf(ThisId) match {
+  def getThisValue: Option[IdValue] = valueOf(ThisId) match {
     case result: ErrorValueQueryResult => None
     case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
   }
@@ -92,55 +91,6 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       case None => nestedContext.queryLocal(id)
     }
   }
-
-  def unifyAndReturnPhis(ite: Asts.IfThenElse, children: List[LocalValuesContext]): List[Phi] = {
-    require(children.forall(_.level == level))
-
-    type Frame = mutable.Map[FunOrVarId, LocalInfo]
-
-    val phiNodesB = List.newBuilder[Phi]
-
-    def unify(result: Frame, inputs: List[Frame]): Unit = {
-      for ((id, localInfo) <- result) {
-        if (inputs.forall(_.apply(id).value.isDefined)) {
-          val inValues = inputs.flatMap(_.apply(id).value).toSet
-          if (inValues.size == 1) {
-            localInfo.value = Some(inValues.head)
-          } else {
-            val newValue = valuesGen.newValue(id)
-            phiNodesB.addOne(Phi(newValue, inValues))
-            localInfo.value = Some(newValue)
-          }
-        } else {
-          assert(localInfo.value.isEmpty)
-        }
-      }
-    }
-
-    @tailrec
-    def unifyRecursively(result: ValuesContext, inputs: List[ValuesContext]): Unit = {
-      result match {
-        case context: LocalValuesContext =>
-          unify(context.values, inputs.map(_.asInstanceOf[LocalValuesContext].values))
-          unifyRecursively(context.nestedContext, inputs.map(_.asInstanceOf[LocalValuesContext].nestedContext))
-        case _ => ()
-      }
-    }
-
-    val activeChildren = children.filter(!_.hasExited)
-    if (activeChildren.forall(_.hasExited)) {
-      markHasExited()
-    }
-    if (activeChildren.isEmpty) {
-      List.empty
-    } else {
-      unifyRecursively(this, activeChildren)
-      phiNodesB.result()
-    }
-  }
-
-  def unifyAndReturnPhis(ite: Asts.IfThenElse, inputs: LocalValuesContext*): List[Phi] =
-    unifyAndReturnPhis(ite, inputs.toList)
 }
 
 object LocalValuesContext {

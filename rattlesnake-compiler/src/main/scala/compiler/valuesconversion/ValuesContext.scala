@@ -1,10 +1,10 @@
 package compiler.valuesconversion
 
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
-import identifiers.{FunOrVarId, TypeIdentifier}
-import lang.ReassigPermission
-import lang.Types.Type
-import lang.Formulas.{Constant, IdValue, Value}
+import compiler.lang.Types.Type
+import compiler.lang.Formulas.{Constant, IdValue, Value}
 
 trait ValuesContext {
 

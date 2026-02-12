@@ -4,8 +4,6 @@ import compiler.io.SourceCodeProvider
 import compiler.irs.Tokens.*
 import compiler.reporting.Errors.{CompilationError, ErrorReporter, ExitCode}
 import compiler.reporting.Position
-import lang.Keyword.*
-import lang.Operator.*
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue, fail}
 import org.junit.Test
 

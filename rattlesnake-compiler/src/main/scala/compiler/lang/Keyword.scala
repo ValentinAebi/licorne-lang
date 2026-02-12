@@ -1,4 +1,4 @@
-package lang
+package compiler.lang
 
 enum Keyword(val str: String) {
   case As extends Keyword("as")

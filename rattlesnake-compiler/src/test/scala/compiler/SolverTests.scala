@@ -2,7 +2,6 @@ package compiler
 
 import compiler.solver.Solver
 import lang.Formulas
-import lang.Formulas.*
 import lang.Formulas.RegularIdValue
 import lang.Types.IntRangeType
 import lang.Types.IntRangeType.Bound.{Max, Min}

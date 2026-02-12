@@ -1,19 +1,20 @@
-package compiler.program
+package compiler.typing.smartcasting
 
-import identifiers.TypeIdentifier
-import lang.{DatatypeSignature, RecordSignature}
+import compiler.identifiers.TypeIdentifier
+import compiler.lang.{DatatypeSignature, RecordSignature}
+import compiler.typing.contexts.ResolutionContext
 
 import scala.collection.mutable
 import scala.util.boundary
 
 
-final class TypesReasoningCache(program: Program) {
+final class TypesReasoningCache(resolutionCtx: ResolutionContext) {
   private val allRecords = mutable.Map.empty[TypeIdentifier, Option[List[RecordSignature]]]
 
   def developUnencapsulated(tpe: TypeIdentifier): Option[List[RecordSignature]] = {
     allRecords.getOrElseUpdate(tpe, {
       val recordsOpt = boundary {
-        program.resolveSignature(tpe) match {
+        resolutionCtx.resolveSignature(tpe) match {
           case Some(sig: DatatypeSignature) =>
             val possibilities = mutable.ListBuffer.empty[RecordSignature]
             for (subT <- sig.directSubtypes) {
