@@ -4,16 +4,21 @@ import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo}
 import compiler.lang.Types.{NamedType, PrincipalType, Type}
+import compiler.pipeline.CompilationStep
+import compiler.reporting.Errors.ErrorReporter
+import compiler.reporting.Position
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst}
 
 import scala.collection.mutable
 
 final class SubtypingContext(
-                              resolutionCtx: ResolutionContext,
                               subtypingGraph: Graph[TypeIdentifier],
-                              flattenedSupertypesSubstitutions: SupertypesSubst
-                            ) {
+                              flattenedSupertypesSubstitutions: SupertypesSubst,
+                              dealiasingCtx: DealiasingContext,
+                              resolutionCtx: ResolutionContext,
+                              er: ErrorReporter
+                            )(using CompilationStep) {
 
   def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
     if subT == superT then resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subT).map {
@@ -73,10 +78,24 @@ final class SubtypingContext(
         CannotDowncast(s"tested type $originalType is unresolved or primitive")
     }
   }
-  
+
   def isValidDowncastTarget(downcastTarget: NamedType, regularType: NamedType): Boolean =
     checkDowncastTarget(regularType, downcastTarget.typeName).isPositive(downcastTarget)
+
+  // TODO memoize? But we need to take smartcasts into account
+  def isSubtype(subT: Type, superT: Type): Boolean = (subT, superT) match {
+    case (_, _) => ???
+  }
+
+  def enforceIsSubtype(subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
+    if (!isSubtype(subT, superT)) {
+      er.reportError(msg, posOpt)
+    }
+  }
   
+  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit =
+    enforceIsSubtype(subT, superT, s"$posDescr: expected $superT, found $subT", posOpt)
+
 }
 
 object SubtypingContext {
@@ -86,17 +105,17 @@ object SubtypingContext {
   enum DowncastTargetCheckResult {
     case CanDowncast(tpe: NamedType)
     case CannotDowncast(reason: String)
-    
+
     def asOption: Option[NamedType] = this match {
       case CanDowncast(tpe) => Some(tpe)
       case CannotDowncast(reason) => None
     }
-    
+
     def isPositive(tpe: Type): Boolean = this match {
       case CanDowncast(actType) => actType == tpe
       case CannotDowncast(reason) => false
     }
-    
+
   }
-  
+
 }

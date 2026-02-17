@@ -39,7 +39,7 @@ final class UnencapsulatedSmartcastingData(
     canProveIsCache.getOrElseUpdate(tid, computeCanProveIs(tid))
   }
 
-  def mostPreciseTypeId: Option[TypeIdentifier] = {
+  def mostPreciseTypeIdOpt: Option[TypeIdentifier] = {
     mostPreciseTypeCache match {
       case Some(value) => value
       case None =>

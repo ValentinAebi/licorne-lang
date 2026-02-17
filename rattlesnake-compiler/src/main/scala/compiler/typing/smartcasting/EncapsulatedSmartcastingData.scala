@@ -14,8 +14,11 @@ final class EncapsulatedSmartcastingData(
                                           subtypingCtx: SubtypingContext
                                         ) extends SmartcastingData(resolutionCtx, subtypingCtx) {
 
+  override def mostPreciseTypeIdOpt: Option[TypeIdentifier] =
+    Some(mostPreciseTypeId)
+
   def canProveIs(tid: TypeIdentifier): Boolean = {
-    tid == rawType.typeName || tid == mostPreciseTypeId || knownTypes.contains(tid)
+    tid == rawType.typeName || tid == mostPreciseTypeIdOpt || knownTypes.contains(tid)
   }
   
 }

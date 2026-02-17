@@ -143,6 +143,13 @@ object Formulas {
     val formula: Formula
     var tpe: Type
   }
+  
+  object TypedFormula {
+    def unapply(subject: Formula): Option[(Formula, Type)] = subject match {
+      case typedFormula: TypedFormula => Some((typedFormula.formula, typedFormula.tpe))
+      case _ => None
+    }
+  }
 
   final case class RegularlyTypedFormula(formula: Formula, var tpe: Type) extends TypedFormula
 

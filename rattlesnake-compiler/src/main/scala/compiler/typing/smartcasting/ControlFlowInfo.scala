@@ -10,6 +10,7 @@ import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
 import compiler.lang.Formulas.*
 import compiler.typing.PurityChecking
+import compiler.typing.smartcasting.SmartcastingData.DataAddition
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -31,13 +32,11 @@ final class EnabledControlFlowInfo(
                                   ) extends ControlFlowInfo {
 
   def smartcastFor(formula: Formula): Option[Type] = {
-    unencapsulatedTypesData.get(formula)
-      .orElse(encapsulatedTypesData.get(formula))
-      .flatMap { smartcastData =>
-        smartcastData.mostPreciseTypeId
-      }.flatMap { targetTid =>
-        subtypingCtx.checkDowncastTarget(smartcastData.rawType, targetTid).asOption
-      }
+    for {
+      smartcastData <- unencapsulatedTypesData.get(formula).orElse(encapsulatedTypesData.get(formula))
+      targetTid <- smartcastData.mostPreciseTypeIdOpt
+      castResultType <- subtypingCtx.checkDowncastTarget(smartcastData.rawType, targetTid).asOption
+    } yield castResultType
   }
 
   def hasExited: Boolean =
@@ -45,6 +44,31 @@ final class EnabledControlFlowInfo(
 
   def afterCondition(cond: Formula): (EnabledControlFlowInfo, EnabledControlFlowInfo) = {
     ???
+  }
+
+  /**
+   * @return (info when cond, info when !cond)
+   */
+  private def extractTypeInfos(cond: Formula): (Set[DataAddition], Set[DataAddition]) = cond match {
+    case And(lhs, rhs) =>
+      val (infoWhenLhs, infoWhenNotLhs) = extractTypeInfos(lhs)
+      val (infoWhenRhs, infoWhenNotRhs) = extractTypeInfos(rhs)
+      (infoWhenLhs ++ infoWhenRhs, Set.empty)
+    case Or(lhs, rhs) =>
+      val (infoWhenLhs, infoWhenNotLhs) = extractTypeInfos(lhs)
+      val (infoWhenRhs, infoWhenNotRhs) = extractTypeInfos(rhs)
+      (Set.empty, infoWhenNotLhs ++ infoWhenNotRhs)
+    case Not(operand) =>
+      val (infoWhenOperand, infoWhenNotOperand) = extractTypeInfos(operand)
+      (infoWhenNotOperand, infoWhenOperand)
+    case HasType(TypedFormula(formula, formulaType), testedType) =>
+      ts.typeOfOpt(idValue).map(_.baseType) match {
+        case Some(NamedType(knownType, _, Nil)) =>
+          (Set(TypeInfo(idValue, knownType, List(testedType), List.empty)),
+            Set(TypeInfo(idValue, knownType, List.empty, List(testedType))))
+        case _ => (Set.empty, Set.empty)
+      }
+    case _ => (Set.empty, Set.empty)
   }
 
 }

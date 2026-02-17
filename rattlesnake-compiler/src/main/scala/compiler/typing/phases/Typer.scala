@@ -16,6 +16,7 @@ import compiler.typing.smartcasting.ControlFlowInfo
 import compiler.util.{mapVals, zipCommons}
 
 import scala.collection.mutable
+import scala.reflect.ClassTag
 import scala.util.boundary
 
 
@@ -187,34 +188,71 @@ final class Typer(
       visibility, declPosOpt)
   }
 
-  def typeInterfaceSig(interfaceSig: InterfaceSignature)(using typeParamsCtx: TypeParamsContext): InterfaceSignature = {
+  def typeInterfaceSig(interfaceSig: InterfaceSignature): InterfaceSignature = {
     val InterfaceSignature(id, typeParams, functions, directSupertypes, declPosOpt) = interfaceSig
+
+    given TypeParamsContext = TypeParamsContext(typeParams)
+    
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     InterfaceSignature(id,
       typeParams.map(typeTypeTypeParam(_, declPosOpt)),
       functions.mapVals(typeFunSig),
-      typeSupertypesOfEncapsulated(interfaceSig, resolutionCtx),
+      typeSupertypesAsInterfaces(interfaceSig, resolutionCtx),
       declPosOpt
     )
   }
 
-  def typeClassSig(classSig: ClassSignature)(using typeParamsCtx: TypeParamsContext): ClassSignature = {
+  def typeClassSig(classSig: ClassSignature): ClassSignature = {
     val ClassSignature(id, typeParams, fields, functions, directSupertypes, declPosOpt) = classSig
+
+    given TypeParamsContext = TypeParamsContext(typeParams)
+    
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     ClassSignature(id,
       typeParams.map(typeTypeTypeParam(_, declPosOpt)),
       fields.mapVals(typeField(_, declPosOpt)),
       functions.mapVals(typeFunSig),
-      typeSupertypesOfEncapsulated(classSig, resolutionCtx),
+      typeSupertypesAsInterfaces(classSig, resolutionCtx),
       declPosOpt
     )
   }
 
-  def typeObjectSig(objSig: ObjectSignature)(using typeParamsCtx: TypeParamsContext): ObjectSignature = {
+  def typeObjectSig(objSig: ObjectSignature): ObjectSignature = {
     val ObjectSignature(id, functions, directSupertypes, declPosOpt) = objSig
+
+    given TypeParamsContext = TypeParamsContext.empty
+    
     ObjectSignature(id,
       functions.mapVals(typeFunSig),
-      typeSupertypesOfEncapsulated(objSig, resolutionCtx),
+      typeSupertypes(objSig, "interface", resolutionCtx),
+      declPosOpt
+    )
+  }
+
+  def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
+    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, declPosOpt) = datatypeSig
+
+    given TypeParamsContext = TypeParamsContext(typeParams)
+    
+    checkTypeParamsAreDistinct(typeParams, declPosOpt)
+    DatatypeSignature(id,
+      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
+      typeSupertypesAsDatatypes(datatypeSig, resolutionCtx),
+      directSubtypes,
+      declPosOpt
+    )
+  }
+
+  def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
+    val RecordSignature(id, typeParams, fields, directSupertypes, declPosOpt) = recordSig
+    
+    given TypeParamsContext = TypeParamsContext(typeParams)
+    
+    checkTypeParamsAreDistinct(typeParams, declPosOpt)
+    RecordSignature(id,
+      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
+      fields.mapVals(typeStableField(_, declPosOpt)),
+      typeSupertypesAsDatatypes(recordSig, resolutionCtx),
       declPosOpt
     )
   }
@@ -223,18 +261,24 @@ final class Typer(
     val prevNames = mutable.Set.empty[TypeIdentifier]
     for (tParam <- typeParams) {
       if (!prevNames.add(tParam.tid)) {
-        er.reportError("duplicate type parameter", posOpt)
+        er.reportError(s"duplicate type parameter: ${tParam.tid}", posOpt)
       }
     }
   }
 
-  private def typeSupertypesOfEncapsulated(sig: Encapsulated, resolutionCtx: ResolutionContext): List[NamedType] = {
+  private def typeSupertypesAsInterfaces(sig: Encapsulated, resolutionCtx: ResolutionContext): List[NamedType] =
+    typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx)
+
+  private def typeSupertypesAsDatatypes(sig: Unencapsulated, resolutionCtx: ResolutionContext): List[NamedType] =
+    typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx)
+
+  private def typeSupertypes[S <: Abstract : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): List[NamedType] = {
     val typedDirectSuperTypesB = List.newBuilder[NamedType]
     for (superT <- sig.directSupertypes) {
       dealiasingCtx.dealiasType(superT) match {
         case namedType: NamedType =>
-          if (resolutionCtx.resolveTypeSigAs[InterfaceSignature](superT.typeName).isEmpty) {
-            er.reportError(s"interface not found: ${superT.typeName}", sig.declPosOpt)
+          if (resolutionCtx.resolveTypeSigAs[S](superT.typeName).isEmpty) {
+            er.reportError(s"$superTKindDescr not found: ${superT.typeName}", sig.declPosOpt)
           }
           typedDirectSuperTypesB.addOne(namedType)
         case dealiasedSuperT =>

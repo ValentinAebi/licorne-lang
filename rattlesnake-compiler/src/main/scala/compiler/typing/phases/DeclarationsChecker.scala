@@ -28,31 +28,37 @@ final class DeclarationsChecker(
 
   private given CompilationStep = DeclarationsAnalysis
 
-  override def apply(inProgram: Program): Program = {
+  override def apply(oldProgram: Program): Program = {
+    val dealiasingCtx = DealiasingContext(oldProgram.typeAliases)
     val typer = Typer(
-      DealiasingContext(inProgram.typeAliases),
-      ResolutionContext.fromProgram(inProgram),
+      dealiasingCtx,
+      ResolutionContext.fromProgram(oldProgram),
       typeVarsCtx,
       er
     )
-    val outProgram = Program(
-      inProgram.globalValuesContext,
-      inProgram.interfaces.mapVals(typer.typeInterfaceSig),
-      inProgram.classes.mapVals(typer.typeClassSig),
-      inProgram.objects.mapVals(typer.typeObjectSig),
-      
+    val newProgram = Program(
+      oldProgram.globalValuesContext,
+      oldProgram.interfaces.mapVals(typer.typeInterfaceSig),
+      oldProgram.classes.mapVals(typer.typeClassSig),
+      oldProgram.objects.mapVals(typer.typeObjectSig),
+      oldProgram.datatypes.mapVals(typer.typeDatatypeSig),
+      oldProgram.records.mapVals(typer.typeRecordSig),
+      oldProgram.typeAliases,
+      oldProgram.functions
     )
     er.displayAndTerminateIfErrors()
 
-    val subtypingGraph = buildSubtypingGraph(outProgram)
-    checkSubtypingCyclicity(subtypingGraph, resolutionCtx)
+    val newResolutionCtx = ResolutionContext.fromProgram(newProgram)
+    val subtypingGraph = buildSubtypingGraph(newProgram)
+    checkSubtypingCyclicity(subtypingGraph, newResolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, resolutionCtx)
+    val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, newResolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    val subtypingCtx = SubtypingContext(resolutionCtx, subtypingGraph, flattenedSubtypingMaps)
-    // TODO analyze overrides
+    val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps,
+      dealiasingCtx, newResolutionCtx, er)
+    
 
     ???
   }
@@ -115,6 +121,77 @@ final class DeclarationsChecker(
     }
 
     flattenedSupertypesSubstitutions
+  }
+
+  private def analyzeOverrides(flattenedSupertypesSubstitutions: SupertypesSubst, resolutionCtx: ResolutionContext, subtypingCtx: SubtypingContext): Unit = {
+    for ((subT, subTSupertypes) <- flattenedSupertypesSubstitutions; (superT, typeTypeParamsSubst) <- subTSupertypes) {
+      val subTSig = resolutionCtx.resolveTypeSig(subT).get
+      val superTSig = resolutionCtx.resolveTypeSig(superT).get
+      (subTSig, superTSig) match {
+        case (subTSig: Encapsulated, superTSig: Encapsulated) =>
+          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility, superFunDeclPosOpt)) <- superTSig.functions) {
+            subTSig.functions.get(funId) match {
+              // TODO allow method implementation in interfaces?
+              case None if subTSig.isInstanceOf[InterfaceSignature] => ()
+              case None =>
+                er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, subFunVisibility, subFunDeclPosOpt)) =>
+                val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
+                val paramsLenMatch = subFunParams.size == superFunParams.size
+                if (!typeParamsLenMatch) {
+                  er.reportError(s"length of type parameters list in method $funId in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
+                }
+                if (!paramsLenMatch) {
+                  er.reportError(s"length of parameters list in method $funId in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
+                }
+                if (typeParamsLenMatch && paramsLenMatch) {
+                  val funTypeParamsSubst = mutable.Map.empty[TypeIdentifier, Type]
+                  for ((superFunTp, subFunTp) <- superFunTypeParams zip subFunTypeParams) {
+
+                    def mkErrorMsg(upOrLow: String): String =
+                      s"$upOrLow bound of type parameter ${subFunTp.tid} of function $funId in $subT does not conform to the signature of the overridden function in $superT"
+
+                    subFunTp.upperBoundOpt.foreach { subFunUpperBound =>
+                      superFunTp.upperBoundOpt match {
+                        case Some(superFunUpperBound) =>
+                          subtypingCtx.enforceIsSubtype(superFunUpperBound, subFunUpperBound, mkErrorMsg("upper"), subFunDeclPosOpt)
+                        case None =>
+                          er.reportError(mkErrorMsg("upper"), subFunDeclPosOpt)
+                      }
+                    }
+                    subFunTp.lowerBoundOpt.foreach { subFunLowerBound =>
+                      superFunTp.lowerBoundOpt match {
+                        case Some(superFunLowerBound) =>
+                          subtypingCtx.enforceIsSubtype(subFunLowerBound, superFunLowerBound, mkErrorMsg("lower"), subFunDeclPosOpt)
+                        case None =>
+                          er.reportError(mkErrorMsg("lower"), subFunDeclPosOpt)
+                      }
+                    }
+                    funTypeParamsSubst.addOne(superFunTp.tid -> NamedType(subFunTp.tid, List.empty, List.empty))
+                  }
+                  val typeParamsSubst = typeTypeParamsSubst ++ funTypeParamsSubst
+                  val valsSubst = mutable.Map.empty[IdValue, IdValue]
+                  // TODO do not forget to check refinements on the receiver (the base type is not checked here)
+                  val superTSubst = superTSig.toType(typeParamsSubst, Map.empty)
+                  for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
+                    val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
+                    if (subParamType != expectedSubParamType) {
+                      er.reportError(s"type mismatch on parameter ${subParamVal.sourceLevelDescrOrDefault} of method $funId: " +
+                        s"type is $subParamType but should be $expectedSubParamType since the method overrides $funId in $superTSubst", subFunDeclPosOpt)
+                    }
+                    valsSubst(superParamVal) = subParamVal
+                  }
+                  val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
+                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, superFunRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)
+                }
+                if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
+                  er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", subFunDeclPosOpt)
+                }
+            }
+          }
+        case _ => ()
+      }
+    }
   }
 
 }
