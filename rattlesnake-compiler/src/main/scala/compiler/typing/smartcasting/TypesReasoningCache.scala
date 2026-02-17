@@ -14,7 +14,7 @@ final class TypesReasoningCache(resolutionCtx: ResolutionContext) {
   def developUnencapsulated(tpe: TypeIdentifier): Option[List[RecordSignature]] = {
     allRecords.getOrElseUpdate(tpe, {
       val recordsOpt = boundary {
-        resolutionCtx.resolveSignature(tpe) match {
+        resolutionCtx.resolveTypeSig(tpe) match {
           case Some(sig: DatatypeSignature) =>
             val possibilities = mutable.ListBuffer.empty[RecordSignature]
             for (subT <- sig.directSubtypes) {

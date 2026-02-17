@@ -114,7 +114,6 @@ object Asts {
 
   final case class ObjectDef(
                               id: TypeIdentifier,
-                              importedObjects: List[TypeIdentifier],
                               functions: List[FunDef],
                               directSupertypes: List[NamedTypeTree]
                             ) extends EncapsulatedTypeDefTree {
@@ -203,10 +202,6 @@ object Asts {
     override val paramId: FunOrVarId = ThisId
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
-  }
-
-  final case class ObjectImport(objectId: TypeIdentifier) extends ClassParam {
-    override def children: List[Ast] = Nil
   }
   
   final case class TypeParamWithoutVariance(id: TypeIdentifier, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {

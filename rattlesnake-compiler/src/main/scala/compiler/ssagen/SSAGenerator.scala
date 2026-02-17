@@ -25,8 +25,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.{SeqMap, mutable}
 
 
-final class SSAGenerator(er: ErrorReporter)
-  extends CompilerStep[List[Asts.Source], (Program, TypeVariablesContext)] {
+final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Source], (Program, TypeVariablesContext)] {
 
   override def apply(input: List[Asts.Source]): (Program, TypeVariablesContext) = {
     val programBuilder = Program.Builder(er)
@@ -47,12 +46,11 @@ final class SSAGenerator(er: ErrorReporter)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
-          case df@Asts.ObjectDef(id, importedObjects, functions, directSupertypes) =>
+          case df@Asts.ObjectDef(id, functions, directSupertypes) =>
             val thisValue = valuesGen.newValue(ThisId)
             val valsCtx = LocalValuesContext(globalValuesContext)
             valsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val importedObjectsVals = mutable.LinkedHashSet.from(importedObjects.map(globalValuesContext.resolveObject))
-            val noFunctionsSig = ObjectSignature(id, importedObjectsVals, Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)), df.getPosition)
+            val noFunctionsSig = ObjectSignature(id, Map.empty, directSupertypes.map(mkNamedType(_, valsCtx)), df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -62,7 +60,6 @@ final class SSAGenerator(er: ErrorReporter)
             val paramsCtx = LocalValuesContext(globalValuesContext)
             paramsCtx.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
-            val importedObjects = mutable.LinkedHashSet.empty[IdValue]
             params.foreach {
               case param@Asts.VarParam(paramId, paramTypeTree) =>
                 val paramType = mkType(paramTypeTree, paramsCtx)
@@ -74,10 +71,8 @@ final class SSAGenerator(er: ErrorReporter)
                 mustNotBeUnit(paramType, param.getPosition)
                 fields(paramId) = StableField(paramId, paramType, fieldValue)
                 paramsCtx.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
-              case param@Asts.ObjectImport(objectId) =>
-                importedObjects.addOne(globalValuesContext.resolveObject(objectId))
             }
-            val noFunctionsSig = ClassSignature(id, typeParams.convert(paramsCtx), fields, importedObjects, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)), df.getPosition)
+            val noFunctionsSig = ClassSignature(id, typeParams.convert(paramsCtx), fields, Map.empty, directSupertypes.map(mkNamedType(_, paramsCtx)), df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalValuesContext, allFunctionsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -149,7 +144,7 @@ final class SSAGenerator(er: ErrorReporter)
       } else {
         val paramsInclThis = mutable.LinkedHashMap.empty[IdValue, Type]
         val thisVal = functionsProvider match {
-          case Asts.ObjectDef(id, importedObjects, functions, directSupertypes) => globalValsCtx.resolveObject(id)
+          case Asts.ObjectDef(id, functions, directSupertypes) => globalValsCtx.resolveObject(id)
           case _ => globalValsCtx.valuesGen.newValue(ThisId)
         }
         val funcLocalValsCtx = LocalValuesContext(globalValsCtx)
@@ -227,7 +222,8 @@ final class SSAGenerator(er: ErrorReporter)
   }
 
   extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(valsCtx: LocalValuesContext): List[TypeTypeParamInfo] = typeParams.map {
-    case Asts.TypeParamWithVariance(id, variance, upperBounds, lowerBounds) => TypeTypeParamInfo(id, variance, upperBounds.map(mkType(_, valsCtx)), lowerBounds.map(mkType(_, valsCtx)))
+    case Asts.TypeParamWithVariance(id, variance, upperBounds, lowerBounds) =>
+      TypeTypeParamInfo(id, variance, upperBounds.map(mkType(_, valsCtx)), lowerBounds.map(mkType(_, valsCtx)))
   }
 
   private def generateSSAFunc(

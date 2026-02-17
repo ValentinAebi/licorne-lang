@@ -23,7 +23,7 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNode
   }
   
-  final case class Function(signature: FunctionSignature, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
+  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
   
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, var bodyLastVal: IdValue) {
     override def toString: String = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"

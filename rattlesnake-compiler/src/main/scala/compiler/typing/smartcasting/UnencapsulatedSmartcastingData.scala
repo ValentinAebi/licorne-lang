@@ -15,19 +15,19 @@ final class UnencapsulatedSmartcastingData(
                                             knownIsNot: Set[TypeIdentifier],
                                             resolutionCtx: ResolutionContext,
                                             subtypingCtx: SubtypingContext
-                                          ) extends SmartcastingData {
+                                          ) extends SmartcastingData(resolutionCtx, subtypingCtx) {
   private val canProveIsCache = mutable.Map.empty[TypeIdentifier, Boolean]
   private var mostPreciseTypeCache = Option.empty[Option[TypeIdentifier]]
   private var canProveIsNothingCache = Option.empty[Boolean]
 
-  def canProveIs(tid: TypeIdentifier): Boolean = {
+  override def canProveIs(tid: TypeIdentifier): Boolean = {
 
     def computeCanProveIs(tid: TypeIdentifier): Boolean = {
-      knownIs.contains(tid) || (resolutionCtx.resolveSignatureAs[Unencapsulated](tid) match {
+      knownIs.contains(tid) || (resolutionCtx.resolveTypeSigAs[Unencapsulated](tid) match {
         case Some(tSig) =>
           tSig.directSupertypes.exists {
             case NamedType(superTid, _, _) =>
-              canProveIs(superTid) && (resolutionCtx.resolveSignatureAs[DatatypeSignature](superTid) match {
+              canProveIs(superTid) && (resolutionCtx.resolveTypeSigAs[DatatypeSignature](superTid) match {
                 case Some(superTSig) => superTSig.directSubtypes.diff(knownIsNot) == Set(tid)
                 case None => false
               })
@@ -39,7 +39,7 @@ final class UnencapsulatedSmartcastingData(
     canProveIsCache.getOrElseUpdate(tid, computeCanProveIs(tid))
   }
 
-  def mostPreciseType(): Option[TypeIdentifier] = {
+  def mostPreciseTypeId: Option[TypeIdentifier] = {
     mostPreciseTypeCache match {
       case Some(value) => value
       case None =>

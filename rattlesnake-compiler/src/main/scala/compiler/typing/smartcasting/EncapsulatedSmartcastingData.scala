@@ -1,16 +1,21 @@
 package compiler.typing.smartcasting
 
+import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
-import compiler.lang.Types.Type
+import compiler.lang.Types.{NamedType, Type}
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
 
 final class EncapsulatedSmartcastingData(
                                           val subject: Formula,
-                                          rawType: Type,
-                                          val mostPreciseType: Type,
-                                          knownTypes: Set[Type]
-                                        ) {
+                                          val rawType: NamedType,
+                                          val mostPreciseTypeId: TypeIdentifier,
+                                          knownTypes: Set[TypeIdentifier],
+                                          resolutionCtx: ResolutionContext,
+                                          subtypingCtx: SubtypingContext
+                                        ) extends SmartcastingData(resolutionCtx, subtypingCtx) {
 
-  def canProveIs(tpe: Type): Boolean =
-    tpe == rawType || tpe == mostPreciseType || knownTypes.contains(tpe)
-
+  def canProveIs(tid: TypeIdentifier): Boolean = {
+    tid == rawType.typeName || tid == mostPreciseTypeId || knownTypes.contains(tid)
+  }
+  
 }

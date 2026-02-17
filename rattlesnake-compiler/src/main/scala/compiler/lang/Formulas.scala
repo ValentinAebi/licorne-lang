@@ -5,11 +5,13 @@ import Types.PrimitiveType.NothingType
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.reporting.Position
 
+import scala.reflect.ClassTag
+
 object Formulas {
 
   sealed abstract class Formula {
     private var pos = PositionStatus.Unset
-    
+
     def offerPosition(posOpt: Option[Position]): Unit = pos match {
       case PositionStatus.Unset =>
         pos = PositionStatus.Set(posOpt)
@@ -17,19 +19,19 @@ object Formulas {
         pos = PositionStatus.Blocked
       case PositionStatus.Blocked => ()
     }
-    
+
     def getPosition: Option[Position] = pos match {
       case PositionStatus.Set(posOpt) => posOpt
       case _ => None
     }
-    
+
     final override def toString: String = formulaToString(this)(using _ => None)
 
     def typedStr(using typeFunc: IdValue => Option[Type]): String = formulaToString(this)
 
     def str: String = typedStr(using _ => None)
   }
-  
+
   private enum PositionStatus {
     case Unset
     case Set(posOpt: Option[Position])
@@ -88,15 +90,28 @@ object Formulas {
     def rhs: Formula
   }
 
+  trait Commutative[T <: Commutative[T] : ClassTag] {
+    this: BinOp =>
+    
+    override def equals(that: Any): Boolean = that match {
+      case that: BinOp if that.isInstanceOf[T] =>
+        (this.lhs == that.lhs && this.rhs == that.rhs)
+          || (this.lhs == that.rhs && this.rhs == that.lhs)
+      case _ => false
+    }
+
+    override def hashCode(): Int = lhs.hashCode() + rhs.hashCode()
+  }
+
   sealed trait UnaryOp(val operator: Operator) extends Formula {
     def operand: Formula
   }
 
-  final case class Plus(lhs: Formula, rhs: Formula) extends BinOp(Operator.Plus)
+  final case class Plus(lhs: Formula, rhs: Formula) extends BinOp(Operator.Plus), Commutative[Plus]
 
   final case class Minus(lhs: Formula, rhs: Formula) extends BinOp(Operator.Minus)
 
-  final case class Times(lhs: Formula, rhs: Formula) extends BinOp(Operator.Times)
+  final case class Times(lhs: Formula, rhs: Formula) extends BinOp(Operator.Times), Commutative[Times]
 
   final case class Div(lhs: Formula, rhs: Formula) extends BinOp(Operator.Div)
 
@@ -104,9 +119,9 @@ object Formulas {
 
   final case class Neg(operand: Formula) extends UnaryOp(Operator.Minus)
 
-  final case class And(lhs: Formula, rhs: Formula) extends BinOp(Operator.And)
+  final case class And(lhs: Formula, rhs: Formula) extends BinOp(Operator.And), Commutative[And]
 
-  final case class Or(lhs: Formula, rhs: Formula) extends BinOp(Operator.Or)
+  final case class Or(lhs: Formula, rhs: Formula) extends BinOp(Operator.Or), Commutative[Or]
 
   final case class Not(operand: Formula) extends UnaryOp(Operator.ExclamationMark)
 
@@ -114,7 +129,7 @@ object Formulas {
 
   final case class LessOrEq(lhs: Formula, rhs: Formula) extends BinOp(Operator.LessOrEq)
 
-  final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality)
+  final case class Equal(lhs: Formula, rhs: Formula) extends BinOp(Operator.Equality), Commutative[Equal]
 
   final case class Call(receiver: Formula, callTarget: CallTarget, typeArgs: List[Type], args: List[Formula]) extends Formula
 
@@ -128,9 +143,9 @@ object Formulas {
     val formula: Formula
     var tpe: Type
   }
-  
+
   final case class RegularlyTypedFormula(formula: Formula, var tpe: Type) extends TypedFormula
-  
+
   final case class SmartcastTypedFormula(formula: Formula, var tpe: Type) extends TypedFormula
 
   enum CallTarget {

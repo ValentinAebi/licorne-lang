@@ -7,8 +7,7 @@ import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
-import compiler.ssaprinting.SSAPrinter
-import compiler.typing.phases.Typer1
+import compiler.typing.phases.TyperPhase1
 
 import java.nio.file.Path
 
@@ -50,8 +49,8 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(SSAGenerator(er))
       // FIXME this implementation is temporary
-      .andThen(Typer1(er, /* FIXME */ continueIfErrors = true))
-      .andThen(SSAPrinter(_._1, _._2))
+      .andThen(??? /* actual compilation phases */)
+      .andThen(??? /* Printer */)
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))
   }

@@ -4,12 +4,14 @@ import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
 import compiler.irs.Asts.*
 import compiler.irs.Tokens.*
 import compiler.parser.ParseTree.^:
-import compiler.parser.TreeParsers.{opt as :::, *}
+import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.lang.{Keyword, Operator, Operators, ReassigPermission, Types, Variance, Visibility}
 import compiler.lang.Types.PrimitiveType.IntType
+import compiler.lang.Operator.*
+import compiler.lang.Keyword.*
 
 import scala.compiletime.uninitialized
 
@@ -91,7 +93,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val classDef: P[ClassDef] = {
     kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
+      ::: opt(openParenth ::: repeatWithSep(funOrClassParam, comma) ::: closeParenth)
       ::: supertypesListOpt ::: methodsListOpt map {
       case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
         ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
@@ -99,11 +101,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "classDef"
 
   private lazy val objectDef: P[ObjectDef] = {
-    kw(Object).ignored ::: highName
-      ::: opt(openParenth ::: repeatWithSep(highName, comma) ::: closeParenth)
-      ::: supertypesListOpt ::: methodsListOpt map {
-      case objectName ^: importedPackagesOpt ^: supertypes ^: functions =>
-        ObjectDef(objectName, importedPackagesOpt.getOrElse(Nil), functions, supertypes)
+    kw(Object).ignored ::: highName ::: supertypesListOpt ::: methodsListOpt map {
+      case objectName ^: supertypes ^: functions =>
+        ObjectDef(objectName, functions, supertypes)
     }
   } setName "objectDef"
 
@@ -146,12 +146,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         )
     }
   } setName "funDef"
-
-  private lazy val packageImport = {
-    kw(Object).ignored ::: highName map (ObjectImport(_))
-  } setName "packageImport"
-
-  private lazy val classParamTree = funOrClassParam OR packageImport
 
   private lazy val funParamTree = funOrClassParam OR thisParam
 

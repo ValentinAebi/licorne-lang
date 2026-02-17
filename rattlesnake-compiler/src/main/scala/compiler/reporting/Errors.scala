@@ -100,33 +100,22 @@ object Errors {
    */
   final class ErrorReporter(errorsConsumer: ErrorsConsumer, exit: => ExitCode => Nothing) {
     private val errors = mutable.ListBuffer.empty[NonFatal]
-    private val speculationStack = mutable.Stack.empty[mutable.ListBuffer[NonFatal]]
-
-    def speculationEnabled(): Boolean = speculationStack.nonEmpty
-
-    def speculationDepth(): Int = speculationStack.size
-
-    def pushSpeculationLayer(): Unit = {
-      speculationStack.push(mutable.ListBuffer.empty)
-    }
-
-    def commitSpeculation(): Unit = {
-      errors.addAll(speculationStack.pop())
-    }
-    
-    def clearCurrentSpeculationLayer(): Unit = {
-      speculationStack.head.clear()
-    }
 
     /**
      * Add an error to the stack of non fatal errors
      */
     def report(nonFatalError: NonFatal): Unit = {
-      if (speculationEnabled()) {
-        speculationStack.head.addOne(nonFatalError)
-      } else {
-        errors.addOne(nonFatalError)
-      }
+      errors.addOne(nonFatalError)
+    }
+
+    def reportError(msg: String, posOpt: Option[Position])
+                   (using compilationStep: CompilationStep): Unit = {
+      report(Err(compilationStep, msg, posOpt))
+    }
+
+    def warn(msg: String, posOpt: Option[Position])
+            (using compilationStep: CompilationStep): Unit = {
+      report(Warning(compilationStep, msg, posOpt))
     }
 
     def getErrors: List[CompilationError] = errors.toList
@@ -165,9 +154,6 @@ object Errors {
      * Display the given fatal error as well as all errors found until now and exit
      */
     def reportFatal(fatalError: Fatal): Nothing = {
-      if (speculationEnabled()) {
-        throw IllegalStateException("fatal error with speculation mode enabled")
-      }
       errorsConsumer(fatalError)
       errorsConsumer("\n")
       if errors.nonEmpty then errorsConsumer("Previously found errors:\n")

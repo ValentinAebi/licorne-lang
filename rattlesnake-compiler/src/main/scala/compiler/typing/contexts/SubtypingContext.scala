@@ -9,11 +9,14 @@ import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, Sup
 
 import scala.collection.mutable
 
-final class SubtypingContext(resolutionCtx: ResolutionContext, subtypingGraph: Graph[TypeIdentifier]) {
-  private val flattenedSupertypesSubstitutions: SupertypesSubst = mutable.LinkedHashMap.empty
+final class SubtypingContext(
+                              resolutionCtx: ResolutionContext,
+                              subtypingGraph: Graph[TypeIdentifier],
+                              flattenedSupertypesSubstitutions: SupertypesSubst
+                            ) {
 
   def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
-    if subT == superT then resolutionCtx.resolveSignatureAs[RuntimeTypeSignature](subT).map {
+    if subT == superT then resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subT).map {
       _.typeParams.map {
         case TypeTypeParamInfo(tid, variance, upperBounds, lowerBounds) =>
           tid -> NamedType(tid, List.empty, List.empty)
@@ -24,18 +27,21 @@ final class SubtypingContext(resolutionCtx: ResolutionContext, subtypingGraph: G
     } yield superSubst
   }
 
+  def isEnumCaseOf(subId: TypeIdentifier, superId: TypeIdentifier): Boolean =
+    subToSuperSubst(subId, superId).isDefined
+
   // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
     originalType match {
       case NamedType(originId, originTypeArgs, Nil) =>
-        resolutionCtx.resolveSignatureAs[RuntimeTypeSignature](targetId) match {
+        resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>
             CannotDowncast(s"type $targetId not found")
           case Some(targetSig) =>
             subToSuperSubst(targetId, originId) match {
               case None => CannotDowncast(s"$targetId does not subtype $originId")
               case Some(targetToOrigSubst) =>
-                val origSig = resolutionCtx.resolveSignatureAs[RuntimeTypeSignature](originId).get
+                val origSig = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](originId).get
                 val siteSubst = origSig.typeParams.map(_._1).zip(originTypeArgs).toMap
                 val newTargetSubstB = Map.newBuilder[TypeIdentifier, Type]
                 for ((tInOrig, tInTarget) <- targetToOrigSubst) {
@@ -68,11 +74,14 @@ final class SubtypingContext(resolutionCtx: ResolutionContext, subtypingGraph: G
     }
   }
   
+  def isValidDowncastTarget(downcastTarget: NamedType, regularType: NamedType): Boolean =
+    checkDowncastTarget(regularType, downcastTarget.typeName).isPositive(downcastTarget)
+  
 }
 
 object SubtypingContext {
 
-  type SupertypesSubst = mutable.LinkedHashMap[TypeIdentifier, mutable.LinkedHashMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
+  type SupertypesSubst = mutable.SeqMap[TypeIdentifier, mutable.SeqMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
 
   enum DowncastTargetCheckResult {
     case CanDowncast(tpe: NamedType)
@@ -82,6 +91,12 @@ object SubtypingContext {
       case CanDowncast(tpe) => Some(tpe)
       case CannotDowncast(reason) => None
     }
+    
+    def isPositive(tpe: Type): Boolean = this match {
+      case CanDowncast(actType) => actType == tpe
+      case CannotDowncast(reason) => false
+    }
+    
   }
   
 }

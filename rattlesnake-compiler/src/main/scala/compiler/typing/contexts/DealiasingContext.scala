@@ -5,8 +5,12 @@ import compiler.lang.Types.*
 import compiler.lang.{TypeAliasSignature, Types}
 import compiler.util.zipCommons
 
+import scala.reflect.ClassTag
+
 final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSignature]) {
 
+  // TODO memoize recursive multi-step dealiasing (update the signatures in the mapping)
+  
   def dealiasType(tpe: Type): Type = tpe match {
     case primitiveType: Types.PrimitiveType => primitiveType
     case NamedType(typeName, typeArgsRaw, args) =>

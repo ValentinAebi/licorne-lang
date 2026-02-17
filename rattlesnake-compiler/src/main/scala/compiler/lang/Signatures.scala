@@ -118,12 +118,10 @@ final case class InterfaceSignature(
                                    )
   extends RuntimeTypeSignature, TypeParametric, Encapsulated
 
-// TODO maybe remove importedObjects?
 final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[TypeTypeParamInfo],
                                  fields: SeqMap[FunOrVarId, Field],
-                                 importedObjects: mutable.LinkedHashSet[IdValue],
                                  functions: Map[FunOrVarId, FunctionSignature],
                                  directSupertypes: List[NamedType],
                                  declPosOpt: Option[Position]
@@ -134,7 +132,6 @@ final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
 final case class ObjectSignature(
                                   id: TypeIdentifier,
-                                  importedObjects: mutable.LinkedHashSet[IdValue],
                                   functions: Map[FunOrVarId, FunctionSignature],
                                   directSupertypes: List[NamedType],
                                   declPosOpt: Option[Position]
