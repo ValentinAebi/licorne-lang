@@ -1,17 +1,16 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.ssa.SSA.IdValue
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
-import compiler.lang.Formulas.{Constant, IdValue, Value}
 
 trait ValuesContext {
 
   val globalCtx: GlobalValuesContext
-  val valuesGen: ValuesGenerator
 
-  def resolveObject(objectId: TypeIdentifier): Value
+  def resolveObject(objectId: TypeIdentifier): IdValue
 
   def deepCopyWithSameGlobalCtx: ValuesContext
 

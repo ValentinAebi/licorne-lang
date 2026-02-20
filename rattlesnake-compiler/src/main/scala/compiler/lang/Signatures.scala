@@ -2,10 +2,11 @@ package compiler.lang
 
 import Field.StableField
 import Types.{NamedType, Type}
-import Formulas.{Formula, IdValue}
 import Keyword.{Sub, Super}
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.ssa.SSA.IdValue
 import compiler.reporting.Position
+import compiler.util.SeqSet
 
 import scala.collection.{SeqMap, mutable}
 
@@ -144,7 +145,7 @@ final case class DatatypeSignature(
                                     id: TypeIdentifier,
                                     typeParams: List[TypeTypeParamInfo],
                                     directSupertypes: List[NamedType],
-                                    directSubtypes: mutable.LinkedHashSet[TypeIdentifier],
+                                    directSubtypes: SeqSet[TypeIdentifier],
                                     declPosOpt: Option[Position]
                                   )
   extends RuntimeTypeSignature, Abstract, Unencapsulated, TypeParametric

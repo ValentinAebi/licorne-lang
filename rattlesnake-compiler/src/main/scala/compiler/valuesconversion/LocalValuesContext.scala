@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ThisId}
 import compiler.irs.Asts
-import compiler.lang.Formulas.IdValue
+import compiler.irs.ssa.SSA.IdValue
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -23,7 +23,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   private val values = mutable.Map.empty[FunOrVarId, LocalInfo]
 
   export nestedContext.globalCtx
-  export globalCtx.{valuesGen, resolveObject}
+  export globalCtx.resolveObject
   export exitManager.{hasExited, reportHasExitedIfNeeded, markHasExited}
 
   def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager)

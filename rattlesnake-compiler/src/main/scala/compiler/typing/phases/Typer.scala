@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.SSA.*
+import compiler.irs.ssa.SSA.*
 import compiler.lang.*
 import compiler.lang.Field.*
 import compiler.lang.Formulas.*
@@ -61,16 +61,13 @@ final class Typer(
     case Disjunction(cond, thenBr, elseBr, variables) => ???
     case Assignment(assignedValue, rhs) => ???
     case Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) => ???
-    case ClosureCreation(assignedValue, params, body) => ???
+    case MkClosure(assignedValue, params, body) => ???
     case Conversion(assignedValue, inValue, targetType) => ???
     case StaticTypeAssert(value, tpe) => ???
-    case StaticAssert(formula) => ???
     case FieldWrite(owner, fieldName, rhs) => ???
     case Return(retVal) => ???
     case Panic(msg) => ???
-    case Evaluate(formula) => ???
     case Cast(inValue, target) => ???
-    case DynamicAssert(formula) => ???
     case LocalDecl(localId, tpe) => ???
     case ErrorInstr(instrOpt, errorMsg) =>
       throw AssertionError(s"unexpected error instruction with message \"$errorMsg\"")

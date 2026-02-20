@@ -1,9 +1,11 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.ssa.SSA.{IdValue, Scope}
+import compiler.irs.ssa.egraphs.EGraph
+import compiler.lang.Keyword
 import compiler.reporting.Position
 import compiler.lang.Types.TypeVariable
-import compiler.lang.Formulas.{Constant, Formula, IdValue, Value}
 
 import java.util
 import scala.collection.mutable
@@ -14,11 +16,16 @@ final class GlobalValuesContext extends ValuesContext {
   private val typeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
 
   override val globalCtx: GlobalValuesContext = this
-  override val valuesGen: ValuesGenerator = ValuesGenerator(this)
+  
+  val globalScope: Scope = Scope(EGraph(), List.empty, None)
+  
+  val unitVal: IdValue = globalScope.newUninterpretedConst("unit")
+  val trueVal: IdValue = globalScope.newUninterpretedConst("true")
+  val falseVal: IdValue = globalScope.newUninterpretedConst("false")
 
   def resolveObject(objectId: TypeIdentifier): IdValue =
     idToObjName.getOrElseUpdate(objectId, {
-      val value = valuesGen.newValue(objectId)
+      val value = globalScope.newUninterpretedConst(objectId.stringId)
       objNameToId(value) = objectId
       value
     })

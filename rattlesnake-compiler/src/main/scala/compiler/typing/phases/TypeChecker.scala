@@ -10,7 +10,6 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.typing.TypeStore
 import compiler.typing.smartcasting.ControlFlowInfo
 
 final class TypeChecker(er: ErrorReporter) extends CompilerStep[(Program, TypeStore), (Program, TypeStore)] {

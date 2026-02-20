@@ -1,8 +1,8 @@
 package compiler.typing.phases
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.SSA
-import compiler.irs.SSA.*
+import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.SSA
 import compiler.lang.*
 import compiler.lang.Field.*
 import compiler.lang.Formulas.*
@@ -15,7 +15,6 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.typing.TypeStore
 import compiler.typing.contexts.DealiasingContext
 import compiler.typing.smartcasting.ControlFlowInfo
 import compiler.util.{Result, mapVals}

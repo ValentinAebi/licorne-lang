@@ -43,6 +43,12 @@ final class EnabledControlFlowInfo(
     unencapsulatedTypesData.exists((_, smartcastInfo) => smartcastInfo.canProveIsNothing)
 
   def afterCondition(cond: Formula): (EnabledControlFlowInfo, EnabledControlFlowInfo) = {
+    val (infoWhenCondTrue, infoWhenCondFalse) = extractTypeInfos(cond)
+    val allSubjects = encapsulatedTypesData.keySet ++ infoWhenCondTrue.map(_.subject) ++ infoWhenCondFalse.map(_.subject)
+    val unencapsulatedKnownIs = Map.newBuilder[Formula, ]
+    for (subject <- allSubjects) {
+      ???
+    }
     ???
   }
 
@@ -61,12 +67,11 @@ final class EnabledControlFlowInfo(
     case Not(operand) =>
       val (infoWhenOperand, infoWhenNotOperand) = extractTypeInfos(operand)
       (infoWhenNotOperand, infoWhenOperand)
-    case HasType(TypedFormula(formula, formulaType), testedType) =>
-      ts.typeOfOpt(idValue).map(_.baseType) match {
-        case Some(NamedType(knownType, _, Nil)) =>
-          (Set(TypeInfo(idValue, knownType, List(testedType), List.empty)),
-            Set(TypeInfo(idValue, knownType, List.empty, List(testedType))))
-        case _ => (Set.empty, Set.empty)
+    case HasType(formula: TypedFormula, testedType) if PurityChecking.isPure(formula) =>
+      formula.tpe match {
+        case NamedType(tid, _, _) =>
+          (Set(DataAddition(formula, List(tid), List.empty)),
+            Set(DataAddition(formula, List.empty, List(tid))))
       }
     case _ => (Set.empty, Set.empty)
   }

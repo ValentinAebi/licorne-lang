@@ -1,7 +1,7 @@
 package compiler.typing.smartcasting
 
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.Formula
+import compiler.lang.Formulas.{Formula, TypedFormula}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.{DatatypeSignature, Unencapsulated}
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
@@ -9,8 +9,7 @@ import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
 import scala.collection.mutable
 
 final class UnencapsulatedSmartcastingData(
-                                            val subject: Formula,
-                                            val rawType: NamedType,
+                                            val rawTypedSubject: TypedFormula,
                                             knownIs: Set[TypeIdentifier],
                                             knownIsNot: Set[TypeIdentifier],
                                             resolutionCtx: ResolutionContext,
@@ -69,7 +68,7 @@ final class UnencapsulatedSmartcastingData(
     }
   }
   
-  def withMoreInfo(knownIs: Set[TypeIdentifier], knownIsNot: Set[TypeIdentifier]): UnencapsulatedSmartcastingData =
+  def withMoreInfo(knownIs: Seq[TypeIdentifier], knownIsNot: Seq[TypeIdentifier]): UnencapsulatedSmartcastingData =
     UnencapsulatedSmartcastingData(
       subject,
       rawType,

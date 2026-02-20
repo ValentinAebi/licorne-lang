@@ -1,13 +1,16 @@
 package compiler.typing.smartcasting
 
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.Formula
+import compiler.lang.Formulas.{Formula, TypedFormula}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext}
+import compiler.typing.smartcasting.SmartcastingData.DataAddition
 
 trait SmartcastingData(resolutionCtx: ResolutionContext, subtypingCtx: SubtypingContext) {
-  val subject: Formula
-  val rawType: NamedType
+  val rawTypedSubject: TypedFormula
+  
+  def rawType: Type = rawTypedSubject.tpe
+  def subjectWithoutType: Formula = rawTypedSubject.formula
 
   def canProveIs(tid: TypeIdentifier): Boolean
 
@@ -25,11 +28,18 @@ trait SmartcastingData(resolutionCtx: ResolutionContext, subtypingCtx: Subtyping
       castType <- subtypingCtx.checkDowncastTarget(rawType, mostPreciseTypeId).asOption
     } yield castType
   }
+
+  def withMoreInfo(knownIs: Seq[TypeIdentifier], knownIsNot: Seq[TypeIdentifier]): this.type
+  
+  def withMoreInfo(dataAddition: DataAddition): this.type = {
+    require(dataAddition.subject == this.subject)
+    withMoreInfo(dataAddition.knownIs, dataAddition.knownIsNot)
+  }
   
 }
 
 object SmartcastingData {
   
-  final case class DataAddition(formula: Formula, knownIs: Set[TypeIdentifier], knownIsNot: Set[TypeIdentifier])
+  final case class DataAddition(subject: TypedFormula, knownIs: Seq[TypeIdentifier], knownIsNot: Seq[TypeIdentifier])
   
 }

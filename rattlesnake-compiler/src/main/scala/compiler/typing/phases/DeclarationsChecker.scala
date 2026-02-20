@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.SSA
+import compiler.irs.ssa.SSA
 import compiler.lang.*
 import compiler.lang.Formulas.IdValue
 import compiler.lang.Types.{NamedType, Type, primTypeFor}
@@ -12,7 +12,6 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.typing.TypeStore
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.util.mapVals

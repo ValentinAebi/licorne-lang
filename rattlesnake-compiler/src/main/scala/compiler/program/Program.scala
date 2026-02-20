@@ -2,7 +2,7 @@ package compiler.program
 
 import compiler.datastructures.Graph
 import compiler.identifiers.{ThisId, TypeIdentifier}
-import compiler.irs.SSA
+import compiler.irs.ssa.SSA
 import compiler.lang.Formulas.{And, Formula, IdValue}
 import compiler.lang.Types.PrimitiveType.UnitType
 import compiler.lang.Types.{PrimitiveType, Type, TypeVariable}
@@ -14,7 +14,6 @@ import compiler.pipeline.CompilationStep.{SSAGeneration, TypeChecking}
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.typing.phases.TyperPhase1
-import compiler.typing.TypeStore
 import compiler.typing.smartcasting.TypesReasoningCache
 import compiler.util.zipCommons
 import compiler.valuesconversion.GlobalValuesContext
