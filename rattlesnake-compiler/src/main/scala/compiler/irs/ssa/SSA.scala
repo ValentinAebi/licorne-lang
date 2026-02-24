@@ -51,6 +51,7 @@ object SSA {
     val assigned: IdValue
   }
 
+  final case class Assignment(assigned: IdValue, src: IdValue) extends AssigningInstr
   final case class FieldRead(assigned: IdValue, owner: IdValue, field: FieldResolutionTarget) extends AssigningInstr
   final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr

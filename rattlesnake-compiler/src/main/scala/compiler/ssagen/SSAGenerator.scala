@@ -5,7 +5,7 @@ import compiler.irs.Asts.{BinaryOp, Expr, PrincipalTypeTree, RefinedTypeTree}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.Asts
 import compiler.irs.ssa.SSA
-import compiler.irs.ssa.egraphs.{EGraph, FalseNode, IdValNode, IntConstNode, NegNode, NotNode, ProductNode, SumNode, TrueNode}
+import compiler.irs.ssa.egraphs.{DivNode, EClassId, EGraph, ENode, FalseNode, IdValNode, IntConstNode, NegNode, NotNode, ProductNode, RemNode, StringConstNode, SumNode, TrueNode}
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -422,62 +422,76 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
   }
 
   private def generateSSAExpr(
+                               resultVal: IdValue,
                                expr: Asts.Expr,
                                ssaInstructions: mutable.ListBuffer[SSA.Instr],
                                currScope: Scope,
                                valsCtx: LocalValuesContext
-                             ): IdValue = {
+                             ): Unit = {
 
-    def generateSSAExpr(expr: Asts.Expr): IdValue = this.generateSSAExpr(expr, ssaInstructions, currScope, valsCtx)
+    def generateSSAExpr(resultVal: IdValue, expr: Asts.Expr): Unit =
+      this.generateSSAExpr(resultVal, expr, ssaInstructions, currScope, valsCtx)
 
-    def withResVal(action: IdValue => Unit): IdValue = {
-      val resVal = currScope.newIntermediate()
-      action(resVal)
-      resVal
+    def generateArgsList(argsTrees: List[Expr]): List[IdValue] = {
+      val argsValsB = List.newBuilder[IdValue]
+      for (argTree <- argsTrees) {
+        val argVal = currScope.newIntermediate()
+        generateSSAExpr(argVal, argTree)
+        argsValsB.addOne(argVal)
+      }
+      argsValsB.result()
     }
 
-    def binary(binop: BinaryOp)
-              (action: (resVal: IdValue, lhsVal: IdValue, rhsVal: IdValue) => Unit): IdValue = withResVal { resVal =>
-      action(resVal, generateSSAExpr(binop.lhs), generateSSAExpr(binop.rhs))
+    def generateUnary(operandTree: Expr, mkNode: EClassId => ENode): Unit = {
+      val operandVal = currScope.newIntermediate()
+      generateSSAExpr(operandVal, operandTree)
+      val operandId = currScope.ctxGraph.classOf(IdValNode(operandVal))
+      currScope.ctxGraph.unify(IdValNode(resultVal), mkNode(operandId))
+    }
+
+    def generateBinary(lhs: Expr, rhs: Expr, mkNode: (EClassId, EClassId) => ENode): Unit = {
+      val lhsVal = currScope.newIntermediate()
+      generateSSAExpr(lhsVal, lhs)
+      val rhsVal = currScope.newIntermediate()
+      generateSSAExpr(rhsVal, rhs)
+      val lhsId = currScope.ctxGraph.classOf(IdValNode(lhsVal))
+      val rhsId = currScope.ctxGraph.classOf(IdValNode(rhsVal))
+      currScope.ctxGraph.unify(IdValNode(resultVal), mkNode(lhsId, rhsId))
     }
 
     expr match {
       case Asts.UnitLit() =>
-        valsCtx.globalCtx.unitVal
-      case Asts.IntLit(value) => withResVal { resVal =>
-        currScope.ctxGraph.unify(IdValNode(resVal), IntConstNode(value))
-      }
+        currScope.ctxGraph.unify(IdValNode(resultVal), IdValNode(valsCtx.globalCtx.unitVal))
+      case Asts.IntLit(value) =>
+        currScope.ctxGraph.unify(IdValNode(resultVal), IntConstNode(value))
       case Asts.DoubleLit(value) => ???
       case Asts.CharLit(value) => ???
-      case Asts.BoolLit(true) => withResVal { resVal =>
-        currScope.ctxGraph.unify(IdValNode(resVal), TrueNode)
-      }
-      case Asts.BoolLit(false) => withResVal { resVal =>
-        currScope.ctxGraph.unify(IdValNode(resVal), FalseNode)
-      }
-      case Asts.StringLit(value) => withResVal { resVal =>
-        // TODO interpret string literals
-      }
+      case Asts.BoolLit(true) =>
+        currScope.ctxGraph.unify(IdValNode(resultVal), TrueNode)
+      case Asts.BoolLit(false) =>
+        currScope.ctxGraph.unify(IdValNode(resultVal), FalseNode)
+      case Asts.StringLit(value) =>
+        currScope.ctxGraph.unify(IdValNode(resultVal), StringConstNode(value))
       case varRef@Asts.VariableRef(name) =>
         valsCtx.valueOf(name) match {
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRef.getPosition)
-            currScope.newIntermediate()
           case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
             reportError(s"$id might not have been initialized", varRef.getPosition)
-            currScope.newIntermediate()
-          case KnownAndInitialized(value, reassigStatus, typeUpperBound) => value
+          case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
+            currScope.ctxGraph.unify(IdValNode(resultVal), IdValNode(value))
         }
-      case Asts.ThisRef() => generateSSAExpr(Asts.VariableRef(ThisId))
-      case Asts.ItRef() => generateSSAExpr(Asts.VariableRef(ItId))
-      case Asts.ObjectRef(objectName) => valsCtx.resolveObject(objectName)
-      case call@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argsTrees) =>
-        val receiverVal = generateSSAExpr(receiverTree)
+      case Asts.ThisRef() => generateSSAExpr(resultVal, Asts.VariableRef(ThisId))
+      case Asts.ItRef() => generateSSAExpr(resultVal, Asts.VariableRef(ItId))
+      case Asts.ObjectRef(objectName) =>
+        val objIdVal = valsCtx.resolveObject(objectName)
+        currScope.ctxGraph.unify(IdValNode(resultVal), IdValNode(objIdVal))
+      case call@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
+        val receiverVal = currScope.newIntermediate()
+        generateSSAExpr(receiverVal, receiverTree)
         val typeArgs = typeArgsTrees.map(mkType(_, valsCtx))
-        val args = argsTrees.map(generateSSAExpr)
-        withResVal { resVal =>
-          InvokeFunc(resVal, receiverVal, InvocationTarget.Unresolved(funId), args)
-        }
+        val argVals = generateArgsList(argTrees)
+        ssaInstructions.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), argVals), expr)
       case call@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees) if !valsCtx.knows(funId) =>
         val receiverVal = valsCtx.getThisValue match {
           case Some(recv) => recv
@@ -486,54 +500,36 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             currScope.newIntermediate()
         }
         val typeArgs = typeArgTrees.map(mkType(_, valsCtx))
-        val args = argTrees.map(generateSSAExpr)
-        withResVal { resVal =>
-          InvokeFunc(resVal, receiverVal, InvocationTarget.Unresolved(funId), args)
-        }
+        val argVals = generateArgsList(argTrees)
+        ssaInstructions.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), argVals), expr)
       case call@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", call.getPosition)
         }
-        val callee = generateSSAExpr(calleeTree)
-        val args = argTrees.map(generateSSAExpr)
-        withResVal { resVal =>
-          InvokeClosure(resVal, callee, args)
-        }
-      case Asts.UnaryOp(Operator.Minus, operandTree) => withResVal { resVal =>
-        val operand = generateSSAExpr(operandTree)
-        val operandId = currScope.ctxGraph.classOf(IdValNode(operand))
-        currScope.ctxGraph.unify(IdValNode(resVal), NegNode(operandId))
-      }
-      case Asts.UnaryOp(Operator.ExclamationMark, operandTree) => withResVal { resVal =>
-        val operand = generateSSAExpr(operandTree)
-        val operandId = currScope.ctxGraph.classOf(IdValNode(operand))
-        currScope.ctxGraph.unify(IdValNode(resVal), NotNode(operandId))
-      }
+        val calleeVal = currScope.newIntermediate()
+        generateSSAExpr(calleeVal, calleeTree)
+        val args = generateArgsList(argTrees)
+        ssaInstructions.saveInstr(InvokeClosure(resultVal, calleeVal, args), expr)
+      case Asts.UnaryOp(Operator.Minus, operandTree) =>
+        generateUnary(operandTree, NegNode(_))
+      case Asts.UnaryOp(Operator.ExclamationMark, operandTree) =>
+        generateUnary(operandTree, NotNode(_))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
-      case binop@Asts.BinaryOp(lhsTree, Operator.Plus, rhsTree) => binary(binop) { (resVal, lhsVal, rhsVal) =>
-        val lhsId = currScope.ctxGraph.classOf(IdValNode(lhsVal))
-        val rhsId = currScope.ctxGraph.classOf(IdValNode(rhsVal))
-        currScope.ctxGraph.unify(IdValNode(resVal), SumNode(SeqSet(lhsId, rhsId)))
-      }
-      case binop@Asts.BinaryOp(lhs, Operator.Minus, rhs) => binary(binop) { (resVal, lhsVal, rhsVal) =>
-        val lhsId = currScope.ctxGraph.classOf(IdValNode(lhsVal))
-        val rhsId = currScope.ctxGraph.classOf(IdValNode(rhsVal))
-        val negRhsId = currScope.ctxGraph.classOf(NegNode(rhsId))
-        currScope.ctxGraph.unify(IdValNode(resVal), SumNode(SeqSet(lhsId, negRhsId)))
-      }
-      case binop@Asts.BinaryOp(lhs, Operator.Times, rhs) => binary(binop){ (resVal, lhsVal, rhsVal) =>
-        val lhsId = currScope.ctxGraph.classOf(IdValNode(lhsVal))
-        val rhsId = currScope.ctxGraph.classOf(IdValNode(rhsVal))
-        currScope.ctxGraph.unify(IdValNode(resVal), ProductNode(SeqSet(lhsId, rhsId)))
-      }
-      case binop@Asts.BinaryOp(lhs, Operator.Div, rhs) => binary(binop) { (resVal, lhsVal, rhsVal) =>
-        // TODO check rhsVal != 0: StaticAssert? More specialized node?
-        ssaInstructions.saveInstr(StaticAssert())
-        val lhsId = currScope.ctxGraph.classOf(IdValNode(lhsVal))
-        val rhsId = currScope.ctxGraph.classOf(IdValNode(rhsVal))
-        
-      }
-      case binop@Asts.BinaryOp(lhs, Operator.Modulo, rhs) => Rem(generateSSAExpr(lhs), generateSSAExpr(rhs))
+      case binop@Asts.BinaryOp(lhsTree, Operator.Plus, rhsTree) =>
+        generateBinary(lhsTree, rhsTree, SumNode(_, _))
+      case binop@Asts.BinaryOp(lhsTree, Operator.Minus, rhsTree) =>
+        generateSSAExpr(
+          resultVal,
+          Asts.BinaryOp(lhsTree, Operator.Plus,
+            Asts.UnaryOp(Operator.Minus, rhsTree).withDesugaringSource(binop)
+          ).withDesugaringSource(binop)
+        )
+      case binop@Asts.BinaryOp(lhsTree, Operator.Times, rhsTree) =>
+        generateBinary(lhsTree, rhsTree, ProductNode(_, _))
+      case binop@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
+        generateBinary(lhsTree, rhsTree, DivNode(_, _))
+      case binop@Asts.BinaryOp(lhsTree, Operator.Modulo, rhsTree) =>
+        generateBinary(lhsTree, rhsTree, RemNode(_, _))
       case binop@Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) => LessThan(generateSSAExpr(rhs), generateSSAExpr(lhs))
       case binop@Asts.BinaryOp(lhs, Operator.LessThan, rhs) => LessThan(generateSSAExpr(lhs), generateSSAExpr(rhs))
       case binop@Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) => LessOrEq(generateSSAExpr(rhs), generateSSAExpr(lhs))

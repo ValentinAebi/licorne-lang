@@ -2,25 +2,52 @@ package compiler.irs.ssa.egraphs
 
 import scala.collection.mutable
 
-final class EClass {
+
+final class EClass(egraph: EGraph) {
   private val nodes = mutable.LinkedHashSet.empty[ENode]
-  private var deleted = false
+  private val upperBounds = mutable.LinkedHashSet.empty[EClassId]
+  private val lowerBounds = mutable.LinkedHashSet.empty[EClassId]
+  private val disequalities = mutable.LinkedHashSet.empty[EClassId]
 
-  def addNode(node: ENode): Unit = {
-    checkNotDestroyed()
+  private var constValue = Option.empty[ConstNode]
+
+  def asConst: Option[ConstNode] = constValue
+
+  def addNode(node: ENode): Boolean = {
     nodes.add(node)
-  }
-
-  def deleteAndTransferTo(target: EClass): Unit = {
-    require(target != this)
-    target.nodes.addAll(nodes)
-    deleted = true
-  }
-
-  private def checkNotDestroyed(): Unit = {
-    if (deleted) {
-      throw IllegalStateException("attempt to access a deleted e-class")
+    node match {
+      case node: ConstNode if constValue.isEmpty =>
+        constValue = Some(node)
+        true
+      case node: ConstNode if node != constValue.get =>
+        false
+      case _ => true
     }
   }
+
+  def saveUpperBound(ub: EClassId): Boolean = {
+    upperBounds.add(ub)
+  }
+
+  def saveLowerBound(lb: EClassId): Boolean = {
+    lowerBounds.add(lb)
+  }
+
+  def saveDisequality(disEq: EClassId): Boolean = {
+    disequalities.add(disEq)
+  }
+
+  def currentNodes: Set[ENode] = Set.from(nodes)
+
+  def currentUpperBounds: Set[EClassId] = Set.from(upperBounds)
+
+  def currentLowerBounds: Set[EClassId] = Set.from(lowerBounds)
+
+  def currentDisequalities: Set[EClassId] = Set.from(disequalities)
+  
+  export nodes.contains as containsNode
+  export upperBounds.contains as hasDirectUpperBound
+  export lowerBounds.contains as hasDirectLowerBound
+  export disequalities.contains as hasDisequality
 
 }
