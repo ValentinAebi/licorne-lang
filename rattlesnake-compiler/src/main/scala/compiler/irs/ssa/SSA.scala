@@ -2,10 +2,12 @@ package compiler.irs.ssa
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.Asts.Ast
-import compiler.irs.ssa.egraphs.EGraph
-import compiler.lang.{FunctionSignature, Operator, RuntimeTypeSignature, TypeSignature, UserInstantiable}
+import compiler.irs.egraphs.EGraph
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.lang.*
 import compiler.reporting.Position
+import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
@@ -26,7 +28,7 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNode
   }
 
-  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[List[Instr]], posOpt: Option[Position])
+  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope], posOpt: Option[Position])
 
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, var bodyLastVal: IdValue) {
     override def toString: String = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
@@ -41,9 +43,8 @@ object SSA {
 
   sealed trait ControlFlowInstr extends Instr
 
-  final case class Loop(condEval: List[Instr], cond: IdValue, body: List[Instr], variables: List[LoopVarData]) extends ControlFlowInstr
-  final case class Disjunction(cond: IdValue, thenBr: List[Instr], elseBr: List[Instr], variables: List[DisjunctionVarData]) extends ControlFlowInstr
-
+  final case class Loop(condEval: Scope, cond: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr
+  final case class Disjunction(cond: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
   final case class StaticTypeAssert(value: IdValue, tpe: Type) extends Instr
   final case class StaticAssert(value: IdValue) extends Instr
 
@@ -51,24 +52,47 @@ object SSA {
     val assigned: IdValue
   }
 
-  final case class Assignment(assigned: IdValue, src: IdValue) extends AssigningInstr
+  final case class AssignVal(assigned: IdValue, src: IdValue) extends AssigningInstr
+
+  final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr
+  final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr
+  final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr
+
+  final case class NumNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr
+  final case class Add(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Sub(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Mul(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Div(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Rem(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+
+  final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr
+  final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  
+  final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+
   final case class FieldRead(assigned: IdValue, owner: IdValue, field: FieldResolutionTarget) extends AssigningInstr
   final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type], initialization: List[Instr]) extends AssigningInstr
+
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
   final case class MkClosure(assigned: IdValue, params: List[(IdValue, Type)], var body: List[Instr]) extends AssigningInstr
 
+  final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
 
   final case class FieldWrite(owner: IdValue, field: FieldResolutionTarget, rhs: IdValue) extends Instr
   final case class Return(retVal: IdValue) extends Instr
   final case class Panic(msg: IdValue) extends Instr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends Instr
+  final case class Drop(droppedValue: IdValue) extends Instr
 
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
 
   enum FieldResolutionTarget {
-    case Unresolved(receiver: IdValue)
+    case Unresolved(fieldId: FunOrVarId)
     case Resolved(receiver: IdValue, receiverSig: UserInstantiable, fieldId: FunOrVarId)
   }
 
@@ -77,11 +101,16 @@ object SSA {
     case Resolved(funSig: FunctionSignature)
   }
 
-  final class Scope(
-                     val ctxGraph: EGraph,
-                     val instructions: List[Instr],
-                     val outScopeOpt: Option[Scope]
-                   ) extends Instr {
+  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
+
+    def localValuesContextOpt: Option[LocalValuesContext] = valuesCtx match {
+      case valuesCtx: LocalValuesContext => Some(valuesCtx)
+      case _ => None
+    }
+
+    def getLocalValuesContextUnsafe: LocalValuesContext = valuesCtx.asInstanceOf[LocalValuesContext]
+
+    val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
 
     val depth: Int = outScopeOpt match {
       case Some(outScope) => outScope.depth + 1
@@ -104,9 +133,13 @@ object SSA {
     }
 
     def newIntermediate(): IntermediateIdValue = newValue {
-      IntermediateIdValue(this, _)
+      IntermediateIdValue(this, _, None)
     }
-    
+
+    def newIntermediate(nameHint: String): IntermediateIdValue = newValue {
+      IntermediateIdValue(this, _, Some(nameHint))
+    }
+
     def newUninterpretedConst(descr: String): UninterpretedConst = newValue {
       UninterpretedConst(descr, this, _)
     }
@@ -117,24 +150,12 @@ object SSA {
 
   }
 
-  sealed trait IdValue {
-    def uid: Long
+  object Scope {
+    def nestedInside(outScope: Scope): Scope =
+      new Scope(Some(outScope), outScope.getLocalValuesContextUnsafe.deepCopyWithSameGlobalCtx)
 
-    def definingScope: Scope
+    def root(globalValuesCtx: GlobalValuesContext): Scope =
+      new Scope(None, globalValuesCtx)
   }
-
-  sealed trait UserDefinedIdValue extends IdValue {
-    def srcId: FunOrVarId
-  }
-
-  final case class ParamIdValue(srcId: FunOrVarId, definingScope: Scope, uid: Long) extends UserDefinedIdValue
-
-  final case class ValIdValue(srcId: FunOrVarId, definingScope: Scope, uid: Long) extends UserDefinedIdValue
-
-  final case class VarIdValue(srcId: FunOrVarId, definingScope: Scope, uid: Long) extends UserDefinedIdValue
-
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long) extends IdValue
-  
-  final case class UninterpretedConst(descr: String, definingScope: Scope, uid: Long) extends IdValue
 
 }

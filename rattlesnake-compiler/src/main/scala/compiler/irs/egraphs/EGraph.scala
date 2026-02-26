@@ -1,7 +1,7 @@
-package compiler.irs.ssa.egraphs
+package compiler.irs.egraphs
 
 import compiler.irs.ssa.SSA.IdValue
-import compiler.irs.ssa.egraphs.EGraph.ApproxMode
+import EGraph.ApproxMode
 import compiler.lang.Operator
 import compiler.util.SeqSet
 
@@ -9,24 +9,52 @@ import scala.collection.mutable
 import scala.util.boundary
 
 
-final class EGraph {
-
-  private val gen = EClassId.Generator()
+final class EGraph private(private val gen: EClassId.Generator) {
 
   private val classes = mutable.LinkedHashMap.empty[EClassId, EClass]
-  private val ownerClassOf = mutable.LinkedHashMap.empty[ENode, EClassId]
+
+  // maps every node to itself, see the classOf method.
+  // WARNING: use with care, ENodes are mutable and equals and hashCode are not stable!
+  private val nodes = mutable.LinkedHashMap.empty[ENode, ENode]
+
   private val nodesMentioning = mutable.LinkedHashMap.empty[EClassId, mutable.LinkedHashSet[ENode]]
 
   private val trueClassId: EClassId = classOf(TrueNode)
   private val falseClassId: EClassId = classOf(FalseNode)
 
-  def classOf(node: ENode): EClassId = ownerClassOf.get(node) match {
-    case Some(classId) => classId
-    case None =>
-      val newClassId = gen.next()
-      classAdd(newClassId, node)
-      saveChildrenMentions(node)
-      newClassId
+  def deepCopy: EGraph = {
+    val newGraph = EGraph(gen)
+    for ((clId, oldCl) <- this.classes) {
+      val newCl =
+        if oldCl.containsNode(TrueNode) then newGraph.classes(newGraph.trueClassId)
+        else if oldCl.containsNode(FalseNode) then newGraph.classes(newGraph.falseClassId)
+        else EClass(newGraph)
+      oldCl.copyTypingDataTo(newCl)
+      newGraph.classes.put(clId, newCl)
+    }
+    for ((_, n) <- nodes) {
+      val clId = n.classId
+      val newNode = n.copy
+      newGraph.nodes.put(newNode, newNode)
+      newGraph.classes(clId).addNode(newNode)
+      newGraph.saveChildrenMentions(newNode)
+    }
+    newGraph
+  }
+
+  def classOf(extNode: ENode): EClassId = {
+    /* nodes maps every node to itself.
+     * This way, given a node, one can retrieve the internal version of it 
+     * (which contains the pointer to the e-class, ignored by the == method). */
+    nodes.get(extNode) match {
+      case Some(inNode) => inNode.classId
+      case None =>
+        nodes.put(extNode, extNode)
+        val newClassId = gen.next()
+        classAdd(newClassId, extNode)
+        saveChildrenMentions(extNode)
+        newClassId
+    }
   }
 
   def isProvablyInconsistent: Boolean = areEqual(TrueNode, FalseNode)
@@ -56,9 +84,12 @@ final class EGraph {
       }
       val mentioningNodes = nodesMentioning.remove(class2Id).getOrElse(Set.empty[ENode])
       for (node <- mentioningNodes) {
+        nodes.remove(node)
         node.subst(target = class2Id, repl = class1Id)
+        nodes.put(node, node)
         saveChildrenMentions(node)
       }
+      class2.copyTypingDataTo(class1)
     }
   }
 
@@ -75,7 +106,6 @@ final class EGraph {
     }
   }
 
-  // TODO saveInequality (upper and lower bounds, maybe within the same method?)
   def saveLessOrEq(left: ENode, right: ENode): Unit = {
     val leftClassId = classOf(left)
     val rightClassId = classOf(right)
@@ -95,8 +125,11 @@ final class EGraph {
   }
 
   private def classAdd(clazz: EClassId, node: ENode): Unit = {
-    classes.getOrElseUpdate(clazz, EClass(this)).addNode(node)
-    ownerClassOf(node) = clazz
+    node.classId = clazz
+    val addIsValid = classes.getOrElseUpdate(clazz, EClass(this)).addNode(node)
+    if (!addIsValid) {
+      mkInconsistent()
+    }
   }
 
   private def saveChildrenMentions(node: ENode): Unit = {
@@ -112,6 +145,8 @@ final class EGraph {
 }
 
 object EGraph {
+
+  def newEmpty: EGraph = new EGraph(EClassId.Generator())
 
   enum ApproxMode {
     case DefaultToUpperBound

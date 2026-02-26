@@ -1,8 +1,8 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.egraphs.EGraph
 import compiler.irs.ssa.SSA.{IdValue, Scope}
-import compiler.irs.ssa.egraphs.EGraph
 import compiler.lang.Keyword
 import compiler.reporting.Position
 import compiler.lang.Types.TypeVariable
@@ -17,7 +17,7 @@ final class GlobalValuesContext extends ValuesContext {
 
   override val globalCtx: GlobalValuesContext = this
   
-  val globalScope: Scope = Scope(EGraph(), List.empty, None)
+  val globalScope: Scope = Scope.root(this)
   
   val unitVal: IdValue = globalScope.newUninterpretedConst("unit")
   val trueVal: IdValue = globalScope.newUninterpretedConst("true")

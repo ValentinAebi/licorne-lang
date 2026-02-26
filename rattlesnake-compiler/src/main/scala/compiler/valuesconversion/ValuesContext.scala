@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.SSA.IdValue
+import compiler.irs.ssa.Formulas.IdValue
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type

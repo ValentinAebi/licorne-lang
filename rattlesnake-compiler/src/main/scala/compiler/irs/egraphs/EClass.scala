@@ -1,4 +1,4 @@
-package compiler.irs.ssa.egraphs
+package compiler.irs.egraphs
 
 import scala.collection.mutable
 
@@ -10,6 +10,15 @@ final class EClass(egraph: EGraph) {
   private val disequalities = mutable.LinkedHashSet.empty[EClassId]
 
   private var constValue = Option.empty[ConstNode]
+
+  def copyTypingDataTo(dst: EClass): Unit = {
+    dst.upperBounds.addAll(this.upperBounds)
+    dst.lowerBounds.addAll(this.lowerBounds)
+    dst.disequalities.addAll(this.disequalities)
+    if (dst.constValue.isEmpty) {
+      dst.constValue = this.constValue
+    }
+  }
 
   def asConst: Option[ConstNode] = constValue
 
@@ -44,7 +53,7 @@ final class EClass(egraph: EGraph) {
   def currentLowerBounds: Set[EClassId] = Set.from(lowerBounds)
 
   def currentDisequalities: Set[EClassId] = Set.from(disequalities)
-  
+
   export nodes.contains as containsNode
   export upperBounds.contains as hasDirectUpperBound
   export lowerBounds.contains as hasDirectLowerBound

@@ -1,17 +1,28 @@
-package compiler.irs.ssa.egraphs
+package compiler.irs.egraphs
 
-import compiler.identifiers.FunOrVarId
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.SSA.IdValue
+import compiler.lang.Types.Type
 import compiler.util.SeqSet
 
+import scala.compiletime.uninitialized
 
-sealed trait ENode {
+
+sealed abstract class ENode {
   def subst(target: EClassId, repl: EClassId): Unit
   def children: SeqSet[EClassId]
+  
+  def copy: ENode
+  
+  var classId: EClassId = uninitialized
 }
 
 sealed trait ConstNode extends ENode {
   def compareTo(that: ConstNode): ConstNode.ComparisonResult
+
+  override def subst(target: EClassId, repl: EClassId): ENode = this
+
+  override def children: SeqSet[EClassId] = SeqSet.empty
 }
 
 object ConstNode {
@@ -33,33 +44,13 @@ object ConstNode {
 }
 
 case object TrueNode extends ConstNode {
-  override def subst(target: EClassId, repl: EClassId): ENode = TrueNode
-
-  override def children: SeqSet[EClassId] = SeqSet.empty
-
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult = {
-    import ConstNode.ComparisonResult.*
-    that match {
-      case TrueNode => Eq
-      case FalseNode => Gt
-      case _ => NotComparable
-    }
-  }
+  override def compareTo(that: ConstNode): ConstNode.ComparisonResult =
+    ConstNode.ComparisonResult.NotComparable
 }
 
 case object FalseNode extends ConstNode {
-  override def subst(target: EClassId, repl: EClassId): Unit = ()
-
-  override def children: SeqSet[EClassId] = SeqSet.empty
-
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult = {
-    import ConstNode.ComparisonResult.*
-    that match {
-      case TrueNode => Lt
-      case FalseNode => Eq
-      case _ => NotComparable
-    }
-  }
+  override def compareTo(that: ConstNode): ConstNode.ComparisonResult =
+    ConstNode.ComparisonResult.NotComparable
 }
 
 final case class IntConstNode(value: Int) extends ConstNode {
@@ -69,7 +60,7 @@ final case class IntConstNode(value: Int) extends ConstNode {
 
   override def compareTo(that: ConstNode): ConstNode.ComparisonResult = {
     import ConstNode.ComparisonResult.*
-    import this.value as l
+    import `this`.value as l
     that match {
       case IntConstNode(r) =>
         if l < r then Lt
@@ -96,13 +87,29 @@ final case class IdValNode(idVal: IdValue) extends ENode {
   override def children: SeqSet[EClassId] = SeqSet.empty
 }
 
-final case class SelectNode(var owner: EClassId, fieldId: FunOrVarId) extends ENode {
+sealed abstract class UnopNode extends ENode {
+  var operand: EClassId
+
   override def subst(target: EClassId, repl: EClassId): Unit = {
-    owner = owner.subst(target, repl)
+    operand = operand.subst(target, repl)
   }
 
-  override def children: SeqSet[EClassId] = SeqSet(owner)
+  override def children: SeqSet[EClassId] = SeqSet(operand)
 }
+
+sealed abstract class BinopNode extends ENode {
+  var lhs: EClassId
+  var rhs: EClassId
+
+  override def subst(target: EClassId, repl: EClassId): Unit = {
+    lhs = lhs.subst(target, repl)
+    rhs = rhs.subst(target, repl)
+  }
+
+  override def children: SeqSet[EClassId] = SeqSet(lhs, rhs)
+}
+
+final case class SelectNode(var operand: EClassId, fieldId: FunOrVarId) extends UnopNode
 
 final case class SumNode(var children: SeqSet[EClassId]) extends ENode {
   override def subst(target: EClassId, repl: EClassId): Unit = {
@@ -115,13 +122,7 @@ object SumNode {
     new SumNode(SeqSet(children))
 }
 
-final case class NegNode(var child: EClassId) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    child = child.subst(target, repl)
-  }
-
-  override def children: SeqSet[EClassId] = SeqSet(child)
-}
+final case class NegNode(var operand: EClassId) extends UnopNode
 
 final case class ProductNode(var children: SeqSet[EClassId]) extends ENode {
   override def subst(target: EClassId, repl: EClassId): Unit = {
@@ -134,31 +135,23 @@ object ProductNode {
     new ProductNode(SeqSet(children))
 }
 
-final case class DivNode(var lhs: EClassId, var rhs: EClassId) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    lhs = lhs.subst(target, repl)
-    rhs = rhs.subst(target, repl)
-  }
+final case class DivNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
 
-  override def children: SeqSet[EClassId] = SeqSet(lhs, rhs)
-}
+final case class RemNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
 
-final case class RemNode(var lhs: EClassId, var rhs: EClassId) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    lhs = lhs.subst(target, repl)
-    rhs = rhs.subst(target, repl)
-  }
+final case class NotNode(var operand: EClassId) extends UnopNode
 
-  override def children: SeqSet[EClassId] = SeqSet(lhs, rhs)
-}
+final case class EqualityNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
 
-final case class NotNode(var operand: EClassId) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    operand = operand.subst(target, repl)
-  }
+final case class LessOrEqNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
 
-  override def children: SeqSet[EClassId] = SeqSet(operand)
-}
+final case class LessThanNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
 
-extension (classId: EClassId) private inline def subst(inline target: EClassId, inline repl: EClassId): EClassId =
+final case class AndNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+
+final case class OrNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+
+final case class TypeTestNode(var operand: EClassId, tpe: TypeIdentifier) extends UnopNode
+
+extension (inline classId: EClassId) private inline def subst(inline target: EClassId, inline repl: EClassId): EClassId =
   if classId == target then repl else classId

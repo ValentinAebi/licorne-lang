@@ -221,11 +221,7 @@ object Asts {
     override def children: List[Ast] = optTypeAnnot.toList ++ rhsOpt
   }
 
-  sealed abstract class FormulaExpr extends Expr
-
-  sealed abstract class NonFormulaExpr extends Expr
-
-  sealed abstract class Literal extends FormulaExpr {
+  sealed abstract class Literal extends Expr {
     final override def children: List[Ast] = Nil
   }
 
@@ -263,34 +259,34 @@ object Asts {
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
    */
-  final case class VariableRef(name: FunOrVarId) extends FormulaExpr {
+  final case class VariableRef(name: FunOrVarId) extends Expr {
     override def children: List[Ast] = Nil
   }
 
-  final case class ThisRef() extends FormulaExpr {
+  final case class ThisRef() extends Expr {
     override def children: List[Ast] = Nil
   }
 
-  final case class ItRef() extends FormulaExpr {
+  final case class ItRef() extends Expr {
     override def children: List[Ast] = Nil
   }
 
-  final case class ObjectRef(objectName: TypeIdentifier) extends FormulaExpr {
+  final case class ObjectRef(objectName: TypeIdentifier) extends Expr {
     override def children: List[Ast] = Nil
   }
 
-  final case class TypeAscription(expr: Expr, tpe: TypeTree) extends NonFormulaExpr {
+  final case class TypeAscription(expr: Expr, tpe: TypeTree) extends Expr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
   /**
    * Function call: `callee(args)`
    */
-  final case class Call(callee: Expr, typeArgs: List[TypeTree], args: List[Expr]) extends FormulaExpr {
+  final case class Call(callee: Expr, typeArgs: List[TypeTree], args: List[Expr]) extends Expr {
     override def children: List[Ast] = callee :: typeArgs ++ args
   }
 
-  final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends NonFormulaExpr {
+  final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends Expr {
     override def children: List[Ast] = typeArgs ++ initializers
   }
 
@@ -306,19 +302,19 @@ object Asts {
     override def children: List[Ast] = Nil
   }
 
-  final case class UnaryOp(operator: Operator, operand: Expr) extends FormulaExpr {
+  final case class UnaryOp(operator: Operator, operand: Expr) extends Expr {
     override def children: List[Ast] = List(operand)
   }
 
-  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends FormulaExpr {
+  final case class BinaryOp(lhs: Expr, operator: Operator, rhs: Expr) extends Expr {
     override def children: List[Ast] = List(lhs, rhs)
   }
 
-  final case class Select(lhs: Expr, selected: FunOrVarId) extends FormulaExpr {
+  final case class Select(lhs: Expr, selected: FunOrVarId) extends Expr {
     override def children: List[Ast] = List(lhs)
   }
   
-  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block) extends NonFormulaExpr {
+  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block) extends Expr {
     override def children: List[Ast] = params.flatMap(_._2) :+ body
   }
 
@@ -389,7 +385,7 @@ object Asts {
    *   when cond then thenBr else elseBr
    * }}}
    */
-  final case class Ternary(cond: Expr, thenBr: Expr, elseBr: Expr) extends NonFormulaExpr with Conditional {
+  final case class Ternary(cond: Expr, thenBr: Expr, elseBr: Expr) extends Expr with Conditional {
     override def children: List[Ast] = List(cond, thenBr, elseBr)
 
     override def elseBrOpt: Option[Statement] = Some(elseBr)
@@ -436,18 +432,18 @@ object Asts {
   /**
    * Cast, e.g. `x as Int`
    */
-  final case class Cast(expr: Expr, tpe: TypeTree) extends NonFormulaExpr {
+  final case class Cast(expr: Expr, tpe: TypeTree) extends Expr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
   /**
    * Type test, e.g. `x is Foo`
    */
-  final case class TypeTest(expr: Expr, tpe: TypeTree) extends FormulaExpr {
+  final case class TypeTest(expr: Expr, tpe: TypeTree) extends Expr {
     override def children: List[Ast] = List(expr, tpe)
   }
 
-  final case class PanicExpr(msg: Expr) extends NonFormulaExpr {
+  final case class PanicExpr(msg: Expr) extends Expr {
     override def children: List[Ast] = List(msg)
   }
 

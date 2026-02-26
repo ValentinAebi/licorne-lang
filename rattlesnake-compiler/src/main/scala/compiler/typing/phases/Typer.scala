@@ -59,7 +59,7 @@ final class Typer(
       val (typedBody, cfAfterBody) = typeInstructions(untypedBody, cfAfterCond)
       (Loop(typedCond, typedBody, variables), cfAfterCond.merged(cfAfterBody))
     case Disjunction(cond, thenBr, elseBr, variables) => ???
-    case Assignment(assignedValue, rhs) => ???
+    case AssignVal(assignedValue, rhs) => ???
     case Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) => ???
     case MkClosure(assignedValue, params, body) => ???
     case Conversion(assignedValue, inValue, targetType) => ???

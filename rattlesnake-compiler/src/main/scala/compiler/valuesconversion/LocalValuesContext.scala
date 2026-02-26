@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ThisId}
 import compiler.irs.Asts
-import compiler.irs.ssa.SSA.IdValue
+import compiler.irs.ssa.Formulas.IdValue
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -97,7 +97,12 @@ object LocalValuesContext {
 
   def apply(globalValuesContext: GlobalValuesContext): LocalValuesContext = new LocalValuesContext(globalValuesContext, 0, new ExitManager())
 
-  sealed trait ValueQueryResult
+  sealed trait ValueQueryResult {
+    def toOption: Option[IdValue] = this match {
+      case result: ErrorValueQueryResult => None
+      case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
+    }
+  }
 
   sealed trait ErrorValueQueryResult extends ValueQueryResult
 
