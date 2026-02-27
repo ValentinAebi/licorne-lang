@@ -1,9 +1,9 @@
 package compiler.irs
 
+import compiler.egraphs.EGraph
 import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.Asts.Ast
 import compiler.irs.SSA.Scope.scopeUidGen
-import compiler.irs.egraphs.EGraph
 import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.{PrimitiveType, Type}

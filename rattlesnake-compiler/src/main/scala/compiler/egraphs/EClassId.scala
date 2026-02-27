@@ -1,4 +1,4 @@
-package compiler.irs.egraphs
+package compiler.egraphs
 
 import java.util.concurrent.atomic.AtomicLong
 

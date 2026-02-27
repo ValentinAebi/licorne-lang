@@ -1,4 +1,4 @@
-package compiler.irs.egraphs
+package compiler.egraphs
 
 import EGraph.ApproxMode
 import compiler.lang.Operator

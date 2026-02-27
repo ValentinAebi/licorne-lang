@@ -1,4 +1,4 @@
-package compiler.irs.egraphs
+package compiler.egraphs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.lang.Formulas.IdValue
