@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ThisId}
 import compiler.irs.Asts
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.lang.Formulas.IdValue
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}

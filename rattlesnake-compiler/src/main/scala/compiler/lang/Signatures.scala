@@ -1,10 +1,10 @@
 package compiler.lang
 
-import Field.StableField
-import Types.{NamedType, Type}
-import Keyword.{Sub, Super}
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.SSA.IdValue
+import compiler.lang.Field.StableField
+import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
+import compiler.lang.Keyword.{Sub, Super}
+import compiler.lang.Types.{NamedType, Type}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 
@@ -14,7 +14,7 @@ final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
                                     functionName: FunOrVarId,
                                     typeParams: List[FunctionTypeParamInfo],
-                                    paramsInclThis: SeqMap[IdValue, Type],
+                                    paramsInclThis: SeqMap[NamedIdValue, Type],
                                     retType: Type,
                                     visibility: Visibility,
                                     declPosOpt: Option[Position]
@@ -117,7 +117,7 @@ final case class InterfaceSignature(
                                      directSupertypes: List[NamedType],
                                      declPosOpt: Option[Position]
                                    )
-  extends RuntimeTypeSignature, TypeParametric, Encapsulated
+  extends RuntimeTypeSignature, Abstract, TypeParametric, Encapsulated
 
 final case class ClassSignature(
                                  id: TypeIdentifier,

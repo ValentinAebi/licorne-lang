@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.SSA.*
+import compiler.irs.SSA.*
 import compiler.lang.*
 import compiler.lang.Field.*
 import compiler.lang.Formulas.*
@@ -28,230 +28,208 @@ final class Typer(
                  )(using CompilationStep) {
 
   def typeFunction(function: Function, ownerTypeParamsCtx: TypeParamsContext)
-                  (using subtypingCtx: SubtypingContext): Function = {
+                  (using subtypingCtx: SubtypingContext): Unit = {
     val Function(ownerId, funId, bodyOpt, posOpt) = function
     val funSig = resolutionCtx.resolveFunSig(ownerId, funId).forceGetFunSig
 
     given TypeParamsContext = ownerTypeParamsCtx.extendedWith(funSig.typeParams)
 
-    Function(ownerId, funId, bodyOpt.map { bodyUntyped =>
-      val (bodyTyped, _) = typeInstructions(bodyUntyped, ControlFlowInfo.emptyEnabled(subtypingCtx))
-      bodyTyped
-    }, posOpt)
+    bodyOpt.foreach { body =>
+      typeInstructions(body, ControlFlowInfo.emptyEnabled(subtypingCtx))
+    }
   }
 
-  def typeInstructions(untypedInstructions: List[Instr], cfIn: ControlFlowInfo)
-                      (using typeParamsCtx: TypeParamsContext): (List[Instr], ControlFlowInfo) = {
+  def typeInstructions(scope: Scope, cfIn: ControlFlowInfo)
+                      (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = {
     var cf = cfIn
     val typedInstructionsB = List.newBuilder[Instr]
-    for (untypedInstr <- untypedInstructions) {
-      val (typedInstr, newCf) = typeInstr(untypedInstr, cf)
-      cf = newCf
-      typedInstructionsB.addOne(typedInstr)
+    for (untypedInstr <- scope.instructions) {
+      cf = typeInstr(untypedInstr, cf)
     }
-    (typedInstructionsB.result(), cf)
+    cf
   }
 
   def typeInstr(instr: Instr, cfIn: ControlFlowInfo)
-               (using typeParamsCtx: TypeParamsContext): (Instr, ControlFlowInfo) = instr match {
-    case Loop(untypedCond, untypedBody, variables) =>
-      val (typedCond, cfAfterCond) = typeFormula(untypedCond, cfIn)
-      val (typedBody, cfAfterBody) = typeInstructions(untypedBody, cfAfterCond)
-      (Loop(typedCond, typedBody, variables), cfAfterCond.merged(cfAfterBody))
-    case Disjunction(cond, thenBr, elseBr, variables) => ???
-    case AssignVal(assignedValue, rhs) => ???
-    case Instantiate(assignedValue, classOrRecordName, typeArgs, initialization) => ???
-    case MkClosure(assignedValue, params, body) => ???
-    case Conversion(assignedValue, inValue, targetType) => ???
+               (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = instr match {
+    case Loop(cond, condVal, body, variables) => ???
+    case Disjunction(condVal, thenBr, elseBr, variables) => ???
     case StaticTypeAssert(value, tpe) => ???
-    case FieldWrite(owner, fieldName, rhs) => ???
+    case StaticAssert(value) => ???
+    case instr: AssigningInstr => ???
+    case FieldWrite(owner, field, rhs) => ???
     case Return(retVal) => ???
     case Panic(msg) => ???
     case Cast(inValue, target) => ???
+    case Drop(droppedValue) => ???
     case LocalDecl(localId, tpe) => ???
-    case ErrorInstr(instrOpt, errorMsg) =>
-      throw AssertionError(s"unexpected error instruction with message \"$errorMsg\"")
+    case scope: Scope => ???
   }
 
-  def typeFormula(formula: Formula, cfIn: ControlFlowInfo)
-                 (using typeParamsCtx: TypeParamsContext): (TypedFormula, ControlFlowInfo) = formula match {
+  def typeFormula(formula: Formula)
+                 (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = formula match {
     case value: IdValue => ???
-    case constant: Constant => ???
-    case Plus(lhs, rhs) => ???
-    case Minus(lhs, rhs) => ???
-    case Times(lhs, rhs) => ???
-    case Div(lhs, rhs) => ???
-    case Rem(lhs, rhs) => ???
-    case And(lhs, rhs) => ???
-    case Or(lhs, rhs) => ???
-    case LessThan(lhs, rhs) => ???
-    case LessOrEq(lhs, rhs) => ???
-    case Equal(lhs, rhs) => ???
+    case IntConst(value) => ???
+    case BoolConst(value) => ???
+    case StringConst(value) => ???
+    case Select(owner, field) => ???
+    case Sum(terms) => ???
     case Neg(operand) => ???
-    case Not(operand) => ???
-    case Call(receiver, funId, typeArgs, args) => ???
-    case ClosureInvocation(closure, args) => ???
-    case Select(owner, fieldName) => ???
-    case HasType(formula, tpe) => ???
-    case typed: TypedFormula =>
-      throw AssertionError(s"unexpected typed construct in first typing phase")
+    case Times(terms) => ???
+    case DivBy(lhs, rhs) => ???
+    case Modulo(lhs, rhs) => ???
   }
-
-  def typeFormulaNoCf(formula: Formula)(using typeParamsCtx: TypeParamsContext): TypedFormula =
-    typeFormula(formula, ControlFlowInfo.disabled)._1
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], posOpt: Option[Position])
-                        (using tParamsCtx: TypeParamsContext): Type = dealiasingCtx.dealiasType(tpe) match {
-    case primitiveType: PrimitiveType => primitiveType
+                        (using tParamsCtx: TypeParamsContext): Unit = dealiasingCtx.dealiasType(tpe) match {
+    case primitiveType: PrimitiveType => ()
     case namedType: NamedType => typeNamedTypeDealiased(namedType, ambientVarianceOpt, posOpt)
-    case ClosureType(params, result) =>
-      ClosureType(
-        params.map(dealiasAndTypeType(_, ambientVarianceOpt.map(_ * Contravariant), posOpt)),
-        dealiasAndTypeType(result, ambientVarianceOpt.map(_ * Covariant), posOpt)
-      )
-    case tv: TypeVariable => tv
-    case UnionType(types) => UnionType(types.map(dealiasAndTypeType(_, ambientVarianceOpt, posOpt)))
-    case IntersectionType(types) => IntersectionType(types.map(dealiasAndTypeType(_, ambientVarianceOpt, posOpt)))
+    case ClosureType(paramTypes, resultType) =>
+      for paramType <- paramTypes do {
+        dealiasAndTypeType(paramType, ambientVarianceOpt.map(_ * Contravariant), posOpt)
+      }
+      dealiasAndTypeType(resultType, ambientVarianceOpt.map(_ * Covariant), posOpt)
+    case tv: TypeVariable => ()
+    case UnionType(types) =>
+      for tpe <- types do {
+        dealiasAndTypeType(tpe, ambientVarianceOpt, posOpt)
+      }
+    case IntersectionType(types) =>
+      for tpe <- types do {
+        dealiasAndTypeType(tpe, ambientVarianceOpt, posOpt)
+      }
     case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
-      val typedLowerBoundOpt = untypedLowerBoundOpt.map(typeFormulaNoCf)
-      val typedUpperBoundOpt = untypedUpperBoundOpt.map(typeFormulaNoCf)
-      IntRangeType(typedLowerBoundOpt, typedUpperBoundOpt)
+      untypedLowerBoundOpt.foreach { typeFormula(_) }
+      untypedUpperBoundOpt.foreach { typeFormula(_) }
   }
 
   def typeNamedTypeDealiased(namedType: NamedType, ambientVarianceOpt: Option[Variance], posOpt: Option[Position])
-                            (using typeParamsCtx: TypeParamsContext): NamedType = {
+                            (using typeParamsCtx: TypeParamsContext): Unit = {
     val NamedType(typeName, typeArgs, args) = namedType
     if (args.nonEmpty) {
       er.reportError(s"unexpected value arguments for type $typeName", posOpt)
     }
-
-    def fallbackNamedType =
-      NamedType(typeName, typeArgs.map(dealiasAndTypeType(_, None, posOpt)),
-        typeArgsList(typeName, args.size /* avoid redundant error */ , args, ControlFlowInfo.disabled, posOpt)._1)
-
     typeParamsCtx.resolve(typeName) match {
       case Some(tpInfo) =>
         if (typeArgs.nonEmpty) {
           er.reportError(s"$typeName is a type variable, hence it cannot take type arguments", posOpt)
         }
-        fallbackNamedType
       case None => resolutionCtx.resolveTypeSig(typeName) match {
         case Some(sig) =>
-          val typedTypeArgs = typeTypeArgsList(typeName, sig.typeParams, typeArgs, ambientVarianceOpt, posOpt)
-          val (typedArgs, _) = typeArgsList(typeName, sig.params.size, args, ControlFlowInfo.disabled, posOpt)
-          NamedType(typeName, typedTypeArgs, typedArgs)
+          typeTypeArgsList(typeName, sig.typeParams, typeArgs, ambientVarianceOpt, posOpt)
+          typeArgsList(typeName, sig.params.size, args, posOpt)
         case None =>
           er.reportError(s"type not found: $typeName", posOpt)
-          fallbackNamedType
       }
     }
   }
 
-  def typeField(field: Field, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext): Field = field match {
-    case ReassignableField(id, tpe) => ReassignableField(id, dealiasAndTypeType(tpe, Some(Invariant), posOpt))
+  def typeField(field: Field, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext): Unit = field match {
+    case ReassignableField(id, tpe) => dealiasAndTypeType(tpe, Some(Invariant), posOpt)
     case field: StableField => typeStableField(field, posOpt)
   }
 
   def typeStableField(field: StableField, posOpt: Option[Position])
-                     (using typeParamsCtx: TypeParamsContext): StableField = {
+                     (using typeParamsCtx: TypeParamsContext): Unit = {
     val StableField(id, tpe, value) = field
-    StableField(id, dealiasAndTypeType(tpe, Some(Covariant), posOpt), value)
+    dealiasAndTypeType(tpe, Some(Covariant), posOpt)
   }
 
+  // TODO merge with typeFunTypeParam?
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, posOpt: Option[Position])
-                       (using typeParamsCtx: TypeParamsContext): TypeTypeParamInfo = {
+                       (using typeParamsCtx: TypeParamsContext): Unit = {
     val TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt) = typeTypeParamInfo
-    TypeTypeParamInfo(tid, variance,
-      upperBoundOpt.map(dealiasAndTypeType(_, None, posOpt)),
-      lowerBoundOpt.map(dealiasAndTypeType(_, None, posOpt))
-    )
+    upperBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
+    lowerBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
   }
 
   def typeFunTypeParam(functionTypeParamInfo: FunctionTypeParamInfo, posOpt: Option[Position])
-                      (using typeParamsCtx: TypeParamsContext): FunctionTypeParamInfo = {
+                      (using typeParamsCtx: TypeParamsContext): Unit = {
     val FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt) = functionTypeParamInfo
-    FunctionTypeParamInfo(tid,
-      upperBoundOpt.map(dealiasAndTypeType(_, None, posOpt)),
-      lowerBoundOpt.map(dealiasAndTypeType(_, None, posOpt))
-    )
+    upperBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
+    lowerBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
   }
 
-  def typeFunSig(functionSignature: FunctionSignature)(using typeParamsCtx: TypeParamsContext): FunctionSignature = {
+  def typeFunSig(functionSignature: FunctionSignature)(using typeParamsCtx: TypeParamsContext): Unit = {
     val FunctionSignature(ownerName, functionName, typeParams,
       paramsInclThis, retType, visibility, declPosOpt) = functionSignature
-    FunctionSignature(ownerName, functionName, typeParams.map(typeFunTypeParam(_, functionSignature.declPosOpt)),
-      paramsInclThis.mapVals(dealiasAndTypeType(_, Some(Contravariant), functionSignature.declPosOpt)),
-      dealiasAndTypeType(retType, Some(Covariant), functionSignature.declPosOpt),
-      visibility, declPosOpt)
+    for typeParam <- typeParams do {
+      typeFunTypeParam(typeParam, functionSignature.declPosOpt)
+    }
+    for (paramId, paramType) <- paramsInclThis do {
+      dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.declPosOpt)
+    }
+    dealiasAndTypeType(retType, Some(Covariant), functionSignature.declPosOpt)
   }
 
-  def typeInterfaceSig(interfaceSig: InterfaceSignature): InterfaceSignature = {
+  def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
     val InterfaceSignature(id, typeParams, functions, directSupertypes, declPosOpt) = interfaceSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
     
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    InterfaceSignature(id,
-      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
-      functions.mapVals(typeFunSig),
-      typeSupertypesAsInterfaces(interfaceSig, resolutionCtx),
-      declPosOpt
-    )
+    for typeParam <- typeParams do {
+      typeTypeTypeParam(typeParam, declPosOpt)
+    }
+    for (_, funSig) <- functions do {
+      typeFunSig(funSig)
+    }
+    typeSupertypesAsInterfaces(interfaceSig, resolutionCtx)
   }
 
-  def typeClassSig(classSig: ClassSignature): ClassSignature = {
+  def typeClassSig(classSig: ClassSignature): Unit = {
     val ClassSignature(id, typeParams, fields, functions, directSupertypes, declPosOpt) = classSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
     
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    ClassSignature(id,
-      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
-      fields.mapVals(typeField(_, declPosOpt)),
-      functions.mapVals(typeFunSig),
-      typeSupertypesAsInterfaces(classSig, resolutionCtx),
-      declPosOpt
-    )
+    for tp <- typeParams do {
+      typeTypeTypeParam(tp, declPosOpt)
+    }
+    for (_, fld) <- fields do {
+      typeField(fld, declPosOpt)
+    }
+    for (_, funSig) <- functions do {
+      typeFunSig(funSig)
+    }
+    typeSupertypesAsInterfaces(classSig, resolutionCtx)
   }
 
-  def typeObjectSig(objSig: ObjectSignature): ObjectSignature = {
+  def typeObjectSig(objSig: ObjectSignature): Unit = {
     val ObjectSignature(id, functions, directSupertypes, declPosOpt) = objSig
 
     given TypeParamsContext = TypeParamsContext.empty
     
-    ObjectSignature(id,
-      functions.mapVals(typeFunSig),
-      typeSupertypes(objSig, "interface", resolutionCtx),
-      declPosOpt
-    )
+    for (_, funSig) <- functions do {
+      typeFunSig(funSig)
+    }
+    typeSupertypes(objSig, "interface", resolutionCtx)
   }
 
-  def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
+  def typeDatatypeSig(datatypeSig: DatatypeSignature): Unit = {
     val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, declPosOpt) = datatypeSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
-    
+
+    for typeParam <- typeParams do {
+      typeTypeTypeParam(typeParam, declPosOpt)
+    }
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    DatatypeSignature(id,
-      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
-      typeSupertypesAsDatatypes(datatypeSig, resolutionCtx),
-      directSubtypes,
-      declPosOpt
-    )
+    typeSupertypesAsDatatypes(datatypeSig, resolutionCtx)
   }
 
-  def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
+  def typeRecordSig(recordSig: RecordSignature): Unit = {
     val RecordSignature(id, typeParams, fields, directSupertypes, declPosOpt) = recordSig
     
     given TypeParamsContext = TypeParamsContext(typeParams)
     
+    for typeParam <- typeParams do {
+      typeTypeTypeParam(typeParam, declPosOpt)
+    }
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    RecordSignature(id,
-      typeParams.map(typeTypeTypeParam(_, declPosOpt)),
-      fields.mapVals(typeStableField(_, declPosOpt)),
-      typeSupertypesAsDatatypes(recordSig, resolutionCtx),
-      declPosOpt
-    )
+    for (_, fld) <- fields do {
+      typeStableField(fld, declPosOpt)
+    }
+    typeSupertypesAsDatatypes(recordSig, resolutionCtx)
   }
 
   private def checkTypeParamsAreDistinct(typeParams: Iterable[TypeParamInfo], posOpt: Option[Position]): Unit = {
@@ -263,26 +241,23 @@ final class Typer(
     }
   }
 
-  private def typeSupertypesAsInterfaces(sig: Encapsulated, resolutionCtx: ResolutionContext): List[NamedType] =
+  private def typeSupertypesAsInterfaces(sig: Encapsulated, resolutionCtx: ResolutionContext): Unit =
     typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx)
 
-  private def typeSupertypesAsDatatypes(sig: Unencapsulated, resolutionCtx: ResolutionContext): List[NamedType] =
+  private def typeSupertypesAsDatatypes(sig: Unencapsulated, resolutionCtx: ResolutionContext): Unit =
     typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx)
 
-  private def typeSupertypes[S <: Abstract : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): List[NamedType] = {
-    val typedDirectSuperTypesB = List.newBuilder[NamedType]
+  private def typeSupertypes[S <: Abstract : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): Unit = {
     for (superT <- sig.directSupertypes) {
       dealiasingCtx.dealiasType(superT) match {
         case namedType: NamedType =>
           if (resolutionCtx.resolveTypeSigAs[S](superT.typeName).isEmpty) {
             er.reportError(s"$superTKindDescr not found: ${superT.typeName}", sig.declPosOpt)
           }
-          typedDirectSuperTypesB.addOne(namedType)
         case dealiasedSuperT =>
           er.reportError(s"type $superT expands to $dealiasedSuperT, which cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
     }
-    typedDirectSuperTypesB.result()
   }
 
   private def checkSupertypesOfUnencapsulated(sig: Unencapsulated, resolutionCtx: ResolutionContext): Unit = {
@@ -294,34 +269,26 @@ final class Typer(
   }
 
   private def typeTypeArgsList(tid: TypeIdentifier, tParams: List[TypeParamInfo], tArgs: List[Type], ambientVarianceOpt: Option[Variance], posOpt: Option[Position])
-                              (using TypeParamsContext): List[Type] = {
+                              (using TypeParamsContext): Unit = {
     if (tParams.size != tArgs.size) {
       er.reportError(s"wrong number of type parameters for $tid: expected ${tParams.size}, was ${tArgs.size}", posOpt)
     }
-    val typedTArgsB = List.newBuilder[Type]
     val tInfosIter = tParams.iterator
     for (tArg <- tArgs) {
       val nestedAmbientVariance = tInfosIter.nextOption().flatMap(expVariance(ambientVarianceOpt, _))
-      val typedTArg = dealiasAndTypeType(tArg, nestedAmbientVariance, posOpt)
-      typedTArgsB.addOne(typedTArg)
+      dealiasAndTypeType(tArg, nestedAmbientVariance, posOpt)
     }
-    typedTArgsB.result()
   }
 
   // TODO maybe collect params -> args mapping for dependent typing
-  private def typeArgsList(tid: TypeIdentifier, expParamsCnt: Int, args: List[Formula], cfIn: ControlFlowInfo, posOpt: Option[Position])
-                          (using TypeParamsContext): (List[TypedFormula], ControlFlowInfo) = {
+  private def typeArgsList(tid: TypeIdentifier, expParamsCnt: Int, args: List[Formula], posOpt: Option[Position])
+                          (using TypeParamsContext): Unit = {
     if (args.size == expParamsCnt) {
       er.reportError(s"wrong number of parameters for $tid: expected $expParamsCnt, was ${args.size}", posOpt)
     }
-    var cf = cfIn
-    val typedArgsB = List.newBuilder[TypedFormula]
     for (arg <- args) {
-      val (typedArg, cfAfterArgEval) = typeFormula(arg, cf)
-      cf = cfAfterArgEval
-      typedArgsB.addOne(typedArg)
+      typeFormula(arg)
     }
-    (typedArgsB.result(), cf)
   }
 
   private def expVariance(ambientVarianceOpt: Option[Variance], tParam: TypeParamInfo): Option[Variance] = (tParam, ambientVarianceOpt) match {

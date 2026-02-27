@@ -1,10 +1,10 @@
 package compiler.lang
 
-import Formulas.{Equal, IdValue, IntConstant, Not}
-import Operator.*
-import Types.PrimitiveType.*
-import Types.Type
 import compiler.identifiers.{ItId, TypeIdentifier}
+import compiler.irs.SSA.Equal
+import compiler.lang.Operator.*
+import compiler.lang.Types.PrimitiveType.*
+import compiler.lang.Types.Type
 
 import scala.annotation.targetName
 
@@ -30,12 +30,6 @@ object Operators {
   final case class BinaryOpSignature(leftOperandType: Type, op: Operator, rightOperandType: Type, retType: Type)
     extends OperatorSignature {
     override def toString: String = s"$leftOperandType $op $rightOperandType -> $retType"
-  }
-
-  private val nzi$it = new IdValue {
-    override def completeDescr: String = "nzi$it"
-
-    override def sourceLevelDescrOrDefault: String = completeDescr
   }
   
   private val nonZeroInt = IntType  // FIXME use refinements

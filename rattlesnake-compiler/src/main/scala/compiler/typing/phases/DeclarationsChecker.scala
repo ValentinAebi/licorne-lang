@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.SSA
+import compiler.irs.SSA
 import compiler.lang.*
 import compiler.lang.Formulas.IdValue
 import compiler.lang.Types.{NamedType, Type, primTypeFor}
@@ -12,6 +12,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.typing.TypeStore
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.util.mapVals
@@ -27,37 +28,25 @@ final class DeclarationsChecker(
 
   private given CompilationStep = DeclarationsAnalysis
 
-  override def apply(oldProgram: Program): Program = {
-    val dealiasingCtx = DealiasingContext(oldProgram.typeAliases)
+  override def apply(program: Program): Program = {
+    val dealiasingCtx = DealiasingContext(program.typeAliases)
+    val resolutionCtx = ResolutionContext.fromProgram(program)
     val typer = Typer(
       dealiasingCtx,
-      ResolutionContext.fromProgram(oldProgram),
+      resolutionCtx,
       typeVarsCtx,
       er
     )
-    val newProgram = Program(
-      oldProgram.globalValuesContext,
-      oldProgram.interfaces.mapVals(typer.typeInterfaceSig),
-      oldProgram.classes.mapVals(typer.typeClassSig),
-      oldProgram.objects.mapVals(typer.typeObjectSig),
-      oldProgram.datatypes.mapVals(typer.typeDatatypeSig),
-      oldProgram.records.mapVals(typer.typeRecordSig),
-      oldProgram.typeAliases,
-      oldProgram.functions
-    )
     er.displayAndTerminateIfErrors()
-
-    val newResolutionCtx = ResolutionContext.fromProgram(newProgram)
-    val subtypingGraph = buildSubtypingGraph(newProgram)
-    checkSubtypingCyclicity(subtypingGraph, newResolutionCtx)
-    er.displayAndTerminateIfErrors()
-
-    val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, newResolutionCtx)
-    er.displayAndTerminateIfErrors()
-
-    val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps,
-      dealiasingCtx, newResolutionCtx, er)
     
+    val subtypingGraph = buildSubtypingGraph(program)
+    checkSubtypingCyclicity(subtypingGraph, resolutionCtx)
+    er.displayAndTerminateIfErrors()
+
+    val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, resolutionCtx)
+    er.displayAndTerminateIfErrors()
+
+    val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, er)
 
     ???
   }
@@ -175,7 +164,7 @@ final class DeclarationsChecker(
                   for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
                     val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
                     if (subParamType != expectedSubParamType) {
-                      er.reportError(s"type mismatch on parameter ${subParamVal.sourceLevelDescrOrDefault} of method $funId: " +
+                      er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funId: " +
                         s"type is $subParamType but should be $expectedSubParamType since the method overrides $funId in $superTSubst", subFunDeclPosOpt)
                     }
                     valsSubst(superParamVal) = subParamVal

@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.lang.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
@@ -10,7 +10,7 @@ trait ValuesContext {
 
   val globalCtx: GlobalValuesContext
 
-  def resolveObject(objectId: TypeIdentifier): IdValue
+  def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue
 
   def deepCopyWithSameGlobalCtx: ValuesContext
 

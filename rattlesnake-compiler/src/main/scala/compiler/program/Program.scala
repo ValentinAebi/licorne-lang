@@ -2,8 +2,8 @@ package compiler.program
 
 import compiler.datastructures.Graph
 import compiler.identifiers.{ThisId, TypeIdentifier}
-import compiler.irs.ssa.SSA
-import compiler.lang.Formulas.{And, Formula, IdValue}
+import compiler.irs.SSA
+import compiler.lang.Formulas.{Formula, IdValue}
 import compiler.lang.Types.PrimitiveType.UnitType
 import compiler.lang.Types.{PrimitiveType, Type, TypeVariable}
 import compiler.lang.Visibility.Private

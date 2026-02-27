@@ -1,7 +1,6 @@
 package compiler.typing.phases
 
 import compiler.identifiers.FunOrVarId
-import compiler.lang.Formulas.{Formula, Value}
 import compiler.lang.Types.PrimitiveType.UnitType
 import compiler.lang.Types.{Type, UnionType}
 import compiler.lang.{ClassSignature, RecordSignature, RuntimeTypeSignature, Types}
@@ -10,13 +9,14 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
+import compiler.typing.TypeStore
 import compiler.typing.smartcasting.ControlFlowInfo
 
-final class TypeChecker(er: ErrorReporter) extends CompilerStep[(Program, TypeStore), (Program, TypeStore)] {
+final class TypeChecker(er: ErrorReporter, typeStore: TypeStore) extends CompilerStep[Program, Program] {
   
   private given CompilationStep = TypeChecking
 
-  override def apply(input: (Program, TypeStore)): (Program, TypeStore) = {
+  override def apply(input: Program): Program = {
     ???
   }
   

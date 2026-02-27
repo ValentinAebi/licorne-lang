@@ -1,7 +1,7 @@
 package compiler.irs.egraphs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.SSA.IdValue
+import compiler.lang.Formulas.IdValue
 import compiler.lang.Types.Type
 import compiler.util.SeqSet
 
@@ -12,7 +12,7 @@ sealed abstract class ENode {
   def subst(target: EClassId, repl: EClassId): Unit
   def children: SeqSet[EClassId]
   
-  def copy: ENode
+  def deepCopy: ENode
   
   var classId: EClassId = uninitialized
 }
@@ -20,7 +20,9 @@ sealed abstract class ENode {
 sealed trait ConstNode extends ENode {
   def compareTo(that: ConstNode): ConstNode.ComparisonResult
 
-  override def subst(target: EClassId, repl: EClassId): ENode = this
+  override def deepCopy: ENode = this
+
+  override def subst(target: EClassId, repl: EClassId): Unit = ()
 
   override def children: SeqSet[EClassId] = SeqSet.empty
 }
@@ -60,7 +62,7 @@ final case class IntConstNode(value: Int) extends ConstNode {
 
   override def compareTo(that: ConstNode): ConstNode.ComparisonResult = {
     import ConstNode.ComparisonResult.*
-    import `this`.value as l
+    val l = this.value
     that match {
       case IntConstNode(r) =>
         if l < r then Lt
@@ -83,6 +85,8 @@ final case class StringConstNode(value: String) extends ConstNode {
 
 final case class IdValNode(idVal: IdValue) extends ENode {
   override def subst(target: EClassId, repl: EClassId): Unit = ()
+
+  override def deepCopy: ENode = this
 
   override def children: SeqSet[EClassId] = SeqSet.empty
 }
@@ -109,12 +113,16 @@ sealed abstract class BinopNode extends ENode {
   override def children: SeqSet[EClassId] = SeqSet(lhs, rhs)
 }
 
-final case class SelectNode(var operand: EClassId, fieldId: FunOrVarId) extends UnopNode
+final case class SelectNode(var operand: EClassId, fieldId: FunOrVarId) extends UnopNode {
+  override def deepCopy: ENode = copy()
+}
 
 final case class SumNode(var children: SeqSet[EClassId]) extends ENode {
   override def subst(target: EClassId, repl: EClassId): Unit = {
     children = children.map(_.subst(target, repl))
   }
+  
+  override def deepCopy: ENode = copy()
 }
 
 object SumNode {
@@ -122,12 +130,17 @@ object SumNode {
     new SumNode(SeqSet(children))
 }
 
-final case class NegNode(var operand: EClassId) extends UnopNode
+final case class NegNode(var operand: EClassId) extends UnopNode {
+  override def deepCopy: ENode = copy()
+}
 
 final case class ProductNode(var children: SeqSet[EClassId]) extends ENode {
+  
   override def subst(target: EClassId, repl: EClassId): Unit = {
     children = children.map(_.subst(target, repl))
   }
+
+  override def deepCopy: ENode = copy()
 }
 
 object ProductNode {
@@ -135,23 +148,41 @@ object ProductNode {
     new ProductNode(SeqSet(children))
 }
 
-final case class DivNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class DivNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class RemNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class RemNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class NotNode(var operand: EClassId) extends UnopNode
+final case class NotNode(var operand: EClassId) extends UnopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class EqualityNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class EqualityNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class LessOrEqNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class LessOrEqNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class LessThanNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class LessThanNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class AndNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class AndNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class OrNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode
+final case class OrNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
+  override def deepCopy: ENode = copy()
+}
 
-final case class TypeTestNode(var operand: EClassId, tpe: TypeIdentifier) extends UnopNode
+final case class TypeTestNode(var operand: EClassId, tpe: TypeIdentifier) extends UnopNode {
+  override def deepCopy: ENode = copy()
+}
 
 extension (inline classId: EClassId) private inline def subst(inline target: EClassId, inline repl: EClassId): EClassId =
   if classId == target then repl else classId

@@ -9,12 +9,6 @@ import java.util.concurrent.atomic.AtomicLong
 
 object Types {
 
-  private val itForHashAndEquals = new IdValue {
-    override def completeDescr: String = "it$hash"
-
-    override def sourceLevelDescrOrDefault: String = "it"
-  }
-
   sealed trait Type {
     def principalType: PrincipalType
   }
@@ -134,7 +128,7 @@ object Types {
       case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
         typesSubst.apply(typeName)
       case NamedType(typeName, typeArgs, args) =>
-        NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(typesSubst, valsSubst)))
+        NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(valsSubst)))
       case tVar: TypeVariable => tVar
       case ClosureType(params, result) =>
         ClosureType(params.map(_.substitute(typesSubst, valsSubst)), result.substitute(typesSubst, valsSubst))
@@ -144,8 +138,8 @@ object Types {
         IntersectionType(types.map(_.substitute(typesSubst, valsSubst)))
       case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
         IntRangeType(
-          lowerBoundOpt.map(_.substitute(typesSubst, valsSubst)),
-          upperBoundOpt.map(_.substitute(typesSubst, valsSubst))
+          lowerBoundOpt.map(_.substitute(valsSubst)),
+          upperBoundOpt.map(_.substitute(valsSubst))
         )
     }
 

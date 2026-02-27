@@ -1,11 +1,12 @@
-package compiler.irs.ssa
+package compiler.irs
 
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.Asts.Ast
+import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.irs.egraphs.EGraph
-import compiler.irs.ssa.Formulas.*
-import compiler.lang.Types.{PrimitiveType, Type}
 import compiler.lang.*
+import compiler.lang.Formulas.*
+import compiler.lang.Types.{PrimitiveType, Type}
 import compiler.reporting.Position
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -30,7 +31,7 @@ object SSA {
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope], posOpt: Option[Position])
 
-  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, var bodyLastVal: IdValue) {
+  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) {
     override def toString: String = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
   }
 
@@ -43,8 +44,8 @@ object SSA {
 
   sealed trait ControlFlowInstr extends Instr
 
-  final case class Loop(condEval: Scope, cond: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr
-  final case class Disjunction(cond: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
+  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr
+  final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
   final case class StaticTypeAssert(value: IdValue, tpe: Type) extends Instr
   final case class StaticAssert(value: IdValue) extends Instr
 
@@ -78,7 +79,7 @@ object SSA {
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
-  final case class MkClosure(assigned: IdValue, params: List[(IdValue, Type)], var body: List[Instr]) extends AssigningInstr
+  final case class MkClosure(assigned: IdValue, params: List[(IdValue, Type)], var body: Scope) extends AssigningInstr
 
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
@@ -103,13 +104,30 @@ object SSA {
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
 
-    def localValuesContextOpt: Option[LocalValuesContext] = valuesCtx match {
+    val scopeUid: Long = scopeUidGen.incrementAndGet()
+
+    override def toString: String = {
+      val outerScopeDescr = outScopeOpt match {
+        case Some(outScope) => s" nested inside ${outScope.uidGen}"
+        case None => ""
+      }
+      s"scope $scopeUid (depth $depth)" + outerScopeDescr
+    }
+    
+    def getLocalValuesContextOpt: Option[LocalValuesContext] = valuesCtx match {
       case valuesCtx: LocalValuesContext => Some(valuesCtx)
       case _ => None
     }
 
     def getLocalValuesContextUnsafe: LocalValuesContext = valuesCtx.asInstanceOf[LocalValuesContext]
-
+    
+    def hasExited: Boolean = getLocalValuesContextOpt match {
+      case Some(localValsCtx) => localValsCtx.hasExited
+      case None => false
+    }
+    
+    export valuesCtx.globalCtx as globalValuesCtx
+    
     val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
 
     val depth: Int = outScopeOpt match {
@@ -140,8 +158,8 @@ object SSA {
       IntermediateIdValue(this, _, Some(nameHint))
     }
 
-    def newUninterpretedConst(descr: String): UninterpretedConst = newValue {
-      UninterpretedConst(descr, this, _)
+    def newUninterpretedConst(name: String): UninterpretedConstIdValue = newValue {
+      UninterpretedConstIdValue(name, this, _)
     }
 
     private def newValue[T <: IdValue](creation: Long => T): T = {
@@ -156,6 +174,8 @@ object SSA {
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
       new Scope(None, globalValuesCtx)
+      
+    private val scopeUidGen = new AtomicLong(0)
   }
 
 }

@@ -21,12 +21,12 @@ final class TypeAliasesAnalyzer(er: ErrorReporter, typeVarsCtx: TypeVariablesCon
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val typer = Typer(dealiasingCtx, ResolutionContext.fromProgram(program), typeVarsCtx, er)
-    val typedAliasesDefinitions = program.typeAliases.map { (tid, tsig) =>
+    for (tid, tsig) <- program.typeAliases do {
       val typeParamsCtx = TypeParamsContext(tsig.typeParams)
-      val typedRhs = typer.dealiasAndTypeType(tsig.rhs, None, tsig.declPosOpt)(using typeParamsCtx)
-      tid -> tsig.copy(rhs = typedRhs)
+      typer.dealiasAndTypeType(tsig.rhs, None, tsig.declPosOpt)(using typeParamsCtx)
     }
-    program.copy(typeAliases = typedAliasesDefinitions)
+    
+    program
   }
 
   private def checkTypeAliasesCyclicity(program: Program, resolutionCtx: ResolutionContext): Unit = {
@@ -45,7 +45,7 @@ final class TypeAliasesAnalyzer(er: ErrorReporter, typeVarsCtx: TypeVariablesCon
   private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = tpe match {
     case primitiveType: Types.PrimitiveType => Set.empty
     case NamedType(typeName, typeParams, params) =>
-      Set(typeName) ++ typeParams.flatMap(findMentionedTypes) ++ params.flatMap(findMentionedTypes)
+      Set(typeName) ++ typeParams.flatMap(findMentionedTypes)
     case _: TypeVariable => Set.empty
     case UnionType(types) =>
       types.flatMap(findMentionedTypes)
@@ -54,16 +54,7 @@ final class TypeAliasesAnalyzer(er: ErrorReporter, typeVarsCtx: TypeVariablesCon
     case ClosureType(params, resultType) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      lowerBoundOpt.toSet.flatMap(findMentionedTypes) ++ upperBoundOpt.toSet.flatMap(findMentionedTypes)
-  }
-
-  private def findMentionedTypes(formula: Formula): Set[TypeIdentifier] = formula match {
-    case value: Formulas.Value => Set.empty
-    case op: Formulas.BinOp => findMentionedTypes(op.lhs) ++ findMentionedTypes(op.rhs)
-    case op: Formulas.UnaryOp => findMentionedTypes(op.operand)
-    case Formulas.Call(receiver, funId, typeArgs, args) => findMentionedTypes(receiver) ++ typeArgs.flatMap(findMentionedTypes) ++ args.flatMap(findMentionedTypes)
-    case Formulas.Select(owner, fieldName) => findMentionedTypes(owner)
-    case Formulas.HasType(formula, tpe) => findMentionedTypes(formula) + tpe
+      Set.empty
   }
 
 }

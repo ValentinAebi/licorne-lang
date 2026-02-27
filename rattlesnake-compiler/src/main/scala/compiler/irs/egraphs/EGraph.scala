@@ -1,6 +1,5 @@
 package compiler.irs.egraphs
 
-import compiler.irs.ssa.SSA.IdValue
 import EGraph.ApproxMode
 import compiler.lang.Operator
 import compiler.util.SeqSet
@@ -34,7 +33,7 @@ final class EGraph private(private val gen: EClassId.Generator) {
     }
     for ((_, n) <- nodes) {
       val clId = n.classId
-      val newNode = n.copy
+      val newNode = n.deepCopy
       newGraph.nodes.put(newNode, newNode)
       newGraph.classes(clId).addNode(newNode)
       newGraph.saveChildrenMentions(newNode)
