@@ -29,13 +29,15 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNode
   }
 
-  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope], posOpt: Option[Position])
+  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
 
-  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) {
+  trait VarData
+
+  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) extends VarData {
     override def toString: String = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
   }
 
-  final case class DisjunctionVarData(varIdOpt: Option[FunOrVarId], afterThenVal: IdValue, afterElseVal: IdValue, joinedVal: IdValue) {
+  final case class DisjunctionVarData(varIdOpt: Option[FunOrVarId], afterThenVal: IdValue, afterElseVal: IdValue, joinedVal: IdValue) extends VarData {
     override def toString: String = {
       val varIdDescr = varIdOpt.getOrElse("")
       s"$varIdDescr: $joinedVal := phi($afterThenVal, $afterElseVal)"
@@ -69,17 +71,17 @@ object SSA {
   final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr
   final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
   final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  
+
   final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
   final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
   final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
 
   final case class FieldRead(assigned: IdValue, owner: IdValue, field: FieldResolutionTarget) extends AssigningInstr
-  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, args: List[IdValue]) extends AssigningInstr
+  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
-  final case class MkClosure(assigned: IdValue, params: List[(IdValue, Type)], var body: Scope) extends AssigningInstr
+  final case class MkClosure(assigned: IdValue, params: List[(ValIdValue, Type)], var body: Scope) extends AssigningInstr
 
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
@@ -113,21 +115,21 @@ object SSA {
       }
       s"scope $scopeUid (depth $depth)" + outerScopeDescr
     }
-    
+
     def getLocalValuesContextOpt: Option[LocalValuesContext] = valuesCtx match {
       case valuesCtx: LocalValuesContext => Some(valuesCtx)
       case _ => None
     }
 
     def getLocalValuesContextUnsafe: LocalValuesContext = valuesCtx.asInstanceOf[LocalValuesContext]
-    
+
     def hasExited: Boolean = getLocalValuesContextOpt match {
       case Some(localValsCtx) => localValsCtx.hasExited
       case None => false
     }
-    
+
     export valuesCtx.globalCtx as globalValuesCtx
-    
+
     val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
 
     val depth: Int = outScopeOpt match {
@@ -169,12 +171,14 @@ object SSA {
   }
 
   object Scope {
-    def nestedInside(outScope: Scope): Scope =
-      new Scope(Some(outScope), outScope.getLocalValuesContextUnsafe.deepCopyWithSameGlobalCtx)
+
+    def nestedInside(outScope: Scope): Scope = {
+      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
+    }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
       new Scope(None, globalValuesCtx)
-      
+
     private val scopeUidGen = new AtomicLong(0)
   }
 

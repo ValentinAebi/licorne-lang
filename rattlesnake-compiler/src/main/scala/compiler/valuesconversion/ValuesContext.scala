@@ -13,6 +13,8 @@ trait ValuesContext {
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue
 
   def deepCopyWithSameGlobalCtx: ValuesContext
+  
+  def withOneMoreFrame: LocalValuesContext
 
   private[valuesconversion] def queryLocal(id: FunOrVarId): Option[LocalInfo]
 

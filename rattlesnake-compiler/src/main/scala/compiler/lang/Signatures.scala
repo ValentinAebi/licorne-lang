@@ -171,6 +171,11 @@ enum Field {
     case _: ReassignableField => false
     case _: StableField => true
   }
+
+  override def toString: String = this match {
+    case Field.ReassignableField(id, tpe) => s"${Keyword.Var} $id: $tpe"
+    case Field.StableField(id, tpe, value) => s"$value: $tpe"
+  }
 }
 
 sealed trait TypeParamInfo {

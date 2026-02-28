@@ -42,6 +42,8 @@ final class GlobalValuesContext extends ValuesContext {
 
   override def deepCopyWithSameGlobalCtx: ValuesContext = this
 
+  override def withOneMoreFrame: LocalValuesContext = LocalValuesContext(this)
+
   override private[valuesconversion] def queryLocal(id: FunOrVarId): Option[ValuesContext.LocalInfo] = None
 
 }

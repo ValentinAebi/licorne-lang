@@ -246,9 +246,9 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
       for (stat <- body.stats) {
         generateSSA(stat, funScope)
       }
-      SSA.Function(owner, funId, Some(funScope), posOpt)
+      SSA.Function(owner, funId, Some(funScope))
     case None =>
-      SSA.Function(owner, funId, None, posOpt)
+      SSA.Function(owner, funId, None)
   }
 
   private def generateSSA(stat: Asts.Statement, currScope: Scope): Unit = {
@@ -469,7 +469,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), argVals), expr)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
         val receiverVal = currScope.getLocalValuesContextUnsafe.getThisValue match {
@@ -480,7 +480,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), argVals), expr)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
@@ -567,7 +567,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
       case closureDefTree@Asts.ClosureDef(params, body) =>
         val bodyScope = Scope.nestedInside(currScope)
-        val paramValsAndTypesB = List.newBuilder[(IdValue, Type)]
+        val paramValsAndTypesB = List.newBuilder[(ValIdValue, Type)]
         for ((id, typeTreeOpt) <- params) {
           val paramVal = currScope.newVal(id)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, bodyScope))
@@ -590,10 +590,16 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
   private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = boundary {
     
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
-      val formulaOpt = expr match {
+
+      def failIllegalConstruct(constructKindDescr: String): Option[Formula] = {
+        er.reportError(s"illegal construct in formula: $constructKindDescr", expr.getPosition)
+        None
+      }
+
+      expr match {
         case Asts.IntLit(value) => Some(IntConst(value))
         case Asts.DoubleLit(value) => ???
-        case Asts.UnitLit() => None
+        case Asts.UnitLit() => failIllegalConstruct("unit literal")
         case Asts.CharLit(value) => ???
         case Asts.BoolLit(value) => Some(BoolConst(value))
         case Asts.StringLit(value) => Some(StringConst(value))
@@ -601,14 +607,30 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         case Asts.ThisRef() => currScope.getLocalValuesContextOpt.flatMap(_.getThisValue)
         case Asts.ItRef() => ???
         case Asts.ObjectRef(objectName) => Some(currScope.valuesCtx.resolveObject(objectName))
-        case Asts.TypeAscription(expr, tpe) => None
-        case Asts.Call(callee, typeArgs, args) => None
-        case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => None
+        case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
+        // TODO check that there are no side-effects (later)
+        // TODO non-prefixed calls (implicit this)?
+        case Asts.Call(callee, typeArgs, args) =>
+          val receiverAndFunIdOpt = callee match {
+            case Asts.VariableRef(funId) =>
+              currScope.getLocalValuesContextOpt.flatMap(_.getThisValue).map(_ -> funId)
+            case Asts.Select(lhs, funId) =>
+              generateFormula(lhs, currScope).map(_ -> funId)
+            case _ => failIllegalConstruct("closure invocation")
+          }
+          receiverAndFunIdOpt match {
+            case Some((receiverFormula, funId)) =>
+              val argFormulas = args.flatMap(generateFormula(_, currScope))
+              if argFormulas.size == args.size then Some(Call(receiverFormula, funId, argFormulas))
+              else None
+            case _ => None
+          }
+        case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
         case Asts.UnaryOp(Operator.Minus, operand) =>
           for {
             opFormula <- generateFormula(operand, currScope)
           } yield Neg(opFormula)
-        case _: Asts.UnaryOp => None
+        case expr: Asts.UnaryOp => failIllegalConstruct(s"\"${expr.operator}\" operator")
         case Asts.BinaryOp(lhs, Operator.Plus, rhs) =>
           for {
             lhsFormula <- generateFormula(lhs, currScope)
@@ -634,22 +656,18 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
           } yield Modulo(lhsFormula, rhsFormula)
-        case _: Asts.BinaryOp => None
+        case expr: Asts.BinaryOp => failIllegalConstruct(s"\"${expr.operator}\" operator")
         case Asts.Select(lhs, field) =>
           for {
             ownerFormula <- generateFormula(lhs, currScope)
           } yield Select(ownerFormula, field)
-        case Asts.ClosureDef(params, body) => None
-        case Asts.Ternary(cond, thenBr, elseBr) => None
-        case Asts.Cast(expr, tpe) => None
-        case Asts.TypeTest(expr, tpe) => None
-        case Asts.PanicExpr(msg) => None
+        case Asts.ClosureDef(params, body) => failIllegalConstruct("closure definition")
+        case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
+        case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
+        // TODO ideally should be allowed
+        case Asts.TypeTest(expr, tpe) => failIllegalConstruct("type test")
+        case Asts.PanicExpr(msg) => failIllegalConstruct("panic expression")
       }
-      if (formulaOpt.isEmpty){
-        er.reportError("illegal construct in formula", expr.getPosition)
-        boundary.break(None)
-      }
-      formulaOpt
     }
     
     generateFormula(expr, currScope)

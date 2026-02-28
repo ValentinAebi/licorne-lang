@@ -1,5 +1,6 @@
 package compiler.pipeline
 
+import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.Asts
@@ -49,8 +50,9 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(SSAGenerator(er))
       // FIXME this implementation is temporary
-      .andThen(??? /* actual compilation phases */)
-      .andThen(??? /* Printer */)
+      //.andThen(??? /* actual compilation phases */)
+      .andThen(Mapper(_._1))
+      .andThen(SSAPrinter("  "))
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))
   }

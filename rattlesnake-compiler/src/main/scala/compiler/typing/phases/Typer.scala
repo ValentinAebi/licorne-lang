@@ -29,7 +29,7 @@ final class Typer(
 
   def typeFunction(function: Function, ownerTypeParamsCtx: TypeParamsContext)
                   (using subtypingCtx: SubtypingContext): Unit = {
-    val Function(ownerId, funId, bodyOpt, posOpt) = function
+    val Function(ownerId, funId, bodyOpt) = function
     val funSig = resolutionCtx.resolveFunSig(ownerId, funId).forceGetFunSig
 
     given TypeParamsContext = ownerTypeParamsCtx.extendedWith(funSig.typeParams)

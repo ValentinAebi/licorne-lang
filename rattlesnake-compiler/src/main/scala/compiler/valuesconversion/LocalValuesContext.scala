@@ -15,10 +15,6 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int, val exitManager: ExitManager) extends ValuesContext {
-  nestedContext match {
-    case nestedContext: LocalValuesContext => require(!nestedContext.hasExited)
-    case _ => ()
-  }
 
   private val values = mutable.Map.empty[FunOrVarId, LocalInfo]
 
@@ -26,7 +22,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   export globalCtx.resolveObject
   export exitManager.{hasExited, reportHasExitedIfNeeded, markHasExited}
 
-  def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager)
+  def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager.copy)
 
   override def deepCopyWithSameGlobalCtx: LocalValuesContext = {
     val newExitManager = exitManager.copy
@@ -55,10 +51,10 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       case None => false
     }
   }
-  
+
   def saveOrRemap(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Unit = {
     val saved = saveNewLocal(id, value, reassigStatus, typeUpperBound)
-    if (!saved){
+    if (!saved) {
       remap(id, value)
     }
   }
@@ -70,7 +66,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       KnownButUninitialized(id, reassigStatus, typeUpperBound)
     case None => Unknown(id)
   }
-  
+
   def getThisValue: Option[IdValue] = valueOf(ThisId) match {
     case result: ErrorValueQueryResult => None
     case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
@@ -126,10 +122,9 @@ object LocalValuesContext {
     }
 
     def markHasExited(): Unit = {
-      if (exitedStatus != ExitedStatus.Active) {
-        throw IllegalStateException()
+      if (exitedStatus == ExitedStatus.Active) {
+        exitedStatus = ExitedStatus.HasExited
       }
-      exitedStatus = ExitedStatus.HasExited
     }
 
     def reportHasExitedIfNeeded(er: ErrorReporter, compilationStep: CompilationStep, posOpt: Option[Position]): Unit = {
