@@ -83,31 +83,27 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
   def directSupertypes: List[NamedType]
 }
 
-sealed trait Concrete {
-  this: RuntimeTypeSignature =>
-}
+sealed trait ConcreteTypeSig extends RuntimeTypeSignature
 
-sealed trait UserInstantiable {
-  this: Concrete =>
-
+sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
   def fields: SeqMap[FunOrVarId, Field]
 }
 
-sealed trait Abstract extends RuntimeTypeSignature {
-  this: RuntimeTypeSignature =>
-}
+sealed trait AbstractTypeSig extends RuntimeTypeSignature
 
-sealed trait Encapsulated extends RuntimeTypeSignature {
+sealed trait EncapsulatedTypeSig extends RuntimeTypeSignature {
   def functions: Map[FunOrVarId, FunctionSignature]
 }
 
-sealed trait Unencapsulated extends RuntimeTypeSignature {
+sealed trait UnencapsulatedTypeSig extends RuntimeTypeSignature {
   this: RuntimeTypeSignature =>
   def directSupertypes: List[NamedType]
 }
 
-sealed trait TypeParametric extends RuntimeTypeSignature {
+sealed trait TypeParametricTypeSig extends RuntimeTypeSignature {
   this: TypeSignature =>
+  
+  def typeParams: List[TypeTypeParamInfo]
 }
 
 final case class InterfaceSignature(
@@ -117,7 +113,7 @@ final case class InterfaceSignature(
                                      directSupertypes: List[NamedType],
                                      declPosOpt: Option[Position]
                                    )
-  extends RuntimeTypeSignature, Abstract, TypeParametric, Encapsulated
+  extends RuntimeTypeSignature, AbstractTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig
 
 final case class ClassSignature(
                                  id: TypeIdentifier,
@@ -127,7 +123,7 @@ final case class ClassSignature(
                                  directSupertypes: List[NamedType],
                                  declPosOpt: Option[Position]
                                )
-  extends RuntimeTypeSignature, Concrete, TypeParametric, Encapsulated, UserInstantiable
+  extends RuntimeTypeSignature, ConcreteTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig, UserInstantiableTypeSig
 
 final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
@@ -137,7 +133,7 @@ final case class ObjectSignature(
                                   directSupertypes: List[NamedType],
                                   declPosOpt: Option[Position]
                                 )
-  extends RuntimeTypeSignature, Abstract, Concrete, Encapsulated {
+  extends RuntimeTypeSignature, AbstractTypeSig, ConcreteTypeSig, EncapsulatedTypeSig {
   override def typeParams: List[TypeTypeParamInfo] = List.empty
 }
 
@@ -148,7 +144,7 @@ final case class DatatypeSignature(
                                     directSubtypes: SeqSet[TypeIdentifier],
                                     declPosOpt: Option[Position]
                                   )
-  extends RuntimeTypeSignature, Abstract, Unencapsulated, TypeParametric
+  extends RuntimeTypeSignature, AbstractTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig
 
 final case class RecordSignature(
                                   id: TypeIdentifier,
@@ -157,7 +153,7 @@ final case class RecordSignature(
                                   directSupertypes: List[NamedType],
                                   declPosOpt: Option[Position]
                                 )
-  extends RuntimeTypeSignature, Concrete, Unencapsulated, TypeParametric, UserInstantiable
+  extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig
 
 enum Field {
   case ReassignableField(id: FunOrVarId, tpe: Type)

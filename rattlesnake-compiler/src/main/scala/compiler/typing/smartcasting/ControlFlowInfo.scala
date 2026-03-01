@@ -3,7 +3,7 @@ package compiler.typing.smartcasting
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.{Formula, IdValue}
 import compiler.lang.Types.{NamedType, Type}
-import compiler.lang.{DatatypeSignature, Encapsulated, Formulas, RecordSignature, Unencapsulated}
+import compiler.lang.{DatatypeSignature, EncapsulatedTypeSig, Formulas, RecordSignature, UnencapsulatedTypeSig}
 import compiler.program.Program
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*

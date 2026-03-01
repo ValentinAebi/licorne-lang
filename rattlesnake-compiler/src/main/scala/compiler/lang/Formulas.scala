@@ -1,7 +1,7 @@
 package compiler.lang
 
 import compiler.identifiers.FunOrVarId
-import compiler.irs.SSA.Scope
+import compiler.irs.SSA.{FieldResolutionTarget, Scope}
 import compiler.util.SeqSet
 
 object Formulas {
@@ -36,7 +36,7 @@ object Formulas {
   final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c")
 
   final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHintOpt: Option[String]) extends IdValue {
-    override def toString: String = s"$uid@${definingScope.scopeUid}i"
+    override def toString: String = s"${"$"}$uid@${definingScope.scopeUid}i"
   }
 
   sealed trait ConstFormula extends Formula {
@@ -51,7 +51,7 @@ object Formulas {
 
   final case class StringConst(value: String) extends ConstFormula
 
-  final case class Select(owner: Formula, field: FunOrVarId) extends Formula {
+  final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
     override def toString: String = s"$owner.$field"
   }
   

@@ -39,8 +39,11 @@ object SSA {
 
   final case class DisjunctionVarData(varIdOpt: Option[FunOrVarId], afterThenVal: IdValue, afterElseVal: IdValue, joinedVal: IdValue) extends VarData {
     override def toString: String = {
-      val varIdDescr = varIdOpt.getOrElse("")
-      s"$varIdDescr: $joinedVal := phi($afterThenVal, $afterElseVal)"
+      val varIdDescr = varIdOpt match {
+        case Some(varId) => s"$varId: "
+        case None => ""
+      }
+      s"$varIdDescr$joinedVal := phi($afterThenVal, $afterElseVal)"
     }
   }
 
@@ -96,12 +99,26 @@ object SSA {
 
   enum FieldResolutionTarget {
     case Unresolved(fieldId: FunOrVarId)
-    case Resolved(receiver: IdValue, receiverSig: UserInstantiable, fieldId: FunOrVarId)
+    case Resolved(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId)
+
+    override def toString: String = this match {
+      case Unresolved(fieldId) =>
+        s"$fieldId<unres>"
+      case Resolved(receiverSig, fieldId) =>
+        s"$fieldId<res:${receiverSig.id}"
+    }
   }
 
   enum InvocationTarget {
     case Unresolved(funId: FunOrVarId)
     case Resolved(funSig: FunctionSignature)
+
+    override def toString: String = this match {
+      case Unresolved(funId) =>
+        s"$funId<unres>"
+      case Resolved(funSig) =>
+        s"${funSig.functionName}<res:${funSig.ownerName}>"
+    }
   }
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
@@ -179,7 +196,7 @@ object SSA {
     def root(globalValuesCtx: GlobalValuesContext): Scope =
       new Scope(None, globalValuesCtx)
 
-    private val scopeUidGen = new AtomicLong(0)
+    private val scopeUidGen = new AtomicLong(-1)
   }
 
 }

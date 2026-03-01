@@ -241,13 +241,13 @@ final class Typer(
     }
   }
 
-  private def typeSupertypesAsInterfaces(sig: Encapsulated, resolutionCtx: ResolutionContext): Unit =
+  private def typeSupertypesAsInterfaces(sig: EncapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit =
     typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx)
 
-  private def typeSupertypesAsDatatypes(sig: Unencapsulated, resolutionCtx: ResolutionContext): Unit =
+  private def typeSupertypesAsDatatypes(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit =
     typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx)
 
-  private def typeSupertypes[S <: Abstract : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): Unit = {
+  private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): Unit = {
     for (superT <- sig.directSupertypes) {
       dealiasingCtx.dealiasType(superT) match {
         case namedType: NamedType =>
@@ -260,7 +260,7 @@ final class Typer(
     }
   }
 
-  private def checkSupertypesOfUnencapsulated(sig: Unencapsulated, resolutionCtx: ResolutionContext): Unit = {
+  private def checkSupertypesOfUnencapsulated(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit = {
     for (superT <- sig.directSupertypes) {
       if (resolutionCtx.resolveTypeSigAs[DatatypeSignature](superT.typeName).isEmpty) {
         er.reportError(s"datatype not found: ${superT.typeName}", sig.declPosOpt)

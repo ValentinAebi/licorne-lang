@@ -21,21 +21,27 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
     for ((_, sig) <- program.typeAliases) {
       printTypeAlias(sig)
+      pps.newLine()
     }
     for ((_, sig) <- program.interfaces) {
       printInterface(sig)
+      pps.newLine()
     }
     for ((_, sig) <- program.classes) {
       printClass(sig)
+      pps.newLine()
     }
     for ((_, sig) <- program.objects) {
       printObject(sig)
+      pps.newLine()
     }
     for ((_, sig) <- program.datatypes) {
       printDatatype(sig)
+      pps.newLine()
     }
     for ((_, sig) <- program.records) {
       printRecord(sig)
+      pps.newLine()
     }
 
     pps.built
@@ -115,8 +121,10 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
                                            (using pps: PrettyPrintString, program: Program): Unit = {
     if (functions.nonEmpty) {
       pps.addSpace().block {
-        for ((_, funSig) <- functions) {
+        traverseIterable(functions.iterator) { (_, funSig) =>
           printFunction(funSig)
+        } {
+          pps.newLine()
         }
       }
     }
@@ -129,18 +137,24 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
     program.functions.get(funSig)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>
+        pps.addSpace()
         printScope(funBody)
       }
   }
 
   private def printScope(scope: Scope)(using pps: PrettyPrintString): Unit = {
-    pps.add(s"SCOPE").addSpace().add(scope.scopeUid).addSpace().block {
-      traverseIterable(scope.instructions.iterator) { instr =>
-        printInstr(instr)
-      } {
-        pps.newLine()
+    pps.add(s"SCOPE").addSpace().add(scope.scopeUid).addSpace()
+    if (scope.instructions.isEmpty) {
+      pps.add("{ /* empty */ }")
+    } else {
+      pps.block {
+        traverseIterable(scope.instructions.iterator) { instr =>
+          printInstr(instr)
+        } {
+          pps.newLine()
+        }
       }
-    }.newLine()
+    }
   }
 
   private def printFields(fields: Iterable[(FunOrVarId, Field)])
@@ -151,7 +165,7 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
         val (_, fld) = fields.head
         pps.add("(").add(fld.toString).add(")")
       case _ =>
-        pps.add("(").indent {
+        pps.add("(").indentln {
           traverseIterable(fields.iterator) { (_, fld) =>
             pps.add(fld.toString)
           } {
@@ -163,21 +177,23 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
   private def printInstr(instr: Instr)(using pps: PrettyPrintString): Unit = instr match {
     case SSA.Loop(cond, condVal, body, variables) =>
-      pps.add("LOOP").addSpace().indent {
-        printVarData(variables)
+      pps.add("LOOP").indentln {
         pps.add(s"cond [as $condVal]: ")
         printScope(cond)
-        pps.add("body: ")
+        pps.newLine().add("body: ")
         printScope(body)
+        pps.newLine()
+        printVarData(variables)
       }
       pps.add("END LOOP")
     case SSA.Disjunction(condVal, thenBr, elseBr, variables) =>
-      pps.add("IF [cond = ").add(condVal).add("]").indent {
-        printVarData(variables)
+      pps.add("IF [cond = ").add(condVal).add("]").indentln {
         pps.add("then: ")
         printScope(thenBr)
-        pps.add("else: ")
+        pps.newLine().add("else: ")
         printScope(elseBr)
+        pps.newLine()
+        printVarData(variables)
       }
       pps.add("END IF")
     case SSA.StaticTypeAssert(value, tpe) =>
@@ -191,7 +207,7 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
     case AssignBoolConst(assigned, src) =>
       pps.add(s"BOOLC $assigned := $src")
     case AssignStringConst(assigned, src) =>
-      pps.add(s"STRINGC $assigned := $src")
+      pps.add(s"STRINGC $assigned := \"$src\"")
     case NumNeg(assigned, operand) =>
       pps.add(s"NEG $assigned := -$operand")
     case Add(assigned, lhs, rhs) =>
@@ -252,13 +268,15 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
   }
 
   private def printTypeArgsList(typeArgs: List[Type])(using pps: PrettyPrintString): Unit = {
-    pps.add("[")
-    traverseIterable(typeArgs.iterator) { tArg =>
-      pps.add(tArg)
-    } {
-      pps.add(",")
+    if (typeArgs.nonEmpty) {
+      pps.add("[")
+      traverseIterable(typeArgs.iterator) { tArg =>
+        pps.add(tArg)
+      } {
+        pps.add(",")
+      }
+      pps.add("]")
     }
-    pps.add("]")
   }
 
   private def printArgsList(args: List[IdValue])(using pps: PrettyPrintString): Unit = {
@@ -272,11 +290,16 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
   }
 
   private def printVarData(variables: Iterable[VarData])(using pps: PrettyPrintString): Unit = {
-    pps.add("variables: ").indent {
-      traverseIterable(variables.iterator) { varData =>
-        pps.add(varData.toString)
-      } {
-        pps.newLine()
+    pps.add("variables: ")
+    if (variables.isEmpty) {
+      pps.add("<none>")
+    } else {
+      pps.indent {
+        traverseIterable(variables.iterator) { varData =>
+          pps.add(varData.toString)
+        } {
+          pps.newLine()
+        }
       }
     }
   }

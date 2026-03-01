@@ -139,7 +139,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
 
   private def collectFunctions(
                                 functionsProvider: Asts.EncapsulatedTypeDefTree,
-                                functionsProviderIncompleteSig: Encapsulated,
+                                functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
                                 allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
                               ): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
@@ -251,7 +251,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope): Unit = {
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean = true): Unit = {
 
     def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
       instr.setAstNode(node.originalAst)
@@ -265,7 +265,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         generateSSAExpr(resultValue, expr, currScope)
         saveInstr(Drop(resultValue), expr)
       case Asts.Block(stats) =>
-        val blockScope = Scope.nestedInside(currScope)
+        val blockScope = if newScopeIfBlock then Scope.nestedInside(currScope) else currScope
         for (stat <- stats) {
           generateSSA(stat, blockScope)
         }
@@ -322,10 +322,10 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         val condVal = currScope.newIntermediate("cond")
         generateSSAExpr(condVal, condTree, currScope)
         val thenScope = Scope.nestedInside(currScope)
-        generateSSA(thenTree, thenScope)
+        generateSSA(thenTree, thenScope, newScopeIfBlock = false)
         val elseScope = Scope.nestedInside(currScope)
         elseTreeOpt.foreach { elseTree =>
-          generateSSA(elseTree, elseScope)
+          generateSSA(elseTree, elseScope, newScopeIfBlock = false)
         }
         val variablesB = List.newBuilder[DisjunctionVarData]
         for (varId <- externalVarsAssignedIn(ite)) {
@@ -361,7 +361,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         if (condScope.hasExited) {
           reportError("condition evaluation cannot terminate", condTree.getPosition)
         }
-        generateSSA(bodyTree, bodyScope)
+        generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)
         if (bodyScope.hasExited) {
           warn("loop body always exits, should be an if statement", whileLoop.getPosition)
           // give up and generate a disjunction instead
@@ -660,7 +660,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         case Asts.Select(lhs, field) =>
           for {
             ownerFormula <- generateFormula(lhs, currScope)
-          } yield Select(ownerFormula, field)
+          } yield Select(ownerFormula, FieldResolutionTarget.Unresolved(field))
         case Asts.ClosureDef(params, body) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")

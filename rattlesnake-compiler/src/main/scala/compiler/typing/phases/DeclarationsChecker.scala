@@ -116,7 +116,7 @@ final class DeclarationsChecker(
       val subTSig = resolutionCtx.resolveTypeSig(subT).get
       val superTSig = resolutionCtx.resolveTypeSig(superT).get
       (subTSig, superTSig) match {
-        case (subTSig: Encapsulated, superTSig: Encapsulated) =>
+        case (subTSig: EncapsulatedTypeSig, superTSig: EncapsulatedTypeSig) =>
           for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, superFunVisibility, superFunDeclPosOpt)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
               // TODO allow method implementation in interfaces?

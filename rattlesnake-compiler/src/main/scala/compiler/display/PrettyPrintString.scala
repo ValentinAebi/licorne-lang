@@ -23,12 +23,17 @@ final class PrettyPrintString(indentUnit: String) {
     newLine()
     val _ = action
     currIndentLevel -= 1
+    this
+  }
+  
+  def indentln(action: => Unit): this.type = {
+    indent(action)
     newLine()
   }
 
   def block(action: => Unit): this.type = {
     add("{")
-    indent(action)
+    indentln(action)
     add("}")
   }
 

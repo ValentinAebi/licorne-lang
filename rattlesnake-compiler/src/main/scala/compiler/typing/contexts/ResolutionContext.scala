@@ -36,7 +36,7 @@ final case class ResolutionContext(
     }
 
   def resolveFunSig(ownerId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
-    resolveTypeSigAs[Encapsulated](ownerId) match {
+    resolveTypeSigAs[EncapsulatedTypeSig](ownerId) match {
       case None => OwnerNotFound
       case Some(ownerSig) =>
         ownerSig.functions.get(funId) match {
@@ -63,8 +63,8 @@ object ResolutionContext {
 
   enum FuncResolResult {
     case OwnerNotFound
-    case FuncNotFound(ownerSig: Encapsulated)
-    case Success(ownerSig: Encapsulated, funSig: FunctionSignature)
+    case FuncNotFound(ownerSig: EncapsulatedTypeSig)
+    case Success(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature)
 
     def forceGetFunSig: FunctionSignature = this match {
       case Success(_, funSig) => funSig
