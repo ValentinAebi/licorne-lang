@@ -370,9 +370,10 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             currScope
           )
         } else {
-          for (loopVarData <- loopUpdatedVars) {
-            val bodyLastVal = bodyScope.getLocalValuesContextUnsafe.valueOf(loopVarData.varId).asInstanceOf[KnownAndInitialized].value
-            currScope.getLocalValuesContextUnsafe.remap(loopVarData.varId, loopVarData.condVal)
+          for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
+            val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
+            bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
+            currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
           currScope.saveInstr(Loop(condScope, condVal, bodyScope, loopUpdatedVars), whileLoop)
         }
