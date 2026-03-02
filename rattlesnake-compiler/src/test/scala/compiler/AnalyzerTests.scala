@@ -5,7 +5,9 @@ import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
 import compiler.ssagen.SSAGenerator
-import compiler.typing.phases.TyperPhase1
+import compiler.typing.TypeStore
+import compiler.typing.contexts.TypeVariablesContext
+import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -108,8 +110,14 @@ class AnalyzerTests(fileName: String) {
       throw ExitException
     }
 
+    val ts = TypeStore()
+    val typeVarsCtx = TypeVariablesContext()
     val er = ErrorReporter(errorsConsumer, exitCalled)
-    val pipeline = TasksPipelines.multiFrontEnd(er).andThen(SSAGenerator(er)).andThen(TyperPhase1(er))
+    val pipeline = TasksPipelines.multiFrontEnd(er)
+      .andThen(SSAGenerator(typeVarsCtx, er))
+      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
+      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
+      .andThen(??? /* TODO */)
     try {
       pipeline.apply(srcFiles)
     } catch {

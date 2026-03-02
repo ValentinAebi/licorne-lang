@@ -2,6 +2,8 @@ package compiler.lexer
 
 import compiler.io.SourceCodeProvider
 import compiler.irs.Tokens.*
+import compiler.lang.Keyword.*
+import compiler.lang.Operator.*
 import compiler.reporting.Errors.{CompilationError, ErrorReporter, ExitCode}
 import compiler.reporting.Position
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue, fail}
@@ -26,6 +28,7 @@ class LexerTests {
 
     var line = 1
     var col = 1
+
     def newTok(token: Token): PositionedToken = {
       val posTok = PositionedToken(token, Position(mockSourceCodeProvider, line = line, col = col))
       if token == EndlToken then {
