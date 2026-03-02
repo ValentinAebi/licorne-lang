@@ -23,13 +23,13 @@ import scala.collection.{SeqMap, mutable}
 import scala.util.boundary
 
 
-final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Source], (Program, TypeVariablesContext)] {
+final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) extends CompilerStep[List[Asts.Source], Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
   private given CompilationStep = CompilationStep.SSAGeneration
   
-  override def apply(input: List[Asts.Source]): (Program, TypeVariablesContext) = {
+  override def apply(input: List[Asts.Source]): Program = {
     val programBuilder = Program.Builder(er)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
@@ -129,12 +129,11 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
       }
     }
     val program = programBuilder.build(allFunctionsB.result())
-    val typeVarsCtx = TypeVariablesContext()
     for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv, posOpt)
     }
     er.displayAndTerminateIfErrors()
-    (program, typeVarsCtx)
+    program
   }
 
   private def collectFunctions(

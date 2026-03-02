@@ -8,7 +8,9 @@ import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
-import compiler.typing.phases.TyperPhase1
+import compiler.typing.TypeStore
+import compiler.typing.contexts.TypeVariablesContext
+import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 
 import java.nio.file.Path
 
@@ -47,11 +49,14 @@ object TasksPipelines {
                            runtimeDirPath: Path,
                            agentDirPath: Path,
                            er: ErrorReporter) = {
+    val typeVarsCtx = TypeVariablesContext()
+    val ts = TypeStore()
     multiFrontEnd(er)
-      .andThen(SSAGenerator(er))
+      .andThen(SSAGenerator(typeVarsCtx, er))
+//      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
+//      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
       // FIXME this implementation is temporary
       //.andThen(??? /* actual compilation phases */)
-      .andThen(Mapper(_._1))
       .andThen(SSAPrinter("  "))
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))

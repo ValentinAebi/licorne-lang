@@ -1,6 +1,5 @@
-package compiler.typing.phases
+package compiler.typing
 
-import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.SSA.*
 import compiler.lang.*
@@ -11,16 +10,16 @@ import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.typing.TypeStore
 import compiler.typing.contexts.*
 import compiler.typing.smartcasting.ControlFlowInfo
-import compiler.util.{mapVals, zipCommons}
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
-import scala.util.boundary
 
 
 final class Typer(
+                   ts: TypeStore,
                    dealiasingCtx: DealiasingContext,
                    resolutionCtx: ResolutionContext,
                    typeVarsCtx: TypeVariablesContext,
@@ -98,8 +97,12 @@ final class Typer(
         dealiasAndTypeType(tpe, ambientVarianceOpt, posOpt)
       }
     case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
-      untypedLowerBoundOpt.foreach { typeFormula(_) }
-      untypedUpperBoundOpt.foreach { typeFormula(_) }
+      untypedLowerBoundOpt.foreach {
+        typeFormula(_)
+      }
+      untypedUpperBoundOpt.foreach {
+        typeFormula(_)
+      }
   }
 
   def typeNamedTypeDealiased(namedType: NamedType, ambientVarianceOpt: Option[Variance], posOpt: Option[Position])
@@ -138,15 +141,23 @@ final class Typer(
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, posOpt: Option[Position])
                        (using typeParamsCtx: TypeParamsContext): Unit = {
     val TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt) = typeTypeParamInfo
-    upperBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
-    lowerBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
+    upperBoundOpt.foreach {
+      dealiasAndTypeType(_, None, posOpt)
+    }
+    lowerBoundOpt.foreach {
+      dealiasAndTypeType(_, None, posOpt)
+    }
   }
 
   def typeFunTypeParam(functionTypeParamInfo: FunctionTypeParamInfo, posOpt: Option[Position])
                       (using typeParamsCtx: TypeParamsContext): Unit = {
     val FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt) = functionTypeParamInfo
-    upperBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
-    lowerBoundOpt.foreach { dealiasAndTypeType(_, None, posOpt) }
+    upperBoundOpt.foreach {
+      dealiasAndTypeType(_, None, posOpt)
+    }
+    lowerBoundOpt.foreach {
+      dealiasAndTypeType(_, None, posOpt)
+    }
   }
 
   def typeFunSig(functionSignature: FunctionSignature)(using typeParamsCtx: TypeParamsContext): Unit = {
@@ -165,7 +176,7 @@ final class Typer(
     val InterfaceSignature(id, typeParams, functions, directSupertypes, sigScope, declPosOpt) = interfaceSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
-    
+
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     for typeParam <- typeParams do {
       typeTypeTypeParam(typeParam, declPosOpt)
@@ -180,7 +191,7 @@ final class Typer(
     val ClassSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = classSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
-    
+
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     for tp <- typeParams do {
       typeTypeTypeParam(tp, declPosOpt)
@@ -198,7 +209,7 @@ final class Typer(
     val ObjectSignature(id, functions, directSupertypes, sigScope, declPosOpt) = objSig
 
     given TypeParamsContext = TypeParamsContext.empty
-    
+
     for (_, funSig) <- functions do {
       typeFunSig(funSig)
     }
@@ -219,9 +230,9 @@ final class Typer(
 
   def typeRecordSig(recordSig: RecordSignature): Unit = {
     val RecordSignature(id, typeParams, fields, directSupertypes, sigScope, declPosOpt) = recordSig
-    
+
     given TypeParamsContext = TypeParamsContext(typeParams)
-    
+
     for typeParam <- typeParams do {
       typeTypeTypeParam(typeParam, declPosOpt)
     }

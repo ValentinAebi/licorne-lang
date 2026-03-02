@@ -2,20 +2,17 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.SSA
 import compiler.lang.*
 import compiler.lang.Formulas.IdValue
-import compiler.lang.Types.{NamedType, Type, primTypeFor}
-import compiler.lang.Variance.{Covariant, Invariant}
+import compiler.lang.Types.{NamedType, Type}
 import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.typing.TypeStore
+import compiler.typing.{TypeStore, Typer}
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
-import compiler.util.mapVals
 
 import scala.collection.mutable
 import scala.util.boundary
@@ -32,13 +29,14 @@ final class DeclarationsChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolutionCtx = ResolutionContext.fromProgram(program)
     val typer = Typer(
+      ts,
       dealiasingCtx,
       resolutionCtx,
       typeVarsCtx,
       er
     )
     er.displayAndTerminateIfErrors()
-    
+
     val subtypingGraph = buildSubtypingGraph(program)
     checkSubtypingCyclicity(subtypingGraph, resolutionCtx)
     er.displayAndTerminateIfErrors()
@@ -47,8 +45,9 @@ final class DeclarationsChecker(
     er.displayAndTerminateIfErrors()
 
     val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, er)
+    analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx)
 
-    ???
+    program
   }
 
   private def buildSubtypingGraph(program: Program): Graph[TypeIdentifier] = {
