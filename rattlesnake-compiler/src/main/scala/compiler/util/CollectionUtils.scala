@@ -1,6 +1,6 @@
 package compiler.util
 
-import scala.collection.SeqMap
+import scala.collection.immutable.SeqMap
 
 extension [T](l: Iterable[T]) def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
   l.take(r.size).zip(r.take(l.size))

@@ -10,14 +10,15 @@ import compiler.typing.contexts.ResolutionContext.FuncResolResult.*
 import compiler.typing.smartcasting.TypesReasoningCache
 import compiler.util.zipCommons
 
+import scala.collection.immutable.SeqMap
 import scala.reflect.ClassTag
 
 final case class ResolutionContext(
-                                    interfaces: Map[TypeIdentifier, InterfaceSignature],
-                                    classes: Map[TypeIdentifier, ClassSignature],
-                                    objects: Map[TypeIdentifier, ObjectSignature],
-                                    datatypes: Map[TypeIdentifier, DatatypeSignature],
-                                    records: Map[TypeIdentifier, RecordSignature]
+                                    interfaces: SeqMap[TypeIdentifier, InterfaceSignature],
+                                    classes: SeqMap[TypeIdentifier, ClassSignature],
+                                    objects: SeqMap[TypeIdentifier, ObjectSignature],
+                                    datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
+                                    records: SeqMap[TypeIdentifier, RecordSignature]
                                   ) {
 
   val typesReasoningCache: TypesReasoningCache = TypesReasoningCache(this)

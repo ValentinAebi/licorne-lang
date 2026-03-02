@@ -1,12 +1,12 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
-import compiler.irs.{Asts, SSA}
 import compiler.irs.Asts.Expr
-import compiler.lang.Formulas.*
-import SSA.*
+import compiler.irs.SSA.*
+import compiler.irs.{Asts, SSA}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
+import compiler.lang.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.UnitType
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -16,23 +16,23 @@ import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.util.SeqSet
+import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
-import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 
-import java.util
-import scala.collection.mutable.ListBuffer
 import scala.collection.{SeqMap, mutable}
 import scala.util.boundary
 
 
 final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Source], (Program, TypeVariablesContext)] {
 
+  private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
+
   private given CompilationStep = CompilationStep.SSAGeneration
   
   override def apply(input: List[Asts.Source]): (Program, TypeVariablesContext) = {
     val programBuilder = Program.Builder(er)
     val globalScope = programBuilder.globalValuesContext.globalScope
-    val allFunctionsCollector = mutable.SeqMap.empty[FunctionSignature, SSA.Function]
+    val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
     for (src <- input) {
       val datatypeDefs = mutable.ListBuffer.empty[Asts.DataTypeDef]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
@@ -43,7 +43,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             val thisValue = interfaceSigScope.newVal(ThisId)
             interfaceSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val noFunctionsSig = InterfaceSignature(id, typeParamTrees.convert(interfaceSigScope), Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -52,7 +52,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             val thisValue = objSigScope.newVal(ThisId)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(id, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -75,7 +75,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
                 classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
             }
             val noFunctionsSig = ClassSignature(id, typeParams, fields, Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -128,7 +128,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
         programBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val program = programBuilder.build(allFunctionsCollector)
+    val program = programBuilder.build(allFunctionsB.result())
     val typeVarsCtx = TypeVariablesContext()
     for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv, posOpt)
@@ -141,12 +141,12 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
                                 functionsProvider: Asts.EncapsulatedTypeDefTree,
                                 functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
-                                allFunctionsCollector: mutable.Map[FunctionSignature, SSA.Function]
+                                allFunctionsB: SeqMapBuilder[FunctionSignature, SSA.Function]
                               ): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
-    for (func <- functionsProvider.functions) {
-      if (functions.contains(func.id)) {
-        reportError(s"a function named ${func.id} has already been declared in ${functionsProvider.description}", func.getPosition)
+    for (funDef <- functionsProvider.functions) {
+      if (functions.contains(funDef.id)) {
+        reportError(s"a function named ${funDef.id} has already been declared in ${functionsProvider.description}", funDef.getPosition)
       } else {
         val funSigScope = Scope.nestedInside(globalScope)
         val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
@@ -154,7 +154,7 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
           case Asts.ObjectDef(id, functions, directSupertypes) => funSigScope.valuesCtx.resolveObject(id)
           case _ => funSigScope.newVal(ThisId)
         }
-        val thisParamIsOmitted = func.params.headOption.forall(_.paramId != ThisId)
+        val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
         if (thisParamIsOmitted) {
           val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
@@ -162,12 +162,12 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
           funSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
         }
         if (thisParamIsOmitted && !isObject) {
-          reportError(s"parameters list of ${func.id} should start with the receiver parameter (syntax: 'this : Type')", func.getPosition)
+          reportError(s"parameters list of ${funDef.id} should start with the receiver parameter (syntax: 'this : Type')", funDef.getPosition)
         } else if (!thisParamIsOmitted && isObject) {
-          warn("receiver parameter can be omitted inside objects", func.getPosition)
+          warn("receiver parameter can be omitted inside objects", funDef.getPosition)
         }
         var isFirst = true
-        for (paramTree <- func.params) {
+        for (paramTree <- funDef.params) {
           if (funSigScope.getLocalValuesContextUnsafe.knows(paramTree.paramId)) {
             reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
           } else {
@@ -175,13 +175,13 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
             val paramType = paramTree match {
               case Asts.ThisParam(paramTypeTreeOpt) =>
                 if (!isFirst) {
-                  reportError("receiver parameter should always be at the beginning of the parameters list", func.getPosition)
+                  reportError("receiver parameter should always be at the beginning of the parameters list", funDef.getPosition)
                 }
                 val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funSigScope)
                   if (actualThisType.principalType != expectedThisType) {
-                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", func.getPosition)
+                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", funDef.getPosition)
                   }
                   actualThisType
                 }.getOrElse(expectedThisType)
@@ -195,20 +195,20 @@ final class SSAGenerator(er: ErrorReporter) extends CompilerStep[List[Asts.Sourc
           }
           isFirst = false
         }
-        val retType = func.optRetType match {
+        val retType = funDef.optRetType match {
           case Some(retTypeTree) => mkType(retTypeTree, funSigScope)
           case None => PrimitiveType.UnitType
         }
-        val convertedTypeParams = func.typeParams.map {
+        val convertedTypeParams = funDef.typeParams.map {
           case Asts.TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt) =>
             FunctionTypeParamInfo(id, upperBoundOpt.map(mkType(_, funSigScope)), lowerBoundOpt.map(mkType(_, funSigScope)))
         }
         val ownerId = functionsProvider.id
-        val funId = func.id
-        val bodyOpt = generateSSAFunc(ownerId, funId, func.bodyOpt, funSigScope, func.getPosition)
-        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, paramsInclThis, retType, func.visibility, func.getPosition)
-        functions(func.id) = (sig, bodyOpt)
-        allFunctionsCollector(sig) = bodyOpt
+        val funId = funDef.id
+        val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
+        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, paramsInclThis, retType, funDef.visibility, funDef.getPosition)
+        functions(funDef.id) = (sig, function)
+        allFunctionsB.addOne(sig -> function)
       }
     }
     er.displayAndTerminateIfErrors()
