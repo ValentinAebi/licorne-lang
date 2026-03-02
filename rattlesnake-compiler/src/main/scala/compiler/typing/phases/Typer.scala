@@ -151,7 +151,7 @@ final class Typer(
 
   def typeFunSig(functionSignature: FunctionSignature)(using typeParamsCtx: TypeParamsContext): Unit = {
     val FunctionSignature(ownerName, functionName, typeParams,
-      paramsInclThis, retType, visibility, declPosOpt) = functionSignature
+      paramsInclThis, retType, sigScope, visibility, declPosOpt) = functionSignature
     for typeParam <- typeParams do {
       typeFunTypeParam(typeParam, functionSignature.declPosOpt)
     }
@@ -162,7 +162,7 @@ final class Typer(
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
-    val InterfaceSignature(id, typeParams, functions, directSupertypes, declPosOpt) = interfaceSig
+    val InterfaceSignature(id, typeParams, functions, directSupertypes, sigScope, declPosOpt) = interfaceSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
     
@@ -177,7 +177,7 @@ final class Typer(
   }
 
   def typeClassSig(classSig: ClassSignature): Unit = {
-    val ClassSignature(id, typeParams, fields, functions, directSupertypes, declPosOpt) = classSig
+    val ClassSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = classSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
     
@@ -195,7 +195,7 @@ final class Typer(
   }
 
   def typeObjectSig(objSig: ObjectSignature): Unit = {
-    val ObjectSignature(id, functions, directSupertypes, declPosOpt) = objSig
+    val ObjectSignature(id, functions, directSupertypes, sigScope, declPosOpt) = objSig
 
     given TypeParamsContext = TypeParamsContext.empty
     
@@ -206,7 +206,7 @@ final class Typer(
   }
 
   def typeDatatypeSig(datatypeSig: DatatypeSignature): Unit = {
-    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, declPosOpt) = datatypeSig
+    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
 
     given TypeParamsContext = TypeParamsContext(typeParams)
 
@@ -218,7 +218,7 @@ final class Typer(
   }
 
   def typeRecordSig(recordSig: RecordSignature): Unit = {
-    val RecordSignature(id, typeParams, fields, directSupertypes, declPosOpt) = recordSig
+    val RecordSignature(id, typeParams, fields, directSupertypes, sigScope, declPosOpt) = recordSig
     
     given TypeParamsContext = TypeParamsContext(typeParams)
     

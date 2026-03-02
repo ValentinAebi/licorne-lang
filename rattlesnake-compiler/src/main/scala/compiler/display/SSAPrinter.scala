@@ -49,8 +49,8 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
   private def printTypeAlias(typealiasSig: TypeAliasSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val TypeAliasSignature(id, typeParams, idValue, params, rhs, declPosOpt) = typealiasSig
-    pps.add("TYPEALIAS").addSpace().add(id)
+    val TypeAliasSignature(id, typeParams, idValue, params, rhs, sigScope, declPosOpt) = typealiasSig
+    pps.add(s"TYPEALIAS (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkTypeAliasParamsDescr(params))
       .add(" = ").add(rhs)
@@ -60,41 +60,41 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
   private def printInterface(interfaceSig: InterfaceSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val InterfaceSignature(id, typeParams, functions, directSupertypes, declPosOpt) = interfaceSig
-    pps.add("INTERFACE").addSpace().add(id)
+    val InterfaceSignature(id, typeParams, functions, directSupertypes, sigScope, declPosOpt) = interfaceSig
+    pps.add(s"INTERFACE (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
-    printFunctionsBlockIfNotEmpty(functions)
+    printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = false)
     pps.newLine()
   }
 
   private def printClass(classSig: ClassSignature)
                         (using pps: PrettyPrintString, program: Program): Unit = {
-    val ClassSignature(id, typeParams, fields, functions, directSupertypes, declPosOpt) = classSig
-    pps.add("CLASS").addSpace().add(id)
+    val ClassSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = classSig
+    pps.add(s"CLASS (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
-    printFunctionsBlockIfNotEmpty(functions)
+    printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = true)
     pps.newLine()
   }
 
   private def printObject(objectSig: ObjectSignature)
                          (using pps: PrettyPrintString, program: Program): Unit = {
-    val ObjectSignature(id, functions, directSupertypes, declPosOpt) = objectSig
-    pps.add("OBJECT").addSpace().add(id)
+    val ObjectSignature(id, functions, directSupertypes, sigScope, declPosOpt) = objectSig
+    pps.add(s"OBJECT (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
-    printFunctionsBlockIfNotEmpty(functions)
+    printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = true)
     pps.newLine()
   }
 
   private def printDatatype(datatypeSig: DatatypeSignature)
                            (using pps: PrettyPrintString): Unit = {
-    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, declPosOpt) = datatypeSig
-    pps.add("DATATYPE").addSpace().add(id)
+    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
+    pps.add(s"DATATYPE (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
       .add(" with cases ")
@@ -108,8 +108,8 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
   private def printRecord(recordSig: RecordSignature)
                          (using pps: PrettyPrintString): Unit = {
-    val RecordSignature(id, typeParams, fields, directSupertypes, declPosOpt) = recordSig
-    pps.add("RECORD").addSpace().add(id)
+    val RecordSignature(id, typeParams, fields, directSupertypes, sigScope, declPosOpt) = recordSig
+    pps.add(s"RECORD (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))
@@ -117,11 +117,14 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
       .newLine()
   }
 
-  private def printFunctionsBlockIfNotEmpty(functions: Map[FunOrVarId, FunctionSignature])
+  private def printFunctionsBlockIfNotEmpty(functions: Map[FunOrVarId, FunctionSignature], emptyLineBeforeFunc: Boolean)
                                            (using pps: PrettyPrintString, program: Program): Unit = {
     if (functions.nonEmpty) {
       pps.addSpace().block {
         traverseIterable(functions.iterator) { (_, funSig) =>
+          if (emptyLineBeforeFunc) {
+            pps.newLine()
+          }
           printFunction(funSig)
         } {
           pps.newLine()
@@ -132,8 +135,8 @@ final class SSAPrinter(indentUnit: String) extends CompilerStep[Program, String]
 
   private def printFunction(funSig: FunctionSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, visibility, declPosOpt) = funSig
-    pps.add(s"METHOD ($visibility) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis)} -> $retType${mkPosDescr(declPosOpt)}")
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, funSigScope, visibility, declPosOpt) = funSig
+    pps.add(s"METHOD ($visibility, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis)} -> $retType${mkPosDescr(declPosOpt)}")
     program.functions.get(funSig)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>

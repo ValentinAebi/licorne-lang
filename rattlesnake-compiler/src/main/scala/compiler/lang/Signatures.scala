@@ -1,6 +1,7 @@
 package compiler.lang
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.SSA.Scope
 import compiler.lang.Field.StableField
 import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
 import compiler.lang.Keyword.{Sub, Super}
@@ -16,6 +17,7 @@ final case class FunctionSignature(
                                     typeParams: List[FunctionTypeParamInfo],
                                     paramsInclThis: SeqMap[NamedIdValue, Type],
                                     retType: Type,
+                                    sigScope: Scope,
                                     visibility: Visibility,
                                     declPosOpt: Option[Position]
                                   ) {
@@ -56,6 +58,8 @@ sealed trait TypeSignature {
 
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
+  def sigScope: Scope
+
   def declPosOpt: Option[Position]
 
   def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
@@ -74,6 +78,7 @@ final case class TypeAliasSignature(
                                      itValue: IdValue,
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type,
+                                     sigScope: Scope,
                                      declPosOpt: Option[Position]
                                    ) extends TypeSignature
 
@@ -102,7 +107,7 @@ sealed trait UnencapsulatedTypeSig extends RuntimeTypeSignature {
 
 sealed trait TypeParametricTypeSig extends RuntimeTypeSignature {
   this: TypeSignature =>
-  
+
   def typeParams: List[TypeTypeParamInfo]
 }
 
@@ -111,6 +116,7 @@ final case class InterfaceSignature(
                                      typeParams: List[TypeTypeParamInfo],
                                      functions: Map[FunOrVarId, FunctionSignature],
                                      directSupertypes: List[NamedType],
+                                     sigScope: Scope,
                                      declPosOpt: Option[Position]
                                    )
   extends RuntimeTypeSignature, AbstractTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig
@@ -121,6 +127,7 @@ final case class ClassSignature(
                                  fields: SeqMap[FunOrVarId, Field],
                                  functions: Map[FunOrVarId, FunctionSignature],
                                  directSupertypes: List[NamedType],
+                                 sigScope: Scope,
                                  declPosOpt: Option[Position]
                                )
   extends RuntimeTypeSignature, ConcreteTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig, UserInstantiableTypeSig
@@ -131,6 +138,7 @@ final case class ObjectSignature(
                                   id: TypeIdentifier,
                                   functions: Map[FunOrVarId, FunctionSignature],
                                   directSupertypes: List[NamedType],
+                                  sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
   extends RuntimeTypeSignature, AbstractTypeSig, ConcreteTypeSig, EncapsulatedTypeSig {
@@ -142,6 +150,7 @@ final case class DatatypeSignature(
                                     typeParams: List[TypeTypeParamInfo],
                                     directSupertypes: List[NamedType],
                                     directSubtypes: SeqSet[TypeIdentifier],
+                                    sigScope: Scope,
                                     declPosOpt: Option[Position]
                                   )
   extends RuntimeTypeSignature, AbstractTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig
@@ -151,6 +160,7 @@ final case class RecordSignature(
                                   typeParams: List[TypeTypeParamInfo],
                                   fields: SeqMap[FunOrVarId, StableField],
                                   directSupertypes: List[NamedType],
+                                  sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
   extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig
