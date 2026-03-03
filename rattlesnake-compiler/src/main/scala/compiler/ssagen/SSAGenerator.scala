@@ -621,7 +621,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
           receiverAndFunIdOpt match {
             case Some((receiverFormula, funId)) =>
               val argFormulas = args.flatMap(generateFormula(_, currScope))
-              if argFormulas.size == args.size then Some(Call(receiverFormula, funId, argFormulas))
+              if argFormulas.size == args.size then Some(Call(receiverFormula, InvocationTarget.Unresolved(funId), argFormulas))
               else None
             case _ => None
           }

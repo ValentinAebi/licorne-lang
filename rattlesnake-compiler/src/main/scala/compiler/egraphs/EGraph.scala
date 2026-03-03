@@ -1,156 +1,163 @@
 package compiler.egraphs
 
-import EGraph.ApproxMode
-import compiler.lang.Operator
-import compiler.util.SeqSet
-
-import scala.collection.mutable
-import scala.util.boundary
+import compiler.egraphs.EGraph.ENodeWrapper
+import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
+import compiler.lang.Formulas
+import compiler.lang.Formulas.Formula
 
 
-final class EGraph private(private val gen: EClassId.Generator) {
+final class EGraph private(
+                            val classes: Map[EClassId, EClass],
+                            ownerArgs: Map[ENode, EClass]
+                          )(using classIdGen: EClassId.Generator) {
+  private val owners: Map[ENodeWrapper, EClass] = for ((n, cl) <- ownerArgs) yield ENodeWrapper(n, this) -> cl
 
-  private val classes = mutable.LinkedHashMap.empty[EClassId, EClass]
+  /*
+   * TODO optimize?
+   * Optimization ideas:
+   *  - pool of ENodeWrappers
+   *  - collections created by map in eEquals and eHashCode
+   */
 
-  // maps every node to itself, see the classOf method.
-  // WARNING: use with care, ENodes are mutable and equals and hashCode are not stable!
-  private val nodes = mutable.LinkedHashMap.empty[ENode, ENode]
+  def areEqual(clId1: EClassId, clId2: EClassId): Boolean =
+    classes(clId1) == classes(clId2)
 
-  private val nodesMentioning = mutable.LinkedHashMap.empty[EClassId, mutable.LinkedHashSet[ENode]]
-
-  private val trueClassId: EClassId = classOf(TrueNode)
-  private val falseClassId: EClassId = classOf(FalseNode)
-
-  def deepCopy: EGraph = {
-    val newGraph = EGraph(gen)
-    for ((clId, oldCl) <- this.classes) {
-      val newCl =
-        if oldCl.containsNode(TrueNode) then newGraph.classes(newGraph.trueClassId)
-        else if oldCl.containsNode(FalseNode) then newGraph.classes(newGraph.falseClassId)
-        else EClass(newGraph)
-      oldCl.copyTypingDataTo(newCl)
-      newGraph.classes.put(clId, newCl)
-    }
-    for ((_, n) <- nodes) {
-      val clId = n.classId
-      val newNode = n.deepCopy
-      newGraph.nodes.put(newNode, newNode)
-      newGraph.classes(clId).addNode(newNode)
-      newGraph.saveChildrenMentions(newNode)
-    }
-    newGraph
-  }
-
-  def classOf(extNode: ENode): EClassId = {
-    /* nodes maps every node to itself.
-     * This way, given a node, one can retrieve the internal version of it 
-     * (which contains the pointer to the e-class, ignored by the == method). */
-    nodes.get(extNode) match {
-      case Some(inNode) => inNode.classId
-      case None =>
-        nodes.put(extNode, extNode)
-        val newClassId = gen.next()
-        classAdd(newClassId, extNode)
-        saveChildrenMentions(extNode)
-        newClassId
-    }
-  }
-
-  def isProvablyInconsistent: Boolean = areEqual(TrueNode, FalseNode)
-
-  def areEqual(id1: EClassId, id2: EClassId): Boolean = (classes.get(id1), classes.get(id2)) match {
+  def areEqual(n1: ENode, n2: ENode): Boolean = (findOwner(n1), findOwner(n2)) match {
     case (Some(cl1), Some(cl2)) => cl1 == cl2
     case _ => false
   }
+  
+  def areEqual(f1: Formula, f2: Formula): Boolean = {
+    val (ig1, f1Id) = this.withFormulaAbsorbed(f1)
+    val (ig2, f2Id) = ig1.withFormulaAbsorbed(f2)
+    ig2.areEqual(f1Id, f2Id)
+  }
 
-  def areEqual(node1: ENode, node2: ENode): Boolean =
-    areEqual(classOf(node1), classOf(node2))
-
-  def unify(node1: ENode, node2: ENode): Unit = {
-    val class1Id = classOf(node1)
-    val class2Id = classOf(node2)
-    val class1 = classes(class1Id)
-    val class2 = classes(class2Id)
-    if (class1.hasDisequality(class2Id) || class2.hasDisequality(class1Id)) {
-      mkInconsistent()
-    } else if (class1 != class2) {
-      val nodesToTransfer = classes.remove(class2Id) match {
-        case Some(clazz) => clazz.currentNodes
-        case None => Set.empty[ENode]
-      }
-      for (node <- nodesToTransfer) {
-        classAdd(class1Id, node)
-      }
-      val mentioningNodes = nodesMentioning.remove(class2Id).getOrElse(Set.empty[ENode])
-      for (node <- mentioningNodes) {
-        nodes.remove(node)
-        node.subst(target = class2Id, repl = class1Id)
-        nodes.put(node, node)
-        saveChildrenMentions(node)
-      }
-      class2.copyTypingDataTo(class1)
+  def nodeAdded(n: ENode): (EGraph, EClassId) = {
+    val wr = owners.get(ENodeWrapper(n, this))
+    wr match {
+      case Some(eClass) => (this, eClass.canonicalId)
+      case None =>
+        val newClassId = classIdGen.next()
+        val newClass = EClass(Set(n), Set(newClassId), newClassId)
+        val newGraph = EGraph(
+          classes + (newClassId -> newClass),
+          unwrappedOwners + (n -> newClass)
+        )
+        (newGraph, newClassId)
     }
   }
 
-  def saveDisequality(node1: ENode, node2: ENode): Unit = {
-    val cl1Id = classOf(node1)
-    val cl2Id = classOf(node2)
-    if (areEqual(cl1Id, cl2Id)) {
-      mkInconsistent()
-    } else {
-      val cl1 = classes(cl1Id)
-      val cl2 = classes(cl2Id)
-      cl1.saveDisequality(cl2Id)
-      cl2.saveDisequality(cl1Id)
+  def withEquality(n1: ENode, n2: ENode): EGraph = (findOwner(n1), findOwner(n2)) match {
+    case (Some(cl1), Some(cl2)) if cl1 == cl2 => this
+    case (Some(cl1), Some(cl2)) =>
+      withEquality(cl1, cl2)
+    case (Some(clId1), None) =>
+      copyWithNewNodeInEClass(clId1, n2)
+    case (None, Some(clId2)) =>
+      copyWithNewNodeInEClass(clId2, n1)
+    case (None, None) =>
+      val newClassId = classIdGen.next()
+      val newClass = EClass(Set(n1, n2), Set(newClassId), newClassId)
+      EGraph(Map(newClassId -> newClass), Map(n1 -> newClass, n2 -> newClass))
+  }
+
+  def withEquality(clId1: EClassId, clId2: EClassId): EGraph =
+    withEquality(classes(clId1), classes(clId2))
+
+  def withEquality(f1: Formula, f2: Formula): EGraph = {
+    val (ig1, f1ClId) = this.withFormulaAbsorbed(f1)
+    val (ig2, f2ClId) = ig1.withFormulaAbsorbed(f2)
+    ig2.withEquality(f1ClId, f2ClId)
+  }
+
+  private def withEquality(cl1: EClass, cl2: EClass): EGraph =
+    if cl1 == cl2 then this
+    else {
+      val mergedClass = EClass(cl1.nodes ++ cl2.nodes, cl1.idAliases ++ cl2.idAliases, cl1.canonicalId)
+      val newClasses = for ((clId, cl) <- classes) yield clId -> (if mergedClass.idAliases.contains(clId) then mergedClass else cl)
+      val newOwners = for ((w, cl) <- owners) yield w.eNode -> (if cl == cl1 || cl == cl2 then mergedClass else cl)
+      EGraph(newClasses, newOwners)
     }
+
+  /**
+   * @return (id, egraph) where id is the id of the eclass in egraph that the result of the formula belongs to
+   */
+  def withFormulaAbsorbed(f: Formula): (EGraph, EClassId) = f match {
+    case value: Formulas.IdValue => nodeAdded(EIdValNode(value))
+    case cst: Formulas.ConstFormula => nodeAdded(EConstNode(cst.value))
+    case Formulas.Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId)) if receiverSig.fields(fieldId).isStable =>
+      val (ig, ownerClId) = this.withFormulaAbsorbed(owner)
+      ig.nodeAdded(ESelectNode(ownerClId, fieldId))
+    case _: Formulas.Select => throw IllegalArgumentException("selects can be converted to an e-node only if the field is resolved and stable")
+    case Formulas.Call(receiver, InvocationTarget.Resolved(funSig), args) =>
+      val (rg, rid) = this.withFormulaAbsorbed(receiver)
+      val (ag, argIds) = rg.withFormulasAbsorbed(args)
+      ag.nodeAdded(ECallNode(rid, funSig.functionName, argIds))
+    case _: Formulas.Call =>
+      // NOTE: this does NOT take into account the possible side effects of the call
+      throw IllegalArgumentException("calls can be converted to an e-node only if they have been resolved")
+    case Formulas.Sum(terms) =>
+      val (tg, termIds) = this.withFormulasAbsorbed(terms)
+      tg.nodeAdded(EPlusNode(termIds.toSet))
+    case Formulas.Neg(operand) =>
+      val (og, operandId) = this.withFormulaAbsorbed(operand)
+      og.nodeAdded(ENegNode(operandId))
+    case Formulas.Times(terms) =>
+      val (tg, termIds) = this.withFormulasAbsorbed(terms)
+      tg.nodeAdded(ETimesNode(termIds.toSet))
+    case Formulas.DivBy(lhs, rhs) =>
+      val (lg, lid) = this.withFormulaAbsorbed(lhs)
+      val (rg, rid) = lg.withFormulaAbsorbed(rhs)
+      rg.nodeAdded(EDivNode(lid, rid))
+    case Formulas.Modulo(lhs, rhs) =>
+      val (lg, lid) = this.withFormulaAbsorbed(lhs)
+      val (rg, rid) = lg.withFormulaAbsorbed(rhs)
+      rg.nodeAdded(EModuloNode(lid, rid))
   }
 
-  def saveLessOrEq(left: ENode, right: ENode): Unit = {
-    val leftClassId = classOf(left)
-    val rightClassId = classOf(right)
-    val leftClass = classes(leftClassId)
-    val rightClass = classes(rightClassId)
-    leftClass.saveUpperBound(rightClassId)
-    rightClass.saveLowerBound(leftClassId)
-  }
-
-  def equalitySaturation(): Unit = ???
-
-  def asConst(classId: EClassId): Option[ConstNode] = classes(classId).asConst
-
-  def repr(classId: EClassId, maxDepth: Int, approxMode: ApproxMode): Option[ENode] = boundary {
-    val clazz = classes(classId)
-    ???
-  }
-
-  private def classAdd(clazz: EClassId, node: ENode): Unit = {
-    node.classId = clazz
-    val addIsValid = classes.getOrElseUpdate(clazz, EClass(this)).addNode(node)
-    if (!addIsValid) {
-      mkInconsistent()
+  private def withFormulasAbsorbed(formulas: Iterable[Formula]): (EGraph, List[EClassId]) = {
+    val formulaIdsB = List.newBuilder[EClassId]
+    var ig = this
+    for (f <- formulas) {
+      val (newIg, formulaId) = ig.withFormulaAbsorbed(f)
+      formulaIdsB.addOne(formulaId)
+      ig = newIg
     }
+    (ig, formulaIdsB.result())
   }
 
-  private def saveChildrenMentions(node: ENode): Unit = {
-    for (childId <- node.children) {
-      nodesMentioning.getOrElseUpdate(childId, mutable.LinkedHashSet.empty).add(node)
-    }
+  private def copyWithNewNodeInEClass(origCl: EClass, n: ENode): EGraph = {
+    val augmentedCl = EClass(origCl.nodes + n, origCl.idAliases, origCl.canonicalId)
+    val newClasses = for ((clId, cl) <- classes) yield clId -> (if cl == origCl then augmentedCl else cl)
+    val newOwners = (for ((w, cl) <- owners) yield w.eNode -> (if cl == origCl then augmentedCl else cl)) + (n -> augmentedCl)
+    EGraph(newClasses, newOwners)
   }
 
-  private def mkInconsistent(): Unit = {
-    unify(TrueNode, FalseNode)
-  }
+  private def unwrappedOwners: Map[ENode, EClass] = for ((wr, cl) <- owners) yield wr.eNode -> cl
+
+  private def findOwner(n: ENode): Option[EClass] = owners.get(ENodeWrapper(n, this))
 
 }
 
 object EGraph {
 
-  def newEmpty: EGraph = new EGraph(EClassId.Generator())
+  def newEmpty(using EClassId.Generator): EGraph = EGraph(Map.empty, Map.empty)
 
-  enum ApproxMode {
-    case DefaultToUpperBound
-    case DefaultToLowerBound
-    case ExactOnly
+  private final class ENodeWrapper(val eNode: ENode, private val eGraph: EGraph) {
+
+    override def equals(that: Any): Boolean = {
+      that match {
+        case that: ENodeWrapper =>
+          require(this.eGraph == that.eGraph)
+          this.eNode.eEquals(that.eNode)(using eGraph.classes(_))
+        case _ => false
+      }
+    }
+
+    override def hashCode(): Int = eNode.eHashCode()(using eGraph.classes(_))
   }
+
+  type ClassRetriever = EClassId => EClass
 
 }

@@ -1,188 +1,112 @@
 package compiler.egraphs
 
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.egraphs.EGraph.ClassRetriever
+import compiler.identifiers.FunOrVarId
 import compiler.lang.Formulas.IdValue
-import compiler.lang.Types.Type
-import compiler.util.SeqSet
+import compiler.lang.Operator
 
-import scala.compiletime.uninitialized
+import java.util.Objects
 
 
-sealed abstract class ENode {
-  def subst(target: EClassId, repl: EClassId): Unit
-  def children: SeqSet[EClassId]
-  
-  def deepCopy: ENode
-  
-  var classId: EClassId = uninitialized
+sealed trait ENode {
+  def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean
+
+  def eHashCode()(using findClass: ClassRetriever): Int
 }
 
-sealed trait ConstNode extends ENode {
-  def compareTo(that: ConstNode): ConstNode.ComparisonResult
+final case class EConstNode(cst: Any) extends ENode {
 
-  override def deepCopy: ENode = this
-
-  override def subst(target: EClassId, repl: EClassId): Unit = ()
-
-  override def children: SeqSet[EClassId] = SeqSet.empty
-}
-
-object ConstNode {
-  
-  enum ComparisonResult {
-    case Lt
-    case Eq
-    case Gt
-    case NotComparable
-
-    def mayBeLessOrEq: Boolean = this == Lt || this == Eq
-
-    def mayBeGreaterOrEq: Boolean = this == Gt || this == Eq
-
-    def areEqual: Boolean = this == Eq
-
-    def areDifferent: Boolean = this == Lt || this == Gt
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case that: EConstNode => this.cst == that.cst
+    case _ => false
   }
+
+  override def eHashCode()(using findClass: ClassRetriever): Int = Objects.hash(cst)
 }
 
-case object TrueNode extends ConstNode {
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult =
-    ConstNode.ComparisonResult.NotComparable
+final case class EIdValNode(idValue: IdValue) extends ENode {
+
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case EIdValNode(thatIdValue) => this.idValue == thatIdValue
+    case _ => false
+  }
+
+  override def eHashCode()(using findClass: ClassRetriever): Int = Objects.hash(idValue)
 }
 
-case object FalseNode extends ConstNode {
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult =
-    ConstNode.ComparisonResult.NotComparable
+final class EIntermediateNode extends ENode {
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = this eq that
+
+  override def eHashCode()(using findClass: ClassRetriever): Int = System.identityHashCode(this)
 }
 
-final case class IntConstNode(value: Int) extends ConstNode {
-  override def subst(target: EClassId, repl: EClassId): Unit = ()
+final case class ESelectNode(owner: EClassId, fieldId: FunOrVarId) extends ENode {
 
-  override def children: SeqSet[EClassId] = SeqSet.empty
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case ESelectNode(thatOwner, thatFieldId) => this.fieldId == thatFieldId && findClass(this.owner) == findClass(thatOwner)
+    case _ => false
+  }
 
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult = {
-    import ConstNode.ComparisonResult.*
-    val l = this.value
-    that match {
-      case IntConstNode(r) =>
-        if l < r then Lt
-        else if l == r then Eq
-        else Gt
-      case _ => NotComparable
+  override def eHashCode()(using findClass: ClassRetriever): Int =
+    Objects.hash(fieldId, findClass(owner))
+
+}
+
+final case class ECallNode(receiver: EClassId, funId: FunOrVarId, args: List[EClassId]) extends ENode {
+
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case ECallNode(thatReceiver, thatFunId, thatArgs) =>
+      this.funId == thatFunId && findClass(this.receiver) == findClass(thatReceiver) && inOrderEqual(this.args, thatArgs, findClass)
+    case _ => false
+  }
+
+  override def eHashCode()(using findClass: ClassRetriever): Int =
+    Objects.hash(findClass(receiver), funId, args.map(findClass))
+}
+
+sealed trait OperatorENode(val op: Operator) extends ENode {
+
+  /**
+   * @return a set if the operation is commutative, a sequence otherwise
+   */
+  def operands: Iterable[EClassId]
+
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case that: OperatorENode if this.op == that.op =>
+      require(this.operands.size == that.operands.size)
+      this.operands.map(findClass) == that.operands.map(findClass)
+    case _ => false
+  }
+
+  override def eHashCode()(using findClass: ClassRetriever): Int =
+    Objects.hash(op, operands.map(findClass))
+}
+
+final class EPlusNode(val operands: Set[EClassId]) extends OperatorENode(Operator.Plus)
+
+final class ENegNode(operand: EClassId) extends OperatorENode(Operator.Minus) {
+  override def operands: Iterable[EClassId] = List(operand)
+}
+
+final class ETimesNode(val operands: Set[EClassId]) extends OperatorENode(Operator.Times)
+
+final class EDivNode(lhs: EClassId, rhs: EClassId) extends OperatorENode(Operator.Div) {
+  override def operands: Iterable[EClassId] = List(lhs, rhs)
+}
+
+final class EModuloNode(lhs: EClassId, rhs: EClassId) extends OperatorENode(Operator.Modulo) {
+  override def operands: Iterable[EClassId] = List(lhs, rhs)
+}
+
+private def inOrderEqual(l: Iterable[EClassId], r: Iterable[EClassId], findClass: ClassRetriever): Boolean =
+  if l.size != r.size then false
+  else {
+    val itL = l.iterator
+    val itR = r.iterator
+    while (itL.hasNext) {
+      if (findClass(itL.next()) != findClass(itR.next())) {
+        return false
+      }
     }
+    true
   }
-}
-
-final case class StringConstNode(value: String) extends ConstNode {
-
-  override def subst(target: EClassId, repl: EClassId): Unit = ()
-
-  override def children: SeqSet[EClassId] = SeqSet.empty
-
-  override def compareTo(that: ConstNode): ConstNode.ComparisonResult =
-    ConstNode.ComparisonResult.NotComparable
-}
-
-final case class IdValNode(idVal: IdValue) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = ()
-
-  override def deepCopy: ENode = this
-
-  override def children: SeqSet[EClassId] = SeqSet.empty
-}
-
-sealed abstract class UnopNode extends ENode {
-  var operand: EClassId
-
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    operand = operand.subst(target, repl)
-  }
-
-  override def children: SeqSet[EClassId] = SeqSet(operand)
-}
-
-sealed abstract class BinopNode extends ENode {
-  var lhs: EClassId
-  var rhs: EClassId
-
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    lhs = lhs.subst(target, repl)
-    rhs = rhs.subst(target, repl)
-  }
-
-  override def children: SeqSet[EClassId] = SeqSet(lhs, rhs)
-}
-
-final case class SelectNode(var operand: EClassId, fieldId: FunOrVarId) extends UnopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class SumNode(var children: SeqSet[EClassId]) extends ENode {
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    children = children.map(_.subst(target, repl))
-  }
-  
-  override def deepCopy: ENode = copy()
-}
-
-object SumNode {
-  def apply(children: EClassId*): SumNode =
-    new SumNode(SeqSet(children))
-}
-
-final case class NegNode(var operand: EClassId) extends UnopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class ProductNode(var children: SeqSet[EClassId]) extends ENode {
-  
-  override def subst(target: EClassId, repl: EClassId): Unit = {
-    children = children.map(_.subst(target, repl))
-  }
-
-  override def deepCopy: ENode = copy()
-}
-
-object ProductNode {
-  def apply(children: EClassId*): ProductNode =
-    new ProductNode(SeqSet(children))
-}
-
-final case class DivNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class RemNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class NotNode(var operand: EClassId) extends UnopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class EqualityNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class LessOrEqNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class LessThanNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class AndNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class OrNode(var lhs: EClassId, var rhs: EClassId) extends BinopNode {
-  override def deepCopy: ENode = copy()
-}
-
-final case class TypeTestNode(var operand: EClassId, tpe: TypeIdentifier) extends UnopNode {
-  override def deepCopy: ENode = copy()
-}
-
-extension (inline classId: EClassId) private inline def subst(inline target: EClassId, inline repl: EClassId): EClassId =
-  if classId == target then repl else classId

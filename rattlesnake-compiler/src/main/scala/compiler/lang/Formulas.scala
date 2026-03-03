@@ -1,7 +1,7 @@
 package compiler.lang
 
 import compiler.identifiers.FunOrVarId
-import compiler.irs.SSA.{FieldResolutionTarget, Scope}
+import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.util.SeqSet
 
 object Formulas {
@@ -51,13 +51,13 @@ object Formulas {
 
   final case class StringConst(value: String) extends ConstFormula
 
-  final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
+  final case class Select(owner: Formula, var field: FieldResolutionTarget) extends Formula {
     override def toString: String = s"$owner.$field"
   }
   
-  final case class Call(receiver: Formula, funId: FunOrVarId, args: List[Formula]) extends Formula {
+  final case class Call(receiver: Formula, var func: InvocationTarget, args: List[Formula]) extends Formula {
     override def toString: String =
-      s"$receiver.$funId" ++ args.mkString("(", ",", ")")
+      s"$receiver.$func" ++ args.mkString("(", ",", ")")
   }
 
   final case class Sum(terms: SeqSet[Formula]) extends Formula {
