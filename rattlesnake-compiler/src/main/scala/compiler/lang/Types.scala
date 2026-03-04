@@ -77,7 +77,7 @@ object Types {
     }
   }
 
-  private val typeVarUidGen = new AtomicLong()
+  private val typeVarUidGen = new AtomicLong(-1)
 
   final class TypeVariable private(name: String, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()

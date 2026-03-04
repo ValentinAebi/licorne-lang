@@ -5,12 +5,15 @@ import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Formulas
 import compiler.lang.Formulas.Formula
 
+import scala.collection.SeqMap
+import scala.collection.immutable.TreeSet
+
 
 final class EGraph private(
-                            val classes: Map[EClassId, EClass],
-                            ownerArgs: Map[ENode, EClass]
+                            val classes: SeqMap[EClassId, EClass],
+                            ownerArgs: SeqMap[ENode, EClass]
                           )(using classIdGen: EClassId.Generator) {
-  private val owners: Map[ENodeWrapper, EClass] = for ((n, cl) <- ownerArgs) yield ENodeWrapper(n, this) -> cl
+  private val owners: SeqMap[ENodeWrapper, EClass] = for ((n, cl) <- ownerArgs) yield ENodeWrapper(n, this) -> cl
 
   /*
    * TODO optimize?
@@ -26,11 +29,11 @@ final class EGraph private(
     case (Some(cl1), Some(cl2)) => cl1 == cl2
     case _ => false
   }
-  
-  def areEqual(f1: Formula, f2: Formula): Boolean = {
+
+  def areEqual(f1: Formula, f2: Formula): (EGraph, Boolean) = {
     val (ig1, f1Id) = this.withFormulaAbsorbed(f1)
     val (ig2, f2Id) = ig1.withFormulaAbsorbed(f2)
-    ig2.areEqual(f1Id, f2Id)
+    (ig2, ig2.areEqual(f1Id, f2Id))
   }
 
   def nodeAdded(n: ENode): (EGraph, EClassId) = {
@@ -39,10 +42,10 @@ final class EGraph private(
       case Some(eClass) => (this, eClass.canonicalId)
       case None =>
         val newClassId = classIdGen.next()
-        val newClass = EClass(Set(n), Set(newClassId), newClassId)
+        val newClass = EClass(Set(n), TreeSet(newClassId), newClassId)
         val newGraph = EGraph(
-          classes + (newClassId -> newClass),
-          unwrappedOwners + (n -> newClass)
+          classes ++ SeqMap(newClassId -> newClass),
+          unwrappedOwners ++ SeqMap(n -> newClass)
         )
         (newGraph, newClassId)
     }
@@ -58,8 +61,8 @@ final class EGraph private(
       copyWithNewNodeInEClass(clId2, n1)
     case (None, None) =>
       val newClassId = classIdGen.next()
-      val newClass = EClass(Set(n1, n2), Set(newClassId), newClassId)
-      EGraph(Map(newClassId -> newClass), Map(n1 -> newClass, n2 -> newClass))
+      val newClass = EClass(Set(n1, n2), TreeSet(newClassId), newClassId)
+      EGraph(SeqMap(newClassId -> newClass), SeqMap(n1 -> newClass, n2 -> newClass))
   }
 
   def withEquality(clId1: EClassId, clId2: EClassId): EGraph =
@@ -130,26 +133,43 @@ final class EGraph private(
   private def copyWithNewNodeInEClass(origCl: EClass, n: ENode): EGraph = {
     val augmentedCl = EClass(origCl.nodes + n, origCl.idAliases, origCl.canonicalId)
     val newClasses = for ((clId, cl) <- classes) yield clId -> (if cl == origCl then augmentedCl else cl)
-    val newOwners = (for ((w, cl) <- owners) yield w.eNode -> (if cl == origCl then augmentedCl else cl)) + (n -> augmentedCl)
+    val newOwners = (for ((w, cl) <- owners) yield w.eNode -> (if cl == origCl then augmentedCl else cl)) ++ SeqMap(n -> augmentedCl)
     EGraph(newClasses, newOwners)
   }
 
-  private def unwrappedOwners: Map[ENode, EClass] = for ((wr, cl) <- owners) yield wr.eNode -> cl
+  private def unwrappedOwners: SeqMap[ENode, EClass] = for ((wr, cl) <- owners) yield wr.eNode -> cl
 
   private def findOwner(n: ENode): Option[EClass] = owners.get(ENodeWrapper(n, this))
 
+  override def equals(that: Any): Boolean = throw UnsupportedOperationException()
+
+  override def hashCode(): Int = throw UnsupportedOperationException()
+
+  override def toString: String = {
+    val indent = "   "
+    val sb = StringBuilder("EGraph {\n")
+    for (cl <- classes.values.toList.distinct) {
+      sb.append(indent)
+        .append(cl.idAliases.map(id => if id == cl.canonicalId then s"$id*" else id.toString).mkString(","))
+        .append(" -> ")
+        .append(cl.nodes.mkString("{ ", ", ", " }"))
+        .append("\n")
+    }
+    sb.append("}")
+    sb.toString
+  }
 }
 
 object EGraph {
 
-  def newEmpty(using EClassId.Generator): EGraph = EGraph(Map.empty, Map.empty)
+  def empty(using EClassId.Generator): EGraph = EGraph(SeqMap.empty, SeqMap.empty)
 
   private final class ENodeWrapper(val eNode: ENode, private val eGraph: EGraph) {
 
     override def equals(that: Any): Boolean = {
       that match {
         case that: ENodeWrapper =>
-          require(this.eGraph == that.eGraph)
+          require(this.eGraph eq that.eGraph)
           this.eNode.eEquals(that.eNode)(using eGraph.classes(_))
         case _ => false
       }

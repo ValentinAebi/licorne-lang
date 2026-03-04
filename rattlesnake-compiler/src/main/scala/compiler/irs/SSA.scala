@@ -154,7 +154,7 @@ object SSA {
       case None => 0
     }
 
-    private val uidGen = AtomicLong(0)
+    private val uidGen = AtomicLong(-1)
     private val values = mutable.LinkedHashSet.empty[IdValue]
 
     def newParam(srcId: FunOrVarId): ParamIdValue = newValue {

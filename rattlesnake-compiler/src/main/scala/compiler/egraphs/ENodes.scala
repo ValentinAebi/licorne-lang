@@ -22,6 +22,8 @@ final case class EConstNode(cst: Any) extends ENode {
   }
 
   override def eHashCode()(using findClass: ClassRetriever): Int = Objects.hash(cst)
+
+  override def toString: String = cst.toString
 }
 
 final case class EIdValNode(idValue: IdValue) extends ENode {
@@ -32,12 +34,8 @@ final case class EIdValNode(idValue: IdValue) extends ENode {
   }
 
   override def eHashCode()(using findClass: ClassRetriever): Int = Objects.hash(idValue)
-}
 
-final class EIntermediateNode extends ENode {
-  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = this eq that
-
-  override def eHashCode()(using findClass: ClassRetriever): Int = System.identityHashCode(this)
+  override def toString: String = idValue.toString
 }
 
 final case class ESelectNode(owner: EClassId, fieldId: FunOrVarId) extends ENode {
@@ -50,6 +48,7 @@ final case class ESelectNode(owner: EClassId, fieldId: FunOrVarId) extends ENode
   override def eHashCode()(using findClass: ClassRetriever): Int =
     Objects.hash(fieldId, findClass(owner))
 
+  override def toString: String = s"$owner.$fieldId"
 }
 
 final case class ECallNode(receiver: EClassId, funId: FunOrVarId, args: List[EClassId]) extends ENode {
@@ -62,6 +61,8 @@ final case class ECallNode(receiver: EClassId, funId: FunOrVarId, args: List[ECl
 
   override def eHashCode()(using findClass: ClassRetriever): Int =
     Objects.hash(findClass(receiver), funId, args.map(findClass))
+
+  override def toString: String = s"$receiver.$funId" ++ args.mkString("(", ",", ")")
 }
 
 sealed trait OperatorENode(val op: Operator) extends ENode {
@@ -80,6 +81,8 @@ sealed trait OperatorENode(val op: Operator) extends ENode {
 
   override def eHashCode()(using findClass: ClassRetriever): Int =
     Objects.hash(op, operands.map(findClass))
+
+  override def toString: String = op.toString + operands.mkString("(", ",", ")")
 }
 
 final class EPlusNode(val operands: Set[EClassId]) extends OperatorENode(Operator.Plus)
