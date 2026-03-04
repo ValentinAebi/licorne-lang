@@ -1,6 +1,8 @@
 package compiler.egraphs
 
+import compiler.egraphs.rewrites.EqualitySaturationRewriteRule
 import compiler.lang.Formulas.Formula
+import compiler.util.SeqSet
 
 /**
  * Note: this uses the EGraphs (which are '''immutable''') under the hood, and should thus not be considered an efficient implementation of e-graphs!
@@ -20,11 +22,17 @@ final class MutEGraphWrapper(initGraph: EGraph) {
 
   def assertEquality(clId1: EClassId, clId2: EClassId): Unit = wrappedMethod(_.withEquality(clId1, clId2) -> ())
 
-  def areEqual(n1: ENode, n2: ENode): Boolean = eGraph.areEqual(n1, n2)
+  def equalityQuery(n1: ENode, n2: ENode): Boolean = eGraph.equalityQuery(n1, n2)
 
-  def areEqual(clId1: EClassId, clId2: EClassId): Boolean = eGraph.areEqual(clId1, clId2)
+  def equalityQuery(clId1: EClassId, clId2: EClassId): Boolean = eGraph.equalityQuery(clId1, clId2)
 
-  def areEqual(f1: Formula, f2: Formula): Boolean = wrappedMethod(_.areEqual(f1, f2))
+  def equalityQueryNoSaturation(f1: Formula, f2: Formula): Boolean = wrappedMethod(_.equalityQueryNoSaturation(f1, f2))
+  
+  def equalityQueryAfterSaturation(f1: Formula, f2: Formula, rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Long): Boolean =
+    wrappedMethod(_.equalityQueryAfterSaturation(f1, f2, rules, maxStepsCnt))
+
+  def runEqualitySaturation(rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Int): Unit =
+    wrappedMethod(_.afterEqualitySaturation(rules, maxStepsCnt) -> ())
 
   private def wrappedMethod[T](mth: EGraph => (EGraph, T)): T = {
     val (newGraph, t) = mth(eGraph)

@@ -20,6 +20,9 @@ final class SeqSet[T] private(private val underlyingMap: mutable.LinkedHashMap[T
 
   override def iterator: Iterator[T] = underlyingMap.keysIterator
 
+  override def concat(that: IterableOnce[T]): SeqSet[T] =
+    SeqSet(this.iterator ++ that.iterator)
+
   override def map[B](f: T => B): SeqSet[B] =
     new SeqSet(underlyingMap.map((k, _) => (f(k), null)))
 

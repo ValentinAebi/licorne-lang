@@ -4,6 +4,7 @@ import compiler.egraphs.EGraph.ClassRetriever
 import compiler.identifiers.FunOrVarId
 import compiler.lang.Formulas.IdValue
 import compiler.lang.Operator
+import compiler.util.SeqSet
 
 import java.util.Objects
 
@@ -65,43 +66,49 @@ final case class ECallNode(receiver: EClassId, funId: FunOrVarId, args: List[ECl
   override def toString: String = s"$receiver.$funId" ++ args.mkString("(", ",", ")")
 }
 
-sealed trait OperatorENode(val op: Operator) extends ENode {
+sealed trait BinaryOperatorENode(val op: Operator, isCommutative: Boolean) extends ENode {
 
-  /**
-   * @return a set if the operation is commutative, a sequence otherwise
-   */
-  def operands: Iterable[EClassId]
+  val lhs: EClassId
+  val rhs: EClassId
 
   override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
-    case that: OperatorENode if this.op == that.op =>
-      val thisOperands = this.operands
-      val thatOperands = that.operands
-      thisOperands.size == thatOperands.size /*optimization*/ &&
-        thisOperands.map(findClass) == thatOperands.map(findClass)
+    case that: BinaryOperatorENode if this.op == that.op =>
+      val thisLhsClass = findClass(this.lhs)
+      val thisRhsClass = findClass(this.rhs)
+      val thatLhsClass = findClass(that.lhs)
+      val thatRhsClass = findClass(that.rhs)
+      (thisLhsClass == thatLhsClass && thisRhsClass == thatRhsClass) ||
+        (isCommutative && thisLhsClass == thatRhsClass && thisRhsClass == thatLhsClass)
     case _ => false
   }
 
   override def eHashCode()(using findClass: ClassRetriever): Int =
-    Objects.hash(op, operands.map(findClass))
+    Objects.hash(op, findClass(lhs), findClass(rhs))
 
-  override def toString: String = op.toString + operands.mkString("(", ",", ")")
+  override def toString: String = s"$op($lhs,$rhs)"
 }
 
-final class EPlusNode(val operands: Set[EClassId]) extends OperatorENode(Operator.Plus)
+sealed trait UnaryOperatorNode(val op: Operator) extends ENode {
+  val operand: EClassId
 
-final class ENegNode(operand: EClassId) extends OperatorENode(Operator.Minus) {
-  override def operands: Iterable[EClassId] = List(operand)
+  override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
+    case that: UnaryOperatorNode if this.op == that.op =>
+      findClass(this.operand) == findClass(that.operand)
+  }
+
+  override def eHashCode()(using findClass: ClassRetriever): Int =
+    Objects.hash(op, findClass(operand))
 }
 
-final class ETimesNode(val operands: Set[EClassId]) extends OperatorENode(Operator.Times)
+final case class EPlusNode(lhs: EClassId, rhs: EClassId) extends BinaryOperatorENode(Operator.Plus, isCommutative = true)
 
-final class EDivNode(lhs: EClassId, rhs: EClassId) extends OperatorENode(Operator.Div) {
-  override def operands: Iterable[EClassId] = List(lhs, rhs)
-}
+final case class ENegNode(operand: EClassId) extends UnaryOperatorNode(Operator.Minus)
 
-final class EModuloNode(lhs: EClassId, rhs: EClassId) extends OperatorENode(Operator.Modulo) {
-  override def operands: Iterable[EClassId] = List(lhs, rhs)
-}
+final case class ETimesNode(lhs: EClassId, rhs: EClassId) extends BinaryOperatorENode(Operator.Times, isCommutative = true)
+
+final case class EDivNode(lhs: EClassId, rhs: EClassId) extends BinaryOperatorENode(Operator.Div, isCommutative = false)
+
+final case class EModuloNode(lhs: EClassId, rhs: EClassId) extends BinaryOperatorENode(Operator.Modulo, isCommutative = false)
 
 private def inOrderEqual(l: Iterable[EClassId], r: Iterable[EClassId], findClass: ClassRetriever): Boolean =
   if l.size != r.size then false

@@ -1,10 +1,12 @@
 package compiler.egraphs
 
+import compiler.egraphs.rewrites.{AssociativityDirection1, AssociativityDirection2, Commutativity}
 import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
 import compiler.irs.SSA.{FieldResolutionTarget, Scope}
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.{Field, RecordSignature}
+import compiler.util.SeqSet
 import compiler.valuesconversion.GlobalValuesContext
 import org.junit.Assert.{assertFalse, assertTrue}
 import org.junit.Test
@@ -14,14 +16,34 @@ import scala.collection.SeqMap
 
 class EGraphTests {
 
+  private given EClassId.Generator = new EClassId.Generator
+
+  private val scope = Scope.root(GlobalValuesContext())
+
+  private def newVal(id: String): IdValue =
+    scope.newVal(NormalFunOrVarId(id))
+
+  private val fid = NormalFunOrVarId("f")
+  private val gid = NormalFunOrVarId("g")
+
+  private val dummySig = RecordSignature(NormalTypeId("Dummy"), List.empty, SeqMap(
+    fid -> Field.StableField(fid, NothingType, newVal("f")),
+    gid -> Field.StableField(gid, NothingType, newVal("g"))
+  ), List.empty, scope, None)
+
+  extension (l: Formula) {
+    def f =
+      Select(l, FieldResolutionTarget.Resolved(dummySig, fid))
+    def g =
+      Select(l, FieldResolutionTarget.Resolved(dummySig, gid))
+
+    infix def +(r: Formula) = Plus(l, r)
+    infix def -(r: Formula) = Plus(l, Neg(r))
+    infix def *(r: Formula) = Times(l, r)
+  }
+
   @Test
   def transitiveEqualityTest(): Unit = {
-    given EClassId.Generator = new EClassId.Generator
-
-    val scope = Scope.root(GlobalValuesContext())
-
-    def newVal(id: String): IdValue =
-      scope.newVal(NormalFunOrVarId(id))
 
     val x = newVal("x")
     val y = newVal("y")
@@ -33,26 +55,20 @@ class EGraphTests {
     eg.assertEquality(y, z)
 
     // given
-    assertTrue(eg.areEqual(x, y))
-    assertTrue(eg.areEqual(y, z))
+    assertTrue(eg.equalityQueryNoSaturation(x, y))
+    assertTrue(eg.equalityQueryNoSaturation(y, z))
 
     // transitivity
-    assertTrue(eg.areEqual(x, z))
+    assertTrue(eg.equalityQueryNoSaturation(x, z))
 
     // not equal
-    assertFalse(eg.areEqual(x, t))
-    assertFalse(eg.areEqual(y, t))
-    assertFalse(eg.areEqual(z, t))
+    assertFalse(eg.equalityQueryNoSaturation(x, t))
+    assertFalse(eg.equalityQueryNoSaturation(y, t))
+    assertFalse(eg.equalityQueryNoSaturation(z, t))
   }
 
   @Test
   def simpleCongruenceTest(): Unit = {
-    given EClassId.Generator = new EClassId.Generator
-
-    val scope = Scope.root(GlobalValuesContext())
-
-    def newVal(id: String): IdValue =
-      scope.newVal(NormalFunOrVarId(id))
 
     val t = newVal("t")
     val u = newVal("u")
@@ -60,47 +76,64 @@ class EGraphTests {
     val y = newVal("y")
     val z = newVal("z")
 
-    val fid = NormalFunOrVarId("f")
-    val gid = NormalFunOrVarId("g")
-
-    val dummySig = RecordSignature(NormalTypeId("Dummy"), List.empty, SeqMap(
-      fid -> Field.StableField(fid, NothingType, newVal("f")),
-      gid -> Field.StableField(gid, NothingType, newVal("g"))
-    ), List.empty, scope, None)
-
-    extension (owner: Formula) {
-      def f =
-        Select(owner, FieldResolutionTarget.Resolved(dummySig, fid))
-      def g =
-        Select(owner, FieldResolutionTarget.Resolved(dummySig, gid))
-    }
-
     val eg = MutEGraphWrapper.newEmpty
     eg.assertEquality(t, u)
     eg.assertEquality(x, y)
     eg.assertEquality(x, z)
 
     // basics
-    assertTrue(eg.areEqual(t, u))
-    assertTrue(eg.areEqual(x, y))
-    assertFalse(eg.areEqual(t, x))
-    assertFalse(eg.areEqual(t, y))
-    assertFalse(eg.areEqual(u, x))
-    assertFalse(eg.areEqual(u, y))
+    assertTrue(eg.equalityQueryNoSaturation(t, u))
+    assertTrue(eg.equalityQueryNoSaturation(x, y))
+    assertFalse(eg.equalityQueryNoSaturation(t, x))
+    assertFalse(eg.equalityQueryNoSaturation(t, y))
+    assertFalse(eg.equalityQueryNoSaturation(u, x))
+    assertFalse(eg.equalityQueryNoSaturation(u, y))
 
     // congruences
-    assertTrue(eg.areEqual(t.f, u.f))
-    assertTrue(eg.areEqual(x.f, y.f))
-    assertFalse(eg.areEqual(x.f, y.g))
-    assertFalse(eg.areEqual(t.f, x.f))
-    assertFalse(eg.areEqual(u.g, z.g))
+    assertTrue(eg.equalityQueryNoSaturation(t.f, u.f))
+    assertTrue(eg.equalityQueryNoSaturation(x.f, y.f))
+    assertFalse(eg.equalityQueryNoSaturation(x.f, y.g))
+    assertFalse(eg.equalityQueryNoSaturation(t.f, x.f))
+    assertFalse(eg.equalityQueryNoSaturation(u.g, z.g))
 
     // transitivity + congruence
-    assertTrue(eg.areEqual(y.g, z.g))
+    assertTrue(eg.equalityQueryNoSaturation(y.g, z.g))
+  }
 
-    // transitivity + congruence + built-in commutativity and associativity
-    assertTrue(/* */ eg.areEqual(Sum(x.g, t, Times(x, Sum(t.f, x))), Sum(t, Times(Sum(u.f, y), z), y.g)))
-    assertFalse(/**/ eg.areEqual(Sum(x.g, t, Times(x, Sum(t.f, t))), Sum(t, Times(Sum(u.f, y), z), y.g)))
+  @Test
+  def equalitySaturationAssocCommutTest(): Unit = {
+
+    val r = newVal("r")
+    val s = newVal("s")
+    val t = newVal("t")
+    val u = newVal("u")
+    val x = newVal("x")
+    val y = newVal("y")
+    val z = newVal("z")
+
+    val eg = MutEGraphWrapper.newEmpty
+    eg.assertEquality(t, u)
+    eg.assertEquality(x, y)
+    eg.assertEquality(x, z)
+
+    val rules = SeqSet(
+      Commutativity(EPlusNode(_, _)),
+      AssociativityDirection1(EPlusNode(_, _)),
+      AssociativityDirection2(EPlusNode(_, _)),
+      Commutativity(ETimesNode(_, _)),
+      AssociativityDirection1(ETimesNode(_, _)),
+      AssociativityDirection2(ETimesNode(_, _)),
+    )
+
+    val timeout = 10_000L
+
+    assertTrue(eg.equalityQueryAfterSaturation(s + t, t + s, rules, timeout))
+    assertTrue(eg.equalityQueryAfterSaturation(s + t, u + s, rules, timeout))
+    assertFalse(eg.equalityQueryAfterSaturation(s + t, t + x, rules, timeout))
+    assertTrue(eg.equalityQueryAfterSaturation((s + t) + y, s + (t + z), rules, timeout))
+    assertFalse(eg.equalityQueryAfterSaturation((s + t) + x, r + (t + x), rules, timeout))
+
+    assertTrue(eg.equalityQueryAfterSaturation(r + s + t + x, t + r + x + s, rules, timeout))
   }
 
 }

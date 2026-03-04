@@ -71,9 +71,9 @@ final class Typer(
     case BoolConst(value) => ???
     case StringConst(value) => ???
     case Select(owner, field) => ???
-    case Sum(terms) => ???
+    case Plus(lhs, rhs) => ???
     case Neg(operand) => ???
-    case Times(terms) => ???
+    case Times(lhs, rhs) => ???
     case DivBy(lhs, rhs) => ???
     case Modulo(lhs, rhs) => ???
   }

@@ -60,60 +60,17 @@ object Formulas {
       s"$receiver.$func" ++ args.mkString("(", ",", ")")
   }
 
-  final case class Sum(terms: SeqSet[Formula]) extends Formula {
-    override def toString: String = {
-      val sb = new StringBuilder
-      var isFirst = true
-      for (term <- terms) {
-        term match {
-          case neg: Neg if isFirst =>
-            sb.append(neg)
-          case Neg(operand) =>
-            sb.append(" - ").append(operand)
-          case term if isFirst =>
-            sb.append(term)
-          case term =>
-            sb.append(" + ").append(term)
-        }
-        isFirst = false
-      }
-      sb.toString
-    }
-  }
-
-  object Sum {
-    def apply(terms: Formula*): Sum = new Sum(SeqSet(terms))
-  }
+  final case class Plus(lhs: Formula, rhs: Formula) extends Formula
 
   final case class Neg(operand: Formula) extends Formula {
     override def toString: String = "-" + parenthIfNot[IdValue | ConstFormula](operand)
   }
 
-  final case class Times(terms: SeqSet[Formula]) extends Formula {
-    override def toString: String = {
-      val sb = new StringBuilder
-      var isFirst = true
-      for (term <- terms) {
-        val termStr =
-          if isFirst then parenthIfNot[Times | IdValue | ConstFormula](term)
-          else parenthIf[Sum | Neg](term)
-        if (!isFirst) {
-          sb.append(" * ")
-        }
-        sb.append(termStr)
-        isFirst = false
-      }
-      sb.toString()
-    }
-  }
-
-  object Times {
-    def apply(terms: Formula*): Times = new Times(SeqSet(terms))
-  }
+  final case class Times(lhs: Formula, rhs: Formula) extends Formula
 
   final case class DivBy(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
-      val lhsStr = parenthIf[Sum | Neg](lhs)
+      val lhsStr = parenthIf[Plus | Neg](lhs)
       val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
       s"$lhsStr / $rhsStr"
     }
@@ -121,7 +78,7 @@ object Formulas {
 
   final case class Modulo(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
-      val lhsStr = parenthIf[Sum | Neg](lhs)
+      val lhsStr = parenthIf[Plus | Neg](lhs)
       val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
       s"$lhsStr % $rhsStr"
     }
@@ -145,9 +102,9 @@ object Formulas {
     case c: StringConst => c
     case Select(owner, field) => Select(owner.substitute(subst), field)
     case Call(receiver, funId, args) => Call(receiver.substitute(subst), funId, args.map(_.substitute(subst)))
-    case Sum(terms) => Sum(terms.map(_.substitute(subst)))
+    case Plus(lhs, rhs) => Plus(lhs.substitute(subst), rhs.substitute(subst))
     case Neg(operand) => Neg(operand.substitute(subst))
-    case Times(terms) => Times(terms.map(_.substitute(subst)))
+    case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
     case DivBy(lhs, rhs) => DivBy(lhs.substitute(subst), rhs.substitute(subst))
     case Modulo(lhs, rhs) => Modulo(lhs.substitute(subst), rhs.substitute(subst))
   }

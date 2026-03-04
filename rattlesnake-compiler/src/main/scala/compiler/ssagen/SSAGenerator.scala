@@ -635,12 +635,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
-          } yield Sum(lhsFormula, rhsFormula)
+          } yield Plus(lhsFormula, rhsFormula)
         case Asts.BinaryOp(lhs, Operator.Minus, rhs) =>
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
-          } yield Sum(lhsFormula, Neg(rhsFormula))
+          } yield Plus(lhsFormula, Neg(rhsFormula))
         case Asts.BinaryOp(lhs, Operator.Times, rhs) =>
           for {
             lhsFormula <- generateFormula(lhs, currScope)
