@@ -74,8 +74,10 @@ sealed trait OperatorENode(val op: Operator) extends ENode {
 
   override def eEquals(that: ENode)(using findClass: ClassRetriever): Boolean = that match {
     case that: OperatorENode if this.op == that.op =>
-      require(this.operands.size == that.operands.size)
-      this.operands.map(findClass) == that.operands.map(findClass)
+      val thisOperands = this.operands
+      val thatOperands = that.operands
+      thisOperands.size == thatOperands.size /*optimization*/ &&
+        thisOperands.map(findClass) == thatOperands.map(findClass)
     case _ => false
   }
 

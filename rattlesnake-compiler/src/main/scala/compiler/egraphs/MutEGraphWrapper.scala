@@ -32,6 +32,9 @@ final class MutEGraphWrapper(initGraph: EGraph) {
     t
   }
 
+  override def toString: String =
+    s"Wrapper {\n" + eGraph.toString.indent(3) + "}"
+
 }
 
 object MutEGraphWrapper {

@@ -2,7 +2,7 @@ package compiler.egraphs
 
 import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
 import compiler.irs.SSA.{FieldResolutionTarget, Scope}
-import compiler.lang.Formulas.{Formula, IdValue, Select}
+import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.{Field, RecordSignature}
 import compiler.valuesconversion.GlobalValuesContext
@@ -13,8 +13,6 @@ import scala.collection.SeqMap
 
 
 class EGraphTests {
-
-  // TODO test with congruence
 
   @Test
   def transitiveEqualityTest(): Unit = {
@@ -99,6 +97,10 @@ class EGraphTests {
 
     // transitivity + congruence
     assertTrue(eg.areEqual(y.g, z.g))
+
+    // transitivity + congruence + built-in commutativity and associativity
+    assertTrue(/* */ eg.areEqual(Sum(x.g, t, Times(x, Sum(t.f, x))), Sum(t, Times(Sum(u.f, y), z), y.g)))
+    assertFalse(/**/ eg.areEqual(Sum(x.g, t, Times(x, Sum(t.f, t))), Sum(t, Times(Sum(u.f, y), z), y.g)))
   }
 
 }
