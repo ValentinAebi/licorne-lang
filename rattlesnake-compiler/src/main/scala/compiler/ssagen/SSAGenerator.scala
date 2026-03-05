@@ -8,7 +8,7 @@ import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Formulas.*
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.UnitType
+import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -28,7 +28,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
   private given CompilationStep = CompilationStep.SSAGeneration
-  
+
   override def apply(input: List[Asts.Source]): Program = {
     val programBuilder = Program.Builder(er)
     val globalScope = programBuilder.globalValuesContext.globalScope
@@ -519,9 +519,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
           Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree).withDesugaringSource(binopTree)
         ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.And, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, And(resultVal, _, _))
+        recurseOnDesugared(Asts.Ternary(lhsTree,
+          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
+          Asts.BoolLit(false).withDesugaringSource(binopTree)
+        ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Or, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Or(resultVal, _, _))
+        recurseOnDesugared(Asts.Ternary(lhsTree,
+          Asts.BoolLit(true).withDesugaringSource(binopTree),
+          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree)
+        ))
       case binopTree@Asts.BinaryOp(lhs, operator, rhs) =>
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>
@@ -588,7 +594,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
   }
 
   private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = boundary {
-    
+
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
       def failIllegalConstruct(constructKindDescr: String): Option[Formula] = {
@@ -669,7 +675,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         case Asts.PanicExpr(msg) => failIllegalConstruct("panic expression")
       }
     }
-    
+
     generateFormula(expr, currScope)
   }
 
