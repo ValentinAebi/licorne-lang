@@ -12,6 +12,8 @@ final class MutEGraphWrapper(initGraph: EGraph) {
 
   def getCurrentState: EGraph = eGraph
 
+  def ownerClassOf(n: ENode): EClass = eGraph.ownerClassOf(n)
+
   def addNode(n: ENode): EClassId = wrappedMethod(_.nodeAdded(n))
 
   def absorbFormula(f: Formula): EClassId = wrappedMethod(_.withFormulaAbsorbed(f))
@@ -27,11 +29,11 @@ final class MutEGraphWrapper(initGraph: EGraph) {
   def equalityQuery(clId1: EClassId, clId2: EClassId): Boolean = eGraph.equalityQuery(clId1, clId2)
 
   def equalityQueryNoSaturation(f1: Formula, f2: Formula): Boolean = wrappedMethod(_.equalityQueryNoSaturation(f1, f2))
-  
-  def equalityQueryAfterSaturation(f1: Formula, f2: Formula, rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Long): Boolean =
+
+  def equalityQueryAfterSaturation(f1: Formula, f2: Formula, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Boolean =
     wrappedMethod(_.equalityQueryAfterSaturation(f1, f2, rules, maxStepsCnt))
 
-  def runEqualitySaturation(rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Int): Unit =
+  def runEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Int): Unit =
     wrappedMethod(_.afterEqualitySaturation(rules, maxStepsCnt) -> ())
 
   private def wrappedMethod[T](mth: EGraph => (EGraph, T)): T = {

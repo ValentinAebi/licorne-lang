@@ -60,13 +60,28 @@ object Formulas {
       s"$receiver.$func" ++ args.mkString("(", ",", ")")
   }
 
-  final case class Plus(lhs: Formula, rhs: Formula) extends Formula
+  final case class Plus(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = {
+      val lhsStr = lhs.toString
+      val opAndRhsStr = rhs match {
+        case Neg(negated) => s" - $negated"
+        case rhs => s" + $rhs"
+      }
+      lhsStr ++ opAndRhsStr
+    }
+  }
 
   final case class Neg(operand: Formula) extends Formula {
     override def toString: String = "-" + parenthIfNot[IdValue | ConstFormula](operand)
   }
 
-  final case class Times(lhs: Formula, rhs: Formula) extends Formula
+  final case class Times(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = {
+      val lhsStr = parenthIf[Plus | Neg](lhs)
+      val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
+      s"$lhsStr * $rhsStr"
+    }
+  }
 
   final case class DivBy(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {

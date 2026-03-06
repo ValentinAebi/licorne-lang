@@ -21,5 +21,15 @@ final case class EClass(nodes: SeqSet[ENode], idAliases: SortedSet[EClassId], ca
     }
     SeqSet(resBuffer)
   }
+  
+  def asConst: Option[Any] = {
+    val cstNodes = findNodesOfType[EConstNode]
+    if cstNodes.size == 1 then Some(cstNodes.head.cst) else None
+  }
+  
+  def asConstOfType[T : ClassTag]: Option[T] = asConst.flatMap {
+    case t: T => Some(t)
+    case _ => None
+  }
 
 }

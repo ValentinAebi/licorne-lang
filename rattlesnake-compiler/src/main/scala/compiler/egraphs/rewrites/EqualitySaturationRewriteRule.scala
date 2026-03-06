@@ -1,13 +1,13 @@
 package compiler.egraphs.rewrites
 
-import compiler.egraphs.{EGraph, ENode}
-import compiler.util.SeqSet
+import compiler.egraphs.{EClass, EClassId, EGraph, ENode}
 
-trait EqualitySaturationRewriteRule {
+import scala.collection.mutable
 
-  /**
-   * @return the updated graph and a list containing the new nodes
-   */
-  def rewrite(eGraph: EGraph, rootNode: ENode): (EGraph, List[ENode])
+abstract class EqualitySaturationRewriteRule {
+
+  def nodeTargets: Iterable[Class[?]]
+
+  def rewrite(eGraph: EGraph, rootNode: ENode, newTargetNodesCollector: java.util.LinkedHashSet[EClass]): EGraph
 
 }

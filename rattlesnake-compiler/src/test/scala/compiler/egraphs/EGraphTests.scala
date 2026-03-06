@@ -1,14 +1,13 @@
 package compiler.egraphs
 
-import compiler.egraphs.rewrites.{AssociativityDirection1, AssociativityDirection2, Commutativity}
+import compiler.egraphs.rewrites.EqualitySaturationRewriteRules.allRules
 import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
 import compiler.irs.SSA.{FieldResolutionTarget, Scope}
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.{Field, RecordSignature}
-import compiler.util.SeqSet
 import compiler.valuesconversion.GlobalValuesContext
-import org.junit.Assert.{assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
 import scala.collection.SeqMap
@@ -40,7 +39,12 @@ class EGraphTests {
     infix def +(r: Formula) = Plus(l, r)
     infix def -(r: Formula) = Plus(l, Neg(r))
     infix def *(r: Formula) = Times(l, r)
+    infix def /(r: Formula) = DivBy(l, r)
+
+    def unary_- = Neg(l)
   }
+
+  private given Conversion[Int, Formula] = IntConst(_)
 
   @Test
   def transitiveEqualityTest(): Unit = {
@@ -116,24 +120,57 @@ class EGraphTests {
     eg.assertEquality(x, y)
     eg.assertEquality(x, z)
 
-    val rules = SeqSet(
-      Commutativity(EPlusNode(_, _)),
-      AssociativityDirection1(EPlusNode(_, _)),
-      AssociativityDirection2(EPlusNode(_, _)),
-      Commutativity(ETimesNode(_, _)),
-      AssociativityDirection1(ETimesNode(_, _)),
-      AssociativityDirection2(ETimesNode(_, _)),
-    )
+    val maxSteps = 500L
 
-    val timeout = 10_000L
+    assertTrue(eg.equalityQueryAfterSaturation(s + t, t + s, allRules, maxSteps))
+    assertTrue(eg.equalityQueryAfterSaturation(s + t, u + s, allRules, maxSteps))
+    assertFalse(eg.equalityQueryAfterSaturation(s + t, t + x, allRules, maxSteps))
+    assertTrue(eg.equalityQueryAfterSaturation((s + t) + y, s + (t + z), allRules, maxSteps))
+    assertFalse(eg.equalityQueryAfterSaturation((s + t) + x, r + (t + x), allRules, maxSteps))
 
-    assertTrue(eg.equalityQueryAfterSaturation(s + t, t + s, rules, timeout))
-    assertTrue(eg.equalityQueryAfterSaturation(s + t, u + s, rules, timeout))
-    assertFalse(eg.equalityQueryAfterSaturation(s + t, t + x, rules, timeout))
-    assertTrue(eg.equalityQueryAfterSaturation((s + t) + y, s + (t + z), rules, timeout))
-    assertFalse(eg.equalityQueryAfterSaturation((s + t) + x, r + (t + x), rules, timeout))
+    assertTrue(eg.equalityQueryAfterSaturation(r + s + t + x, t + r + x + s, allRules, maxSteps))
+  }
 
-    assertTrue(eg.equalityQueryAfterSaturation(r + s + t + x, t + r + x + s, rules, timeout))
+  @Test
+  def simplificationTest(): Unit = {
+
+    def simplify(f: Formula, maxSteps: Long): Formula = {
+      val (ig, fClId) = EGraph.empty.withFormulaAbsorbed(f)
+      ig.simplified(fClId, allRules, maxSteps).get
+    }
+
+    val x = newVal("x")
+    val t = newVal("t")
+
+    assertEquals(12: Formula, simplify(-(-(12: Formula)), 100))
+    assertEquals(x, simplify(x + 0, 50))
+    assertEquals(x + t, simplify(x * 1 + 1 * t, 100))
+    assertEquals(3 * x, simplify(2 * x + x, 100))
+    assertEquals(74: Formula, simplify(x / x * 2 + 11 * t - 11 * t + 8 * 9, 200))
+    assertEquals(-2 * x + 3 * t, simplify(3 * x + 2 * t - 5 * x + t, 50_000))
+  }
+
+  @Test def costsOrderingTest(): Unit = {
+
+    val x = newVal("x")
+    val y = newVal("y")
+    val z = newVal("z")
+
+    val mg = MutEGraphWrapper.newEmpty
+
+    def assertCostLt(l: Formula, r: Formula): Unit = {
+      val lid = mg.absorbFormula(l)
+      val rid = mg.absorbFormula(r)
+      val costCache = mg.getCurrentState.costCache
+      assertTrue(costCache.minCostOf(lid) < costCache.minCostOf(rid))
+    }
+
+    assertCostLt(42, x)
+    assertCostLt(42, (30: Formula) + 12)
+    assertCostLt(x, y + z)
+    assertCostLt(2 * x, x + x)
+    assertCostLt(2 * x, x * 2)
+    assertCostLt(3 * x + y, x + y + 2 * x)
   }
 
 }

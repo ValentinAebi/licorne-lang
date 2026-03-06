@@ -1,22 +1,34 @@
 package compiler.egraphs
 
-import compiler.egraphs.EGraph.ENodeWrapper
 import compiler.egraphs.rewrites.EqualitySaturationRewriteRule
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Formulas
-import compiler.lang.Formulas.Formula
+import compiler.lang.Formulas.*
 import compiler.util.SeqSet
 
-import scala.collection.{SeqMap, mutable}
+import scala.collection.SeqMap
 import scala.collection.immutable.TreeSet
 import scala.util.boundary
 
 
 final class EGraph private(
-                            val classes: SeqMap[EClassId, EClass],
-                            private val unwrappedOwners: SeqMap[ENode, EClass]
+                            classesArgs: SeqMap[EClassId, EClass],
+                            ownerArgs: SeqMap[ENode, EClass]
                           )(using classIdGen: EClassId.Generator) {
-  private val owners: SeqMap[ENodeWrapper, EClass] = for ((n, cl) <- unwrappedOwners) yield ENodeWrapper(n, this) -> cl
+  val classes: SeqMap[EClassId, EClass] = classesArgs.map { (clId, cl) =>
+    clId -> EClass(cl.nodes.map(classesArgs.canonicalize), cl.idAliases, cl.canonicalId)
+  }
+  private val nodeToClass: SeqMap[ENode, EClass] = for ((n, cl) <- ownerArgs) yield canonicalize(n) -> cl
+
+  val costCache: CostCache = CostCache(this)
+
+  def nodeIsWellDefined(n: ENode): Boolean =
+    n.operandClassIds.forall(classes.contains)
+
+  def ownerClassOf(n: ENode): EClass =
+    findOwner(n).get
+
+  def nodesCnt: Int = nodeToClass.size
 
   /*
    * TODO optimize?
@@ -24,9 +36,43 @@ final class EGraph private(
    *  - pool of ENodeWrappers
    *  - collections created by map in eEquals and eHashCode
    */
+  def simplified(clId: EClassId, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
+    val ig = afterEqualitySaturation(rules, maxStepsCnt)
+    Option.when(ig.costCache.minCostOf(clId) < CostCache.cycleCost)(ig.simplifiedImpl(clId))
+  }
+
+  def simplified(n: ENode, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
+    val ig = afterEqualitySaturation(rules, maxStepsCnt)
+    Option.when(ig.costCache.minCostOf(n) < CostCache.cycleCost)(ig.simplifiedImpl(n))
+  }
+
+  private def simplifiedImpl(clId: EClassId): Formula =
+    simplifiedImpl(classes(clId))
+
+  private def simplifiedImpl(n: ENode): Formula = n match {
+    case EConstNode(cst: Int) => IntConst(cst)
+    case EConstNode(cst: Boolean) => BoolConst(cst)
+    case EConstNode(cst: String) => StringConst(cst)
+    case EConstNode(cst: Double) => ???
+    case EConstNode(cst) =>
+      throw new UnsupportedOperationException(s"unexpected constant: $cst")
+    case EIdValNode(idValue) => idValue
+    case ESelectNode(owner, fieldId) =>
+      Select(simplifiedImpl(owner), FieldResolutionTarget.Unresolved(fieldId))
+    case ECallNode(receiver, funId, args) =>
+      Call(simplifiedImpl(receiver), InvocationTarget.Unresolved(funId), args.map(simplifiedImpl))
+    case EPlusNode(lhs, rhs) => Plus(simplifiedImpl(lhs), simplifiedImpl(rhs))
+    case ETimesNode(lhs, rhs) => Times(simplifiedImpl(lhs), simplifiedImpl(rhs))
+    case EDivNode(lhs, rhs) => DivBy(simplifiedImpl(lhs), simplifiedImpl(rhs))
+    case EModuloNode(lhs, rhs) => Modulo(simplifiedImpl(lhs), simplifiedImpl(rhs))
+    case ENegNode(operand) => Neg(simplifiedImpl(operand))
+  }
+
+  private def simplifiedImpl(cl: EClass): Formula =
+    simplifiedImpl(costCache.minNodeInClass(cl).get)
 
   def equalityQuery(clId1: EClassId, clId2: EClassId): Boolean =
-    classes(clId1) == classes(clId2)
+    classes(clId1).canonicalId == classes(clId2).canonicalId
 
   def equalityQuery(n1: ENode, n2: ENode): Boolean = (findOwner(n1), findOwner(n2)) match {
     case (Some(cl1), Some(cl2)) => cl1 == cl2
@@ -39,23 +85,25 @@ final class EGraph private(
     (ig2, ig2.equalityQuery(f1Id, f2Id))
   }
 
-  def equalityQueryAfterSaturation(f1: Formula, f2: Formula, rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Long): (EGraph, Boolean) = {
+  def equalityQueryAfterSaturation(f1: Formula, f2: Formula, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): (EGraph, Boolean) = {
     val (ig1, f1Id) = this.withFormulaAbsorbed(f1)
     val (ig2, f2Id) = ig1.withFormulaAbsorbed(f2)
+    // TODO maybe periodically test equality between rounds of saturation, for performance?
     val satG = ig2.afterEqualitySaturation(rules, maxStepsCnt)
     (satG, satG.equalityQuery(f1Id, f2Id))
   }
 
   def nodeAdded(n: ENode): (EGraph, EClassId) = {
-    val wr = owners.get(ENodeWrapper(n, this))
-    wr match {
-      case Some(eClass) => (this, eClass.canonicalId)
+    require(nodeIsWellDefined(n))
+    findOwner(n) match {
+      case Some(eClass) =>
+        (copyWithNewNodeInEClass(eClass, n), eClass.canonicalId)
       case None =>
         val newClassId = classIdGen.next()
         val newClass = EClass(SeqSet(n), TreeSet(newClassId), newClassId)
         val newGraph = EGraph(
           classes ++ SeqMap(newClassId -> newClass),
-          unwrappedOwners ++ SeqMap(n -> newClass)
+          nodeToClass ++ SeqMap(n -> newClass)
         )
         (newGraph, newClassId)
     }
@@ -89,7 +137,7 @@ final class EGraph private(
     else {
       val mergedClass = EClass(cl1.nodes.concat(cl2.nodes), cl1.idAliases ++ cl2.idAliases, cl1.canonicalId)
       val newClasses = for ((clId, cl) <- classes) yield clId -> (if mergedClass.idAliases.contains(clId) then mergedClass else cl)
-      val newOwners = for ((w, cl) <- owners) yield w.eNode -> (if cl == cl1 || cl == cl2 then mergedClass else cl)
+      val newOwners = for ((n, cl) <- nodeToClass) yield n -> (if cl == cl1 || cl == cl2 then mergedClass else cl)
       EGraph(newClasses, newOwners)
     }
 
@@ -143,36 +191,79 @@ final class EGraph private(
   }
 
   private def copyWithNewNodeInEClass(origCl: EClass, n: ENode): EGraph = {
-    val augmentedCl = EClass(origCl.nodes.incl(n), origCl.idAliases, origCl.canonicalId)
-    val newClasses = for ((clId, cl) <- classes) yield clId -> (if cl == origCl then augmentedCl else cl)
-    val newOwners = (for ((w, cl) <- owners) yield w.eNode -> (if cl == origCl then augmentedCl else cl)) ++ SeqMap(n -> augmentedCl)
-    EGraph(newClasses, newOwners)
+    val nCanonic = canonicalize(n)
+    if origCl.nodes.contains(nCanonic) then this
+    else {
+      val augmentedCl = EClass(origCl.nodes.incl(nCanonic), origCl.idAliases, origCl.canonicalId)
+      val newClasses = for ((clId, cl) <- classes) yield clId -> (if cl == origCl then augmentedCl else cl)
+      val newOwners = (for ((n, cl) <- nodeToClass) yield n -> (if cl == origCl then augmentedCl else cl)) ++ SeqMap(nCanonic -> augmentedCl)
+      EGraph(newClasses, newOwners)
+    }
   }
 
-  def afterEqualitySaturation(rules: SeqSet[EqualitySaturationRewriteRule], maxStepsCnt: Long): EGraph = boundary {
-    val queue = mutable.Queue.empty[ENode]
-    queue.enqueueAll(this.unwrappedOwners.keys)
-    var eGraph = this
+  def afterEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): EGraph = boundary {
+    val nodeClassToRules =
+      (for r <- rules; nc <- r.nodeTargets yield nc -> r)
+        .groupBy(_._1)
+        .map((nc, rules) => nc -> rules.map(_._2))
     var stepsCnt = 0L
-    while (queue.nonEmpty) {
-      val n = queue.dequeue()
-      for (rule <- rules) {
-        val (eGraphAfter, createdNodes) = rule.rewrite(eGraph, n)
-        val newNodes = createdNodes.filterNot(eGraph.unwrappedOwners.contains)
-        if (newNodes.nonEmpty) {
-          queue.enqueueAll(newNodes)
-        }
-        eGraph = eGraphAfter
-        stepsCnt += 1
-        if (stepsCnt >= maxStepsCnt) {
-          boundary.break(eGraph)
+    var updatesCnt = 0L // TODO remove if unused
+    var stuck = false
+    var eGraph = this
+    while (!stuck) {
+      stuck = true
+      val queue = new java.util.LinkedHashSet[EClass]()
+      eGraph.classes.values.foreach(queue.addLast)
+      while (!queue.isEmpty) {
+        val cl = queue.removeFirst()
+        var modified = false
+        for {
+          n <- cl.nodes
+          rule <- nodeClassToRules.getOrElse(n.getClass, Set.empty[EqualitySaturationRewriteRule])
+        } do {
+          val eGraphAfter = rule.rewrite(eGraph, n, queue)
+          if (!(eGraphAfter eq eGraph)) {
+            eGraph = eGraphAfter
+            modified = true
+            updatesCnt += 1
+          }
+          stepsCnt += 1
+          if (stepsCnt >= maxStepsCnt) {
+            boundary.break(eGraph)
+          }
         }
       }
     }
     eGraph
   }
 
-  private def findOwner(n: ENode): Option[EClass] = owners.get(ENodeWrapper(n, this))
+  def canonicalize(n: ENode): ENode = classes.canonicalize(n)
+
+  extension (classes: SeqMap[EClassId, EClass]) {
+
+    private def canonicalize(clId: EClassId): EClassId = classes(clId).canonicalId
+
+    private def canonicalize(n: ENode): ENode = n match {
+      case constNode: EConstNode => constNode
+      case valNode: EIdValNode => valNode
+      case ESelectNode(owner, fieldId) =>
+        ESelectNode(canonicalize(owner), fieldId)
+      case ECallNode(receiver, funId, args) =>
+        ECallNode(canonicalize(receiver), funId, args.map(canonicalize))
+      case EPlusNode(lhs, rhs) =>
+        EPlusNode(canonicalize(lhs), canonicalize(rhs))
+      case ETimesNode(lhs, rhs) =>
+        ETimesNode(canonicalize(lhs), canonicalize(rhs))
+      case EDivNode(lhs, rhs) =>
+        EDivNode(canonicalize(lhs), canonicalize(rhs))
+      case EModuloNode(lhs, rhs) =>
+        EModuloNode(canonicalize(lhs), canonicalize(rhs))
+      case ENegNode(operand) =>
+        ENegNode(canonicalize(operand))
+    }
+  }
+
+  private def findOwner(n: ENode): Option[EClass] = nodeToClass.get(canonicalize(n))
 
   override def equals(that: Any): Boolean = throw UnsupportedOperationException()
 
@@ -186,31 +277,22 @@ final class EGraph private(
         .append(cl.idAliases.map(id => if id == cl.canonicalId then s"$id*" else id.toString).mkString(","))
         .append(" -> ")
         .append(cl.nodes.mkString("{ ", ", ", " }"))
-        .append("\n")
+      for (minNode <- costCache.minNodeInClass(cl)) {
+        sb.append("  // ").append(simplifiedImpl(minNode))
+      }
+      sb.append("\n")
     }
     sb.append("}")
     sb.toString
   }
+
 }
 
 object EGraph {
 
   def empty(using EClassId.Generator): EGraph = EGraph(SeqMap.empty, SeqMap.empty)
 
-  private final class ENodeWrapper(val eNode: ENode, private val eGraph: EGraph) {
-
-    override def equals(that: Any): Boolean = {
-      that match {
-        case that: ENodeWrapper =>
-          require(this.eGraph eq that.eGraph)
-          this.eNode.eEquals(that.eNode)(using eGraph.classes(_))
-        case _ => false
-      }
-    }
-
-    override def hashCode(): Int = eNode.eHashCode()(using eGraph.classes(_))
-  }
-
+  // TODO remove if not used
   type ClassRetriever = EClassId => EClass
 
 }
