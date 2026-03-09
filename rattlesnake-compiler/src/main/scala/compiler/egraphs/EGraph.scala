@@ -1,24 +1,35 @@
 package compiler.egraphs
 
+import compiler.datastructures.Graph
 import compiler.egraphs.rewrites.EqualitySaturationRewriteRule
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
-import compiler.util.SeqSet
+import compiler.util.{SeqSet, mapVals}
 
-import scala.collection.SeqMap
-import scala.collection.immutable.TreeSet
+import scala.collection.immutable.{SeqMap, TreeSet}
 import scala.util.boundary
 
 
 final class EGraph private(
                             classesArgs: SeqMap[EClassId, EClass],
-                            ownerArgs: SeqMap[ENode, EClass]
+                            ownerArgs: SeqMap[ENode, EClass],
+                            upperBounds: SeqMap[EClass, SeqSet[EClass]]
                           )(using classIdGen: EClassId.Generator) {
+
   val classes: SeqMap[EClassId, EClass] = classesArgs.map { (clId, cl) =>
     clId -> EClass(cl.nodes.map(classesArgs.canonicalize), cl.idAliases, cl.canonicalId)
   }
+
   private val nodeToClass: SeqMap[ENode, EClass] = for ((n, cl) <- ownerArgs) yield canonicalize(n) -> cl
+
+  private lazy val leqGraph: Graph[EClass] = {
+    val gb = Graph.Builder[EClass]()
+    for ((cl, lb) <- upperBounds) {
+      gb.addDescendants(cl, lb)
+    }
+    gb.build()
+  }
 
   val costCache: CostCache = CostCache(this)
 
@@ -103,7 +114,8 @@ final class EGraph private(
         val newClass = EClass(SeqSet(n), TreeSet(newClassId), newClassId)
         val newGraph = EGraph(
           classes ++ SeqMap(newClassId -> newClass),
-          nodeToClass ++ SeqMap(n -> newClass)
+          nodeToClass ++ SeqMap(n -> newClass),
+          upperBounds
         )
         (newGraph, newClassId)
     }
@@ -120,7 +132,11 @@ final class EGraph private(
     case (None, None) =>
       val newClassId = classIdGen.next()
       val newClass = EClass(SeqSet(n1, n2), TreeSet(newClassId), newClassId)
-      EGraph(SeqMap(newClassId -> newClass), SeqMap(n1 -> newClass, n2 -> newClass))
+      EGraph(
+        SeqMap(newClassId -> newClass),
+        SeqMap(n1 -> newClass, n2 -> newClass),
+        SeqMap.empty
+      )
   }
 
   def withEquality(clId1: EClassId, clId2: EClassId): EGraph =
@@ -136,9 +152,13 @@ final class EGraph private(
     if cl1 == cl2 then this
     else {
       val mergedClass = EClass(cl1.nodes.concat(cl2.nodes), cl1.idAliases ++ cl2.idAliases, cl1.canonicalId)
+
+      def replClass(origClass: EClass) = if origClass == cl1 || origClass == cl2 then mergedClass else origClass
+
       val newClasses = for ((clId, cl) <- classes) yield clId -> (if mergedClass.idAliases.contains(clId) then mergedClass else cl)
-      val newOwners = for ((n, cl) <- nodeToClass) yield n -> (if cl == cl1 || cl == cl2 then mergedClass else cl)
-      EGraph(newClasses, newOwners)
+      val newOwners = nodeToClass.mapVals(replClass)
+      val newLowerBounds = upperBounds.mapVals(lbs => lbs.map(replClass))
+      EGraph(newClasses, newOwners, newLowerBounds)
     }
 
   /**
@@ -195,10 +215,50 @@ final class EGraph private(
     if origCl.nodes.contains(nCanonic) then this
     else {
       val augmentedCl = EClass(origCl.nodes.incl(nCanonic), origCl.idAliases, origCl.canonicalId)
-      val newClasses = for ((clId, cl) <- classes) yield clId -> (if cl == origCl then augmentedCl else cl)
-      val newOwners = (for ((n, cl) <- nodeToClass) yield n -> (if cl == origCl then augmentedCl else cl)) ++ SeqMap(nCanonic -> augmentedCl)
-      EGraph(newClasses, newOwners)
+
+      def replClass(cl: EClass) = if cl == origCl then augmentedCl else cl
+
+      val newClasses = classes.mapVals(replClass)
+      val newOwners = nodeToClass.mapVals(replClass) ++ SeqMap(nCanonic -> augmentedCl)
+      val newLowerBounds = upperBounds.mapVals(_.map(replClass))
+      EGraph(newClasses, newOwners, newLowerBounds)
     }
+  }
+
+  def withLessOrEq(l: EClassId, r: EClassId): EGraph =
+    withLessOrEq(classes(l), classes(r))
+
+  def withLessOrEq(l: ENode, r: ENode): EGraph =
+    withLessOrEq(ownerClassOf(l), ownerClassOf(r))
+
+  def withLessOrEq(l: Formula, r: Formula): EGraph = {
+    val (ig1, lid) = this.withFormulaAbsorbed(l)
+    val (ig2, rid) = ig1.withFormulaAbsorbed(r)
+    ig2.withLessOrEq(lid, rid)
+  }
+
+  private def withLessOrEq(l: EClass, r: EClass): EGraph = EGraph(
+    classes,
+    ownerArgs,
+    upperBounds.updatedWith(l) {
+      case Some(lbs) => Some(lbs.incl(r))
+      case None => Some(SeqSet(r))
+    }
+  )
+
+  def lessOrEqQuery(l: EClassId, r: EClassId): Boolean =
+    lessOrEqQuery(classes(l), classes(r))
+
+  def lessOrEqQuery(l: ENode, r: ENode): Boolean =
+    lessOrEqQuery(ownerClassOf(l), ownerClassOf(r))
+
+  def lessOrEqQuery(l: EClass, r: EClass): Boolean =
+    l == r || leqGraph.shortestPath(l, r).isDefined
+
+  def lessOrEqQueryNoSaturation(l: Formula, r: Formula): (EGraph, Boolean) = {
+    val (ig1, lid) = this.withFormulaAbsorbed(l)
+    val (ig2, rid) = ig1.withFormulaAbsorbed(r)
+    ig2 -> ig2.lessOrEqQuery(lid, rid)
   }
 
   def afterEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): EGraph = boundary {
@@ -207,7 +267,6 @@ final class EGraph private(
         .groupBy(_._1)
         .map((nc, rules) => nc -> rules.map(_._2))
     var stepsCnt = 0L
-    var updatesCnt = 0L // TODO remove if unused
     var stuck = false
     var eGraph = this
     while (!stuck) {
@@ -225,7 +284,6 @@ final class EGraph private(
           if (!(eGraphAfter eq eGraph)) {
             eGraph = eGraphAfter
             modified = true
-            updatesCnt += 1
           }
           stepsCnt += 1
           if (stepsCnt >= maxStepsCnt) {
@@ -290,7 +348,7 @@ final class EGraph private(
 
 object EGraph {
 
-  def empty(using EClassId.Generator): EGraph = EGraph(SeqMap.empty, SeqMap.empty)
+  def empty(using EClassId.Generator): EGraph = EGraph(SeqMap.empty, SeqMap.empty, SeqMap.empty)
 
   // TODO remove if not used
   type ClassRetriever = EClassId => EClass

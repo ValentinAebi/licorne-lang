@@ -19,5 +19,6 @@ object NegNegCancellation extends EqualitySaturationRewriteRule {
         case _ => ()
       }
       graphB.getCurrentState
+    case _ => eGraph
   }
 }

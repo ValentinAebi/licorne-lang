@@ -173,4 +173,34 @@ class EGraphTests {
     assertCostLt(3 * x + y, x + y + 2 * x)
   }
 
+  @Test def inequalitiesTest(): Unit = {
+
+    val r = newVal("r")
+    val s = newVal("s")
+    val t = newVal("t")
+    val u = newVal("u")
+    val x = newVal("x")
+    val y = newVal("y")
+    val z = newVal("z")
+
+    // s <= r == x <= y == t
+    val eg = MutEGraphWrapper.newEmpty
+    eg.assertEquality(r, x)
+    eg.assertLessOrEq(s, r)
+    eg.assertEquality(y, t)
+    eg.assertLessOrEq(x, y)
+
+    assertTrue(eg.lessOrEqQueryNoSaturation(x, x))
+    assertTrue(eg.lessOrEqQueryNoSaturation(x, y))
+    assertTrue(eg.lessOrEqQueryNoSaturation(s, x))
+    assertTrue(eg.lessOrEqQueryNoSaturation(r, y))
+    assertTrue(eg.lessOrEqQueryNoSaturation(s, t))
+
+    assertFalse(eg.lessOrEqQueryNoSaturation(x, z))
+    assertFalse(eg.lessOrEqQueryNoSaturation(r, s))
+    assertFalse(eg.lessOrEqQueryNoSaturation(t, r))
+    assertFalse(eg.lessOrEqQueryNoSaturation(u, y))
+
+  }
+
 }

@@ -4,6 +4,7 @@ import compiler.identifiers.FunOrVarId
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.util.SeqSet
 
+// TODO cleaner pretty-printing system
 object Formulas {
 
   sealed trait Formula
