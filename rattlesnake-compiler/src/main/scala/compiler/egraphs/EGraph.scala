@@ -409,7 +409,4 @@ object EGraph {
 
   def empty(using EClassId.Generator): EGraph = EGraph(SeqMap.empty, SeqMap.empty, SeqMap.empty)
 
-  // TODO remove if not used
-  type ClassRetriever = EClassId => EClass
-
 }
