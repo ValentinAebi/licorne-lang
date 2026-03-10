@@ -136,7 +136,7 @@ class EGraphTests {
 
     def simplify(f: Formula, maxSteps: Long): Formula = {
       val (ig, fClId) = EGraph.empty.withFormulaAbsorbed(f)
-      ig.simplified(fClId, allRules, maxSteps).get
+      ig.toSimplifiedFormula(fClId, allRules, maxSteps).get
     }
 
     val x = newVal("x")
@@ -173,7 +173,7 @@ class EGraphTests {
     assertCostLt(3 * x + y, x + y + 2 * x)
   }
 
-  @Test def inequalitiesTest(): Unit = {
+  @Test def simpleInequalitiesTest(): Unit = {
 
     val r = newVal("r")
     val s = newVal("s")
@@ -190,16 +190,33 @@ class EGraphTests {
     eg.assertEquality(y, t)
     eg.assertLessOrEq(x, y)
 
-    assertTrue(eg.lessOrEqQueryNoSaturation(x, x))
-    assertTrue(eg.lessOrEqQueryNoSaturation(x, y))
-    assertTrue(eg.lessOrEqQueryNoSaturation(s, x))
-    assertTrue(eg.lessOrEqQueryNoSaturation(r, y))
-    assertTrue(eg.lessOrEqQueryNoSaturation(s, t))
+    assertTrue(eg.lessOrEqQueryNoSearch(x, x))
+    assertTrue(eg.lessOrEqQueryNoSearch(x, y))
+    assertTrue(eg.lessOrEqQueryNoSearch(s, x))
+    assertTrue(eg.lessOrEqQueryNoSearch(r, y))
+    assertTrue(eg.lessOrEqQueryNoSearch(s, t))
 
-    assertFalse(eg.lessOrEqQueryNoSaturation(x, z))
-    assertFalse(eg.lessOrEqQueryNoSaturation(r, s))
-    assertFalse(eg.lessOrEqQueryNoSaturation(t, r))
-    assertFalse(eg.lessOrEqQueryNoSaturation(u, y))
+    assertFalse(eg.lessOrEqQueryNoSearch(x, z))
+    assertFalse(eg.lessOrEqQueryNoSearch(r, s))
+    assertFalse(eg.lessOrEqQueryNoSearch(t, r))
+    assertFalse(eg.lessOrEqQueryNoSearch(u, y))
+
+  }
+
+  @Test def complexInequalitiesTest(): Unit = {
+
+    val x = newVal("x")
+    val y = newVal("y")
+    val z = newVal("z")
+
+    val eg = MutEGraphWrapper.newEmpty
+    eg.assertLessOrEq(2 * x * y + 1, y - 2)
+    eg.assertLessOrEq(y + 1, 3 * x + 4 * y)
+
+    val maxSteps = 10_000
+
+    assertTrue(eg.lessOrEqQueryAfterSearch(2 * x * y - 5, 3 * x + 4 * y + 1, allRules, maxSteps))
+    assertFalse(eg.lessOrEqQueryAfterSearch(2 * x * y + 1, 3 * x + 4 * y - 5, allRules, maxSteps))
 
   }
 

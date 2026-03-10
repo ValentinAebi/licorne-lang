@@ -43,7 +43,10 @@ final class MutEGraphWrapper(initGraph: EGraph) {
   
   def lessOrEqQuery(l: EClassId, r: EClassId): Boolean = eGraph.lessOrEqQuery(l, r)
   
-  def lessOrEqQueryNoSaturation(l: Formula, r: Formula): Boolean = wrappedMethod(_.lessOrEqQueryNoSaturation(l, r))
+  def lessOrEqQueryNoSearch(l: Formula, r: Formula): Boolean = wrappedMethod(_.lessOrEqQueryNoSearch(l, r))
+  
+  def lessOrEqQueryAfterSearch(l: Formula, r: Formula, eqSatRules: List[EqualitySaturationRewriteRule], maxEqSatStepsCnt: Int): Boolean =
+    wrappedMethod(_.lessOrEqQueryAfterSearch(l, r, eqSatRules, maxEqSatStepsCnt))
 
   def runEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Int): Unit =
     wrappedMethod(_.afterEqualitySaturation(rules, maxStepsCnt) -> ())

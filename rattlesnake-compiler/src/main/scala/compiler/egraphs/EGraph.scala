@@ -8,13 +8,14 @@ import compiler.lang.Formulas.*
 import compiler.util.{SeqSet, mapVals}
 
 import scala.collection.immutable.{SeqMap, TreeSet}
+import scala.collection.mutable
 import scala.util.boundary
 
 
 final class EGraph private(
                             classesArgs: SeqMap[EClassId, EClass],
                             ownerArgs: SeqMap[ENode, EClass],
-                            upperBounds: SeqMap[EClass, SeqSet[EClass]]
+                            upperBounds: SeqMap[EClassId, SeqSet[EClassId]]
                           )(using classIdGen: EClassId.Generator) {
 
   val classes: SeqMap[EClassId, EClass] = classesArgs.map { (clId, cl) =>
@@ -23,8 +24,8 @@ final class EGraph private(
 
   private val nodeToClass: SeqMap[ENode, EClass] = for ((n, cl) <- ownerArgs) yield canonicalize(n) -> cl
 
-  private lazy val leqGraph: Graph[EClass] = {
-    val gb = Graph.Builder[EClass]()
+  private lazy val leqGraph: Graph[EClassId] = {
+    val gb = Graph.Builder[EClassId]()
     for ((cl, lb) <- upperBounds) {
       gb.addDescendants(cl, lb)
     }
@@ -43,24 +44,22 @@ final class EGraph private(
 
   /*
    * TODO optimize?
-   * Optimization ideas:
-   *  - pool of ENodeWrappers
-   *  - collections created by map in eEquals and eHashCode
+   * pool of ENodeWrappers?
    */
-  def simplified(clId: EClassId, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
+  def toSimplifiedFormula(clId: EClassId, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
     val ig = afterEqualitySaturation(rules, maxStepsCnt)
-    Option.when(ig.costCache.minCostOf(clId) < CostCache.cycleCost)(ig.simplifiedImpl(clId))
+    Option.when(ig.costCache.minCostOf(clId) < CostCache.cycleCost)(ig.toFormula(clId))
   }
 
-  def simplified(n: ENode, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
+  def toSimplifiedFormula(n: ENode, rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): Option[Formula] = {
     val ig = afterEqualitySaturation(rules, maxStepsCnt)
-    Option.when(ig.costCache.minCostOf(n) < CostCache.cycleCost)(ig.simplifiedImpl(n))
+    Option.when(ig.costCache.minCostOf(n) < CostCache.cycleCost)(ig.toFormula(n))
   }
 
-  private def simplifiedImpl(clId: EClassId): Formula =
-    simplifiedImpl(classes(clId))
+  private def toFormula(clId: EClassId): Formula =
+    toFormula(classes(clId))
 
-  private def simplifiedImpl(n: ENode): Formula = n match {
+  private def toFormula(n: ENode): Formula = n match {
     case EConstNode(cst: Int) => IntConst(cst)
     case EConstNode(cst: Boolean) => BoolConst(cst)
     case EConstNode(cst: String) => StringConst(cst)
@@ -69,18 +68,18 @@ final class EGraph private(
       throw new UnsupportedOperationException(s"unexpected constant: $cst")
     case EIdValNode(idValue) => idValue
     case ESelectNode(owner, fieldId) =>
-      Select(simplifiedImpl(owner), FieldResolutionTarget.Unresolved(fieldId))
+      Select(toFormula(owner), FieldResolutionTarget.Unresolved(fieldId))
     case ECallNode(receiver, funId, args) =>
-      Call(simplifiedImpl(receiver), InvocationTarget.Unresolved(funId), args.map(simplifiedImpl))
-    case EPlusNode(lhs, rhs) => Plus(simplifiedImpl(lhs), simplifiedImpl(rhs))
-    case ETimesNode(lhs, rhs) => Times(simplifiedImpl(lhs), simplifiedImpl(rhs))
-    case EDivNode(lhs, rhs) => DivBy(simplifiedImpl(lhs), simplifiedImpl(rhs))
-    case EModuloNode(lhs, rhs) => Modulo(simplifiedImpl(lhs), simplifiedImpl(rhs))
-    case ENegNode(operand) => Neg(simplifiedImpl(operand))
+      Call(toFormula(receiver), InvocationTarget.Unresolved(funId), args.map(toFormula))
+    case EPlusNode(lhs, rhs) => Plus(toFormula(lhs), toFormula(rhs))
+    case ETimesNode(lhs, rhs) => Times(toFormula(lhs), toFormula(rhs))
+    case EDivNode(lhs, rhs) => DivBy(toFormula(lhs), toFormula(rhs))
+    case EModuloNode(lhs, rhs) => Modulo(toFormula(lhs), toFormula(rhs))
+    case ENegNode(operand) => Neg(toFormula(operand))
   }
 
-  private def simplifiedImpl(cl: EClass): Formula =
-    simplifiedImpl(costCache.minNodeInClass(cl).get)
+  private def toFormula(cl: EClass): Formula =
+    toFormula(costCache.minNodeInClass(cl).get)
 
   def equalityQuery(clId1: EClassId, clId2: EClassId): Boolean =
     classes(clId1).canonicalId == classes(clId2).canonicalId
@@ -157,8 +156,7 @@ final class EGraph private(
 
       val newClasses = for ((clId, cl) <- classes) yield clId -> (if mergedClass.idAliases.contains(clId) then mergedClass else cl)
       val newOwners = nodeToClass.mapVals(replClass)
-      val newLowerBounds = upperBounds.mapVals(lbs => lbs.map(replClass))
-      EGraph(newClasses, newOwners, newLowerBounds)
+      EGraph(newClasses, newOwners, upperBounds)
     }
 
   /**
@@ -220,16 +218,23 @@ final class EGraph private(
 
       val newClasses = classes.mapVals(replClass)
       val newOwners = nodeToClass.mapVals(replClass) ++ SeqMap(nCanonic -> augmentedCl)
-      val newLowerBounds = upperBounds.mapVals(_.map(replClass))
-      EGraph(newClasses, newOwners, newLowerBounds)
+      EGraph(newClasses, newOwners, upperBounds)
     }
   }
 
   def withLessOrEq(l: EClassId, r: EClassId): EGraph =
-    withLessOrEq(classes(l), classes(r))
+    if upperBounds.get(l).exists(_.contains(r)) then this
+    else EGraph(
+      classes,
+      ownerArgs,
+      upperBounds.updatedWith(l) {
+        case Some(lbs) => Some(lbs.incl(r))
+        case None => Some(SeqSet(r))
+      }
+    )
 
   def withLessOrEq(l: ENode, r: ENode): EGraph =
-    withLessOrEq(ownerClassOf(l), ownerClassOf(r))
+    withLessOrEq(ownerClassOf(l).canonicalId, ownerClassOf(r).canonicalId)
 
   def withLessOrEq(l: Formula, r: Formula): EGraph = {
     val (ig1, lid) = this.withFormulaAbsorbed(l)
@@ -237,14 +242,53 @@ final class EGraph private(
     ig2.withLessOrEq(lid, rid)
   }
 
-  private def withLessOrEq(l: EClass, r: EClass): EGraph = EGraph(
-    classes,
-    ownerArgs,
-    upperBounds.updatedWith(l) {
-      case Some(lbs) => Some(lbs.incl(r))
-      case None => Some(SeqSet(r))
+  def afterLinearInequalitiesSearch: EGraph = {
+
+    /**
+     * @param commonPart e.g. 2*x
+     * @param classes    e.g. 2*x + n with n a constant; maps e-classes to the shift w.r.t. `commonPart`
+     */
+    case class LinearWayInfo(commonPart: EClassId, classes: mutable.TreeMap[Int, EClassId])
+
+    val linearWays = mutable.Map.empty[EClassId, LinearWayInfo]
+
+    def saveLinearWayInfo(commonPart: EClassId, cl: EClassId, shift: Int): Unit = {
+      linearWays.getOrElseUpdate(commonPart, LinearWayInfo(commonPart, mutable.TreeMap.empty)).classes.put(shift, cl)
     }
-  )
+
+    // build ways
+    nodeToClass.foreach {
+      case (EPlusNode(lhs, rhs), cl) =>
+        val lhsClass = classes(lhs)
+        val rhsClass = classes(rhs)
+        (lhsClass.asConstOfType[Int], rhsClass.asConstOfType[Int]) match {
+          case (Some(lhsConst), None) =>
+            saveLinearWayInfo(rhsClass.canonicalId, cl.canonicalId, lhsConst)
+          case (None, Some(rhsConst)) =>
+            saveLinearWayInfo(lhsClass.canonicalId, cl.canonicalId, rhsConst)
+          case _ => ()
+        }
+      case _ => ()
+    }
+
+    // traverse ways and save inequalities
+    var eg = this
+    for ((cl, lw) <- linearWays) {
+      var prevOpt = Option.empty[EClassId]
+      for ((shift, curr) <- lw.classes) {
+        if (shift <= 0) {
+          eg = eg.withLessOrEq(curr, lw.commonPart)
+        } else {
+          eg = eg.withLessOrEq(lw.commonPart, curr)
+        }
+        prevOpt.foreach { prev =>
+          eg = eg.withLessOrEq(prev, curr)
+        }
+        prevOpt = Some(curr)
+      }
+    }
+    eg
+  }
 
   def lessOrEqQuery(l: EClassId, r: EClassId): Boolean =
     lessOrEqQuery(classes(l), classes(r))
@@ -253,12 +297,19 @@ final class EGraph private(
     lessOrEqQuery(ownerClassOf(l), ownerClassOf(r))
 
   def lessOrEqQuery(l: EClass, r: EClass): Boolean =
-    l == r || leqGraph.shortestPath(l, r).isDefined
+    l == r || leqGraph.shortestPath(l.canonicalId, r.canonicalId).isDefined
 
-  def lessOrEqQueryNoSaturation(l: Formula, r: Formula): (EGraph, Boolean) = {
+  def lessOrEqQueryNoSearch(l: Formula, r: Formula): (EGraph, Boolean) = {
     val (ig1, lid) = this.withFormulaAbsorbed(l)
     val (ig2, rid) = ig1.withFormulaAbsorbed(r)
     ig2 -> ig2.lessOrEqQuery(lid, rid)
+  }
+
+  def lessOrEqQueryAfterSearch(l: Formula, r: Formula, eqSatRules: List[EqualitySaturationRewriteRule], maxEqSatStepsCnt: Int): (EGraph, Boolean) = {
+    val (ig1, lid) = this.withFormulaAbsorbed(l)
+    val (ig2, rid) = ig1.withFormulaAbsorbed(r)
+    val ig3 = ig2.afterEqualitySaturation(eqSatRules, maxEqSatStepsCnt).afterLinearInequalitiesSearch
+    ig3 -> ig3.lessOrEqQuery(lid, rid)
   }
 
   def afterEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): EGraph = boundary {
@@ -336,9 +387,17 @@ final class EGraph private(
         .append(" -> ")
         .append(cl.nodes.mkString("{ ", ", ", " }"))
       for (minNode <- costCache.minNodeInClass(cl)) {
-        sb.append("  // ").append(simplifiedImpl(minNode))
+        sb.append("  // ").append(toFormula(minNode))
       }
       sb.append("\n")
+    }
+    for ((l, ubs) <- upperBounds) {
+      if (ubs.nonEmpty) {
+        sb.append(s"$l (${toFormula(l)})")
+          .append(" <= ")
+          .append(ubs.map(r => s"$r (${toFormula(r)})").mkString(", "))
+          .append("\n")
+      }
     }
     sb.append("}")
     sb.toString

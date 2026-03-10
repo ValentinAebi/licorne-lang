@@ -297,8 +297,13 @@ object Graph {
       this
     }
 
-    def build(): Graph[N] =
-      Graph(adjSets.toMap.map((n, as) => n -> as.toSet))
+    def build(): Graph[N] = {
+      val adjSetsB = Map.newBuilder[N, Set[N]]
+      for ((n, as) <- adjSets) {
+        adjSetsB.addOne(n -> as.toSet)
+      }
+      Graph(adjSetsB.result())
+    }
 
   }
 

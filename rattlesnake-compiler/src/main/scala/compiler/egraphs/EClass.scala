@@ -32,4 +32,10 @@ final case class EClass(nodes: SeqSet[ENode], idAliases: SortedSet[EClassId], ca
     case _ => None
   }
 
+  override def toString: String = {
+    val nonCanonicalAliases = idAliases - canonicalId
+    val aliasesDescr = if nonCanonicalAliases.isEmpty then "" else " with aliases " + nonCanonicalAliases.mkString(",")
+    s"$canonicalId = " + nodes.mkString("{", "," , "}") + aliasesDescr
+  }
+
 }
