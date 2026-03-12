@@ -239,21 +239,23 @@ final class EGraph private(
   def withLessOrEq(l: Formula, r: Formula): EGraph = {
     val (ig1, lid) = this.withFormulaAbsorbed(l)
     val (ig2, rid) = ig1.withFormulaAbsorbed(r)
-    ig2.withLessOrEq(lid, rid)
+    val (ig3, zeroId) = ig2.withFormulaAbsorbed(IntConst(0))
+    val (ig4, diffId) = ig3.withFormulaAbsorbed(Plus(r, Neg(l)))
+    ig4.withLessOrEq(lid, rid).withLessOrEq(zeroId, diffId)
   }
 
   def afterLinearInequalitiesSearch: EGraph = {
 
     /**
-     * @param commonPart e.g. 2*x
-     * @param classes    e.g. 2*x + n with n a constant; maps e-classes to the shift w.r.t. `commonPart`
+     * @param commonPartOpt e.g. 2*x (None for constant nodes)
+     * @param classes       e.g. 2*x + n with n a constant; maps e-classes to the shift w.r.t. `commonPart`
      */
-    case class LinearWayInfo(commonPart: EClassId, classes: mutable.TreeMap[Int, EClassId])
+    case class LinearWayInfo(commonPartOpt: Option[EClassId], classes: mutable.TreeMap[Int, EClassId])
 
-    val linearWays = mutable.Map.empty[EClassId, LinearWayInfo]
+    val linearWays = mutable.Map.empty[Option[EClassId], LinearWayInfo]
 
-    def saveLinearWayInfo(commonPart: EClassId, cl: EClassId, shift: Int): Unit = {
-      linearWays.getOrElseUpdate(commonPart, LinearWayInfo(commonPart, mutable.TreeMap.empty)).classes.put(shift, cl)
+    def saveLinearWayInfo(commonPartOpt: Option[EClassId], cl: EClassId, shift: Int): Unit = {
+      linearWays.getOrElseUpdate(commonPartOpt, LinearWayInfo(commonPartOpt, mutable.TreeMap.empty)).classes.put(shift, cl)
     }
 
     // build ways
@@ -263,12 +265,19 @@ final class EGraph private(
         val rhsClass = classes(rhs)
         (lhsClass.asConstOfType[Int], rhsClass.asConstOfType[Int]) match {
           case (Some(lhsConst), None) =>
-            saveLinearWayInfo(rhsClass.canonicalId, cl.canonicalId, lhsConst)
+            saveLinearWayInfo(Some(rhsClass.canonicalId), cl.canonicalId, lhsConst)
           case (None, Some(rhsConst)) =>
-            saveLinearWayInfo(lhsClass.canonicalId, cl.canonicalId, rhsConst)
+            saveLinearWayInfo(Some(lhsClass.canonicalId), cl.canonicalId, rhsConst)
           case _ => ()
         }
       case _ => ()
+    }
+
+    // build constant way
+    for ((clId, cl) <- classes) {
+      cl.asConstOfType[Int].foreach { cst =>
+        saveLinearWayInfo(None, clId, cst)
+      }
     }
 
     // traverse ways and save inequalities
@@ -276,10 +285,12 @@ final class EGraph private(
     for ((cl, lw) <- linearWays) {
       var prevOpt = Option.empty[EClassId]
       for ((shift, curr) <- lw.classes) {
-        if (shift <= 0) {
-          eg = eg.withLessOrEq(curr, lw.commonPart)
-        } else {
-          eg = eg.withLessOrEq(lw.commonPart, curr)
+        lw.commonPartOpt.foreach { commonPart =>
+          if (shift <= 0) {
+            eg = eg.withLessOrEq(curr, commonPart)
+          } else {
+            eg = eg.withLessOrEq(commonPart, curr)
+          }
         }
         prevOpt.foreach { prev =>
           eg = eg.withLessOrEq(prev, curr)
@@ -302,17 +313,22 @@ final class EGraph private(
   def lessOrEqQueryNoSearch(l: Formula, r: Formula): (EGraph, Boolean) = {
     val (ig1, lid) = this.withFormulaAbsorbed(l)
     val (ig2, rid) = ig1.withFormulaAbsorbed(r)
-    ig2 -> ig2.lessOrEqQuery(lid, rid)
+    val (ig3, zeroId) = ig2.withFormulaAbsorbed(IntConst(0))
+    val (ig4, diffId) = ig3.withFormulaAbsorbed(Plus(r, Neg(l)))
+    ig4 -> (ig4.lessOrEqQuery(lid, rid) || ig4.lessOrEqQuery(zeroId, diffId))
   }
 
   def lessOrEqQueryAfterSearch(l: Formula, r: Formula, eqSatRules: List[EqualitySaturationRewriteRule], maxEqSatStepsCnt: Int): (EGraph, Boolean) = {
     val (ig1, lid) = this.withFormulaAbsorbed(l)
     val (ig2, rid) = ig1.withFormulaAbsorbed(r)
-    val ig3 = ig2.afterEqualitySaturation(eqSatRules, maxEqSatStepsCnt).afterLinearInequalitiesSearch
-    ig3 -> ig3.lessOrEqQuery(lid, rid)
+    val (ig3, zeroId) = ig2.withFormulaAbsorbed(IntConst(0))
+    val (ig4, diffId) = ig3.withFormulaAbsorbed(Plus(r, Neg(l)))
+    val ig5 = ig4.afterEqualitySaturation(eqSatRules, maxEqSatStepsCnt).afterLinearInequalitiesSearch
+    ig5 -> (ig5.lessOrEqQuery(lid, rid) || ig5.lessOrEqQuery(zeroId, diffId))
   }
 
   def afterEqualitySaturation(rules: List[EqualitySaturationRewriteRule], maxStepsCnt: Long): EGraph = boundary {
+    // TODO check if use of getClass impacts performance
     val nodeClassToRules =
       (for r <- rules; nc <- r.nodeTargets yield nc -> r)
         .groupBy(_._1)

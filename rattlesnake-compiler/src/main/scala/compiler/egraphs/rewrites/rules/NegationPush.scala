@@ -5,6 +5,13 @@ import compiler.egraphs.*
 
 import java.util
 
+/**
+ * -(a + b)  ==>  (-a) + (-b)
+ *
+ * `-(a*b)  ==> (-a)*b`
+ *
+ * `-(a/b)  ==>  (-a)/b`
+ */
 object NegationPush extends EqualitySaturationRewriteRule {
 
   override def nodeTargets: Iterable[Class[?]] = List(classOf[ENegNode])
@@ -13,7 +20,20 @@ object NegationPush extends EqualitySaturationRewriteRule {
     case rootNode: ENegNode =>
       val graphB = MutEGraphWrapper(eGraph)
 
-      def mkSimplification[B <: BinaryOperatorENode](n: B, mkNode: (EClassId, EClassId) => B): Unit = {
+      def mkPlusSimplification(plus: EPlusNode): Unit = {
+        val nLhsNegNode = ENegNode(plus.lhs)
+        val nLhsNegClId = graphB.addNode(nLhsNegNode)
+        val nRhsNegNode = ENegNode(plus.rhs)
+        val nRhsNegClId = graphB.addNode(nRhsNegNode)
+        val sumOfNegNode = EPlusNode(nLhsNegClId, nRhsNegClId)
+        val sumOfNegId = graphB.addNode(sumOfNegNode)
+        graphB.assertEquality(rootNode, sumOfNegNode)
+        newTargetNodesCollector.addLast(graphB.ownerClassOf(nLhsNegNode))
+        newTargetNodesCollector.addLast(graphB.ownerClassOf(nRhsNegNode))
+        newTargetNodesCollector.addLast(graphB.ownerClassOf(sumOfNegNode))
+      }
+
+      def mkLeftOnlySimplification[B <: BinaryOperatorENode](n: B, mkNode: (EClassId, EClassId) => B): Unit = {
         val nLhsNegNode = ENegNode(n.lhs)
         val nLhsNegClId = graphB.addNode(nLhsNegNode)
         val lNegTimesNode = mkNode(nLhsNegClId, n.rhs)
@@ -23,10 +43,12 @@ object NegationPush extends EqualitySaturationRewriteRule {
       }
 
       graphB.getCurrentState.classes(rootNode.operand).nodes.foreach {
+        case n: EPlusNode =>
+          mkPlusSimplification(n)
         case n: ETimesNode =>
-          mkSimplification(n, ETimesNode(_, _))
+          mkLeftOnlySimplification(n, ETimesNode(_, _))
         case n: EDivNode =>
-          mkSimplification(n, EDivNode(_, _))
+          mkLeftOnlySimplification(n, EDivNode(_, _))
         case _ => ()
       }
       graphB.getCurrentState

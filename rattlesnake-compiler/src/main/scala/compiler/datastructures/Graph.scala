@@ -18,6 +18,17 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
     to <- adjSetOf(from)
   } yield from -> to
 
+  def reversedGraph: Graph[N] = {
+    val revB = Graph.Builder[N]()
+    for ((u, adjSetOfU) <- verticesToAdjSets) {
+      revB.addVertex(u)
+      for (v <- adjSetOfU) {
+        revB.addEdge(v, u)
+      }
+    }
+    revB.build()
+  }
+
   def verticesOfInDegree(inDeg: Int): Set[N] = {
     vertices.filter(inSetOf(_).size == inDeg)
   }
@@ -37,6 +48,29 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
       }
     }
     inSetMap.toMap
+  }
+
+  def bfsSearchFor(start: N, predicate: N => Boolean): Option[N] = {
+    val queue = mutable.Queue.empty[N]
+    val alreadySeen = mutable.Set.empty[N]
+
+    def discover(n: N): Unit = {
+      if (alreadySeen.add(n)) {
+        queue.enqueue(n)
+      }
+    }
+
+    discover(start)
+    while (queue.nonEmpty) {
+      val curr = queue.dequeue()
+      if (predicate(curr)) {
+        return Some(curr)
+      }
+      for (desc <- adjSetOf(curr)) {
+        discover(desc)
+      }
+    }
+    None
   }
 
   def findShortestCycle(): Option[Seq[N]] = shortestCycleMemo

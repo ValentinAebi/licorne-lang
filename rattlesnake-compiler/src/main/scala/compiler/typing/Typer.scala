@@ -12,7 +12,6 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.TypeStore
 import compiler.typing.contexts.*
-import compiler.typing.smartcasting.ControlFlowInfo
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -34,43 +33,65 @@ final class Typer(
     given TypeParamsContext = ownerTypeParamsCtx.extendedWith(funSig.typeParams)
 
     bodyOpt.foreach { body =>
-      typeInstructions(body, ControlFlowInfo.emptyEnabled(subtypingCtx))
+      typeInstructions(body.instructions, body)
     }
   }
 
-  def typeInstructions(scope: Scope, cfIn: ControlFlowInfo)
-                      (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = {
-    var cf = cfIn
-    val typedInstructionsB = List.newBuilder[Instr]
-    for (untypedInstr <- scope.instructions) {
-      cf = typeInstr(untypedInstr, cf)
+  def typeInstructions(instructions: Iterable[Instr], currScope: Scope)
+                      (using typeParamsCtx: TypeParamsContext): Unit = {
+    for (untypedInstr <- instructions) {
+      typeInstr(untypedInstr, currScope)
     }
-    cf
   }
 
-  def typeInstr(instr: Instr, cfIn: ControlFlowInfo)
-               (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = instr match {
+  def typeInstr(instr: Instr, currScope: Scope)
+               (using typeParamsCtx: TypeParamsContext): Unit = instr match {
     case Loop(cond, condVal, body, variables) => ???
     case Disjunction(condVal, thenBr, elseBr, variables) => ???
     case StaticTypeAssert(value, tpe) => ???
     case StaticAssert(value) => ???
-    case instr: AssigningInstr => ???
+    case AssignVal(assigned, src) => ???
+    case AssignIntConst(assigned, src) => ???
+    case AssignBoolConst(assigned, src) => ???
+    case AssignStringConst(assigned, src) => ???
+    case NumNeg(assigned, operand) => ???
+    case Add(assigned, lhs, rhs) => ???
+    case Sub(assigned, lhs, rhs) => ???
+    case Mul(assigned, lhs, rhs) => ???
+    case Div(assigned, lhs, rhs) => ???
+    case Rem(assigned, lhs, rhs) => ???
+    case LogicNeg(assigned, operand) => ???
+    case And(assigned, lhs, rhs) => ???
+    case Or(assigned, lhs, rhs) => ???
+    case Equal(assigned, lhs, rhs) => ???
+    case Leq(assigned, lhs, rhs) => ???
+    case Lt(assigned, lhs, rhs) => ???
+    case FieldRead(assigned, owner, field) => ???
+    case InvokeFunc(assigned, receiver, func, typeArgs, args) => ???
+    case InvokeClosure(assigned, callee, args) => ???
+    case Instantiate(assigned, classOrRecordName, typeArgs) => ???
+    case MkClosure(assigned, params, body) => ???
+    case TypeTest(assigned, testedValue, testedTypeId) => ???
+    case Conversion(assigned, inValue, targetType) => ???
     case FieldWrite(owner, field, rhs) => ???
     case Return(retVal) => ???
     case Panic(msg) => ???
     case Cast(inValue, target) => ???
     case Drop(droppedValue) => ???
     case LocalDecl(localId, tpe) => ???
-    case scope: Scope => ???
+    case scope: Scope =>
+      assert(scope.outScopeOpt.contains(currScope))
+      typeInstructions(scope.instructions, scope)
   }
 
   def typeFormula(formula: Formula)
-                 (using typeParamsCtx: TypeParamsContext): ControlFlowInfo = formula match {
+                 (using typeParamsCtx: TypeParamsContext): Unit = formula match {
     case value: IdValue => ???
     case IntConst(value) => ???
     case BoolConst(value) => ???
     case StringConst(value) => ???
     case Select(owner, field) => ???
+    case Call(receiver, func, args) => ???
     case Plus(lhs, rhs) => ???
     case Neg(operand) => ???
     case Times(lhs, rhs) => ???

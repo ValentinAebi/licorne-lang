@@ -1,13 +1,13 @@
 package compiler.irs
 
 import compiler.egraphs.EGraph
-import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.Asts.Ast
 import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Formulas.*
+import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
-import compiler.reporting.Position
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
@@ -16,17 +16,24 @@ import scala.collection.mutable
 object SSA {
 
   sealed abstract class Instr {
-    private var astNode: Option[Ast] = None
+    private var astNodeOpt: Option[Ast] = None
+    private var eGraphOpt: Option[EGraph] = None
 
     def setAstNode(astNode: Ast): this.type = {
-      if (this.astNode.isDefined) {
+      if (this.astNodeOpt.isDefined) {
         throw IllegalStateException("node has already been set")
       }
-      this.astNode = Some(astNode)
+      this.astNodeOpt = Some(astNode)
       this
     }
 
-    def getAstNodeOpt: Option[Ast] = astNode
+    def getAstNodeOpt: Option[Ast] = astNodeOpt
+
+    def eGraph_=(eg: EGraph): Unit = {
+      eGraphOpt = Some(eg)
+    }
+
+    def eGraph: EGraph = eGraphOpt.get
   }
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
@@ -122,6 +129,27 @@ object SSA {
   }
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
+    private val typeStore = mutable.Map.empty[IdValue, Type]
+
+    def saveType(idVal: IdValue, tpe: Type): Unit = {
+      if (idVal.definingScope == this) {
+        typeStore.put(idVal, tpe)
+      } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
+        outScopeOpt.get.saveType(idVal, tpe)
+      } else {
+        throw IllegalArgumentException(s"illegal type save: $idVal in $this")
+      }
+    }
+
+    def saveSmartcast(idVal: IdValue, tpe: Type): Unit = {
+      typeStore.put(idVal, tpe)
+    }
+
+    def typeOf(idVal: IdValue): Type =
+      typeStore.getOrElse(idVal,
+        outScopeOpt.map(_.typeOf(idVal))
+          .getOrElse(NothingType)
+      )
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 

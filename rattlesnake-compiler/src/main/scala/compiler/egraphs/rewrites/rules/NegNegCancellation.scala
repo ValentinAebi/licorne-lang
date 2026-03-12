@@ -5,6 +5,9 @@ import compiler.egraphs.rewrites.EqualitySaturationRewriteRule
 
 import java.util
 
+/**
+ * `-(-a)  ==>  a`
+ */
 object NegNegCancellation extends EqualitySaturationRewriteRule {
 
   override def nodeTargets: Iterable[Class[?]] = List(classOf[ENegNode])

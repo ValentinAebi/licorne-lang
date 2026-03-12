@@ -157,22 +157,4 @@ object Types {
 
   }
 
-  def join(types: Type*): Type = join(types.toSet)
-
-  def join(typesRaw: Set[Type]): Type = {
-    val nonNothingTypes = typesRaw - NothingType
-    nonNothingTypes.size match {
-      case 0 => NothingType
-      case 1 => nonNothingTypes.head
-      case _ =>
-        val ranges = nonNothingTypes.flatMap {
-          case rangeType: IntRangeType => Some(rangeType)
-          case _ => None
-        }
-        val intCnt = nonNothingTypes.count(_ == IntType)
-
-        UnionType(nonNothingTypes)
-    }
-  }
-
 }

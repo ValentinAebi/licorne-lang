@@ -211,13 +211,32 @@ class EGraphTests {
 
     val eg = MutEGraphWrapper.newEmpty
     eg.assertLessOrEq(2 * x * y + 1, y - 2)
-    eg.assertLessOrEq(y + 1, 3 * x + 4 * y)
+    eg.assertLessOrEq(1 + y, 3 * x + 4 * y)
 
-    val maxSteps = 10_000
+    val maxSteps = 100
 
-    assertTrue(eg.lessOrEqQueryAfterSearch(2 * x * y - 5, 3 * x + 4 * y + 1, allRules, maxSteps))
+    assertTrue(eg.lessOrEqQueryAfterSearch(2 * x * y - 5, 4 * y + 3 * x + 1, allRules, maxSteps))
     assertFalse(eg.lessOrEqQueryAfterSearch(2 * x * y + 1, 3 * x + 4 * y - 5, allRules, maxSteps))
 
+  }
+  
+  @Test def translatedInequalitiesTest(): Unit = {
+
+    val r = newVal("r")
+    val s = newVal("s")
+    val t = newVal("t")
+    val u = newVal("u")
+    val x = newVal("x")
+    val y = newVal("y")
+    val z = newVal("z")
+
+    val eg = MutEGraphWrapper.newEmpty
+    eg.assertLessOrEq(x, y)
+
+    val maxSteps = 10_000
+    
+    assertTrue(eg.lessOrEqQueryAfterSearch(x + 1, y + 1, allRules, maxSteps))
+    // TODO other test cases
   }
 
 }
