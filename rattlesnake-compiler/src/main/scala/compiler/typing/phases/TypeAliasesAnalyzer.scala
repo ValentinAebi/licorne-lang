@@ -9,22 +9,23 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.typing.{TypeStore, Typer}
+import compiler.typing.Typer
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext, TypeVariablesContext}
 
-final class TypeAliasesAnalyzer(ts: TypeStore, typeVarsCtx: TypeVariablesContext, er: ErrorReporter) extends CompilerStep[Program, Program] {
+final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) extends CompilerStep[Program, Program] {
   
   private given CompilationStep = TypeAliasesAnalysis
 
   override def apply(program: Program): Program = {
-    checkTypeAliasesCyclicity(program, ResolutionContext.fromProgram(program))
+    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    checkTypeAliasesCyclicity(program, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val typer = Typer(ts, dealiasingCtx, ResolutionContext.fromProgram(program), typeVarsCtx, er)
+    val typer = Typer(dealiasingCtx, resolutionCtx, typeVarsCtx, er)
     for (tid, tsig) <- program.typeAliases do {
       val typeParamsCtx = TypeParamsContext(tsig.typeParams)
-      typer.dealiasAndTypeType(tsig.rhs, None, tsig.declPosOpt)(using typeParamsCtx)
+      typer.dealiasAndTypeType(tsig.rhs, None, tsig.sigScope, tsig.declPosOpt)(using typeParamsCtx)
     }
     
     program

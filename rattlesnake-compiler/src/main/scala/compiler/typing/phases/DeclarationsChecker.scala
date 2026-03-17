@@ -10,7 +10,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.typing.{TypeStore, Typer}
+import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 
@@ -18,7 +18,6 @@ import scala.collection.mutable
 import scala.util.boundary
 
 final class DeclarationsChecker(
-                                 private val ts: TypeStore,
                                  private val typeVarsCtx: TypeVariablesContext,
                                  private val er: ErrorReporter
                                ) extends CompilerStep[Program, Program] {
@@ -27,9 +26,8 @@ final class DeclarationsChecker(
 
   override def apply(program: Program): Program = {
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolutionCtx = ResolutionContext.fromProgram(program)
+    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
     val typer = Typer(
-      ts,
       dealiasingCtx,
       resolutionCtx,
       typeVarsCtx,

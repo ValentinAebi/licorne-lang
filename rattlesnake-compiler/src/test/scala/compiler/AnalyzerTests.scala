@@ -5,7 +5,6 @@ import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
 import compiler.ssagen.SSAGenerator
-import compiler.typing.TypeStore
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 import org.junit.Assert.fail

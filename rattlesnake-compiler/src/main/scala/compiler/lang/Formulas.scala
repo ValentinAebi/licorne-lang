@@ -124,5 +124,59 @@ object Formulas {
     case DivBy(lhs, rhs) => DivBy(lhs.substitute(subst), rhs.substitute(subst))
     case Modulo(lhs, rhs) => Modulo(lhs.substitute(subst), rhs.substitute(subst))
   }
+  
+  extension (formula: Formula) def simplified: Formula = {
+    var summaryOpt = Option.empty[Formula]
+
+    def addToSummary(f: Formula): Unit = {
+      summaryOpt = Some(summaryOpt match {
+        case Some(summary) => Plus(summary, f)
+        case None => f
+      })
+    }
+
+    var cstOpt = Option.empty[Int]
+    for ((f, coef) <- linearize(formula)) {
+      f match {
+        case IntConst(1) =>
+          assert(cstOpt.isEmpty)
+          cstOpt = Some(coef)
+        case _ if coef == 0 => ()
+        case _ if coef == 1 =>
+          addToSummary(f)
+        case _ if coef == -1 =>
+          addToSummary(Neg(f))
+        case _ =>
+          addToSummary(Times(IntConst(coef), f))
+      }
+    }
+    cstOpt.foreach { cst =>
+      addToSummary(IntConst(cst))
+    }
+    summaryOpt.getOrElse(IntConst(0))
+  }
+  
+  private def linearize(formula: Formula): Map[Formula, Int] = formula match {
+    case value: IdValue => Map(value -> 1)
+    case IntConst(cst) => Map(IntConst(1) -> cst)
+    case formula: ConstFormula => Map(formula -> 1)
+    case Select(owner, field) => Map(formula -> 1)
+    case Call(receiver, func, args) => Map(formula -> 1)
+    case Plus(lhs, rhs) =>
+      val lLin = linearize(lhs)
+      val rLin = linearize(rhs)
+      Map.from(for (f <- lLin.keys ++ rLin.keys) yield {
+        val coef = lLin.getOrElse(f, 0) + rLin.getOrElse(f, 0)
+        f -> coef
+      })
+    case Neg(operand) =>
+      for ((f, coef) <- linearize(operand)) yield (f, -coef)
+    case Times(lhs, rhs) =>
+      Map(formula -> 1)
+    case DivBy(lhs, rhs) =>
+      Map(formula -> 1)
+    case Modulo(lhs, rhs) =>
+      Map(formula -> 1)
+  }
 
 }

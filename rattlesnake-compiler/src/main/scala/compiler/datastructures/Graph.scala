@@ -75,9 +75,9 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
 
   def findShortestCycle(): Option[Seq[N]] = shortestCycleMemo
 
-  private lazy val shortestCycleMemo = computeShortestCycle()
+  private lazy val shortestCycleMemo = computeShortestCycle((from, to) => 1)
 
-  private def computeShortestCycle(): Option[Seq[N]] = {
+  def computeShortestCycle(costFunc: (N, N) => Int): Option[Seq[N]] = {
     if (vertices.isEmpty) {
       return None
     }
@@ -109,7 +109,7 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
         val (dist, _) = tableGet(root, curr)
         for (desc <- adjSetOf(curr)) {
           if (reached.add(desc)) {
-            tableSet(root, desc, dist + 1, Some(curr))
+            tableSet(root, desc, dist + costFunc(curr, desc), Some(curr))
             worklist.enqueue(desc)
           }
         }
@@ -138,28 +138,35 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
       Some(cycle.last +: cycle)
     }
   }
+  
+  def shortestPathUnweighted(from: N, to: N): Option[Seq[N]] =
+    shortestPathWeighted(from, to, (_, _) => 1).map(_._1)
 
-  def shortestPath(from: N, to: N): Option[Seq[N]] = {
-    val predecessor = mutable.Map.empty[N, N]
+  def shortestPathWeighted(from: N, to: N, costFunc: (N, N) => Int): Option[(Seq[N], Int)] = {
+    
+    given Ordering[(N, Int)] = Ordering.by(_._2)
+    
+    val predecessor = mutable.Map.empty[N, (N, Int)]
 
     @tailrec
     def buildPathBack(n: N, tail: List[N]): List[N] = {
       if n == from then n :: tail
-      else buildPathBack(predecessor.apply(n), n :: tail)
+      else buildPathBack(predecessor.apply(n)._1, n :: tail)
     }
 
     boundary {
-      val worklist = mutable.Queue.empty[N]
-      worklist.enqueue(from)
+      val worklist = mutable.PriorityQueue.empty[(N, Int)]
+      worklist.enqueue(from -> 0)
       while (worklist.nonEmpty) {
-        val curr = worklist.dequeue()
+        val (curr, costOfCurr) = worklist.dequeue()
+        if (curr == to) {
+          boundary.break(Some(buildPathBack(curr, Nil), costOfCurr))
+        }
         for (desc <- adjSetOf(curr)) {
-          if (desc == to) {
-            boundary.break(Some(buildPathBack(curr, List(to))))
-          }
-          if (!predecessor.contains(desc)) {
-            predecessor(desc) = curr
-            worklist.enqueue(desc)
+          val newCostOfDesc = costOfCurr + costFunc(curr, desc)
+          if (predecessor.get(desc).forall(_._2 < newCostOfDesc)) {
+            predecessor(desc) = (curr, newCostOfDesc)
+            worklist.enqueue(desc -> newCostOfDesc)
           }
         }
       }

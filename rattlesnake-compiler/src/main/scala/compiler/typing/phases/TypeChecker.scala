@@ -4,9 +4,8 @@ import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.typing.TypeStore
 
-final class TypeChecker(er: ErrorReporter, typeStore: TypeStore) extends CompilerStep[Program, Program] {
+final class TypeChecker(er: ErrorReporter) extends CompilerStep[Program, Program] {
   
   private given CompilationStep = TypeChecking
 

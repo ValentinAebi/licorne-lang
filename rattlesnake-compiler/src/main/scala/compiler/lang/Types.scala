@@ -3,6 +3,7 @@ package compiler.lang
 import Formulas.*
 import Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.identifiers.TypeIdentifier
+import compiler.util.SeqSet
 
 import java.util.concurrent.atomic.AtomicLong
 
@@ -55,16 +56,26 @@ object Types {
     override def toString: String = s"(${params.mkString(", ")}) -> $result"
   }
 
-  final case class UnionType(types: Set[Type]) extends RefinedType {
+  final case class UnionType(types: SeqSet[Type]) extends RefinedType {
     override def principalType: PrincipalType = if types.size == 1 then types.head.principalType else AnyType
 
     override def toString: String = types.mkString(" | ")
+  }
+  
+  object UnionType {
+    def apply(types: Type*): UnionType =
+      UnionType(SeqSet(types))
   }
 
   final case class IntersectionType(types: Set[Type]) extends RefinedType {
     override def principalType: PrincipalType = AnyType
 
     override def toString: String = types.mkString(" & ")
+  }
+  
+  object IntersectionType {
+    def apply(types: Type*): IntersectionType =
+      IntersectionType(SeqSet(types))
   }
 
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends RefinedType {
@@ -75,6 +86,29 @@ object Types {
 
       s"[${boundDescr(lowerBoundOpt)},${boundDescr(upperBoundOpt)}]"
     }
+  }
+  
+  object IntRangeType {
+    
+    def singleton(elem: Formula): IntRangeType =
+      IntRangeType(Some(elem), Some(elem))
+    
+    def ofLowerBound(lb: Formula): IntRangeType =
+      IntRangeType(Some(lb), None)
+      
+    def ofUpperBound(ub: Formula): IntRangeType =
+      IntRangeType(None, Some(ub))
+    
+  }
+  
+  final case class SetType(elems: SeqSet[Formula]) extends RefinedType {
+    override def principalType: PrincipalType = ??? // FIXME should depend on the values
+
+    override def toString: String = elems.mkString("{", ",", "}")
+  }
+  
+  object SetType {
+    def apply(elems: Formula*): SetType = new SetType(SeqSet(elems))
   }
 
   private val typeVarUidGen = new AtomicLong(-1)

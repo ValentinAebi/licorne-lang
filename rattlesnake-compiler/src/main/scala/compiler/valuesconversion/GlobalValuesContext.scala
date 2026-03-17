@@ -1,12 +1,11 @@
 package compiler.valuesconversion
 
-import compiler.egraphs.EGraph
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.lang.Keyword
-import compiler.reporting.Position
 import compiler.lang.Types.TypeVariable
+import compiler.reporting.Position
 
 import java.util
 import scala.collection.mutable

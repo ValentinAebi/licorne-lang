@@ -1,6 +1,5 @@
 package compiler.irs
 
-import compiler.egraphs.EGraph
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.Asts.Ast
 import compiler.irs.SSA.Scope.scopeUidGen
@@ -8,16 +7,18 @@ import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.typing.{ImmutableUnionFind, MutableUnionFind, UnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
+import scala.compiletime.uninitialized
 
 object SSA {
 
   sealed abstract class Instr {
     private var astNodeOpt: Option[Ast] = None
-    private var eGraphOpt: Option[EGraph] = None
+    private var _uf: Option[ImmutableUnionFind] = None
 
     def setAstNode(astNode: Ast): this.type = {
       if (this.astNodeOpt.isDefined) {
@@ -29,11 +30,11 @@ object SSA {
 
     def getAstNodeOpt: Option[Ast] = astNodeOpt
 
-    def eGraph_=(eg: EGraph): Unit = {
-      eGraphOpt = Some(eg)
+    def uf_=(unionFind: ImmutableUnionFind): Unit = {
+      _uf = Some(unionFind)
     }
 
-    def eGraph: EGraph = eGraphOpt.get
+    def uf: ImmutableUnionFind = _uf.get
   }
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
@@ -106,34 +107,41 @@ object SSA {
 
   enum FieldResolutionTarget {
     case Unresolved(fieldId: FunOrVarId)
-    case Resolved(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId)
+    case Unresolvable(fieldId: FunOrVarId)
+    case Resolved(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId, instantiatedFieldType: Type)
 
     override def toString: String = this match {
       case Unresolved(fieldId) =>
+        s"$fieldId<resol=?>"
+      case Unresolvable(fieldId) =>
         s"$fieldId<unres>"
-      case Resolved(receiverSig, fieldId) =>
-        s"$fieldId<res:${receiverSig.id}"
+      case Resolved(receiverSig, fieldId, instantiatedFieldType) =>
+        s"$fieldId<res=${receiverSig.id}:$instantiatedFieldType>"
     }
   }
 
   enum InvocationTarget {
     case Unresolved(funId: FunOrVarId)
-    case Resolved(funSig: FunctionSignature)
+    case Unresolvable(funId: FunOrVarId)
+    case Resolved(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type)
 
     override def toString: String = this match {
       case Unresolved(funId) =>
+        s"$funId<resol=?>"
+      case Unresolvable(funId) =>
         s"$funId<unres>"
-      case Resolved(funSig) =>
-        s"${funSig.functionName}<res:${funSig.ownerName}>"
+      case Resolved(encapsulatedTypeSig, funSig, instantiatedReturnType) =>
+        s"${funSig.functionName}<res=${funSig.ownerName}:$instantiatedReturnType>"
     }
   }
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
-    private val typeStore = mutable.Map.empty[IdValue, Type]
-
+    
+    var movingUf: MutableUnionFind = uninitialized
+    
     def saveType(idVal: IdValue, tpe: Type): Unit = {
       if (idVal.definingScope == this) {
-        typeStore.put(idVal, tpe)
+        movingUf.saveType(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
         outScopeOpt.get.saveType(idVal, tpe)
       } else {
@@ -141,15 +149,30 @@ object SSA {
       }
     }
 
-    def saveSmartcast(idVal: IdValue, tpe: Type): Unit = {
-      typeStore.put(idVal, tpe)
+    def saveSmartcast(f: Formula, tpe: Type): Unit = {
+      movingUf.saveSmartcast(f, tpe)
     }
-
-    def typeOf(idVal: IdValue): Type =
-      typeStore.getOrElse(idVal,
-        outScopeOpt.map(_.typeOf(idVal))
+    
+    def typeOf(clId: EClassId): Type = {
+      typeStore.getOrElse(clId,
+        outScopeOpt.map(_.typeOf(clId))
           .getOrElse(NothingType)
       )
+    }
+
+    def typeOf(idVal: IdValue): Type = {
+      val clId = wrappedEGraph.absorbFormula(idVal)
+      typeOf(clId)
+    }
+    
+    def smartcastFor(clId: EClassId): Option[Type] = {
+      typeStore.get(clId).orElse(outScopeOpt.flatMap(_.smartcastFor(clId)))
+    }
+    
+    def smartcastFor(f: Formula): Option[Type] = {
+      val clId = wrappedEGraph.absorbFormula(f)
+      smartcastFor(clId)
+    }
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 

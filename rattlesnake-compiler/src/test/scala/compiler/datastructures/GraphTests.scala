@@ -120,7 +120,7 @@ class GraphTests {
 
   @Test def findShortestPathTest(): Unit = {
     val exp = Seq(15, 12, 10, 7, 8)
-    val act = graph1.shortestPath(15, 8).get
+    val act = graph1.shortestPathUnweighted(15, 8).get
     assertEquals(exp, act)
   }
 
