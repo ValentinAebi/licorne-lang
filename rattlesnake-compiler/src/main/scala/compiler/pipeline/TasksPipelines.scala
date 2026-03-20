@@ -9,7 +9,7 @@ import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.{ProxyStore, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
-import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
+import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalysis, TypeAliasesAnalyzer, TyperPhase1}
 
 import java.nio.file.Path
 
@@ -52,6 +52,7 @@ object TasksPipelines {
     val proxyStore = ProxyStore()
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
+      .andThen(MonotonicityAnalysis())
 //      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
 //      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
       // FIXME this implementation is temporary

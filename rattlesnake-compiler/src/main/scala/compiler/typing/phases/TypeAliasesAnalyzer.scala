@@ -9,10 +9,11 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
+import compiler.ssagen.ProxyStore
 import compiler.typing.Typer
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext, TypeVariablesContext}
 
-final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) extends CompilerStep[Program, Program] {
+final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[Program, Program] {
   
   private given CompilationStep = TypeAliasesAnalysis
 
@@ -22,7 +23,7 @@ final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, er: ErrorRepo
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val typer = Typer(dealiasingCtx, resolutionCtx, typeVarsCtx, er)
+    val typer = Typer(dealiasingCtx, resolutionCtx, typeVarsCtx, proxyStore, er)
     for (tid, tsig) <- program.typeAliases do {
       val typeParamsCtx = TypeParamsContext(tsig.typeParams)
       typer.dealiasAndTypeType(tsig.rhs, None, tsig.sigScope, tsig.declPosOpt)(using typeParamsCtx)

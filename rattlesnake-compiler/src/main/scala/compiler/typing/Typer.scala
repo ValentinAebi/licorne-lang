@@ -2,7 +2,6 @@ package compiler.typing
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.*
-import compiler.irs.Tokens.BoolLitToken
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -13,6 +12,7 @@ import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.ssagen.ProxyStore
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 
@@ -24,6 +24,7 @@ final class Typer(
                    dealiasingCtx: DealiasingContext,
                    resolutionCtx: ResolutionContext,
                    typeVarsCtx: TypeVariablesContext,
+                   proxyStore: ProxyStore,
                    er: ErrorReporter
                  )(using CompilationStep) {
 

@@ -34,6 +34,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     val programBuilder = Program.Builder(er)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
+    val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
     for (src <- input) {
       val datatypeDefs = mutable.ListBuffer.empty[Asts.DataTypeDef]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
@@ -44,7 +45,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = interfaceSigScope.newVal(ThisId)
             interfaceSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val noFunctionsSig = InterfaceSignature(id, typeParamTrees.convert(interfaceSigScope), Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -53,7 +54,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = objSigScope.newVal(ThisId)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(id, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -76,7 +77,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
             }
             val noFunctionsSig = ClassSignature(id, typeParams, fields, Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -129,7 +130,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         programBuilder.saveSignature(sig, df.getPosition)
       }
     }
-    val program = programBuilder.build(allFunctionsB.result())
+    val program = programBuilder.build(allFunctionsB.result(), loopsCollector.toSeq)
     for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv, posOpt)
     }
@@ -142,7 +143,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                 functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
                                 allFunctionsB: SeqMapBuilder[FunctionSignature, SSA.Function]
-                              ): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (funDef <- functionsProvider.functions) {
       if (functions.contains(funDef.id)) {
@@ -242,7 +243,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                bodyOpt: Option[Asts.Block],
                                funSigScope: Scope,
                                posOpt: Option[Position]
-                             ): SSA.Function = bodyOpt match {
+                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): SSA.Function = bodyOpt match {
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope)
       for (stat <- body.stats) {
@@ -253,19 +254,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean = true): Unit = {
-
-    def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
-      instr.setAstNode(node.originalAst)
-      currScope.instructions.addOne(instr)
-    }
-
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean = true)(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, CompilationStep.SSAGeneration, stat.getPosition)
     stat match {
       case expr: Asts.Expr =>
         val resultValue = currScope.newIntermediate("dummy")
         generateSSAExpr(resultValue, expr, currScope)
-        saveInstr(Drop(resultValue), expr)
+        currScope.saveInstr(Drop(resultValue), expr)
       case block@Asts.Block(stats) =>
         val blockScope = if (newScopeIfBlock) {
           val sc = Scope.nestedInside(currScope)
@@ -291,7 +286,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               .withDesugaringSource(localDef), currScope)
           case None =>
             typeAnnotOpt.foreach { typeAnnot =>
-              saveInstr(LocalDecl(localName, typeAnnot), localDef)
+              currScope.saveInstr(LocalDecl(localName, typeAnnot), localDef)
             }
             currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, reassigPermission, typeAnnotOpt)
         }
@@ -386,7 +381,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
-          currScope.saveInstr(Loop(condScope, condVal, bodyScope, loopUpdatedVars), whileLoop)
+          val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
+          currScope.saveInstr(loop, whileLoop)
+          loopsCollector.addOne(loop)
         }
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
         generateSSA(Asts.Block(
@@ -422,7 +419,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                resultVal: IdValue,
                                expr: Asts.Expr,
                                currScope: Scope
-                             ): Option[Formula] = {
+                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateSSAExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)

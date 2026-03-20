@@ -9,8 +9,8 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.GlobalValuesContext
 
-import scala.collection.mutable
 import scala.collection.immutable.SeqMap
+import scala.collection.mutable
 
 final case class Program(
                           globalValuesContext: GlobalValuesContext,
@@ -20,7 +20,8 @@ final case class Program(
                           datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
-                          functions: SeqMap[FunctionSignature, SSA.Function]
+                          functions: SeqMap[FunctionSignature, SSA.Function],
+                          loops: Seq[SSA.Loop]
                         ) {
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
@@ -46,7 +47,7 @@ object Program {
       }
     }
 
-    def build(allFunctions: SeqMap[FunctionSignature, SSA.Function]): Program = {
+    def build(allFunctions: SeqMap[FunctionSignature, SSA.Function], loops: Seq[SSA.Loop]): Program = {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]
@@ -71,7 +72,8 @@ object Program {
         datatypes.result(),
         recordsB.result(),
         typeAliasesB.result(),
-        allFunctions
+        allFunctions,
+        loops
       )
     }
   }

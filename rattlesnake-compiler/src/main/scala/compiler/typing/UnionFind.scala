@@ -11,11 +11,11 @@ import scala.collection.mutable
 trait UnionFind {
 
   def representativeOf(value: IdValue): IdValue
-  
+
   def typeOfNoSmartcast(value: IdValue): Option[Type]
-  
+
   def smartcastTypeOf(f: Formula): Option[Type]
-  
+
   def currentTypeOf(value: IdValue): Option[Type] = smartcastTypeOf(value).orElse(typeOfNoSmartcast(value))
 
   def canonicalize(formula: Formula): Formula = formula match {
@@ -70,7 +70,7 @@ final class MutableUnionFind extends UnionFind {
       types.get(rb).foreach { tb =>
         types.updateWith(ra) {
           case Some(oldType) if oldType != tb => Some(IntersectionType(oldType, tb))
-          case None => Some(tb)
+          case _ => Some(tb)
         }
       }
     } else {

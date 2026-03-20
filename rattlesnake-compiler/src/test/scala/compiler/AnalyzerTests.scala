@@ -114,7 +114,7 @@ class AnalyzerTests(fileName: String) {
     val er = ErrorReporter(errorsConsumer, exitCalled)
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, er))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, er))
       .andThen(??? /* TODO */)
     try {

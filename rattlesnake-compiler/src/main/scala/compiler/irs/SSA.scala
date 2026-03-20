@@ -8,7 +8,7 @@ import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
 import compiler.recurrences.Recurrence
-import compiler.typing.{ImmutableUnionFind, MutableUnionFind, UnionFind}
+import compiler.typing.{ImmutableUnionFind, MutableUnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
@@ -67,7 +67,9 @@ object SSA {
 
   sealed trait ControlFlowInstr extends Instr
 
-  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr
+  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
+    val invariants: mutable.Seq[Formula] = mutable.ListBuffer.empty[Formula]
+  }
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
   final case class StaticTypeAssert(value: IdValue, tpe: Type) extends Instr
   final case class StaticAssert(value: IdValue) extends Instr
