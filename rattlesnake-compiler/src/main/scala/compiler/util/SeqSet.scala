@@ -18,6 +18,8 @@ final class SeqSet[T] private(private val underlyingMap: mutable.LinkedHashMap[T
 
   override def contains(elem: T): Boolean = underlyingMap.contains(elem)
 
+  override def filter(pred: T => Boolean): SeqSet[T] = new SeqSet(underlyingMap.filter((k, _) => pred(k)))
+
   override def iterator: Iterator[T] = underlyingMap.keysIterator
 
   override def concat(that: IterableOnce[T]): SeqSet[T] =

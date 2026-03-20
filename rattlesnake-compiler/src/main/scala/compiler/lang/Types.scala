@@ -67,7 +67,7 @@ object Types {
       UnionType(SeqSet(types))
   }
 
-  final case class IntersectionType(types: Set[Type]) extends RefinedType {
+  final case class IntersectionType(types: SeqSet[Type]) extends RefinedType {
     override def principalType: PrincipalType = AnyType
 
     override def toString: String = types.mkString(" & ")
@@ -99,16 +99,6 @@ object Types {
     def ofUpperBound(ub: Formula): IntRangeType =
       IntRangeType(None, Some(ub))
     
-  }
-  
-  final case class SetType(elems: SeqSet[Formula]) extends RefinedType {
-    override def principalType: PrincipalType = ??? // FIXME should depend on the values
-
-    override def toString: String = elems.mkString("{", ",", "}")
-  }
-  
-  object SetType {
-    def apply(elems: Formula*): SetType = new SetType(SeqSet(elems))
   }
 
   private val typeVarUidGen = new AtomicLong(-1)

@@ -11,46 +11,12 @@ import scala.collection.mutable
 trait UnionFind {
 
   def representativeOf(value: IdValue): IdValue
-
-  def knows(idValue: IdValue): Boolean
-
-  def rawReprOf(idValue: IntermediateIdValue): Option[Formula]
-
-  def canonicReprOf(idValue: IntermediateIdValue): Option[Formula] =
-    rawReprOf(idValue).map(canonicalize)
-
-  def filterFormula(f: Formula): Option[Formula] = f match {
-    case value: IdValue => Option.when(knows(value))(canonicalize(value))
-    case formula: ConstFormula => Some(formula)
-    case Select(owner, field) => for ow <- filterFormula(owner) yield Select(ow, field)
-    case Call(receiver, func, args) =>
-      val filteredRecOpt = filterFormula(receiver)
-      val filteredArgs = args.flatMap(filterFormula)
-      for filteredReceiverOpt <- filteredRecOpt
-          if filteredArgs.size == args.size yield Call(filteredReceiverOpt, func, filteredArgs)
-    case Plus(lhs, rhs) =>
-      for {
-        flhs <- filterFormula(lhs)
-        frhs <- filterFormula(rhs)
-      } yield Plus(flhs, frhs)
-    case Neg(operand) =>
-      for filteredOperand <- filterFormula(operand) yield Neg(filteredOperand)
-    case Times(lhs, rhs) =>
-      for {
-        flhs <- filterFormula(lhs)
-        frhs <- filterFormula(rhs)
-      } yield Times(flhs, frhs)
-    case DivBy(lhs, rhs) =>
-      for {
-        flhs <- filterFormula(lhs)
-        frhs <- filterFormula(rhs)
-      } yield DivBy(flhs, frhs)
-    case Modulo(lhs, rhs) =>
-      for {
-        flhs <- filterFormula(lhs)
-        frhs <- filterFormula(rhs)
-      } yield Modulo(flhs, frhs)
-  }
+  
+  def typeOfNoSmartcast(value: IdValue): Option[Type]
+  
+  def smartcastTypeOf(f: Formula): Option[Type]
+  
+  def currentTypeOf(value: IdValue): Option[Type] = smartcastTypeOf(value).orElse(typeOfNoSmartcast(value))
 
   def canonicalize(formula: Formula): Formula = formula match {
     case value: IdValue => representativeOf(value)
@@ -76,11 +42,8 @@ trait UnionFind {
 
 final class MutableUnionFind extends UnionFind {
   private val representatives: mutable.Map[IdValue, IdValue] = mutable.Map.empty
-  private val valsDefs: mutable.Map[IntermediateIdValue, Formula] = mutable.Map.empty
   private val types: mutable.Map[IdValue, Type] = mutable.Map.empty
   private var smartcasts: mutable.Map[Formula, Type] = mutable.Map.empty
-
-  override def knows(idValue: IdValue): Boolean = representatives.contains(idValue)
 
   def representativeOf(idVal: IdValue): IdValue = {
     representatives.get(idVal) match {
@@ -92,7 +55,9 @@ final class MutableUnionFind extends UnionFind {
     }
   }
 
-  override def rawReprOf(idValue: IntermediateIdValue): Option[Formula] = valsDefs.get(idValue)
+  override def typeOfNoSmartcast(value: IdValue): Option[Type] = types.get(value)
+
+  override def smartcastTypeOf(f: Formula): Option[Type] = smartcasts.get(f)
 
   def mkEqual(a: IdValue, b: IdValue): Unit = {
     val ra = representativeOf(a)
@@ -122,10 +87,6 @@ final class MutableUnionFind extends UnionFind {
     smartcasts(canonicalize(formula)) = tpe
   }
 
-  def saveValDef(idValue: IntermediateIdValue, df: Formula): Unit = {
-    valsDefs(idValue) = df
-  }
-
   def deepCopy: MutableUnionFind = {
     val copy = MutableUnionFind()
     copy.representatives.addAll(this.representatives)
@@ -134,7 +95,7 @@ final class MutableUnionFind extends UnionFind {
   }
 
   def snapshot: ImmutableUnionFind =
-    ImmutableUnionFind(representatives.toMap, valsDefs.toMap, types.toMap, smartcasts.toMap)
+    ImmutableUnionFind(representatives.toMap, types.toMap, smartcasts.toMap)
 
   def clear(): Unit = {
     representatives.clear()
@@ -145,16 +106,15 @@ final class MutableUnionFind extends UnionFind {
 
 final case class ImmutableUnionFind(
                                      representatives: Map[IdValue, IdValue],
-                                     valsDefs: Map[IntermediateIdValue, Formula],
                                      types: Map[IdValue, Type],
                                      smartcasts: Map[Formula, Type]
                                    ) extends UnionFind {
 
-  override def knows(idValue: IdValue): Boolean = representatives.contains(idValue)
-
   override def representativeOf(value: IdValue): IdValue =
     representatives.getOrElse(value, value)
 
-  override def rawReprOf(idValue: IntermediateIdValue): Option[Formula] =
-    valsDefs.get(idValue)
+  override def typeOfNoSmartcast(value: IdValue): Option[Type] = types.get(value)
+
+  override def smartcastTypeOf(f: Formula): Option[Type] = smartcasts.get(f)
+  
 }

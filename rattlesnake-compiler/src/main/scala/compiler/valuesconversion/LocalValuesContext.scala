@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ThisId}
 import compiler.irs.Asts
-import compiler.lang.Formulas.IdValue
+import compiler.lang.Formulas.{Formula, IdValue}
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -40,8 +40,8 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Boolean =
-    saveNewLocal(id, Some(value), reassigStatus, typeUpperBound)
+  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean =
+    saveNewLocal(id, Some(value), reassigPermission, typeUpperBound)
 
   def remap(id: FunOrVarId, value: IdValue): Boolean = {
     queryLocal(id) match {

@@ -7,7 +7,7 @@ import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.ssagen.SSAGenerator
+import compiler.ssagen.{ProxyStore, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 
@@ -49,8 +49,9 @@ object TasksPipelines {
                            agentDirPath: Path,
                            er: ErrorReporter) = {
     val typeVarsCtx = TypeVariablesContext()
+    val proxyStore = ProxyStore()
     multiFrontEnd(er)
-      .andThen(SSAGenerator(typeVarsCtx, er))
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
 //      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
 //      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
       // FIXME this implementation is temporary

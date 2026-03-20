@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.lang.Formulas.{IdValue, UninterpretedConstIdValue}
+import compiler.lang.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
@@ -13,7 +13,7 @@ trait ValuesContext {
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue
 
   def deepCopyWithSameGlobalCtx: ValuesContext
-  
+
   def withOneMoreFrame: LocalValuesContext
 
   private[valuesconversion] def queryLocal(id: FunOrVarId): Option[LocalInfo]

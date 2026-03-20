@@ -4,7 +4,7 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
-import compiler.ssagen.SSAGenerator
+import compiler.ssagen.{ProxyStore, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 import org.junit.Assert.fail
@@ -108,14 +108,14 @@ class AnalyzerTests(fileName: String) {
       fatalErrorOccured |= exitCode == fatalErrorExitCode
       throw ExitException
     }
-
-    val ts = TypeStore()
+    
     val typeVarsCtx = TypeVariablesContext()
+    val proxyStore = ProxyStore()
     val er = ErrorReporter(errorsConsumer, exitCalled)
     val pipeline = TasksPipelines.multiFrontEnd(er)
-      .andThen(SSAGenerator(typeVarsCtx, er))
-      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
-      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, er))
+      .andThen(DeclarationsChecker(typeVarsCtx, er))
       .andThen(??? /* TODO */)
     try {
       pipeline.apply(srcFiles)

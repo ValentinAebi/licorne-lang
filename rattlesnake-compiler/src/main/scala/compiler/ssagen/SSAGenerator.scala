@@ -12,6 +12,7 @@ import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
+import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.typing.contexts.TypeVariablesContext
@@ -23,7 +24,7 @@ import scala.collection.{SeqMap, mutable}
 import scala.util.boundary
 
 
-final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) extends CompilerStep[List[Asts.Source], Program] {
+final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[List[Asts.Source], Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
@@ -179,7 +180,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
                 val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funSigScope)
-                  if (actualThisType.principalType != expectedThisType) {
+                  // TODO see if we allow refined types on receiver
+                  if (actualThisType != expectedThisType) {
                     reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", funDef.getPosition)
                   }
                   actualThisType
@@ -191,6 +193,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
             paramsInclThis(paramValue) = paramType
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramTree.paramId, paramValue, reassigPermission, Some(paramType))
+            proxyStore.saveProxy(paramValue, paramValue)
           }
           isFirst = false
         }
@@ -263,8 +266,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         val resultValue = currScope.newIntermediate("dummy")
         generateSSAExpr(resultValue, expr, currScope)
         saveInstr(Drop(resultValue), expr)
-      case Asts.Block(stats) =>
-        val blockScope = if newScopeIfBlock then Scope.nestedInside(currScope) else currScope
+      case block@Asts.Block(stats) =>
+        val blockScope = if (newScopeIfBlock) {
+          val sc = Scope.nestedInside(currScope)
+          currScope.saveInstr(sc, block)
+          sc
+        } else currScope
         for (stat <- stats) {
           generateSSA(stat, blockScope)
         }
@@ -298,7 +305,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         }
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val newValue = currScope.newIntermediate()
-        generateSSAExpr(newValue, rhsTree, currScope)
+        val proxyOpt = generateSSAExpr(newValue, rhsTree, currScope)
+        proxyStore.saveProxy(newValue, proxyOpt)
         currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
@@ -369,8 +377,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
             currScope
           )
         } else {
-          for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
+          for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
+            varData.recurrenceOpt = for {
+              init <- proxyStore.getProxy(beforeLoopVal)
+              induct <- proxyStore.getProxy(bodyLastLocalVal)
+            } yield Recurrence(init, induct, condVal)
             bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
@@ -410,9 +422,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
                                resultVal: IdValue,
                                expr: Asts.Expr,
                                currScope: Scope
-                             ): Unit = {
+                             ): Option[Formula] = {
 
-    def recurseOnDesugared(desugaredExpr: Asts.Expr): Unit =
+    def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateSSAExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
 
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
@@ -425,51 +437,79 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
       argsValsB.result()
     }
 
-    def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr): Unit = {
+    def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
       val operandVal = currScope.newIntermediate()
-      generateSSAExpr(operandVal, operandTree, currScope)
+      val proxyOfOperandOpt = generateSSAExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
+      for {
+        mkFormula <- mkFormulaOpt
+        proyOfOperand <- proxyOfOperandOpt
+      } yield mkFormula(proyOfOperand)
     }
 
-    def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr): Unit = {
+    def generateUnaryWithProxy(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormula: Formula => Formula): Option[Formula] =
+      generateUnary(operandTree, mkInstr, Some(mkFormula))
+
+    def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None): Option[Formula] = {
       val lhsVal = currScope.newIntermediate()
-      generateSSAExpr(lhsVal, lhs, currScope)
+      val lhsProxyOpt = generateSSAExpr(lhsVal, lhs, currScope)
       val rhsVal = currScope.newIntermediate()
-      generateSSAExpr(rhsVal, rhs, currScope)
+      val rhsProxyOpt = generateSSAExpr(rhsVal, rhs, currScope)
       currScope.saveInstr(mkInstr(lhsVal, rhsVal), expr)
+      for {
+        mkFormula <- mkFormulaOpt
+        lhsProxy <- lhsProxyOpt
+        rhsProxy <- rhsProxyOpt
+      } yield mkFormula(lhsProxy, rhsProxy)
     }
+
+    def generateBinaryWithProxy(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormula: (Formula, Formula) => Formula): Option[Formula] =
+      generateBinary(lhs, rhs, mkInstr, Some(mkFormula))
 
     expr match {
       case Asts.UnitLit() =>
         currScope.saveInstr(AssignVal(resultVal, currScope.valuesCtx.globalCtx.unitVal), expr)
+        None
       case Asts.IntLit(value) =>
         currScope.saveInstr(AssignIntConst(resultVal, value), expr)
+        Some(IntConst(value))
       case Asts.DoubleLit(value) => ???
       case Asts.CharLit(value) => ???
       case Asts.BoolLit(value) =>
         currScope.saveInstr(AssignBoolConst(resultVal, value), expr)
+        None
       case Asts.StringLit(value) =>
         currScope.saveInstr(AssignStringConst(resultVal, value), expr)
+        None
       case varRefTree@Asts.VariableRef(name) =>
         currScope.getLocalValuesContextUnsafe.valueOf(name) match {
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRefTree.getPosition)
+            None
           case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
             reportError(s"$id might not have been initialized", varRefTree.getPosition)
+            None
           case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
             currScope.saveInstr(AssignVal(resultVal, value), expr)
+            Some(value)
         }
-      case Asts.ThisRef() => recurseOnDesugared(Asts.VariableRef(ThisId))
-      case Asts.ItRef() => recurseOnDesugared(Asts.VariableRef(ItId))
+      case Asts.ThisRef() =>
+        recurseOnDesugared(Asts.VariableRef(ThisId))
+        None
+      case Asts.ItRef() =>
+        recurseOnDesugared(Asts.VariableRef(ItId))
+        None // TODO update if it gets reintroduced
       case Asts.ObjectRef(objectName) =>
         val objIdVal = currScope.valuesCtx.resolveObject(objectName)
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
+        None
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
         val receiverVal = currScope.newIntermediate()
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
+        None
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
         val receiverVal = currScope.getLocalValuesContextUnsafe.getThisValue match {
@@ -481,6 +521,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
+        None
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
@@ -489,21 +530,22 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         generateSSAExpr(calleeVal, calleeTree, currScope)
         val args = generateArgsList(argTrees)
         currScope.saveInstr(InvokeClosure(resultVal, calleeVal, args), expr)
+        None
       case Asts.UnaryOp(Operator.Minus, operandTree) =>
-        generateUnary(operandTree, NumNeg(resultVal, _))
+        generateUnaryWithProxy(operandTree, NumNeg(resultVal, _), Neg(_))
       case Asts.UnaryOp(Operator.ExclamationMark, operandTree) =>
         generateUnary(operandTree, LogicNeg(resultVal, _))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Plus, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Add(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Add(resultVal, _, _), Plus(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Minus, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Sub(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Sub(resultVal, _, _), (a, b) => Plus(a, Neg(b)))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Times, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Mul(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Mul(resultVal, _, _), Times(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Div(resultVal, _, _))
+        generateBinary(lhsTree, rhsTree, Div(resultVal, _, _)) // TODO proxy?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Modulo, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Rem(resultVal, _, _))
+        generateBinary(lhsTree, rhsTree, Rem(resultVal, _, _)) // TODO proxy?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessThan, rhsTree) =>
         generateBinary(lhsTree, rhsTree, Lt(resultVal, _, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterThan, rhsTree) =>
@@ -534,19 +576,24 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         val lhsVal = currScope.newIntermediate()
         generateSSAExpr(lhsVal, lhsTree, currScope)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, FieldResolutionTarget.Unresolved(fieldId)), selectTree)
+        None
       case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
         generateUnary(testedExprTree, TypeTest(resultVal, _, typeName))
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
+        None
       case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeId, typeArgTrees, initializers) =>
-        val instanceVal = currScope.newIntermediate()
+        val initializationScope = Scope.nestedInside(currScope)
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
           val rhsVal = currScope.newIntermediate()
           generateSSAExpr(rhsVal, initializerRhs, currScope)
+          initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget.Unresolved(initializer.fieldName), rhsVal), initializer)
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs), recordOrClassInstTree)
+        currScope.saveInstr(initializationScope, recordOrClassInstTree)
+        None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
         val condVal = currScope.newIntermediate("cond")
         generateSSAExpr(condVal, condTree, currScope)
@@ -559,18 +606,23 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
+        None
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
         generateSSAExpr(resultVal, castExprTree, currScope)
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
+        None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
         val inVal = currScope.newIntermediate()
         generateSSAExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
+        None
       case castTree@Asts.Cast(castExpr, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
+        None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
         generateSSAExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
+        None
       case closureDefTree@Asts.ClosureDef(params, body) =>
         val bodyScope = Scope.nestedInside(currScope)
         val paramValsAndTypesB = List.newBuilder[(ValIdValue, Type)]
@@ -585,11 +637,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         }
         generateSSA(body, bodyScope)
         currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope), closureDefTree)
+        None
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg")
         generateSSAExpr(msgVal, msgTree, currScope)
         currScope.saveInstr(Panic(msgVal), panicTree)
         currScope.getLocalValuesContextUnsafe.markHasExited()
+        None
     }
   }
 
@@ -703,9 +757,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, er: ErrorReporter) e
         upperBoundOpt.flatMap(generateFormula(_, scope))
       )
     case Asts.UnionTypeTree(types) =>
-      UnionType(types.map(mkType(_, scope)).toSet)
+      UnionType(SeqSet(types.map(mkType(_, scope))))
     case Asts.IntersectionTypeTree(types) =>
-      IntersectionType(types.map(mkType(_, scope)).toSet)
+      IntersectionType(SeqSet(types.map(mkType(_, scope))))
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope): NamedType = {

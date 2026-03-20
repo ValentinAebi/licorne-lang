@@ -41,27 +41,6 @@ final case class ResolutionContext(
       case _ => None
     }
 
-  def resolveFunSig(receiver: Type, funId: FunOrVarId, posOpt: Option[Position]): (InvocationTarget, Type) = {
-
-    def errorCase() = {
-      er.reportError(s"method $funId not found in type $receiver", posOpt)
-      (InvocationTarget.Unresolvable(funId), NothingType)
-    }
-
-    receiver.principalType match {
-      case NamedType(typeName, typeArgs, args) =>
-        resolveFunSig(typeName, funId) match {
-          case FuncResolResult.Success(ownerSig, funSig) =>
-            val typesSubst = instantiateTypes(typeName, funSig.typeParams, typeArgs, posOpt)
-            val instantiatedRetType = funSig.retType.substitute(typesSubst, Map.empty)
-            val invocationTarget = InvocationTarget.Resolved(ownerSig, funSig, instantiatedRetType)
-            (invocationTarget, instantiatedRetType)
-          case _ => errorCase()
-        }
-      case _ => errorCase()
-    }
-  }
-
   def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
     resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
       case None => FuncResolResult.OwnerNotFound
@@ -70,26 +49,6 @@ final case class ResolutionContext(
           case None => FuncResolResult.FuncNotFound(ownerSig)
           case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
         }
-    }
-  }
-
-  def resolveFieldAccess(owner: Type, fieldId: FunOrVarId, posOpt: Option[Position]): (FieldResolutionTarget, Type) = {
-
-    def errorCase() = {
-      er.reportError(s"field $fieldId not found in type ${owner.principalType}", posOpt)
-      (FieldResolutionTarget.Unresolvable(fieldId), NothingType)
-    }
-
-    owner.principalType match {
-      case NamedType(typeName, typeArgs, args) =>
-        resolveFieldAccess(typeName, fieldId) match {
-          case FieldResolResult.Success(ownerSig, field) =>
-            val typeSubst = instantiateTypes(ownerSig.id, ownerSig.typeParams, typeArgs, posOpt)
-            val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
-            (FieldResolutionTarget.Resolved(ownerSig, fieldId, instantiatedFieldType), instantiatedFieldType)
-          case _ => errorCase()
-        }
-      case _ => errorCase()
     }
   }
 
@@ -106,16 +65,6 @@ final case class ResolutionContext(
 
   def declarationPositionOf(tid: TypeIdentifier): Option[Position] =
     resolveTypeSig(tid).flatMap(_.declPosOpt)
-
-  private def instantiateTypes(tid: TypeIdentifier, typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position]): Map[TypeIdentifier, Type] = {
-    if typeParams.size == typeArgs.size then typeParams.map(_.tid).zip(typeArgs).toMap
-    else {
-      if (typeArgs.nonEmpty) {
-        er.reportError(s"wrong number of type parameters for type $tid", posOpt)
-      }
-      Map.from(for tp <- typeParams yield tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, posOpt))
-    }
-  }
 
 }
 

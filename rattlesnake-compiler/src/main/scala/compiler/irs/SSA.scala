@@ -7,6 +7,7 @@ import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.recurrences.Recurrence
 import compiler.typing.{ImmutableUnionFind, MutableUnionFind, UnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -42,7 +43,16 @@ object SSA {
   trait VarData
 
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) extends VarData {
-    override def toString: String = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
+    var recurrenceOpt: Option[Recurrence] = None
+
+    override def toString: String = {
+      val baseStr = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
+      recurrenceOpt match {
+        case Some(recurrence) =>
+          s"$baseStr  RECUR: $recurrence"
+        case None => baseStr
+      }
+    }
   }
 
   final case class DisjunctionVarData(varIdOpt: Option[FunOrVarId], afterThenVal: IdValue, afterElseVal: IdValue, joinedVal: IdValue) extends VarData {
@@ -136,9 +146,9 @@ object SSA {
   }
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
-    
+
     var movingUf: MutableUnionFind = uninitialized
-    
+
     def saveType(idVal: IdValue, tpe: Type): Unit = {
       if (idVal.definingScope == this) {
         movingUf.saveType(idVal, tpe)
@@ -152,26 +162,22 @@ object SSA {
     def saveSmartcast(f: Formula, tpe: Type): Unit = {
       movingUf.saveSmartcast(f, tpe)
     }
-    
-    def typeOf(clId: EClassId): Type = {
-      typeStore.getOrElse(clId,
-        outScopeOpt.map(_.typeOf(clId))
-          .getOrElse(NothingType)
-      )
+
+    def currentTypeOf(idValue: IdValue): Type = {
+      uf.currentTypeOf(idValue)
+        .orElse(outScopeOpt.map(_.currentTypeOf(idValue)))
+        .getOrElse(NothingType)
     }
 
-    def typeOf(idVal: IdValue): Type = {
-      val clId = wrappedEGraph.absorbFormula(idVal)
-      typeOf(clId)
+    def typeOfNoSmartcast(idValue: IdValue): Type = {
+      uf.typeOfNoSmartcast(idValue)
+        .orElse(outScopeOpt.map(_.typeOfNoSmartcast(idValue)))
+        .getOrElse(NothingType)
     }
-    
-    def smartcastFor(clId: EClassId): Option[Type] = {
-      typeStore.get(clId).orElse(outScopeOpt.flatMap(_.smartcastFor(clId)))
-    }
-    
+
     def smartcastFor(f: Formula): Option[Type] = {
-      val clId = wrappedEGraph.absorbFormula(f)
-      smartcastFor(clId)
+      uf.smartcastTypeOf(f)
+        .orElse(outScopeOpt.flatMap(_.smartcastFor(f)))
     }
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()

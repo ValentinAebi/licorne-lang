@@ -1,18 +1,20 @@
 package compiler.typing
 
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.*
 import compiler.irs.Tokens.BoolLitToken
+import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{BoolType, DoubleType, StringType}
+import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.contexts.*
+import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -46,7 +48,15 @@ final class Typer(
 
   def typeInstr(instr: Instr, currScope: Scope)
                (using typeParamsCtx: TypeParamsContext): Unit = instr match {
-    case Loop(condScope, condVal, body, variables) => ???
+    case Loop(condScope, condVal, body, variables) =>
+      for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
+        condScope.saveType(condVal, currScope.currentTypeOf(beforeLoopVal))
+      }
+      typeInstructions(currScope.instructions, currScope)
+      for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
+        // TODO
+      }
+      // TODO
     case Disjunction(condVal, thenBr, elseBr, variables) => ???
     case StaticTypeAssert(value, tpe) => ???
     case StaticAssert(value) => ???
@@ -86,55 +96,59 @@ final class Typer(
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
                  (using typeParamsCtx: TypeParamsContext): Type = formula match {
-      case value: IdValue => scope.typeOf(value)
-      case IntConst(value) => IntRangeType.singleton(IntConst(value))
-      case BoolConst(value) => BoolType
-      case StringConst(value) => StringType
-      case sel@Select(owner, FieldResolutionTarget.Resolved(_, _, instantiatedFieldType)) =>
-        scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
-      case sel@Select(owner, FieldResolutionTarget.Unresolved(fieldId)) =>
-        val ownerType = typeFormula(owner, scope, posOpt)
-        val (resolvedField, tpe) = resolutionCtx.resolveFieldAccess(ownerType, fieldId, posOpt)
-        sel.field = resolvedField
-        scope.smartcastFor(sel).getOrElse(tpe)
-      case Call(receiver, InvocationTarget.Resolved(ownerSig, funSig, instantiatedReturnType), args) => instantiatedReturnType
-      case call@Call(receiver, InvocationTarget.Unresolved(funId), args) =>
-        val receiverType = typeFormula(receiver, scope, posOpt)
-        val (invocationTarget, retType) = resolutionCtx.resolveFunSig(receiverType, funId, posOpt)
-        call.func = invocationTarget
-        retType
-      case Plus(lhs, rhs) => ???
-      case Neg(operand) => ???
-      case Times(lhs, rhs) => ???
-      case DivBy(lhs, rhs) => ???
-      case Modulo(lhs, rhs) => ???
-    }
+    case value: IdValue => scope.currentTypeOf(value)
+    case IntConst(value) => IntType
+    case BoolConst(value) => BoolType
+    case StringConst(value) => StringType
+    case sel@Select(owner, FieldResolutionTarget.Resolved(_, _, instantiatedFieldType)) =>
+      scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
+    case sel@Select(owner, FieldResolutionTarget.Unresolved(fieldId)) =>
+      val ownerType = typeFormula(owner, scope, posOpt)
+      val (resolvedField, tpe) = resolveFieldAccess(ownerType, fieldId, posOpt)
+      sel.field = resolvedField
+      scope.smartcastFor(sel).getOrElse(tpe)
+    case Select(owner, _: FieldResolutionTarget.Unresolvable) => NothingType
+    case Call(receiver, InvocationTarget.Resolved(ownerSig, funSig, instantiatedReturnType), args) => instantiatedReturnType
+    case call@Call(receiver, InvocationTarget.Unresolved(funId), args) =>
+      val receiverType = typeFormula(receiver, scope, posOpt)
+      val (invocationTarget, retType) = resolveFunSig(receiverType, funId, posOpt)
+      call.func = invocationTarget
+      retType
+    case Call(receiver, _: InvocationTarget.Unresolvable, args) => NothingType
+    case Plus(lhs, rhs) => ???
+    case Neg(operand) => ???
+    case Times(lhs, rhs) => ???
+    case DivBy(lhs, rhs) => ???
+    case Modulo(lhs, rhs) => ???
+  }
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
-                        (using tParamsCtx: TypeParamsContext): Unit = dealiasingCtx.dealiasType(tpe) match {
-    case primitiveType: PrimitiveType => ()
-    case namedType: NamedType => typeNamedTypeDealiased(namedType, ambientVarianceOpt, currScope, posOpt)
-    case ClosureType(paramTypes, resultType) =>
-      for paramType <- paramTypes do {
-        dealiasAndTypeType(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
-      }
-      dealiasAndTypeType(resultType, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
-    case tv: TypeVariable => ()
-    case UnionType(types) =>
-      for tpe <- types do {
-        dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
-      }
-    case IntersectionType(types) =>
-      for tpe <- types do {
-        dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
-      }
-    case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
-      untypedLowerBoundOpt.foreach {
-        typeFormula(_, currScope, posOpt)
-      }
-      untypedUpperBoundOpt.foreach {
-        typeFormula(_, currScope, posOpt)
-      }
+                        (using tParamsCtx: TypeParamsContext): Unit = {
+    dealiasingCtx.dealiasType(tpe) match {
+      case primitiveType: PrimitiveType => ()
+      case namedType: NamedType => typeNamedTypeDealiased(namedType, ambientVarianceOpt, currScope, posOpt)
+      case ClosureType(paramTypes, resultType) =>
+        for paramType <- paramTypes do {
+          dealiasAndTypeType(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
+        }
+        dealiasAndTypeType(resultType, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
+      case tv: TypeVariable => ()
+      case UnionType(types) =>
+        for tpe <- types do {
+          dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
+        }
+      case IntersectionType(types) =>
+        for tpe <- types do {
+          dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
+        }
+      case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
+        untypedLowerBoundOpt.foreach {
+          typeFormula(_, currScope, posOpt)
+        }
+        untypedUpperBoundOpt.foreach {
+          typeFormula(_, currScope, posOpt)
+        }
+    }
   }
 
   def typeNamedTypeDealiased(namedType: NamedType, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
@@ -274,13 +288,106 @@ final class Typer(
     }
     typeSupertypesAsDatatypes(recordSig, resolutionCtx)
   }
-  
+
   private def saveType(idValue: IdValue, tpe: Type): Unit = {
     idValue.definingScope.saveType(idValue, tpe)
   }
-  
+
   private def saveSmartcast(idValue: IdValue, tpe: Type, scope: Scope): Unit = {
     scope.saveType(idValue, tpe)
+  }
+
+  private def resolveFunSig(receiver: Type, funId: FunOrVarId, posOpt: Option[Position]): (InvocationTarget, Type) = {
+
+    def errorCase() = {
+      er.reportError(s"method $funId not found in type $receiver", posOpt)
+      (InvocationTarget.Unresolvable(funId), NothingType)
+    }
+
+    receiver.principalType match {
+      case NamedType(typeName, typeArgs, args) =>
+        resolutionCtx.resolveFunSig(typeName, funId) match {
+          case FuncResolResult.Success(ownerSig, funSig) =>
+            val typesSubst = instantiateTypes(typeName, funSig.typeParams, typeArgs, posOpt)
+            val instantiatedRetType = funSig.retType.substitute(typesSubst, Map.empty)
+            val invocationTarget = InvocationTarget.Resolved(ownerSig, funSig, instantiatedRetType)
+            (invocationTarget, instantiatedRetType)
+          case _ => errorCase()
+        }
+      case _ => errorCase()
+    }
+  }
+
+  private def resolveFieldAccess(owner: Type, fieldId: FunOrVarId, posOpt: Option[Position]): (FieldResolutionTarget, Type) = {
+
+    def errorCase() = {
+      er.reportError(s"field $fieldId not found in type ${owner.principalType}", posOpt)
+      (FieldResolutionTarget.Unresolvable(fieldId), NothingType)
+    }
+
+    owner.principalType match {
+      case NamedType(typeName, typeArgs, args) =>
+        resolutionCtx.resolveFieldAccess(typeName, fieldId) match {
+          case FieldResolResult.Success(ownerSig, field) =>
+            val typeSubst = instantiateTypes(ownerSig.id, ownerSig.typeParams, typeArgs, posOpt)
+            val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
+            (FieldResolutionTarget.Resolved(ownerSig, fieldId, instantiatedFieldType), instantiatedFieldType)
+          case _ => errorCase()
+        }
+      case _ => errorCase()
+    }
+  }
+
+  private def instantiateTypes(tid: TypeIdentifier, typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position]): Map[TypeIdentifier, Type] = {
+    if typeParams.size == typeArgs.size then typeParams.map(_.tid).zip(typeArgs).toMap
+    else {
+      if (typeArgs.nonEmpty) {
+        er.reportError(s"wrong number of type parameters for type $tid", posOpt)
+      }
+      Map.from(for tp <- typeParams yield tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, posOpt))
+    }
+  }
+
+  private def filterType(tpe: Type, targetScope: Scope, sourceUf: UnionFind, ambientVariance: Variance)(using TypeParamsContext): Type = tpe match {
+    case primitiveType: PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) =>
+      val newTypeArgs = resolutionCtx.resolveTypeSig(typeName)
+        .map(_.typeParams.map(_.variance))
+        .getOrElse(List.empty)
+        .take(typeArgs.size)
+        .padTo(typeArgs.size, Covariant)
+        .zip(typeArgs)
+        .map((typeParamVariance, typeArg) => filterType(typeArg, targetScope, sourceUf, ambientVariance * typeParamVariance))
+      NamedType(typeName, newTypeArgs, args)
+    case ClosureType(params, result) =>
+      ClosureType(params.map(filterType(_, targetScope, sourceUf, ambientVariance * Contravariant)), filterType(result, targetScope, sourceUf, ambientVariance * Covariant))
+    case UnionType(types) =>
+      UnionType(types.map(filterType(_, targetScope, sourceUf, ambientVariance)))
+    case IntersectionType(types) =>
+      IntersectionType(types.map(filterType(_, targetScope, sourceUf, ambientVariance)))
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+      val newLowerBoundOpt = lowerBoundOpt.filter(isStillDefinedIn(_, targetScope, sourceUf))
+      val newUpperBoundOpt = upperBoundOpt.filter(isStillDefinedIn(_, targetScope, sourceUf))
+      ambientVariance match {
+        case Invariant | Covariant =>
+          if newLowerBoundOpt.isEmpty && newUpperBoundOpt.isEmpty then IntType else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
+        case Contravariant =>
+          val boundWasLost = newLowerBoundOpt.size + newUpperBoundOpt.size < lowerBoundOpt.size + upperBoundOpt.size
+          if boundWasLost then NothingType else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
+      }
+    case tv: TypeVariable => tv
+  }
+
+  private def isStillDefinedIn(formula: Formula, scope: Scope, uf: UnionFind): Boolean = formula match {
+    case value: IdValue => uf.representativeOf(value).definingScope.depth <= scope.depth
+    case formula: ConstFormula => true
+    case Select(owner, field) => isStillDefinedIn(owner, scope, uf)
+    case Call(receiver, func, args) => isStillDefinedIn(receiver, scope, uf) && args.forall(isStillDefinedIn(_, scope, uf))
+    case Plus(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
+    case Neg(operand) => isStillDefinedIn(operand, scope, uf)
+    case Times(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
+    case DivBy(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
+    case Modulo(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
   }
 
   private def checkTypeParamsAreDistinct(typeParams: Iterable[TypeParamInfo], posOpt: Option[Position]): Unit = {

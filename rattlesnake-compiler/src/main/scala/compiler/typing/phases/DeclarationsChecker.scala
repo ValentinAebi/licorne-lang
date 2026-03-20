@@ -27,12 +27,6 @@ final class DeclarationsChecker(
   override def apply(program: Program): Program = {
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
-    val typer = Typer(
-      dealiasingCtx,
-      resolutionCtx,
-      typeVarsCtx,
-      er
-    )
     er.displayAndTerminateIfErrors()
 
     val subtypingGraph = buildSubtypingGraph(program)
