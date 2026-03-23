@@ -17,6 +17,7 @@ import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.util.SeqSet
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
@@ -134,6 +135,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv, posOpt)
     }
+    println(proxyStore) // TODO remove (debug)
     er.displayAndTerminateIfErrors()
     program
   }
@@ -300,8 +302,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val newValue = currScope.newIntermediate()
-        val proxyOpt = generateSSAExpr(newValue, rhsTree, currScope)
-        proxyStore.saveProxy(newValue, proxyOpt)
+        generateSSAExpr(newValue, rhsTree, currScope)
         currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
@@ -463,7 +464,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     def generateBinaryWithProxy(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormula: (Formula, Formula) => Formula): Option[Formula] =
       generateBinary(lhs, rhs, mkInstr, Some(mkFormula))
 
-    expr match {
+    val proxyOpt = expr match {
       case Asts.UnitLit() =>
         currScope.saveInstr(AssignVal(resultVal, currScope.valuesCtx.globalCtx.unitVal), expr)
         None
@@ -538,17 +539,18 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Minus, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Sub(resultVal, _, _), (a, b) => Plus(a, Neg(b)))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Times, rhsTree) =>
+        // TODO see if we keep the proxy or not: non-determinism?
         generateBinaryWithProxy(lhsTree, rhsTree, Mul(resultVal, _, _), Times(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
         generateBinary(lhsTree, rhsTree, Div(resultVal, _, _)) // TODO proxy?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Modulo, rhsTree) =>
         generateBinary(lhsTree, rhsTree, Rem(resultVal, _, _)) // TODO proxy?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessThan, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Lt(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Lt(resultVal, _, _), LessOrEq(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterThan, rhsTree) =>
         recurseOnDesugared(Asts.BinaryOp(rhsTree, Operator.LessThan, lhsTree).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessOrEq, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Leq(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterOrEq, rhsTree) =>
         recurseOnDesugared(Asts.BinaryOp(rhsTree, Operator.LessOrEq, lhsTree).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree) =>
@@ -575,7 +577,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(FieldRead(resultVal, lhsVal, FieldResolutionTarget.Unresolved(fieldId)), selectTree)
         None
       case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
-        generateUnary(testedExprTree, TypeTest(resultVal, _, typeName))
+        generateUnaryWithProxy(testedExprTree, TypeTest(resultVal, _, typeName), TypePredicate(_, typeName))
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
@@ -603,7 +605,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
-        None
+        // retrieve info from lowering
+        proxyStore.getProxy(thenVal) match {
+          case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
+          case _ => proxyStore.getProxy(elseVal) match {
+            case Some(BoolConst(false)) => Some(LogicalAnd(condVal, thenVal))
+            case _ => None
+          }
+        }
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
         generateSSAExpr(resultVal, castExprTree, currScope)
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
@@ -642,6 +651,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.getLocalValuesContextUnsafe.markHasExited()
         None
     }
+    if (!proxyStore.hasProxyFor(resultVal)) {
+      // avoid resetting proxy when generateSSAExpr is called recursively
+      proxyStore.saveProxy(resultVal, proxyOpt)
+    }
+    proxyOpt
   }
 
   private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = boundary {

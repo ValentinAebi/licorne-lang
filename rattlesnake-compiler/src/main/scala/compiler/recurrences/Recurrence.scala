@@ -8,8 +8,7 @@ import compiler.smt.Solver
 
 final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) {
   private var monotonicityOpt: Option[Monotonicity] = None
-
-  // FIXME
+  
   def computeMonotonicity(solver: Solver): Monotonicity = monotonicityOpt match {
     case Some(monotonicity) => monotonicity
     case None =>

@@ -9,9 +9,9 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.ssagen.ProxyStore
 import compiler.typing.Typer
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext, TypeVariablesContext}
+import compiler.valproxies.ProxyStore
 
 final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[Program, Program] {
   

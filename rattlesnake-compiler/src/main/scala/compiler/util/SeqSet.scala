@@ -85,5 +85,27 @@ object SeqSet {
   def apply[T](elems: T*): SeqSet[T] = SeqSet(elems.iterator)
 
   def empty[T]: SeqSet[T] = SeqSet()
+  
+  def newBuilder[T]: Builder[T] = mutable.LinkedHashMap.empty[T, Null]
+
+  opaque type Builder[T] = mutable.LinkedHashMap[T, Null]
+
+  extension [T](builder: Builder[T]) {
+
+    def addOne(elem: T): Builder[T] = {
+      builder.put(elem, null)
+      builder
+    }
+    
+    def addAll(elems: IterableOnce[T]): Builder[T] = {
+      for (elem <- elems) do {
+        builder.addOne(elem -> null)
+      }
+      builder
+    }
+
+    def build(): SeqSet[T] =
+      new SeqSet[T](builder)
+  }
 
 }

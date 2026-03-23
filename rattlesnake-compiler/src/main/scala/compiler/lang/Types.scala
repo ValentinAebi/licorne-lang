@@ -6,6 +6,7 @@ import compiler.identifiers.TypeIdentifier
 import compiler.util.SeqSet
 
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.SeqMap
 
 
 object Types {
@@ -61,7 +62,7 @@ object Types {
 
     override def toString: String = types.mkString(" | ")
   }
-  
+
   object UnionType {
     def apply(types: Type*): UnionType =
       UnionType(SeqSet(types))
@@ -72,10 +73,16 @@ object Types {
 
     override def toString: String = types.mkString(" & ")
   }
-  
+
   object IntersectionType {
-    def apply(types: Type*): IntersectionType =
-      IntersectionType(SeqSet(types))
+    def apply(types: Type*): IntersectionType = {
+      val typesB = SeqSet.newBuilder[Type]
+      types.foreach {
+        case IntersectionType(nestedTypes) => typesB.addAll(nestedTypes)
+        case tpe => typesB.addOne(tpe)
+      }
+      IntersectionType(typesB.build())
+    }
   }
 
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends RefinedType {
@@ -87,18 +94,18 @@ object Types {
       s"[${boundDescr(lowerBoundOpt)},${boundDescr(upperBoundOpt)}]"
     }
   }
-  
+
   object IntRangeType {
-    
+
     def singleton(elem: Formula): IntRangeType =
       IntRangeType(Some(elem), Some(elem))
-    
+
     def ofLowerBound(lb: Formula): IntRangeType =
       IntRangeType(Some(lb), None)
-      
+
     def ofUpperBound(ub: Formula): IntRangeType =
       IntRangeType(None, Some(ub))
-    
+
   }
 
   private val typeVarUidGen = new AtomicLong(-1)

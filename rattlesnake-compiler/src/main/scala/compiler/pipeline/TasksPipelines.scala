@@ -7,9 +7,10 @@ import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.ssagen.{ProxyStore, SSAGenerator}
+import compiler.ssagen.SSAGenerator
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalysis, TypeAliasesAnalyzer, TyperPhase1}
+import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
 

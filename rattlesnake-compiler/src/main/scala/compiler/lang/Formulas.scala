@@ -1,7 +1,8 @@
 package compiler.lang
 
-import compiler.identifiers.FunOrVarId
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
+import compiler.lang.Types.Type
 import compiler.util.SeqSet
 
 // TODO cleaner pretty-printing system
@@ -98,6 +99,30 @@ object Formulas {
       val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
       s"$lhsStr % $rhsStr"
     }
+  }
+  
+  final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = {
+      val lhsStr = parenthIf[LogicalOr](lhs)
+      val rhsStr = parenthIf[LogicalOr](rhs)
+      s"$lhs and $rhs"
+    }
+  }
+  
+  final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = s"$lhs or $rhs"
+  }
+  
+  final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = s"$lhs <= $rhs"
+  }
+  
+  final case class LessThan(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = s"$lhs < $rhs"
+  }
+  
+  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
+    override def toString: String = s"$subject is $tpe"
   }
 
   private inline def parenthIf[F <: Formula](inline term: Formula): String = {

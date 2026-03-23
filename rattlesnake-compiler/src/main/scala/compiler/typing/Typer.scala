@@ -12,9 +12,9 @@ import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.ssagen.ProxyStore
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
+import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -288,6 +288,21 @@ final class Typer(
       typeStableField(fld, sigScope, declPosOpt)
     }
     typeSupertypesAsDatatypes(recordSig, resolutionCtx)
+  }
+  
+  def isStable(formula: Formula): Boolean = formula match {
+    case value: IdValue => true
+    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
+      receiverSig.fields(fieldId).isStable
+    case _: Select => false
+    case formula: ConstFormula => true
+    // TODO maybe check side-effects
+    case Call(receiver, func, args) => false
+    case Plus(lhs, rhs) => isStable(lhs) && isStable(rhs)
+    case Neg(operand) => isStable(operand)
+    case Times(lhs, rhs) => isStable(lhs) && isStable(rhs)
+    case DivBy(lhs, rhs) => isStable(lhs) && isStable(rhs)
+    case Modulo(lhs, rhs) => isStable(lhs) && isStable(rhs)
   }
 
   private def saveType(idValue: IdValue, tpe: Type): Unit = {

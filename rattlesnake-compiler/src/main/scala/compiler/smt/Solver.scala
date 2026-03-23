@@ -1,7 +1,7 @@
 package compiler.smt
 
 import compiler.lang.Formulas
-import compiler.lang.Formulas.Formula
+import compiler.lang.Formulas.*
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
@@ -42,32 +42,37 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
   }
 
   private def convertAllInt(formula: Formula): Option[KExpr[KIntSort]] = formula match {
-    case value: Formulas.IdValue => Some(kCtx.mkConst(value.toString, kCtx.mkIntSort()))
-    case Formulas.IntConst(value) => Some(kCtx.mkIntNum(value))
-    case Formulas.BoolConst(value) => None
-    case Formulas.StringConst(value) => None
-    case Formulas.Select(owner, field) => None
-    case Formulas.Call(receiver, func, args) => None
-    case Formulas.Plus(lhs, rhs) =>
+    case value: IdValue => Some(kCtx.mkConst(value.toString, kCtx.mkIntSort()))
+    case IntConst(value) => Some(kCtx.mkIntNum(value))
+    case BoolConst(value) => None
+    case StringConst(value) => None
+    case Select(owner, field) => None
+    case Call(receiver, func, args) => None
+    case Plus(lhs, rhs) =>
       for {
         l <- convertAllInt(lhs)
         r <- convertAllInt(rhs)
       } yield kCtx.mkArithAdd(l, r)
-    case Formulas.Neg(negated) =>
+    case Neg(negated) =>
       for {
         n <- convertAllInt(negated)
       } yield kCtx.mkArithUnaryMinus(n)
-    case Formulas.Times(lhs, rhs) =>
+    case Times(lhs, rhs) =>
       for {
         l <- convertAllInt(lhs)
         r <- convertAllInt(rhs)
       } yield kCtx.mkArithMul(l, r) // TODO see if we keep or not, as it introduces indecidability
-    case Formulas.DivBy(lhs, rhs) =>
+    case DivBy(lhs, rhs) =>
       for {
         l <- convertAllInt(lhs)
         r <- convertAllInt(rhs)
       } yield kCtx.mkArithDiv(l, r) // TODO see if division and modulo should be included
-    case Formulas.Modulo(lhs, rhs) => None
+    case Modulo(lhs, rhs) => None
+    case LogicalAnd(lhs, rhs) => None
+    case LogicalOr(lhs, rhs) => None
+    case LessOrEq(lhs, rhs) => None
+    case LessThan(lhs, rhs) => None
+    case TypePredicate(subject, tpe) => None
   }
 
 }

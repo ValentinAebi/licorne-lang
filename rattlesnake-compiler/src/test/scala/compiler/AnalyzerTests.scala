@@ -4,9 +4,10 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
-import compiler.ssagen.{ProxyStore, SSAGenerator}
+import compiler.ssagen.SSAGenerator
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
+import compiler.valproxies.ProxyStore
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
