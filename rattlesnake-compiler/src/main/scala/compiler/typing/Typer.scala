@@ -121,6 +121,11 @@ final class Typer(
     case Times(lhs, rhs) => ???
     case DivBy(lhs, rhs) => ???
     case Modulo(lhs, rhs) => ???
+    case LogicalAnd(_, _) => ???
+    case LogicalOr(_, _) => ???
+    case LessOrEq(_, _) => ???
+    case LessThan(_, _) => ???
+    case TypePredicate(_, _) => ???
   }
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])

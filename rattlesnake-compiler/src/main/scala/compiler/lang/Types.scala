@@ -30,7 +30,7 @@ object Types {
     case BoolType extends PrimitiveType("Bool")
     case StringType extends PrimitiveType("String")
 
-    case NullType extends PrimitiveType("Null")
+    case NullType extends PrimitiveType("Null") // FIXME handle this one (and implement nullable types)
     case AnyType extends PrimitiveType("Any")
     case UnitType extends PrimitiveType("Unit")
     case NothingType extends PrimitiveType("Nothing")

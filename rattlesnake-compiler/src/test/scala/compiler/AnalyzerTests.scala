@@ -116,7 +116,7 @@ class AnalyzerTests(fileName: String) {
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
-      .andThen(DeclarationsChecker(typeVarsCtx, er))
+      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, er))
       .andThen(??? /* TODO */)
     try {
       pipeline.apply(srcFiles)

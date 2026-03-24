@@ -10,16 +10,19 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.typing.Typer
+import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 import scala.util.boundary
 
 final class DeclarationsChecker(
                                  private val typeVarsCtx: TypeVariablesContext,
-                                 private val er: ErrorReporter
+                                 private val er: ErrorReporter,
+                                 private val proxyStore: ProxyStore,
+                                 private val solver: Solver
                                ) extends CompilerStep[Program, Program] {
 
   private given CompilationStep = DeclarationsAnalysis
@@ -36,8 +39,9 @@ final class DeclarationsChecker(
     val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, er)
+    val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx)
+    er.displayAndTerminateIfErrors()
 
     program
   }

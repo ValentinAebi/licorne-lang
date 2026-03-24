@@ -109,6 +109,10 @@ object Formulas {
     }
   }
   
+  final case class LogicalNot(operand: Formula) extends Formula {
+    override def toString: String = s"!$operand"
+  }
+  
   final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = s"$lhs or $rhs"
   }
@@ -148,6 +152,10 @@ object Formulas {
     case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
     case DivBy(lhs, rhs) => DivBy(lhs.substitute(subst), rhs.substitute(subst))
     case Modulo(lhs, rhs) => Modulo(lhs.substitute(subst), rhs.substitute(subst))
+    case LogicalNot(operand) => LogicalNot(operand.substitute(subst))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(subst), rhs.substitute(subst))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(subst), rhs.substitute(subst))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
   }
   
   extension (formula: Formula) def simplified: Formula = {
@@ -196,12 +204,13 @@ object Formulas {
       })
     case Neg(operand) =>
       for ((f, coef) <- linearize(operand)) yield (f, -coef)
-    case Times(lhs, rhs) =>
-      Map(formula -> 1)
-    case DivBy(lhs, rhs) =>
-      Map(formula -> 1)
-    case Modulo(lhs, rhs) =>
-      Map(formula -> 1)
+    case Times(lhs, rhs) => Map(formula -> 1)
+    case DivBy(lhs, rhs) => Map(formula -> 1)
+    case Modulo(lhs, rhs) => Map(formula -> 1)
+    case LogicalNot(operand) => Map.empty
+    case LogicalAnd(lhs, rhs) => Map.empty
+    case LogicalOr(lhs, rhs) => Map.empty
+    case TypePredicate(subject, tpe) => Map.empty
   }
 
 }

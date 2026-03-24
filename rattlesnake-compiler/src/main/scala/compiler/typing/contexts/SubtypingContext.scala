@@ -2,13 +2,18 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
+import compiler.lang.Formulas.IdValue
+import compiler.lang.Types.*
+import compiler.lang.Types.PrimitiveType.*
+import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo}
-import compiler.lang.Types.{NamedType, PrincipalType, Type}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst}
+import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 
@@ -17,6 +22,8 @@ final class SubtypingContext(
                               flattenedSupertypesSubstitutions: SupertypesSubst,
                               dealiasingCtx: DealiasingContext,
                               resolutionCtx: ResolutionContext,
+                              solver: Solver,
+                              proxyStore: ProxyStore,
                               er: ErrorReporter
                             )(using CompilationStep) {
 
@@ -84,7 +91,54 @@ final class SubtypingContext(
 
   // TODO memoize? But we need to take smartcasts into account
   def isSubtype(subT: Type, superT: Type): Boolean = (subT, superT) match {
-    case (_, _) => ???
+    case _ if subT == superT => true
+    case (NothingType, _) => true
+    case (_, AnyType) => true
+    case (_, UnitType) => true
+    case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
+    case (IntRangeType(_, _), IntType) => true
+    case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
+      superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
+        && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
+    case (ClosureType(subParams, subResult), ClosureType(superParams, superResult)) =>
+      subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
+    case (IntersectionType(subtypes), superT) =>
+      subtypes.exists(isSubtype(_, superT))
+    case (subT, IntersectionType(supertypes)) =>
+      supertypes.forall(isSubtype(subT, _))
+    case (UnionType(subtypes), superT) =>
+      subtypes.forall(isSubtype(_, superT))
+    case (subT, UnionType(supertypes)) =>
+      supertypes.exists(isSubtype(subT, _))
+    case _ => false
+  }
+
+  def isSubtype(subject: IdValue, subT: Type, superT: Type): Boolean = superT match {
+    case IntRangeType(lowerBoundOpt, upperBoundOpt)
+      if lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject))
+        && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub)) => true
+    case _ => isSubtype(subT, superT)
+  }
+
+  def isSubtype(subT: NamedType, superT: NamedType): Boolean = {
+    val NamedType(subTId, subTTypeArgs, subTArgs) = subT
+    val NamedType(superTId, superTTypeArgs, superTArgs) = superT
+    subTArgs.isEmpty && superTArgs.isEmpty && (subToSuperSubst(subTId, superTId) match {
+      case None => false
+      case Some(subst) =>
+        resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId) match {
+          case None => false
+          case Some(superTSig) =>
+            superTSig.typeParams.zip(superTTypeArgs).forall { (tParam, tArg) =>
+              val expType = subst.apply(tParam.tid)
+              tParam.variance match {
+                case Invariant => tArg == expType
+                case Covariant => isSubtype(tArg, expType)
+                case Contravariant => isSubtype(expType, tArg)
+              }
+            }
+        }
+    })
   }
 
   def enforceIsSubtype(subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
@@ -92,9 +146,23 @@ final class SubtypingContext(
       er.reportError(msg, posOpt)
     }
   }
-  
+
+  def enforceIsSubtype(subject: IdValue, subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
+    if (!isSubtype(subject, subT, superT)) {
+      er.reportError(msg, posOpt)
+    }
+  }
+
   def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit =
-    enforceIsSubtype(subT, superT, s"$posDescr: expected $superT, found $subT", posOpt)
+    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
+
+  def enforceIsSubtypeExpAct(subject: IdValue, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
+    val proxyDescr = proxyStore.getProxy(subject) match {
+      case Some(proxy) => s"$proxy : "
+      case None => ""
+    }
+    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $proxyDescr$superT, found $subT", posOpt)
+  }
 
 }
 
