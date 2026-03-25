@@ -35,6 +35,7 @@ trait UnionFind {
       DivBy(canonicalize(lhs), canonicalize(rhs))
     case Modulo(lhs, rhs) =>
       Modulo(canonicalize(lhs), canonicalize(rhs))
+    // FIXME additional cases
   }
 
 }

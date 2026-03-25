@@ -180,7 +180,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 if (!isFirst) {
                   reportError("receiver parameter should always be at the beginning of the parameters list", funDef.getPosition)
                 }
-                val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty, Map.empty)
+                val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty)
                 paramTypeTreeOpt.map { paramTypeTree =>
                   val actualThisType = mkType(paramTypeTree, funSigScope)
                   // TODO see if we allow refined types on receiver

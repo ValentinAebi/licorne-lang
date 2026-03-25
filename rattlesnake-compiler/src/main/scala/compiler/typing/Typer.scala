@@ -126,6 +126,7 @@ final class Typer(
     case LessOrEq(_, _) => ???
     case LessThan(_, _) => ???
     case TypePredicate(_, _) => ???
+    // FIXME additional cases
   }
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
@@ -308,6 +309,7 @@ final class Typer(
     case Times(lhs, rhs) => isStable(lhs) && isStable(rhs)
     case DivBy(lhs, rhs) => isStable(lhs) && isStable(rhs)
     case Modulo(lhs, rhs) => isStable(lhs) && isStable(rhs)
+    // FIXME additional cases
   }
 
   private def saveType(idValue: IdValue, tpe: Type): Unit = {
@@ -409,6 +411,7 @@ final class Typer(
     case Times(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
     case DivBy(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
     case Modulo(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
+    // FIXME additional cases
   }
 
   private def checkTypeParamsAreDistinct(typeParams: Iterable[TypeParamInfo], posOpt: Option[Position]): Unit = {

@@ -6,7 +6,7 @@ import compiler.lang.Formulas.IdValue
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
-import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo}
+import compiler.lang.{RuntimeTypeSignature, TypeParamInfo, TypeTypeParamInfo}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
@@ -72,10 +72,7 @@ final class SubtypingContext(
                 val newTargetSubst = newTargetSubstB.result()
                 val uncoveredTypeParams = targetSig.typeParams.map(_._1).toSet -- newTargetSubst.keySet
                 if (uncoveredTypeParams.isEmpty) {
-                  targetSig.toType(newTargetSubst, Map.empty) match {
-                    case namedType: NamedType => CanDowncast(namedType)
-                    case tpe => CannotDowncast(s"type $tpe is not eligible for downcasting")
-                  }
+                  CanDowncast(targetSig.toType(newTargetSubst))
                 } else {
                   CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")} of tested type $targetId")
                 }
@@ -162,6 +159,11 @@ final class SubtypingContext(
       case None => ""
     }
     enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $proxyDescr$superT, found $subT", posOpt)
+  }
+
+  def checkBounds(tParam: TypeParamInfo, tArg: Type): Boolean = {
+    tParam.lowerBoundOpt.forall(lb => isSubtype(lb, tArg))
+      && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
   }
 
 }

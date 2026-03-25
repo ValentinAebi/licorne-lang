@@ -62,10 +62,11 @@ sealed trait TypeSignature {
 
   def declPosOpt: Option[Position]
 
-  def toType(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = {
+  def toType(typesSubst: Map[TypeIdentifier, Type]): NamedType = {
     NamedType(id,
-      typeParams.map { case TypeTypeParamInfo(tid, _, _, _) => NamedType(tid, List.empty, List.empty) },
-      params.map(_._2._2).toList).substitute(typesSubst, valsSubst)
+      typeParams.map(tp => typesSubst.getOrElse(tp.tid, NamedType(tp.tid, List.empty, List.empty))),
+      params.map(_._2._2).toList
+    )
   }
 
   def varianceOf(tParam: TypeIdentifier): Option[Variance] =

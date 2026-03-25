@@ -8,7 +8,7 @@ import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
 import io.ksmt.sort.{KBoolSort, KIntSort}
 
-import scala.util.boundary
+import scala.util.Using
 
 
 final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
@@ -27,6 +27,31 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
   def canProveLeq(lhs: Formula, rhs: Formula): Boolean = onNewFrame {
     assertLt(rhs, lhs)
     checkUnsat()
+  }
+  
+  def canProveLt(lhs: Formula, rhs: Formula): Boolean = onNewFrame {
+    assertLeq(rhs, lhs)
+    checkUnsat()
+  }
+
+  def canProveGeZero(f: Option[Formula]): Boolean = f.exists { f =>
+    canProveLeq(IntConst(0), f)
+  }
+
+  def canProveGtZero(f: Option[Formula]): Boolean = f.exists { f =>
+    canProveLeq(IntConst(1), f)
+  }
+
+  def canProveLeZero(f: Option[Formula]): Boolean = f.exists { f =>
+    canProveLeq(f, IntConst(0))
+  }
+
+  def canProveLtZero(f: Option[Formula]): Boolean = f.exists { f =>
+    canProveLeq(f, IntConst(-1))
+  }
+
+  def canProveNotZero(f: Option[Formula]): Boolean = f.exists { f =>
+    canProve(LogicalNot(Equality(f, IntConst(0))))
   }
 
   def onNewFrame[T](action: => T): T = {
@@ -49,13 +74,13 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     else if canProveLeq(r, l) then Some(l)
     else None
   }
-  
+
   def intMax(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMax)
-  
+
   private def findMinOrMax(formulas: Iterable[Formula], minOrMaxFunc: (Formula, Formula) => Option[Formula]): Option[Formula] = {
     val iter = formulas.iterator
     var minOrMax = iter.next()
-    while (iter.hasNext){
+    while (iter.hasNext) {
       minOrMaxFunc(minOrMax, iter.next()) match {
         case Some(newMinOrMax) =>
           minOrMax = newMinOrMax
@@ -128,6 +153,7 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     case LessOrEq(lhs, rhs) => None
     case LessThan(lhs, rhs) => None
     case TypePredicate(subject, tpe) => None
+    // FIXME additional cases
   }
 
   // TODO cache formula conversion
@@ -169,6 +195,18 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
         r <- convertInt(rhs)
       } yield kCtx.mkArithLt(l, r)
     case TypePredicate(subject, tpe) => None
+    // FIXME additional cases
   }
 
+}
+
+object Solver {
+  
+  def usingFreshSolver[T](f: Solver => T): T = Using(KContext()){ kCtx =>
+    Using(KZ3Solver(kCtx)){ kZ3Solver =>
+      val solver = Solver(kCtx, kZ3Solver)
+      f(solver)
+    }.get
+  }.get
+  
 }

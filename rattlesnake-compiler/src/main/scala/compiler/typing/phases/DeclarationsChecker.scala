@@ -20,9 +20,9 @@ import scala.util.boundary
 
 final class DeclarationsChecker(
                                  private val typeVarsCtx: TypeVariablesContext,
-                                 private val er: ErrorReporter,
                                  private val proxyStore: ProxyStore,
-                                 private val solver: Solver
+                                 private val solver: Solver,
+                                 private val er: ErrorReporter
                                ) extends CompilerStep[Program, Program] {
 
   private given CompilationStep = DeclarationsAnalysis
@@ -81,8 +81,8 @@ final class DeclarationsChecker(
           case Some(prevSubst) =>
             if (prevSubst != newSubst) {
               val supertype2Sig = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](name).get
-              val conflictingType1 = supertype2Sig.toType(prevSubst, Map.empty)
-              val conflictingType2 = supertype2Sig.toType(newSubst, Map.empty)
+              val conflictingType1 = supertype2Sig.toType(prevSubst)
+              val conflictingType2 = supertype2Sig.toType(newSubst)
               er.reportError(s"$subtypeId subtypes both $conflictingType1 and $conflictingType2", posOpt)
             }
           case None =>
@@ -155,7 +155,7 @@ final class DeclarationsChecker(
                   val typeParamsSubst = typeTypeParamsSubst ++ funTypeParamsSubst
                   val valsSubst = mutable.Map.empty[IdValue, IdValue]
                   // TODO do not forget to check refinements on the receiver (the base type is not checked here)
-                  val superTSubst = superTSig.toType(typeParamsSubst, Map.empty)
+                  val superTSubst = superTSig.toType(typeParamsSubst)
                   for (((subParamVal, subParamType), (superParamVal, superParamType)) <- subFunParams.tail zip superFunParams.tail) {
                     val expectedSubParamType = superParamType.substitute(typeParamsSubst, valsSubst.toMap)
                     if (subParamType != expectedSubParamType) {

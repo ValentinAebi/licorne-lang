@@ -105,6 +105,23 @@ object Types {
 
     def ofUpperBound(ub: Formula): IntRangeType =
       IntRangeType(None, Some(ub))
+      
+    def apply(from: Formula, to: Formula): IntRangeType =
+      IntRangeType(Some(from), Some(to))
+      
+    def apply(from: Int, to: Formula): IntRangeType =
+      IntRangeType(IntConst(from), to)
+      
+    def apply(from: Formula, to: Int): IntRangeType =
+      IntRangeType(from, IntConst(to))
+      
+    def apply(from: Int, to: Int): IntRangeType =
+      IntRangeType(IntConst(from), IntConst(to))
+
+    val strictlyPositive: IntRangeType = ofLowerBound(IntConst(1))
+    val nonNegative: IntRangeType = ofLowerBound(IntConst(0))
+    val nonPositive: IntRangeType = ofUpperBound(IntConst(0))
+    val strictlyNegative: IntRangeType = ofUpperBound(IntConst(-1))
 
   }
 

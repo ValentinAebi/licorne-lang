@@ -56,7 +56,7 @@ object Formulas {
   final case class Select(owner: Formula, var field: FieldResolutionTarget) extends Formula {
     override def toString: String = s"$owner.$field"
   }
-  
+
   final case class Call(receiver: Formula, var func: InvocationTarget, args: List[Formula]) extends Formula {
     override def toString: String =
       s"$receiver.$func" ++ args.mkString("(", ",", ")")
@@ -67,6 +67,7 @@ object Formulas {
       val lhsStr = lhs.toString
       val opAndRhsStr = rhs match {
         case Neg(negated) => s" - $negated"
+        case IntConst(cst) if cst < 0 => s" - ${-cst}"
         case rhs => s" + $rhs"
       }
       lhsStr ++ opAndRhsStr
@@ -74,7 +75,10 @@ object Formulas {
   }
 
   final case class Neg(operand: Formula) extends Formula {
-    override def toString: String = "-" + parenthIfNot[IdValue | ConstFormula](operand)
+    override def toString: String = operand match {
+      case IntConst(cst) if cst < 0 => (-cst).toString
+      case _ => "-" + parenthIfNot[IdValue | ConstFormula](operand)
+    }
   }
 
   final case class Times(lhs: Formula, rhs: Formula) extends Formula {
@@ -100,7 +104,7 @@ object Formulas {
       s"$lhsStr % $rhsStr"
     }
   }
-  
+
   final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
       val lhsStr = parenthIf[LogicalOr](lhs)
@@ -108,23 +112,27 @@ object Formulas {
       s"$lhs and $rhs"
     }
   }
-  
+
   final case class LogicalNot(operand: Formula) extends Formula {
     override def toString: String = s"!$operand"
   }
-  
+
   final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = s"$lhs or $rhs"
   }
-  
+
+  final case class Equality(lhs: Formula, rhs: Formula) extends Formula {
+    override def toString: String = s"$lhs == $rhs"
+  }
+
   final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = s"$lhs <= $rhs"
   }
-  
+
   final case class LessThan(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = s"$lhs < $rhs"
   }
-  
+
   final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
     override def toString: String = s"$subject is $tpe"
   }
@@ -156,61 +164,7 @@ object Formulas {
     case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(subst), rhs.substitute(subst))
     case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
-  }
-  
-  extension (formula: Formula) def simplified: Formula = {
-    var summaryOpt = Option.empty[Formula]
-
-    def addToSummary(f: Formula): Unit = {
-      summaryOpt = Some(summaryOpt match {
-        case Some(summary) => Plus(summary, f)
-        case None => f
-      })
-    }
-
-    var cstOpt = Option.empty[Int]
-    for ((f, coef) <- linearize(formula)) {
-      f match {
-        case IntConst(1) =>
-          assert(cstOpt.isEmpty)
-          cstOpt = Some(coef)
-        case _ if coef == 0 => ()
-        case _ if coef == 1 =>
-          addToSummary(f)
-        case _ if coef == -1 =>
-          addToSummary(Neg(f))
-        case _ =>
-          addToSummary(Times(IntConst(coef), f))
-      }
-    }
-    cstOpt.foreach { cst =>
-      addToSummary(IntConst(cst))
-    }
-    summaryOpt.getOrElse(IntConst(0))
-  }
-  
-  private def linearize(formula: Formula): Map[Formula, Int] = formula match {
-    case value: IdValue => Map(value -> 1)
-    case IntConst(cst) => Map(IntConst(1) -> cst)
-    case formula: ConstFormula => Map(formula -> 1)
-    case Select(owner, field) => Map(formula -> 1)
-    case Call(receiver, func, args) => Map(formula -> 1)
-    case Plus(lhs, rhs) =>
-      val lLin = linearize(lhs)
-      val rLin = linearize(rhs)
-      Map.from(for (f <- lLin.keys ++ rLin.keys) yield {
-        val coef = lLin.getOrElse(f, 0) + rLin.getOrElse(f, 0)
-        f -> coef
-      })
-    case Neg(operand) =>
-      for ((f, coef) <- linearize(operand)) yield (f, -coef)
-    case Times(lhs, rhs) => Map(formula -> 1)
-    case DivBy(lhs, rhs) => Map(formula -> 1)
-    case Modulo(lhs, rhs) => Map(formula -> 1)
-    case LogicalNot(operand) => Map.empty
-    case LogicalAnd(lhs, rhs) => Map.empty
-    case LogicalOr(lhs, rhs) => Map.empty
-    case TypePredicate(subject, tpe) => Map.empty
+    // FIXME additional cases
   }
 
 }

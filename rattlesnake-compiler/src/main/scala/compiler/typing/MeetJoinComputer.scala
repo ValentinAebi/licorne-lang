@@ -2,17 +2,21 @@ package compiler.typing
 
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
-import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType}
+import compiler.lang.Variance.*
+import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.smt.Solver
-import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
-import compiler.util.SeqSet
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
+import compiler.util.{SeqSet, asIterableOfType}
 
 import scala.collection.mutable
+import scala.util.boundary
 
+// TODO caching
 final class MeetJoinComputer(
                               dealiasingCtx: DealiasingContext,
+                              resolutionCtx: ResolutionContext,
                               subtypingCtx: SubtypingContext,
                               solver: Solver
                             ) {
@@ -81,7 +85,7 @@ final class MeetJoinComputer(
           }
         }
 
-        if namedTypes.size == retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct)
+        if namedTypes.size == retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
         else if rangeTypes.size == retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
         else if primitiveTypes.size == retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
         else if closureTypes.size == retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
@@ -99,8 +103,43 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeJoinOfNamed(types: Iterable[NamedType]): NamedType = {
-    ???
+  def computeJoinOfNamed(types: Iterable[NamedType]): Option[NamedType] = {
+    val candidatesIdsIter = computeJoinOfTypeIds(types.map(_.typeName))
+    while (candidatesIdsIter.hasNext) {
+      val candidateSig = candidatesIdsIter.next()
+      val typeArgsMap = mutable.Map.empty[TypeIdentifier, Type]
+      val candidateSubstOpt = boundary {
+        val candidateSubstB = Map.newBuilder[TypeIdentifier, Type]
+        for (tParam <- candidateSig.typeParams) yield {
+          val instantiated = Set.from(for (tpe <- types) yield subtypingCtx.subToSuperSubst(tpe.typeName, candidateSig.id).get.apply(tParam.tid))
+
+          def checkAndSaveOrAbort(inferredTArg: Type) = {
+            if (subtypingCtx.checkBounds(tParam, inferredTArg)) {
+              candidateSubstB.addOne(tParam.tid -> inferredTArg)
+            } else {
+              boundary.break(None)
+            }
+          }
+
+          tParam.variance match {
+            case Invariant if instantiated.size == 1 =>
+              candidateSubstB.addOne(tParam.tid -> instantiated.head)
+            case Invariant => boundary.break(None)
+            case Covariant =>
+              checkAndSaveOrAbort(computeJoin(instantiated))
+            case Contravariant =>
+              checkAndSaveOrAbort(computeMeet(instantiated))
+          }
+        }
+        Some(candidateSubstB.result())
+      }
+      candidateSubstOpt match {
+        case Some(candidateSubst) =>
+          return Some(candidateSig.toType(candidateSubst))
+        case None => ()
+      }
+    }
+    None
   }
 
   def computeJoinOfClosures(types: Iterable[ClosureType]): Option[ClosureType] = if types.isEmpty then None else {
@@ -114,8 +153,57 @@ final class MeetJoinComputer(
     Some(ClosureType(paramTypesMeetsB.result(), resultTypeJoin))
   }
 
-  def computeJoinOfTypeIds(types: Iterable[TypeIdentifier]): Option[TypeIdentifier] = {
-    ???
+  def computeJoinOfTypeIds(types: Iterable[TypeIdentifier]): Iterator[RuntimeTypeSignature] = {
+    val alreadyChecked = mutable.HashSet.empty[TypeIdentifier]
+    val worklist = mutable.Queue.empty[TypeIdentifier]
+    worklist.enqueueAll(types)
+
+    enum State {
+      case Unknown
+      case HasNext(next: RuntimeTypeSignature)
+      case Finished
+    }
+
+    import State.*
+    new Iterator[RuntimeTypeSignature] {
+      private var state = Unknown
+
+      private def search(): Unit = {
+        if (state != Unknown) {
+          return
+        }
+        while (worklist.nonEmpty) {
+          val curr = worklist.dequeue()
+          val currSigOpt = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](curr)
+          val isValidSupertypeOfAll = currSigOpt.isDefined && types.forall(tpe => subtypingCtx.subToSuperSubst(tpe, curr).isDefined)
+          alreadyChecked.add(curr)
+          worklist.enqueueAll(
+            currSigOpt.toList
+              .flatMap(_.directSupertypes.map(_.typeName))
+              .filterNot(alreadyChecked.contains)
+          )
+          if (isValidSupertypeOfAll) {
+            state = HasNext(currSigOpt.get)
+            return
+          }
+        }
+        state = Finished
+      }
+
+      override def hasNext: Boolean = {
+        search()
+        state.isInstanceOf[HasNext]
+      }
+
+      override def next(): RuntimeTypeSignature = {
+        search()
+        state match {
+          case State.HasNext(next) => next
+          case _ =>
+            throw new NoSuchElementException()
+        }
+      }
+    }
   }
 
   def computeJoinOfRanges(types: Iterable[IntRangeType]): IntRangeType = IntRangeType(
@@ -123,13 +211,14 @@ final class MeetJoinComputer(
     filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
   )
 
-  def computeMeet(types: Iterable[Type]): Type = ???
-
-  def computeMeetOfNamed(types: Iterable[NamedType]): Type = ???
-
-  def computeMeetOfTypeIds(types: Iterable[TypeIdentifier]): Option[TypeIdentifier] = ???
-
-  def computeMeetOfClosures(types: Iterable[ClosureType]): Type = ???
+  def computeMeet(types: Iterable[Type]): Type = {
+    val nonAnyTypes = types.filterNot(_ == AnyType)
+    if nonAnyTypes.toSet.size == 1 then nonAnyTypes.head
+    else nonAnyTypes.asIterableOfType[IntRangeType] match {
+      case Some(ranges) => computeMeetOfRanges(ranges)
+      case None => AnyType
+    }
+  }
 
   def computeMeetOfRanges(types: Iterable[IntRangeType]): IntRangeType = IntRangeType(
     filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMax),

@@ -3,6 +3,21 @@ package compiler.util
 import scala.collection
 import scala.collection.immutable
 import scala.collection.mutable
+import scala.reflect.ClassTag
+
+extension [T](iterable: Iterable[T]) def asIterableOfType[U: ClassTag]: Option[Iterable[U]] = {
+  val resultB = Iterable.newBuilder[U]
+  val iter = iterable.iterator
+  while (iter.hasNext) {
+    iter.next() match {
+      case u: U =>
+        resultB.addOne(u)
+      case _ =>
+        return None
+    }
+  }
+  Some(resultB.result())
+}
 
 extension [T](l: Iterable[T]) def zipCommons[U](r: Iterable[U]): Iterable[(T, U)] =
   l.take(r.size).zip(r.take(l.size))
@@ -21,7 +36,7 @@ extension [A, B1](left: collection.SeqMap[A, B1]) def combineInOrder[B2, B3](rig
 
 extension [A, B1](left: Map[A, B1]) def mergeCombine[B2, B3 >: B1 | B2](right: Map[A, B2])(f: (B1, B2) => B3): Map[A, B3] =
   left.combine(right)(mergeOnlyOnConflict(f))
-  
+
 extension [A, B1](left: collection.SeqMap[A, B1]) def mergeCombineInOrder[B2, B3 >: B1 | B2](right: collection.SeqMap[A, B2])(f: (B1, B2) => B3): collection.SeqMap[A, B3] =
   left.combineInOrder(right)(mergeOnlyOnConflict(f))
 

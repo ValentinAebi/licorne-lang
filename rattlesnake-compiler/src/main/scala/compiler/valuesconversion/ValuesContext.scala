@@ -24,6 +24,6 @@ object ValuesContext {
   private[valuesconversion] final case class LocalInfo(
                                                         var value: Option[IdValue],
                                                         reassigPermission: ReassigPermission,
-                                                        typeUpperBoundOpt: Option[Type]
+                                                        declarationTypeAnnot: Option[Type]
                                                       )
 }

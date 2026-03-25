@@ -18,18 +18,13 @@ final class MonotonicityAnalysis extends CompilerStep[Program, Program] {
     program
   }
 
-  private def inferInvariants(loop: Loop): Unit = {
-    Using(KContext()) { kCtx =>
-      Using(KZ3Solver(kCtx)) { kZ3Solver =>
-        val solver = Solver(kCtx, kZ3Solver)
-        for {
-          loopVarData <- loop.variables
-          recurrence <- loopVarData.recurrenceOpt
-        } do {
-          recurrence.computeMonotonicity(solver)
-        }
-      }.get
-    }.get
+  private def inferInvariants(loop: Loop): Unit = Solver.usingFreshSolver { solver =>
+    for {
+      loopVarData <- loop.variables
+      recurrence <- loopVarData.recurrenceOpt
+    } do {
+      recurrence.computeMonotonicity(solver)
+    }
   }
 
 }

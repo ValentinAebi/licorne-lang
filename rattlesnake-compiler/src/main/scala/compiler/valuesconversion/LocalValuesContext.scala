@@ -31,17 +31,17 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     copy
   }
 
-  def saveNewLocal(id: FunOrVarId, value: Option[IdValue], reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean = {
+  def saveNewLocal(id: FunOrVarId, value: Option[IdValue], reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean = {
     if (queryLocal(id).isDefined) {
       false
     } else {
-      values(id) = LocalInfo(value, reassigPermission, typeUpperBound)
+      values(id) = LocalInfo(value, reassigPermission, declarationTypeAnnot)
       true
     }
   }
 
-  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, typeUpperBound: Option[Type]): Boolean =
-    saveNewLocal(id, Some(value), reassigPermission, typeUpperBound)
+  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean =
+    saveNewLocal(id, Some(value), reassigPermission, declarationTypeAnnot)
 
   def remap(id: FunOrVarId, value: IdValue): Boolean = {
     queryLocal(id) match {
@@ -52,8 +52,8 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]): Unit = {
-    val saved = saveNewLocal(id, value, reassigStatus, typeUpperBound)
+  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, declarationTypeAnnot: Option[Type]): Unit = {
+    val saved = saveNewLocal(id, value, reassigStatus, declarationTypeAnnot)
     if (!saved) {
       remap(id, value)
     }
@@ -72,7 +72,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
   }
 
-  def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.typeUpperBoundOpt)
+  def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnot)
 
   def knows(id: FunOrVarId): Boolean = queryLocal(id).isDefined
 
