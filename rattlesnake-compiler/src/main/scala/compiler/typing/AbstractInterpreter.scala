@@ -149,7 +149,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
       case formula: Formula if assignmentTargetOpt.exists(_.typeCanMention(formula)) => Some(IntRangeType.singleton(formula))
       case constFormula: ConstFormula => Some(IntRangeType.singleton(constFormula))
       case idValue: IdValue => typeAssumptions.get(idValue).map { tpe =>
-        tpe.filtered(assignmentTargetOpt, Invariant /* TODO check that using Invariant here is safe */)
+        tpe.filtered(assignmentTargetOpt, Invariant /* TODO check that using Invariant here (and at other calls to filtered) is safe */)
       }
       case Plus(lhs, rhs) => interpretBinop(lhs, rhs, typePlusType)
       case Neg(operand) => interpretUnderAssumptions(operand).flatMap(unaryNegType)

@@ -5,7 +5,7 @@ import compiler.irs.SSA.*
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
-import compiler.lang.Formulas.*
+import compiler.lang.Formulas.{substitute as _, *}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -20,7 +20,7 @@ import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
-import scala.reflect.ClassTag
+import scala.reflect.{ClassTag, classTag}
 
 
 final class Typer(
@@ -133,15 +133,25 @@ final class Typer(
       currScope.saveType(assigned, BoolType)
     case AssignStringConst(assigned, src) =>
       currScope.saveType(assigned, StringType)
-    case NumNeg(assigned, operand) => ???
-    case Add(assigned, lhs, rhs) => ???
-    case Sub(assigned, lhs, rhs) => ???
-    case Mul(assigned, lhs, rhs) => ???
-    case Div(assigned, lhs, rhs) => ???
-    case Rem(assigned, lhs, rhs) => ???
+    case neg@NumNeg(assigned, operand) =>
+      val posOpt = neg.getPosition
+      val negType = typeUnaryNeg(operand, currScope, posOpt).filtered(assigned, Invariant)
+      currScope.saveType(assigned, negType)
+    case add@Add(assigned, lhs, rhs) =>
+      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, add.getPosition)
+    case sub@Sub(assigned, lhs, rhs) =>
+      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeMinusType, Operator.Minus, sub.getPosition)
+    case mul@Mul(assigned, lhs, rhs) =>
+      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, mul.getPosition)
+    case div@Div(assigned, lhs, rhs) =>
+      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeDivType, Operator.Div, div.getPosition)
+    case rem@Rem(assigned, lhs, rhs) =>
+      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
+    case and@And(assigned, lhs, rhs) =>
+      typeLogicalBinopForTarget(assigned, lhs, rhs, currScope, Operator.And, and.getPosition)
+    case or@Or(assigned, lhs, rhs) =>
+      typeLogicalBinopForTarget(assigned, lhs, rhs, currScope, Operator.Or, or.getPosition)
     case LogicNeg(assigned, operand) => ???
-    case And(assigned, lhs, rhs) => ???
-    case Or(assigned, lhs, rhs) => ???
     case Equal(assigned, lhs, rhs) => ???
     case Leq(assigned, lhs, rhs) => ???
     case Lt(assigned, lhs, rhs) => ???
@@ -163,37 +173,95 @@ final class Typer(
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
-                 (using typeParamsCtx: TypeParamsContext): Type = formula match {
-    case value: IdValue => scope.currentTypeOf(value)
-    case IntConst(value) => IntType
-    case BoolConst(value) => BoolType
-    case StringConst(value) => StringType
-    case sel@Select(owner, FieldResolutionTarget.Resolved(_, _, instantiatedFieldType)) =>
-      scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
-    case sel@Select(owner, FieldResolutionTarget.Unresolved(fieldId)) =>
-      val ownerType = typeFormula(owner, scope, posOpt)
-      val (resolvedField, tpe) = resolveFieldAccess(ownerType, fieldId, posOpt)
-      sel.field = resolvedField
-      scope.smartcastFor(sel).getOrElse(tpe)
-    case Select(owner, _: FieldResolutionTarget.Unresolvable) => NothingType
-    case Call(receiver, InvocationTarget.Resolved(ownerSig, funSig, instantiatedReturnType), args) => instantiatedReturnType
-    case call@Call(receiver, InvocationTarget.Unresolved(funId), args) =>
-      val receiverType = typeFormula(receiver, scope, posOpt)
-      val (invocationTarget, retType) = resolveFunSig(receiverType, funId, posOpt)
-      call.func = invocationTarget
-      retType
-    case Call(receiver, _: InvocationTarget.Unresolvable, args) => NothingType
-    case Plus(lhs, rhs) => ???
-    case Neg(operand) => ???
-    case Times(lhs, rhs) => ???
-    case DivBy(lhs, rhs) => ???
-    case Modulo(lhs, rhs) => ???
-    case LogicalAnd(_, _) => ???
-    case LogicalOr(_, _) => ???
-    case LessOrEq(_, _) => ???
-    case LessThan(_, _) => ???
-    case TypePredicate(_, _) => ???
-    // FIXME additional cases
+                 (using typeParamsCtx: TypeParamsContext): Type =
+    scope.smartcastFor(formula).getOrElse(formula match {
+      case value: IdValue => scope.currentTypeOf(value)
+      case IntConst(value) => IntType
+      case BoolConst(value) => BoolType
+      case StringConst(value) => StringType
+      case sel@Select(owner, FieldResolutionTarget.Resolved(_, _, instantiatedFieldType)) =>
+        scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
+      case sel@Select(owner, FieldResolutionTarget.Unresolved(fieldId)) =>
+        val ownerType = typeFormula(owner, scope, posOpt)
+        val (resolvedField, tpe) = resolveFieldAccess(ownerType, fieldId, posOpt)
+        sel.field = resolvedField
+        scope.smartcastFor(sel).getOrElse(tpe)
+      case Select(owner, _: FieldResolutionTarget.Unresolvable) => NothingType
+      case Call(receiver, InvocationTarget.Resolved(ownerSig, funSig, instantiatedReturnType), args) => instantiatedReturnType
+      case call@Call(receiver, InvocationTarget.Unresolved(funId), args) =>
+        val receiverType = typeFormula(receiver, scope, posOpt)
+        val (invocationTarget, retType) = resolveFunSig(receiverType, funId, posOpt)
+        call.func = invocationTarget
+        retType
+      case Call(receiver, _: InvocationTarget.Unresolvable, args) => NothingType
+      case Plus(lhs, rhs) =>
+        typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
+      case Neg(operand) =>
+        typeUnaryNeg(operand, scope, posOpt)
+      case Times(lhs, rhs) =>
+        typeNumericBinop(lhs, rhs, scope, absInt.typeTimesType, Operator.Times, posOpt)
+      case DivBy(lhs, rhs) =>
+        typeNumericBinop(lhs, rhs, scope, absInt.typeDivType, Operator.Div, posOpt)
+      case Modulo(lhs, rhs) =>
+        typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType, Operator.Modulo, posOpt)
+      case LogicalAnd(lhs, rhs) =>
+        typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
+      case LogicalOr(lhs, rhs) =>
+        typeLogicalBinop(lhs, rhs, scope, Operator.Or, posOpt)
+      case LogicalNot(operand) => ???
+      case Equality(lhs, rhs) => ???
+      case LessOrEq(lhs, rhs) => ???
+      case LessThan(lhs, rhs) => ???
+      case TypePredicate(lhs, rhs) => ???
+    })
+
+  private def typeNumericBinopForTarget(assigTarget: IdValue, lhs: Formula, rhs: Formula, currScope: Scope,
+                                        absIntFunc: (Type, Type) => Option[Type],
+                                        op: Operator, posOpt: Option[Position])
+                                       (using TypeParamsContext): Unit = {
+    val tpe = typeNumericBinop(lhs, rhs, currScope, absIntFunc, op, posOpt).filtered(assigTarget, Invariant)
+    currScope.saveType(assigTarget, tpe)
+  }
+
+  private def typeNumericBinop(lhs: Formula, rhs: Formula, currScope: Scope,
+                               absIntFunc: (Type, Type) => Option[Type],
+                               op: Operator, posOpt: Option[Position])
+                              (using TypeParamsContext): Type = {
+    val lhsType = typeFormula(lhs, currScope, posOpt)
+    val rhsType = typeFormula(rhs, currScope, posOpt)
+    absIntFunc(lhsType, rhsType) match {
+      case Some(tpe) => tpe
+      case None =>
+        er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
+        NothingType
+    }
+  }
+
+  private def typeLogicalBinopForTarget(assignmentTarget: IdValue, lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
+                                       (using TypeParamsContext): Unit = {
+    val tpe = typeLogicalBinop(lhs, rhs, currScope, op, posOpt).filtered(assignmentTarget, Invariant)
+    currScope.saveType(assignmentTarget, tpe)
+  }
+
+  private def typeLogicalBinop(lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
+                              (using TypeParamsContext): Type = {
+    val lhsType = typeFormula(lhs, currScope, posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(lhsType, BoolType, s"left operand of $op", posOpt)
+    val rhsType = typeFormula(rhs, currScope, posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(rhsType, BoolType, s"right operand of $op", posOpt)
+    BoolType
+  }
+
+  private def typeUnaryNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
+                          (using TypeParamsContext): Type = {
+    val operandType = typeFormula(operand, currScope, posOpt)
+    val negatedType = absInt.unaryNegType(operandType) match {
+      case Some(negType) => negType
+      case None =>
+        er.reportError(s"no unary operator ${Operator.Modulo} found for operand type $operandType", posOpt)
+        NothingType
+    }
+    negatedType
   }
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
