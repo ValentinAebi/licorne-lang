@@ -28,7 +28,7 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     assertLt(rhs, lhs)
     checkUnsat()
   }
-  
+
   def canProveLt(lhs: Formula, rhs: Formula): Boolean = onNewFrame {
     assertLeq(rhs, lhs)
     checkUnsat()
@@ -77,19 +77,21 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
 
   def intMax(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMax)
 
-  private def findMinOrMax(formulas: Iterable[Formula], minOrMaxFunc: (Formula, Formula) => Option[Formula]): Option[Formula] = {
-    val iter = formulas.iterator
-    var minOrMax = iter.next()
-    while (iter.hasNext) {
-      minOrMaxFunc(minOrMax, iter.next()) match {
-        case Some(newMinOrMax) =>
-          minOrMax = newMinOrMax
-        case None =>
-          return None
+  private def findMinOrMax(formulas: Iterable[Formula], minOrMaxFunc: (Formula, Formula) => Option[Formula]): Option[Formula] =
+    if formulas.isEmpty then None
+    else {
+      val iter = formulas.iterator
+      var minOrMax = iter.next()
+      while (iter.hasNext) {
+        minOrMaxFunc(minOrMax, iter.next()) match {
+          case Some(newMinOrMax) =>
+            minOrMax = newMinOrMax
+          case None =>
+            return None
+        }
       }
+      Some(minOrMax)
     }
-    Some(minOrMax)
-  }
 
   def assert(formulas: Formula*): Unit = {
     for {
@@ -201,12 +203,12 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
 }
 
 object Solver {
-  
-  def usingFreshSolver[T](f: Solver => T): T = Using(KContext()){ kCtx =>
-    Using(KZ3Solver(kCtx)){ kZ3Solver =>
+
+  def usingFreshSolver[T](f: Solver => T): T = Using(KContext()) { kCtx =>
+    Using(KZ3Solver(kCtx)) { kZ3Solver =>
       val solver = Solver(kCtx, kZ3Solver)
       f(solver)
     }.get
   }.get
-  
+
 }

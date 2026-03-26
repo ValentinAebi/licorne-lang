@@ -8,6 +8,7 @@ import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
 import compiler.recurrences.Recurrence
+import compiler.reporting.Position
 import compiler.typing.{ImmutableUnionFind, MutableUnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -30,6 +31,8 @@ object SSA {
     }
 
     def getAstNodeOpt: Option[Ast] = astNodeOpt
+    
+    def getPosition: Option[Position] = getAstNodeOpt.flatMap(_.getPosition)
 
     def uf_=(unionFind: ImmutableUnionFind): Unit = {
       _uf = Some(unionFind)
@@ -44,6 +47,7 @@ object SSA {
 
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) extends VarData {
     var recurrenceOpt: Option[Recurrence] = None
+    var handledThroughRecurrenceFlag: Boolean = false
 
     override def toString: String = {
       val baseStr = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
@@ -150,6 +154,11 @@ object SSA {
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
 
     var movingUf: MutableUnionFind = uninitialized
+    
+    def isNestedIn(outerScope: Scope): Boolean =
+      outerScope.depth < this.depth && (
+        outScopeOpt.contains(outerScope) ||
+          (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
     def saveType(idVal: IdValue, tpe: Type): Unit = {
       if (idVal.definingScope == this) {

@@ -2,35 +2,42 @@ package compiler.typing
 
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.SSA.Scope
-import compiler.lang.Formulas.{IntConst, Plus, ValIdValue}
-import compiler.lang.FormulasDsl.autoConvertIntToIConst
-import compiler.lang.FormulasDsl.*
-import compiler.lang.Types.IntRangeType
+import compiler.lang.Formulas.*
+import compiler.lang.FormulasDsl.{autoConvertIntToIConst, *}
 import compiler.lang.Types.IntRangeType.*
 import compiler.lang.Types.PrimitiveType.IntType
+import compiler.lang.Types.IntRangeType
+import compiler.pipeline.CompilationStep
+import compiler.pipeline.CompilationStep.TypeChecking
+import compiler.program.Program
+import compiler.reporting.Errors.ErrorReporter
 import compiler.simplification.Simplifier
 import compiler.smt.Solver
+import compiler.typing.contexts.{ResolutionContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valuesconversion.GlobalValuesContext
+import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+import scala.collection.SeqMap
+
 class AbstractInterpreterTests {
 
-  private val dummyScope = Scope.root(GlobalValuesContext())
+  private val globalValuesContext = GlobalValuesContext()
+  private val abScope = Scope.root(globalValuesContext)
 
-  private def mkVal(id: String): ValIdValue =
-    ValIdValue(NormalFunOrVarId(id), dummyScope, 0)
-
-  private val a = mkVal("a")
-  private val b = mkVal("b")
+  private val a: IdValue = abScope.newVal(NormalFunOrVarId("a"))
+  private val b: IdValue = abScope.newVal(NormalFunOrVarId("b"))
 
   private val `[0,10]` = IntRangeType(0, 10)
+  private val `[-10,0]` = IntRangeType(-10, 0)
   private val `[-5,5]` = IntRangeType(-5, 5)
   private val `[-5,15]` = IntRangeType(-5, 15)
   private val `[-10,20]` = IntRangeType(-10, 20)
   private val `[-50,50]` = IntRangeType(-50, 50)
   private val `[-100,100]` = IntRangeType(-100, 100)
   private val `[a,b]` = IntRangeType(a, b)
+  private val `[-b,-a]` = IntRangeType(-b, -a)
   private val `[1,a]` = IntRangeType(1, a)
   private val `[1,a+10]` = IntRangeType(1, a + 10)
   private val `[-9,a]` = IntRangeType(-9, a)
@@ -39,7 +46,7 @@ class AbstractInterpreterTests {
   private val `[-11a,20a-1]` = IntRangeType(-11 * a, 20 * a - 1)
   private val `[0,a-1]` = IntRangeType(0, a - 1)
   private val `[-a+1,0]` = IntRangeType(-a + 1, 0)
-  private val `[-5b,15b]` = IntRangeType(-5*b, 15*b)
+  private val `[-5b,15b]` = IntRangeType(-5 * b, 15 * b)
 
   @Test def typePlusTypeTest(): Unit = usingFreshInterpreter { (absInt, _) =>
     import absInt.typePlusType
@@ -105,10 +112,49 @@ class AbstractInterpreterTests {
     }
   }
 
+  @Test def typeNegationTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+    import absInt.unaryNegType
+    assertEquals(Some(`[-50,50]`), unaryNegType(`[-50,50]`))
+    assertEquals(Some(`[-10,0]`), unaryNegType(`[0,10]`))
+    assertEquals(Some(`[0,10]`), unaryNegType(`[-10,0]`))
+    assertEquals(Some(`[-b,-a]`), unaryNegType(`[a,b]`))
+    assertEquals(Some(`[a,b]`), unaryNegType(`[-b,-a]`))
+    assertEquals(Some(`[-a+1,0]`), unaryNegType(`[0,a-1]`))
+    assertEquals(Some(`[0,a-1]`), unaryNegType(`[-a+1,0]`))
+  }
+
+  @Test def interpretUnderAssumptionsTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+    import absInt.interpretUnderAssumptions
+
+    given CompilationStep = TypeChecking
+
+    val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val typeVarsCtx = TypeVariablesContext()
+    val er = ErrorReporter(_ => fail(), _ => fail())
+
+    given ResolutionContext = ResolutionContext(program, typeVarsCtx, er)
+
+    given TypeParamsContext = TypeParamsContext(Map.empty)
+
+    val xScope = Scope.nestedInside(abScope)
+    val x = xScope.newVal(NormalFunOrVarId("x"))
+
+    assertEquals(Some(IntRangeType(1, 19)), interpretUnderAssumptions(2 * a - 1, Map(a -> IntRangeType(1, 10)), None))
+    assertEquals(Some(IntRangeType.singleton((a + 1) * b)), interpretUnderAssumptions((a + 1) * b, Map(a -> IntRangeType(0, 5), b -> IntRangeType(0, a)), Some(x)))
+    assertEquals(Some(IntType), interpretUnderAssumptions((a + 1) * x, Map(a -> IntRangeType(0, 5), x -> IntRangeType(0, a)), Some(b)))
+    assertEquals(Some(IntRangeType(a, 2 * a)), interpretUnderAssumptions(a + x, Map(a -> IntRangeType(0, 5), x -> IntRangeType(0, a)), Some(b)))
+    assertEquals(Some(`[1,a]`), interpretUnderAssumptions(x + 1, Map(x -> `[0,a-1]`), None))
+  }
+
   private def usingFreshInterpreter(action: (AbstractInterpreter, Solver) => Unit): Unit = Solver.usingFreshSolver { solver =>
     val simplifier = Simplifier(solver)
     val interpreter = AbstractInterpreter(solver, simplifier)
     action(interpreter, solver)
+  }
+
+  private def fail(): Nothing = {
+    Assert.fail()
+    throw AssertionError() // cannot happen
   }
 
 }

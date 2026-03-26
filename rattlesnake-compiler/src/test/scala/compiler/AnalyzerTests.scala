@@ -4,8 +4,10 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
+import compiler.simplification.Simplifier
 import compiler.smt.Solver
 import compiler.ssagen.SSAGenerator
+import compiler.typing.AbstractInterpreter
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
 import compiler.valproxies.ProxyStore
@@ -110,14 +112,16 @@ class AnalyzerTests(fileName: String) {
       fatalErrorOccured |= exitCode == fatalErrorExitCode
       throw ExitException
     }
-    
+
+    val typeVarsCtx = TypeVariablesContext()
+    val proxyStore = ProxyStore()
+    val er = ErrorReporter(errorsConsumer, exitCalled)
     Solver.usingFreshSolver { solver =>
-      val typeVarsCtx = TypeVariablesContext()
-      val proxyStore = ProxyStore()
-      val er = ErrorReporter(errorsConsumer, exitCalled)
+      val simplifier = Simplifier(solver)
+      val absInt = AbstractInterpreter(solver, simplifier)
       val pipeline = TasksPipelines.multiFrontEnd(er)
         .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
-        .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
+        .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, absInt, solver, er))
         .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, solver, er))
         .andThen(??? /* TODO */)
       try {

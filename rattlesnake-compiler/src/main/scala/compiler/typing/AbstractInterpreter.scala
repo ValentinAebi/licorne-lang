@@ -1,11 +1,15 @@
 package compiler.typing
 
-import compiler.lang.Formulas.{Formula, IntConst, Neg, Plus, Times}
+import compiler.irs.SSA.Scope
+import compiler.lang.{Formulas, Types}
+import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
-import compiler.lang.Types.{IntRangeType, Type}
+import compiler.lang.Types.{IntRangeType, Type, primTypeFor}
+import compiler.lang.Variance.Invariant
 import compiler.simplification.Simplifier
 import compiler.smt.Solver
 import compiler.typing.AbstractInterpreter.someZero
+import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 
 final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
 
@@ -121,6 +125,41 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
       else if `[a,b] <= 0` && `[c,d] > 0` then (for d <- d yield -d + 1, someZero)
       else if `[a,b] <= 0` && `[c,d] < 0` then (for c <- c yield c + 1, someZero)
       else (None, None)
+  }
+
+  def unaryNegType(operand: Type): Option[Type] = operand match {
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+      val rawRange = IntRangeType(upperBoundOpt.map(Neg(_)), lowerBoundOpt.map(Neg(_)))
+      Some(simplifier.simplify(rawRange))
+    case IntType => Some(IntType)
+    case DoubleType => Some(DoubleType)
+    case _ => None
+  }
+
+  def interpretUnderAssumptions(formula: Formula, typeAssumptions: Map[IdValue, Type], assignmentTargetOpt: Option[IdValue])
+                               (using ResolutionContext, TypeParamsContext): Option[Type] = {
+
+    def interpretBinop(lhs: Formula, rhs: Formula, interpretationFunc: (Type, Type) => Option[Type]) = for {
+      l <- interpretUnderAssumptions(lhs)
+      r <- interpretUnderAssumptions(rhs)
+      tpe <- interpretationFunc(l, r)
+    } yield tpe
+
+    def interpretUnderAssumptions(formula: Formula): Option[Type] = formula match {
+      case formula: Formula if assignmentTargetOpt.exists(_.typeCanMention(formula)) => Some(IntRangeType.singleton(formula))
+      case constFormula: ConstFormula => Some(IntRangeType.singleton(constFormula))
+      case idValue: IdValue => typeAssumptions.get(idValue).map { tpe =>
+        tpe.filtered(assignmentTargetOpt, Invariant /* TODO check that using Invariant here is safe */)
+      }
+      case Plus(lhs, rhs) => interpretBinop(lhs, rhs, typePlusType)
+      case Neg(operand) => interpretUnderAssumptions(operand).flatMap(unaryNegType)
+      case Times(lhs, rhs) => interpretBinop(lhs, rhs, typeTimesType)
+      case DivBy(lhs, rhs) => interpretBinop(lhs, rhs, typeDivType)
+      case Modulo(lhs, rhs) => interpretBinop(lhs, rhs, typeModuloType)
+      case _ => None
+    }
+
+    interpretUnderAssumptions(formula)
   }
 
   private def typeArithBinopType(l: Type, r: Type)

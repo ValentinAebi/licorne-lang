@@ -311,6 +311,8 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
 }
 
 object Graph {
+  
+  def empty[T]: Graph[T] = new Graph[T](Map.empty)
 
   final class Builder[N] {
     private val adjSets = mutable.Map.empty[N, mutable.Set[N]]

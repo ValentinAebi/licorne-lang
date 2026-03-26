@@ -60,16 +60,16 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   }
 
   def valueOf(id: FunOrVarId): ValueQueryResult = queryLocal(id) match {
-    case Some(LocalInfo(Some(value), reassigStatus, typeUpperBound)) =>
-      KnownAndInitialized(value, reassigStatus, typeUpperBound)
-    case Some(LocalInfo(None, reassigStatus, typeUpperBound)) =>
-      KnownButUninitialized(id, reassigStatus, typeUpperBound)
+    case Some(LocalInfo(Some(value), reassigStatus, declarationTypeAnnot)) =>
+      KnownAndInitialized(value, reassigStatus, declarationTypeAnnot)
+    case Some(LocalInfo(None, reassigStatus, declarationTypeAnnot)) =>
+      KnownButUninitialized(id, reassigStatus, declarationTypeAnnot)
     case None => Unknown(id)
   }
 
   def getThisValue: Option[IdValue] = valueOf(ThisId) match {
     case result: ErrorValueQueryResult => None
-    case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
+    case KnownAndInitialized(value, _, _) => Some(value)
   }
 
   def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnot)
@@ -96,7 +96,7 @@ object LocalValuesContext {
   sealed trait ValueQueryResult {
     def toOption: Option[IdValue] = this match {
       case result: ErrorValueQueryResult => None
-      case KnownAndInitialized(value, reassigStatus, typeUpperBound) => Some(value)
+      case KnownAndInitialized(value, _, _) => Some(value)
     }
   }
 
@@ -104,9 +104,9 @@ object LocalValuesContext {
 
   final case class Unknown(id: FunOrVarId) extends ErrorValueQueryResult
 
-  final case class KnownButUninitialized(id: FunOrVarId, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ErrorValueQueryResult
+  final case class KnownButUninitialized(id: FunOrVarId, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ErrorValueQueryResult
 
-  final case class KnownAndInitialized(value: IdValue, reassigStatus: ReassigPermission, typeUpperBound: Option[Type]) extends ValueQueryResult
+  final case class KnownAndInitialized(value: IdValue, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ValueQueryResult
 
   private enum ExitedStatus {
     case Active, HasExited, ReportedHasExited

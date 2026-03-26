@@ -10,11 +10,14 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
+import compiler.recurrences.Recurrence.Monotonicity.{NonDecreasing, NonMonotonous}
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.smt.Solver
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
-import compiler.valproxies.ProxyStore
+import compiler.valproxies.{BoundMode, ProxyStore}
+import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -24,9 +27,15 @@ final class Typer(
                    dealiasingCtx: DealiasingContext,
                    resolutionCtx: ResolutionContext,
                    typeVarsCtx: TypeVariablesContext,
+                   subtypingCtx: SubtypingContext,
+                   meetJoin: MeetJoinComputer,
                    proxyStore: ProxyStore,
+                   absInt: AbstractInterpreter,
+                   solver: Solver,
                    er: ErrorReporter
                  )(using CompilationStep) {
+
+  private given ResolutionContext = resolutionCtx
 
   def typeFunction(function: Function, ownerTypeParamsCtx: TypeParamsContext)
                   (using subtypingCtx: SubtypingContext): Unit = {
@@ -49,15 +58,48 @@ final class Typer(
 
   def typeInstr(instr: Instr, currScope: Scope)
                (using typeParamsCtx: TypeParamsContext): Unit = instr match {
-    case Loop(condScope, condVal, body, variables) =>
-      for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
-        condScope.saveType(condVal, currScope.currentTypeOf(beforeLoopVal))
+    case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
+      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
+      for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
+        (for {
+          recurrence <- varData.recurrenceOpt
+          monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
+          inBodyType <- Some {
+            val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
+            val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
+            val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
+            if monotonicity == NonDecreasing then IntRangeType(preIterationBoundOpt, inferredBound)
+            else IntRangeType(inferredBound, preIterationBoundOpt)
+          }
+          feedbackType <- absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)
+        } yield {
+          val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
+          condScope.saveType(condVal, inCondType)
+          bodyScope.saveSmartcast(condVal, inBodyType)
+          varData.handledThroughRecurrenceFlag = true
+        }) orElse {
+          // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
+          val tpe =
+            currScope.getLocalValuesContextUnsafe
+              .valueOf(varId)
+              .asInstanceOf[KnownAndInitialized]
+              .declarationTypeAnnotOpt
+              .getOrElse(currScope.currentTypeOf(beforeLoopVal))
+          condScope.saveType(condVal, tpe)
+          Some(())
+        }
       }
-      typeInstructions(currScope.instructions, currScope)
-      for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables) {
-        // TODO
+      typeInstructions(condScope.instructions, condScope)
+      subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+      typeInstructions(bodyScope.instructions, bodyScope)
+      for {
+        varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
+        if !varData.handledThroughRecurrenceFlag
+      } {
+        val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
+        val typeInCond = condScope.currentTypeOf(condVal)
+        subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, s"cannot infer type of variable $varId inside loop, please provide a type annotation", loop.getPosition)
       }
-      // TODO
     case Disjunction(condVal, thenBr, elseBr, variables) => ???
     case StaticTypeAssert(value, tpe) => ???
     case StaticAssert(value) => ???
@@ -295,22 +337,6 @@ final class Typer(
     }
     typeSupertypesAsDatatypes(recordSig, resolutionCtx)
   }
-  
-  def isStable(formula: Formula): Boolean = formula match {
-    case value: IdValue => true
-    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
-      receiverSig.fields(fieldId).isStable
-    case _: Select => false
-    case formula: ConstFormula => true
-    // TODO maybe check side-effects
-    case Call(receiver, func, args) => false
-    case Plus(lhs, rhs) => isStable(lhs) && isStable(rhs)
-    case Neg(operand) => isStable(operand)
-    case Times(lhs, rhs) => isStable(lhs) && isStable(rhs)
-    case DivBy(lhs, rhs) => isStable(lhs) && isStable(rhs)
-    case Modulo(lhs, rhs) => isStable(lhs) && isStable(rhs)
-    // FIXME additional cases
-  }
 
   private def saveType(idValue: IdValue, tpe: Type): Unit = {
     idValue.definingScope.saveType(idValue, tpe)
@@ -369,49 +395,6 @@ final class Typer(
       }
       Map.from(for tp <- typeParams yield tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, posOpt))
     }
-  }
-
-  private def filterType(tpe: Type, targetScope: Scope, sourceUf: UnionFind, ambientVariance: Variance)(using TypeParamsContext): Type = tpe match {
-    case primitiveType: PrimitiveType => primitiveType
-    case NamedType(typeName, typeArgs, args) =>
-      val newTypeArgs = resolutionCtx.resolveTypeSig(typeName)
-        .map(_.typeParams.map(_.variance))
-        .getOrElse(List.empty)
-        .take(typeArgs.size)
-        .padTo(typeArgs.size, Covariant)
-        .zip(typeArgs)
-        .map((typeParamVariance, typeArg) => filterType(typeArg, targetScope, sourceUf, ambientVariance * typeParamVariance))
-      NamedType(typeName, newTypeArgs, args)
-    case ClosureType(params, result) =>
-      ClosureType(params.map(filterType(_, targetScope, sourceUf, ambientVariance * Contravariant)), filterType(result, targetScope, sourceUf, ambientVariance * Covariant))
-    case UnionType(types) =>
-      UnionType(types.map(filterType(_, targetScope, sourceUf, ambientVariance)))
-    case IntersectionType(types) =>
-      IntersectionType(types.map(filterType(_, targetScope, sourceUf, ambientVariance)))
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      val newLowerBoundOpt = lowerBoundOpt.filter(isStillDefinedIn(_, targetScope, sourceUf))
-      val newUpperBoundOpt = upperBoundOpt.filter(isStillDefinedIn(_, targetScope, sourceUf))
-      ambientVariance match {
-        case Invariant | Covariant =>
-          if newLowerBoundOpt.isEmpty && newUpperBoundOpt.isEmpty then IntType else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
-        case Contravariant =>
-          val boundWasLost = newLowerBoundOpt.size + newUpperBoundOpt.size < lowerBoundOpt.size + upperBoundOpt.size
-          if boundWasLost then NothingType else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
-      }
-    case tv: TypeVariable => tv
-  }
-
-  private def isStillDefinedIn(formula: Formula, scope: Scope, uf: UnionFind): Boolean = formula match {
-    case value: IdValue => uf.representativeOf(value).definingScope.depth <= scope.depth
-    case formula: ConstFormula => true
-    case Select(owner, field) => isStillDefinedIn(owner, scope, uf)
-    case Call(receiver, func, args) => isStillDefinedIn(receiver, scope, uf) && args.forall(isStillDefinedIn(_, scope, uf))
-    case Plus(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
-    case Neg(operand) => isStillDefinedIn(operand, scope, uf)
-    case Times(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
-    case DivBy(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
-    case Modulo(lhs, rhs) => isStillDefinedIn(lhs, scope, uf) && isStillDefinedIn(rhs, scope, uf)
-    // FIXME additional cases
   }
 
   private def checkTypeParamsAreDistinct(typeParams: Iterable[TypeParamInfo], posOpt: Option[Position]): Unit = {

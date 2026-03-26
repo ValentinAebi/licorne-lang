@@ -9,12 +9,21 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.typing.Typer
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext, TypeVariablesContext}
+import compiler.smt.Solver
+import compiler.typing.{AbstractInterpreter, MeetJoinComputer, Typer}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
-final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[Program, Program] {
-  
+import scala.collection.mutable
+
+final class TypeAliasesAnalyzer(
+                                 typeVarsCtx: TypeVariablesContext,
+                                 proxyStore: ProxyStore,
+                                 absInt: AbstractInterpreter,
+                                 solver: Solver,
+                                 er: ErrorReporter
+                               ) extends CompilerStep[Program, Program] {
+
   private given CompilationStep = TypeAliasesAnalysis
 
   override def apply(program: Program): Program = {
@@ -23,12 +32,14 @@ final class TypeAliasesAnalyzer(typeVarsCtx: TypeVariablesContext, proxyStore: P
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val typer = Typer(dealiasingCtx, resolutionCtx, typeVarsCtx, proxyStore, er)
+    val subtypingCtx = SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+    val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver)
+    val typer = Typer(dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, absInt, solver, er)
     for (tid, tsig) <- program.typeAliases do {
       val typeParamsCtx = TypeParamsContext(tsig.typeParams)
       typer.dealiasAndTypeType(tsig.rhs, None, tsig.sigScope, tsig.declPosOpt)(using typeParamsCtx)
     }
-    
+
     program
   }
 

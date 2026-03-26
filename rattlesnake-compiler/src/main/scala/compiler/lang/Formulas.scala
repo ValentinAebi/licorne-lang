@@ -3,6 +3,7 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Types.Type
+import compiler.typing.UnionFind
 import compiler.util.SeqSet
 
 // TODO cleaner pretty-printing system
@@ -164,6 +165,46 @@ object Formulas {
     case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(subst), rhs.substitute(subst))
     case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
+    // FIXME additional cases
+  }
+
+  extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {
+    case otherValue: IdValue =>
+      (idValue.definingScope == otherValue.definingScope && idValue.uid > otherValue.uid) ||
+        idValue.definingScope.isNestedIn(otherValue.definingScope)
+    case formula: ConstFormula => true
+    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
+      receiverSig.fields(fieldId).isStable && typeCanMention(owner)
+    case Select(owner, field) => false
+    // TODO maybe check side-effects
+    case Call(receiver, func, args) => false
+    case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case Neg(operand) => typeCanMention(operand)
+    case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case DivBy(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case Modulo(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case LogicalAnd(lhs, rhs) => false
+    case LogicalNot(operand) => false
+    case LogicalOr(lhs, rhs) => false
+    case Equality(lhs, rhs) => false
+    case LessOrEq(lhs, rhs) => false
+    case LessThan(lhs, rhs) => false
+    case TypePredicate(subject, tpe) => false
+  }
+
+  extension (formula: Formula) def isStable: Boolean = formula match {
+    case value: IdValue => true
+    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
+      receiverSig.fields(fieldId).isStable
+    case _: Select => false
+    case formula: ConstFormula => true
+    // TODO maybe check side-effects
+    case Call(receiver, func, args) => false
+    case Plus(lhs, rhs) => lhs.isStable && rhs.isStable
+    case Neg(operand) => operand.isStable
+    case Times(lhs, rhs) => lhs.isStable && rhs.isStable
+    case DivBy(lhs, rhs) => lhs.isStable && rhs.isStable
+    case Modulo(lhs, rhs) => lhs.isStable && rhs.isStable
     // FIXME additional cases
   }
 

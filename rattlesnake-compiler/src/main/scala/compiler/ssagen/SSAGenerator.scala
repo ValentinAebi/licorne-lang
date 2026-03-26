@@ -347,10 +347,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope, variablesB.result()), stat)
       case whileLoop@Asts.WhileLoop(condTree, bodyTree) =>
         val condScope = Scope.nestedInside(currScope)
-        val bodyScope = Scope.nestedInside(currScope)
+        val bodyScope = Scope.nestedInside(condScope)
         val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
-            case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
+            case KnownAndInitialized(value, _, _) =>
               Some(LoopVarData(varId, beforeLoopVal = value, condVal = condScope.newVar(varId),
                 bodyLastVal = bodyScope.newVar(varId)))
             case _ => None
@@ -484,10 +484,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRefTree.getPosition)
             None
-          case LocalValuesContext.KnownButUninitialized(id, reassigStatus, typeUpperBound) =>
+          case LocalValuesContext.KnownButUninitialized(id, _, _) =>
             reportError(s"$id might not have been initialized", varRefTree.getPosition)
             None
-          case KnownAndInitialized(value, reassigStatus, typeUpperBound) =>
+          case KnownAndInitialized(value, _, _) =>
             currScope.saveInstr(AssignVal(resultVal, value), expr)
             Some(value)
         }

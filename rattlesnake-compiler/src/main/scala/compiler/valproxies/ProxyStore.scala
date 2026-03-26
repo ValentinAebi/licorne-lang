@@ -24,7 +24,10 @@ final class ProxyStore {
 
   def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal)
 
-  def extractRawBranchingInfos(cond: IdValue): Option[(BranchingInfo, BranchingInfo)] = getProxy(cond).map(infosFor)
+  def extractRawBranchingInfos(cond: IdValue): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
+    case Some(proxy) => infosFor(proxy)
+    case None => (BranchingInfo.empty, BranchingInfo.empty)
+  }
 
   private def infosFor(cond: Formula): (BranchingInfo, BranchingInfo) = cond match {
     case LogicalAnd(lhs, rhs) =>

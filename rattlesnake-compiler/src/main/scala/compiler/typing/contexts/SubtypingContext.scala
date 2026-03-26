@@ -111,10 +111,11 @@ final class SubtypingContext(
   }
 
   def isSubtype(subject: IdValue, subT: Type, superT: Type): Boolean = superT match {
+    case superT if isSubtype(subT, superT) => true
     case IntRangeType(lowerBoundOpt, upperBoundOpt)
       if lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject))
         && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub)) => true
-    case _ => isSubtype(subT, superT)
+    case _ => false
   }
 
   def isSubtype(subT: NamedType, superT: NamedType): Boolean = {
