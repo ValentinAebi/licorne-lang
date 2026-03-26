@@ -1,6 +1,7 @@
 package compiler.valproxies
 
 import compiler.identifiers.TypeIdentifier
+import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.{Formula, IdValue}
 import compiler.smt.Solver
 import compiler.typing.Typer

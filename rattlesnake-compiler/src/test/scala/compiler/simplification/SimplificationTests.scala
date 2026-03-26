@@ -1,5 +1,6 @@
 package compiler.simplification
 
+import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
@@ -7,10 +8,19 @@ import compiler.lang.FormulasDsl.*
 import compiler.lang.FormulasDsl.autoConvertIntToIConst
 import compiler.lang.Types.IntRangeType
 import compiler.lang.Types.PrimitiveType.NothingType
+import compiler.pipeline.CompilationStep
+import compiler.pipeline.CompilationStep.TypeChecking
+import compiler.program.Program
+import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.Solver
+import compiler.typing.contexts.*
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 import org.junit.Assert.assertEquals
-import org.junit.Test
+import org.junit.{Assert, Test}
+
+import scala.collection.mutable
+import scala.collection.immutable.SeqMap
 
 final class SimplificationTests {
 
@@ -58,8 +68,23 @@ final class SimplificationTests {
   }
 
   private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = Solver.usingFreshSolver { solver =>
-    val simplifier = Simplifier(solver)
+    given CompilationStep = TypeChecking
+
+    val er = ErrorReporter(_ => fail(), _ => fail())
+    val globalValuesCtx = GlobalValuesContext()
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val typeVarsCtx = TypeVariablesContext()
+    val dealiasingCtx = DealiasingContext(Map.empty)
+    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    val proxyStore = ProxyStore()
+    val subtypingCtx = SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+    val simplifier = Simplifier(subtypingCtx, solver)
     action(simplifier, solver)
+  }
+
+  private def fail(): Nothing = {
+    Assert.fail()
+    throw AssertionError() // cannot happen
   }
 
 }

@@ -10,13 +10,13 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
-import compiler.recurrences.Recurrence.Monotonicity.{NonDecreasing, NonMonotonous}
+import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Solver
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
-import compiler.valproxies.{BoundMode, ProxyStore}
+import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
@@ -41,18 +41,22 @@ final class Typer(
                   (using subtypingCtx: SubtypingContext): Unit = {
     val Function(ownerId, funId, bodyOpt) = function
     val funSig = resolutionCtx.resolveFunSig(ownerId, funId).forceGetFunSig
-
-    given TypeParamsContext = ownerTypeParamsCtx.extendedWith(funSig.typeParams)
-
     bodyOpt.foreach { body =>
-      typeInstructions(body.instructions, body)
+      val typeParamsCtx = ownerTypeParamsCtx.extendedWith(funSig.typeParams)
+      typeScopeInstructions(body, BranchingInfo.empty)(using typeParamsCtx)
     }
   }
 
-  def typeInstructions(instructions: Iterable[Instr], currScope: Scope)
-                      (using typeParamsCtx: TypeParamsContext): Unit = {
-    for (untypedInstr <- instructions) {
-      typeInstr(untypedInstr, currScope)
+  def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
+    solver.onNewFrame {
+      applyBranchInfo(scope, branchInfo)
+      if (solver.checkUnsat()) {
+        scope.markHasExited()
+      }
+      for (untypedInstr <- scope.instructions) {
+        scope.reportHasExitedIfNeeded(er, untypedInstr.getPosition)
+        typeInstr(untypedInstr, scope)
+      }
     }
   }
 
@@ -68,7 +72,8 @@ final class Typer(
             val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
             val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
             val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
-            if monotonicity == NonDecreasing then IntRangeType(preIterationBoundOpt, inferredBound)
+            if monotonicity == NonDecreasing
+            then IntRangeType(preIterationBoundOpt, inferredBound)
             else IntRangeType(inferredBound, preIterationBoundOpt)
           }
           feedbackType <- absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)
@@ -89,9 +94,9 @@ final class Typer(
           Some(())
         }
       }
-      typeInstructions(condScope.instructions, condScope)
+      typeScopeInstructions(condScope, BranchingInfo.empty)
       subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
-      typeInstructions(bodyScope.instructions, bodyScope)
+      typeScopeInstructions(bodyScope, infoIfCondTrue)
       for {
         varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
         if !varData.handledThroughRecurrenceFlag
@@ -100,13 +105,34 @@ final class Typer(
         val typeInCond = condScope.currentTypeOf(condVal)
         subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, s"cannot infer type of variable $varId inside loop, please provide a type annotation", loop.getPosition)
       }
-    case Disjunction(condVal, thenBr, elseBr, variables) => ???
-    case StaticTypeAssert(value, tpe) => ???
+      applyBranchInfo(currScope, infoIfCondFalse)
+    case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
+      val condType = currScope.currentTypeOf(condVal)
+      subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
+      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
+      typeScopeInstructions(thenBr, infoIfCondTrue)
+      typeScopeInstructions(elseBr, infoIfCondFalse)
+      for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+        val thenType = thenBr.currentTypeOf(afterThenVal)
+        val elseType = elseBr.currentTypeOf(afterElseVal)
+        val joinType = {
+          if elseBr.hasExited then thenType
+          else if thenBr.hasExited then elseType
+          else meetJoin.computeJoin(thenType, elseType)
+        }
+      }
+    case staticTypeAssert@StaticTypeAssert(value, tpe) =>
+      val valueType = currScope.currentTypeOf(value)
+      subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type annotation", staticTypeAssert.getPosition)
     case StaticAssert(value) => ???
-    case AssignVal(assigned, src) => ???
-    case AssignIntConst(assigned, src) => ???
-    case AssignBoolConst(assigned, src) => ???
-    case AssignStringConst(assigned, src) => ???
+    case AssignVal(assigned, src) =>
+      currScope.saveType(assigned, currScope.currentTypeOf(src))
+    case AssignIntConst(assigned, src) =>
+      currScope.saveType(assigned, IntRangeType.singleton(src))
+    case AssignBoolConst(assigned, src) =>
+      currScope.saveType(assigned, BoolType)
+    case AssignStringConst(assigned, src) =>
+      currScope.saveType(assigned, StringType)
     case NumNeg(assigned, operand) => ???
     case Add(assigned, lhs, rhs) => ???
     case Sub(assigned, lhs, rhs) => ???
@@ -133,8 +159,7 @@ final class Typer(
     case Drop(droppedValue) => ???
     case LocalDecl(localId, tpe) => ???
     case scope: Scope =>
-      assert(scope.outScopeOpt.contains(currScope))
-      typeInstructions(scope.instructions, scope)
+      typeScopeInstructions(scope, BranchingInfo.empty)
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
@@ -344,6 +369,20 @@ final class Typer(
 
   private def saveSmartcast(idValue: IdValue, tpe: Type, scope: Scope): Unit = {
     scope.saveType(idValue, tpe)
+  }
+
+  private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo): Unit = {
+    for {
+      (subject, typeIds) <- branchInfo.smartcasts
+      tid <- typeIds
+      tpe <- subtypingCtx.checkDowncastTarget(scope.currentTypeOf(subject), tid).asOption
+    } {
+      scope.saveSmartcast(subject, tpe)
+    }
+    for (assumption <- branchInfo.assumptions) {
+      solver.assert(assumption)
+      // TODO turn assumptions into smartcasts if they are inequalities
+    }
   }
 
   private def resolveFunSig(receiver: Type, funId: FunOrVarId, posOpt: Option[Position]): (InvocationTarget, Type) = {

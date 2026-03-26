@@ -51,6 +51,10 @@ object TasksPipelines {
                            er: ErrorReporter) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
+    /*******************/
+    // FIXME warning, there should be 2 SubtypingContexts: an empty one for the type aliases analysis, and the real one for teh rest
+    // There should thus also be several versions of the modules that depend on a SubtypingContext (e.g. Simplifier)
+    /*******************/
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(MonotonicityAnalysis())

@@ -3,20 +3,35 @@ package compiler.simplification
 import compiler.lang.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{IntType, NothingType}
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.smt.Solver
+import compiler.typing.contexts.SubtypingContext
 
 import scala.reflect.ClassTag
 
 // TODO caching?
-final class Simplifier(solver: Solver) {
+final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
 
   def simplify(tpe: Type): Type = tpe match {
     case nominalType: NominalType => nominalType
     case ClosureType(params, result) => ClosureType(params.map(simplify), simplify(result))
     case variable: TypeVariable => variable
-    case UnionType(types) => UnionType(types.map(simplify))
-    case IntersectionType(types) => IntersectionType(types.map(simplify))
+    case UnionType(types) =>
+      val simplifiedTypes = types.map(simplify)
+      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
+      filteredTypes.size match {
+        case 0 => AnyType
+        case 1 => simplifiedTypes.head
+        case _ => UnionType(simplifiedTypes)
+      }
+    case IntersectionType(originalTypes) =>
+      val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
+      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(otherType, tpe)))
+      filteredTypes.size match {
+        case 0 => NothingType
+        case 1 => filteredTypes.head
+        case _ => IntersectionType(filteredTypes)
+      }
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {
         case (None, None) => IntType

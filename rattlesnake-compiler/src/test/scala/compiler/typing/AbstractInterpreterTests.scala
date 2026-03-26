@@ -1,5 +1,6 @@
 package compiler.typing
 
+import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
@@ -13,13 +14,15 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.simplification.Simplifier
 import compiler.smt.Solver
-import compiler.typing.contexts.{ResolutionContext, TypeParamsContext, TypeVariablesContext}
+import compiler.typing.contexts.*
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-import scala.collection.SeqMap
+import scala.collection.mutable
+import scala.collection.immutable.SeqMap
 
 class AbstractInterpreterTests {
 
@@ -147,7 +150,17 @@ class AbstractInterpreterTests {
   }
 
   private def usingFreshInterpreter(action: (AbstractInterpreter, Solver) => Unit): Unit = Solver.usingFreshSolver { solver =>
-    val simplifier = Simplifier(solver)
+    given CompilationStep = TypeChecking
+
+    val er = ErrorReporter(_ => fail(), _ => fail())
+    val globalValuesCtx = GlobalValuesContext()
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val typeVarsCtx = TypeVariablesContext()
+    val dealiasingCtx = DealiasingContext(Map.empty)
+    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    val proxyStore = ProxyStore()
+    val subtypingCtx = SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+    val simplifier = Simplifier(subtypingCtx, solver)
     val interpreter = AbstractInterpreter(solver, simplifier)
     action(interpreter, solver)
   }

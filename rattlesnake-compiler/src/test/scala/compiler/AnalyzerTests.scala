@@ -117,7 +117,8 @@ class AnalyzerTests(fileName: String) {
     val proxyStore = ProxyStore()
     val er = ErrorReporter(errorsConsumer, exitCalled)
     Solver.usingFreshSolver { solver =>
-      val simplifier = Simplifier(solver)
+      val subtypingCtx = ???  // FIXME
+      val simplifier = Simplifier(subtypingCtx, solver)
       val absInt = AbstractInterpreter(solver, simplifier)
       val pipeline = TasksPipelines.multiFrontEnd(er)
         .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))

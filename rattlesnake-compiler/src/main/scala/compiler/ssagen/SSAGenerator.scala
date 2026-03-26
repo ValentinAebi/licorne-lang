@@ -257,7 +257,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean = true)(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Unit = {
-    currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, CompilationStep.SSAGeneration, stat.getPosition)
+    currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     stat match {
       case expr: Asts.Expr =>
         val resultValue = currScope.newIntermediate("dummy")

@@ -7,7 +7,9 @@ import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
+import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.{ImmutableUnionFind, MutableUnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
@@ -31,7 +33,7 @@ object SSA {
     }
 
     def getAstNodeOpt: Option[Ast] = astNodeOpt
-    
+
     def getPosition: Option[Position] = getAstNodeOpt.flatMap(_.getPosition)
 
     def uf_=(unionFind: ImmutableUnionFind): Unit = {
@@ -154,7 +156,7 @@ object SSA {
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
 
     var movingUf: MutableUnionFind = uninitialized
-    
+
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
         outScopeOpt.contains(outerScope) ||
@@ -174,9 +176,9 @@ object SSA {
       movingUf.saveSmartcast(f, tpe)
     }
 
-    def currentTypeOf(idValue: IdValue): Type = {
-      uf.currentTypeOf(idValue)
-        .orElse(outScopeOpt.map(_.currentTypeOf(idValue)))
+    def currentTypeOf(formula: Formula): Type = {
+      uf.currentTypeOf(formula)
+        .orElse(outScopeOpt.map(_.currentTypeOf(formula)))
         .getOrElse(NothingType)
     }
 
@@ -208,9 +210,18 @@ object SSA {
 
     def getLocalValuesContextUnsafe: LocalValuesContext = valuesCtx.asInstanceOf[LocalValuesContext]
 
+    def markHasExited(): Unit = {
+      getLocalValuesContextUnsafe.markHasExited()
+    }
+
     def hasExited: Boolean = getLocalValuesContextOpt match {
       case Some(localValsCtx) => localValsCtx.hasExited
       case None => false
+    }
+
+    def reportHasExitedIfNeeded(er: ErrorReporter, posOpt: Option[Position])
+                               (using CompilationStep): Unit = {
+      getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, posOpt)
     }
 
     export valuesCtx.globalCtx as globalValuesCtx

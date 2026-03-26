@@ -3,6 +3,7 @@ package compiler.typing
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
 import compiler.lang.Types.{IntersectionType, Type}
+import compiler.simplification.Simplifier
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -14,9 +15,16 @@ trait UnionFind {
 
   def typeOfNoSmartcast(value: IdValue): Option[Type]
 
+  def typeOfNoSmartcast(formula: Formula): Option[Type] = formula match {
+    case idValue: IdValue => typeOfNoSmartcast(idValue)
+    case _ => None
+  }
+
   def smartcastTypeOf(f: Formula): Option[Type]
 
-  def currentTypeOf(value: IdValue): Option[Type] = smartcastTypeOf(value).orElse(typeOfNoSmartcast(value))
+  def currentTypeOf(formula: Formula): Option[Type] =
+    smartcastTypeOf(formula)
+      .orElse(typeOfNoSmartcast(formula))
 
   def canonicalize(formula: Formula): Formula = formula match {
     case value: IdValue => representativeOf(value)
@@ -41,7 +49,7 @@ trait UnionFind {
 }
 
 
-final class MutableUnionFind extends UnionFind {
+final class MutableUnionFind(simplifier: Simplifier) extends UnionFind {
   private val representatives: mutable.Map[IdValue, IdValue] = mutable.Map.empty
   private val types: mutable.Map[IdValue, Type] = mutable.Map.empty
   private var smartcasts: mutable.Map[Formula, Type] = mutable.Map.empty
@@ -85,11 +93,18 @@ final class MutableUnionFind extends UnionFind {
   }
 
   def saveSmartcast(formula: Formula, tpe: Type): Unit = {
-    smartcasts(canonicalize(formula)) = tpe
+    val canonicFormula = canonicalize(formula)
+    smartcasts(canonicFormula) = smartcasts.get(canonicFormula) match {
+      case Some(IntersectionType(types)) =>
+        simplifier.simplify(IntersectionType(types.incl(tpe)))
+      case Some(prevType) =>
+        simplifier.simplify(IntersectionType(prevType, tpe))
+      case None => tpe
+    }
   }
 
   def deepCopy: MutableUnionFind = {
-    val copy = MutableUnionFind()
+    val copy = MutableUnionFind(simplifier)
     copy.representatives.addAll(this.representatives)
     copy.types.addAll(this.types)
     copy
@@ -117,5 +132,5 @@ final case class ImmutableUnionFind(
   override def typeOfNoSmartcast(value: IdValue): Option[Type] = types.get(value)
 
   override def smartcastTypeOf(f: Formula): Option[Type] = smartcasts.get(f)
-  
+
 }

@@ -61,10 +61,7 @@ final class MeetJoinComputer(
           case unionType: UnionType =>
             throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
           case IntersectionType(types) =>
-            for {
-              tpe <- types
-              if tpe != NothingType
-            } {
+            for (tpe <- types) {
               categorizeType(tpe)
             }
           case intRangeType: IntRangeType =>

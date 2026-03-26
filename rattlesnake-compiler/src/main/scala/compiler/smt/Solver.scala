@@ -93,7 +93,15 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
       Some(minOrMax)
     }
 
-  def assert(formulas: Formula*): Unit = {
+  def assert(formula: Formula): Unit = {
+    for {
+      kFormula <- convertBool(formula)
+    } {
+      kZ3Solver.assert(kFormula)
+    }
+  }
+
+  def assert(formulas: Iterable[Formula]): Unit = {
     for {
       formula <- formulas
       kFormula <- convertBool(formula)
