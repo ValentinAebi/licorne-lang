@@ -4,14 +4,12 @@ import compiler.lang.Types.{Type, TypeVariable}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.typing.Typer
 
 import scala.collection.mutable
 
 final class TypeVariablesContext {
   private val allTypeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
-  
-  def newTypeVariable(name: String, posOpt: Option[Position]): TypeVariable =
-    newTypeVariable(name, None, None, posOpt)
   
   def newTypeVariable(name: String, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position]): TypeVariable =
     TypeVariable(name, upperBoundOpt, lowerBoundOpt)(saveTypeVariable(_, posOpt))
@@ -20,10 +18,13 @@ final class TypeVariablesContext {
     allTypeVariables.addOne((tv, posOpt))
   }
 
-  def checkAllTypeVariablesHaveBeenResolved(errorsCallback: (String, Option[Position]) => Unit): Unit = {
+  def checkAllTypeVariablesHaveBeenResolved(typer: Typer, er: ErrorReporter)(using CompilationStep): Unit = {
     for ((tv, posOpt) <- allTypeVariables) {
-      if (!tv.isResolved) {
-        errorsCallback(s"type variable $tv could not be resolved", posOpt)
+      tv.actualTypeIfResolved match {
+        case Some(tpe) =>
+          typer.checkTypeIsInBounds(tpe, tv.upperBoundOpt, tv.lowerBoundOpt, posOpt)
+        case None =>
+          er.reportError(s"type variable $tv could not be resolved", posOpt)
       }
     }
   }

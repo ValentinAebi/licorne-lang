@@ -16,6 +16,9 @@ final case class TypeParamsContext(typeParams: Map[TypeIdentifier, TypeParamInfo
     }
   }
   
+  def extendedWith(newTypeParam: TypeParamInfo): TypeParamsContext =
+    TypeParamsContext(typeParams + (newTypeParam.tid -> newTypeParam))
+  
   def extendedWith(newTypeParams: Iterable[TypeParamInfo]): TypeParamsContext =
     TypeParamsContext(typeParams ++ newTypeParams.map(tp => tp.tid -> tp))
 

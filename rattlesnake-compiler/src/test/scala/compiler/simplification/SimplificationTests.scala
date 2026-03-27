@@ -12,7 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.Solver
+import compiler.smt.{Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -67,7 +67,7 @@ final class SimplificationTests {
     // @formatter:on
   }
 
-  private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = Solver.usingFreshSolver { solver =>
+  private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = Reasoning.usingFreshSolver { solver =>
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())

@@ -1,4 +1,4 @@
-package compiler.simplification
+package compiler.smt
 
 import compiler.lang.Formulas.*
 import compiler.lang.Types
@@ -78,7 +78,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
     case value: IdValue => None
     case formula: ConstFormula => Some(formula)
     case Select(owner, field) => None
-    case Call(receiver, func, args) => None
+    case Call(receiver, func, typeArgs, args) => None
     case Plus(lhs, rhs) => evalNumericBinop(lhs, rhs, _ + _, _ + _, rhsCanBeZero = true)
     case Neg(operand) =>
       eval(operand) match {
@@ -127,7 +127,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
     case IntConst(cst) => Map(IntConst(1) -> cst)
     case formula: ConstFormula => Map(formula -> 1)
     case Select(owner, field) => Map(formula -> 1)
-    case Call(receiver, func, args) => Map(formula -> 1)
+    case Call(receiver, func, typeArgs, args) => Map(formula -> 1)
     case Plus(lhs, rhs) =>
       val lLin = linearize(lhs)
       val rLin = linearize(rhs)

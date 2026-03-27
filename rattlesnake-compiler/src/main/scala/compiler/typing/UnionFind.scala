@@ -1,11 +1,10 @@
 package compiler.typing
 
-import compiler.lang.Formulas
 import compiler.lang.Formulas.*
-import compiler.lang.Types.{IntersectionType, Type}
-import compiler.simplification.Simplifier
+import compiler.lang.Types.*
+import compiler.lang.{Formulas, Types}
+import compiler.smt.Simplifier
 
-import scala.annotation.tailrec
 import scala.collection.mutable
 
 
@@ -28,11 +27,11 @@ trait UnionFind {
 
   def canonicalize(formula: Formula): Formula = formula match {
     case value: IdValue => representativeOf(value)
-    case cst: Formulas.ConstFormula => cst
+    case cst: ConstFormula => cst
     case Select(owner, field) =>
       Select(canonicalize(owner), field)
-    case Call(receiver, func, args) =>
-      Call(canonicalize(receiver), func, args.map(canonicalize))
+    case Call(receiver, func, typeArgs, args) =>
+      Call(canonicalize(receiver), func, typeArgs.map(canonicalize), args.map(canonicalize))
     case Plus(lhs, rhs) =>
       Plus(canonicalize(lhs), canonicalize(rhs))
     case Neg(operand) =>
@@ -43,16 +42,52 @@ trait UnionFind {
       DivBy(canonicalize(lhs), canonicalize(rhs))
     case Modulo(lhs, rhs) =>
       Modulo(canonicalize(lhs), canonicalize(rhs))
-    // FIXME additional cases
+    case LogicalAnd(lhs, rhs) =>
+      LogicalAnd(canonicalize(lhs), canonicalize(rhs))
+    case LogicalOr(lhs, rhs) =>
+      LogicalOr(canonicalize(lhs), canonicalize(rhs))
+    case LogicalNot(operand) =>
+      LogicalNot(canonicalize(operand))
+    case Equality(lhs, rhs) =>
+      Equality(canonicalize(lhs), canonicalize(rhs))
+    case LessOrEq(lhs, rhs) =>
+      LessOrEq(canonicalize(lhs), canonicalize(rhs))
+    case LessThan(lhs, rhs) =>
+      LessThan(canonicalize(lhs), canonicalize(rhs))
+    case TypePredicate(subject, tpe) =>
+      TypePredicate(canonicalize(subject), tpe)
+  }
+  
+  private def canonicalize(tpe: Type): Type = tpe match {
+    case primitiveType: PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) =>
+      NamedType(typeName, typeArgs.map(canonicalize), args.map(canonicalize))
+    case ClosureType(params, result) =>
+      ClosureType(params.map(canonicalize), canonicalize(result))
+    case tv: TypeVariable => tv
+    case UnionType(types) =>
+      UnionType(types.map(canonicalize))
+    case IntersectionType(types) =>
+      IntersectionType(types.map(canonicalize))
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+      IntRangeType(lowerBoundOpt.map(canonicalize), upperBoundOpt.map(canonicalize))
   }
 
 }
 
 
-final class MutableUnionFind(simplifier: Simplifier) extends UnionFind {
+final class MutableUnionFind extends UnionFind {
   private val representatives: mutable.Map[IdValue, IdValue] = mutable.Map.empty
   private val types: mutable.Map[IdValue, Type] = mutable.Map.empty
   private var smartcasts: mutable.Map[Formula, Type] = mutable.Map.empty
+  
+  def copy: MutableUnionFind = {
+    val copy = MutableUnionFind()
+    copy.representatives.addAll(this.representatives)
+    copy.types.addAll(this.types)
+    copy.smartcasts.addAll(this.types)
+    copy
+  }
 
   def representativeOf(idVal: IdValue): IdValue = {
     representatives.get(idVal) match {
@@ -92,7 +127,7 @@ final class MutableUnionFind(simplifier: Simplifier) extends UnionFind {
     types(representativeOf(idVal)) = tpe
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type): Unit = {
+  def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Unit = {
     val canonicFormula = canonicalize(formula)
     smartcasts(canonicFormula) = smartcasts.get(canonicFormula) match {
       case Some(IntersectionType(types)) =>
@@ -101,13 +136,6 @@ final class MutableUnionFind(simplifier: Simplifier) extends UnionFind {
         simplifier.simplify(IntersectionType(prevType, tpe))
       case None => tpe
     }
-  }
-
-  def deepCopy: MutableUnionFind = {
-    val copy = MutableUnionFind(simplifier)
-    copy.representatives.addAll(this.representatives)
-    copy.types.addAll(this.types)
-    copy
   }
 
   def snapshot: ImmutableUnionFind =

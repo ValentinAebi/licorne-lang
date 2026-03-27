@@ -58,9 +58,11 @@ object Formulas {
     override def toString: String = s"$owner.$field"
   }
 
-  final case class Call(receiver: Formula, var func: InvocationTarget, args: List[Formula]) extends Formula {
-    override def toString: String =
-      s"$receiver.$func" ++ args.mkString("(", ",", ")")
+  final case class Call(receiver: Formula, var func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
+    override def toString: String = {
+      val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
+      s"$receiver.$func" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
+    }
   }
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula {
@@ -155,7 +157,7 @@ object Formulas {
     case c: BoolConst => c
     case c: StringConst => c
     case Select(owner, field) => Select(owner.substitute(subst), field)
-    case Call(receiver, funId, args) => Call(receiver.substitute(subst), funId, args.map(_.substitute(subst)))
+    case Call(receiver, funId, typeArgs, args) => Call(receiver.substitute(subst), funId, typeArgs.map(_.substitute(Map.empty, subst)), args.map(_.substitute(subst)))
     case Plus(lhs, rhs) => Plus(lhs.substitute(subst), rhs.substitute(subst))
     case Neg(operand) => Neg(operand.substitute(subst))
     case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
@@ -164,8 +166,10 @@ object Formulas {
     case LogicalNot(operand) => LogicalNot(operand.substitute(subst))
     case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(subst), rhs.substitute(subst))
     case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(subst), rhs.substitute(subst))
+    case Equality(lhs, rhs) => Equality(lhs.substitute(subst), rhs.substitute(subst))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(subst), rhs.substitute(subst))
+    case LessThan(lhs, rhs) => LessThan(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
-    // FIXME additional cases
   }
 
   extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {
@@ -173,11 +177,11 @@ object Formulas {
       (idValue.definingScope == otherValue.definingScope && idValue.uid > otherValue.uid) ||
         idValue.definingScope.isNestedIn(otherValue.definingScope)
     case formula: ConstFormula => true
-    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
+    case Select(owner, FieldResolutionTarget.ResolvedField(receiverSig, fieldId, instantiatedFieldType)) =>
       receiverSig.fields(fieldId).isStable && typeCanMention(owner)
     case Select(owner, field) => false
     // TODO maybe check side-effects
-    case Call(receiver, func, args) => false
+    case Call(receiver, func, typeArgs, args) => false
     case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Neg(operand) => typeCanMention(operand)
     case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
@@ -194,18 +198,24 @@ object Formulas {
 
   extension (formula: Formula) def isStable: Boolean = formula match {
     case value: IdValue => true
-    case Select(owner, FieldResolutionTarget.Resolved(receiverSig, fieldId, instantiatedFieldType)) =>
+    case Select(owner, FieldResolutionTarget.ResolvedField(receiverSig, fieldId, instantiatedFieldType)) =>
       receiverSig.fields(fieldId).isStable
     case _: Select => false
     case formula: ConstFormula => true
     // TODO maybe check side-effects
-    case Call(receiver, func, args) => false
+    case Call(receiver, func, typeArgs, args) => false
     case Plus(lhs, rhs) => lhs.isStable && rhs.isStable
     case Neg(operand) => operand.isStable
     case Times(lhs, rhs) => lhs.isStable && rhs.isStable
     case DivBy(lhs, rhs) => lhs.isStable && rhs.isStable
     case Modulo(lhs, rhs) => lhs.isStable && rhs.isStable
-    // FIXME additional cases
+    case LogicalAnd(lhs, rhs) => lhs.isStable && rhs.isStable
+    case LogicalNot(operand) => operand.isStable
+    case LogicalOr(lhs, rhs) => lhs.isStable && rhs.isStable
+    case Equality(lhs, rhs) => lhs.isStable && rhs.isStable
+    case LessOrEq(lhs, rhs) => lhs.isStable && rhs.isStable
+    case LessThan(lhs, rhs) => lhs.isStable && rhs.isStable
+    case TypePredicate(subject, tpe) => subject.isStable
   }
 
 }

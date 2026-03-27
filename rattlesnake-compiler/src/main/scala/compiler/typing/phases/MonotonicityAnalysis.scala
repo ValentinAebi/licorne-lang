@@ -3,7 +3,7 @@ package compiler.typing.phases
 import compiler.irs.SSA.*
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
-import compiler.smt.Solver
+import compiler.smt.{Reasoning, Solver}
 import io.ksmt.KContext
 import io.ksmt.solver.z3.KZ3Solver
 
@@ -18,7 +18,7 @@ final class MonotonicityAnalysis extends CompilerStep[Program, Program] {
     program
   }
 
-  private def inferInvariants(loop: Loop): Unit = Solver.usingFreshSolver { solver =>
+  private def inferInvariants(loop: Loop): Unit = Reasoning.usingFreshSolver { solver =>
     for {
       loopVarData <- loop.variables
       recurrence <- loopVarData.recurrenceOpt

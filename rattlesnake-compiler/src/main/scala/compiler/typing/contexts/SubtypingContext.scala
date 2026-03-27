@@ -2,7 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.IdValue
+import compiler.lang.Formulas.{Formula, IdValue, IntermediateIdValue}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -83,9 +83,6 @@ final class SubtypingContext(
     }
   }
 
-  def isValidDowncastTarget(downcastTarget: NamedType, regularType: NamedType): Boolean =
-    checkDowncastTarget(regularType, downcastTarget.typeName).isPositive(downcastTarget)
-
   // TODO memoize? But we need to take smartcasts into account
   def isSubtype(subT: Type, superT: Type): Boolean = (subT, superT) match {
     case _ if subT == superT => true
@@ -110,7 +107,7 @@ final class SubtypingContext(
     case _ => false
   }
 
-  def isSubtype(subject: IdValue, subT: Type, superT: Type): Boolean = superT match {
+  def isSubtype(subject: Formula, subT: Type, superT: Type): Boolean = superT match {
     case superT if isSubtype(subT, superT) => true
     case IntRangeType(lowerBoundOpt, upperBoundOpt)
       if lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject))
@@ -145,7 +142,7 @@ final class SubtypingContext(
     }
   }
 
-  def enforceIsSubtype(subject: IdValue, subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
+  def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
     if (!isSubtype(subject, subT, superT)) {
       er.reportError(msg, posOpt)
     }
@@ -154,12 +151,21 @@ final class SubtypingContext(
   def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit =
     enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
 
-  def enforceIsSubtypeExpAct(subject: IdValue, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
-    val proxyDescr = proxyStore.getProxy(subject) match {
-      case Some(proxy) => s"$proxy : "
-      case None => ""
+  def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
+    val subjectDescr = subject match {
+      case subject: IntermediateIdValue =>
+        proxyStore.getProxy(subject) match {
+          case Some(proxy) => s"$proxy : "
+          case None => ""
+        }
+      case subject => subject.toString
     }
-    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $proxyDescr$superT, found $subT", posOpt)
+    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $subjectDescr$superT, found $subT", posOpt)
+  }
+
+  def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = subjectOpt match {
+    case Some(subject) => enforceIsSubtypeExpAct(subject, subT, superT, posDescr, posOpt)
+    case None => enforceIsSubtypeExpAct(subT, superT, posDescr, posOpt)
   }
 
   def checkBounds(tParam: TypeParamInfo, tArg: Type): Boolean = {

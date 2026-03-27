@@ -4,12 +4,10 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
-import compiler.simplification.Simplifier
-import compiler.smt.Solver
+import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.ssagen.SSAGenerator
-import compiler.typing.AbstractInterpreter
 import compiler.typing.contexts.TypeVariablesContext
-import compiler.typing.phases.{DeclarationsChecker, TypeAliasesAnalyzer, TyperPhase1}
+import compiler.typing.phases.{SubtypingChecker, TypeAliasesAnalyzer}
 import compiler.valproxies.ProxyStore
 import org.junit.Assert.fail
 import org.junit.Test
@@ -116,20 +114,13 @@ class AnalyzerTests(fileName: String) {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val er = ErrorReporter(errorsConsumer, exitCalled)
-    Solver.usingFreshSolver { solver =>
-      val subtypingCtx = ???  // FIXME
-      val simplifier = Simplifier(subtypingCtx, solver)
-      val absInt = AbstractInterpreter(solver, simplifier)
-      val pipeline = TasksPipelines.multiFrontEnd(er)
-        .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
-        .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, absInt, solver, er))
-        .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, solver, er))
-        .andThen(??? /* TODO */)
-      try {
-        pipeline.apply(srcFiles)
-      } catch {
-        case ExitException => ()
-      }
+    val pipeline = TasksPipelines.multiFrontEnd(er)
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
+      .andThen(??? /* TODO */)
+    try {
+      pipeline.apply(srcFiles)
+    } catch {
+      case ExitException => ()
     }
 
     val errorsAreMissing = expectedErrors.exists(!_._2)

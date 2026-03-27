@@ -7,9 +7,10 @@ import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
+import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.ssagen.SSAGenerator
 import compiler.typing.contexts.TypeVariablesContext
-import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalysis, TypeAliasesAnalyzer, TyperPhase1}
+import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalysis, SubtypingChecker, TypeAliasesAnalyzer, TypeChecker}
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
@@ -51,17 +52,15 @@ object TasksPipelines {
                            er: ErrorReporter) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
-    /*******************/
-    // FIXME warning, there should be 2 SubtypingContexts: an empty one for the type aliases analysis, and the real one for teh rest
-    // There should thus also be several versions of the modules that depend on a SubtypingContext (e.g. Simplifier)
-    /*******************/
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(MonotonicityAnalysis())
-//      .andThen(TypeAliasesAnalyzer(ts, typeVarsCtx, er))
-//      .andThen(DeclarationsChecker(ts, typeVarsCtx, er))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
+      .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
+      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, er))
+      .andThen(TypeChecker(typeVarsCtx, proxyStore, er))
       // FIXME this implementation is temporary
-      //.andThen(??? /* actual compilation phases */)
+      //.andThen(??? /* compilation to bytecode */)
       .andThen(SSAPrinter("  "))
       .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))

@@ -312,7 +312,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val rhsVal = currScope.newIntermediate()
         generateSSAExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
-        currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget.Unresolved(fieldId), rhsVal), assig)
+        currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget.UnresolvedField(fieldId), rhsVal), assig)
       case assig@Asts.VarAssig(lhs, typeAnnotOpt, rhs) =>
         reportError("assignment target is not valid", assig.getPosition)
       case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
@@ -506,7 +506,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.UnresolvedFun(funId), typeArgs, argVals), expr)
         None
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
@@ -518,7 +518,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.Unresolved(funId), typeArgs, argVals), expr)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget.UnresolvedFun(funId), typeArgs, argVals), expr)
         None
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
@@ -574,7 +574,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case selectTree@Asts.Select(lhsTree, fieldId) =>
         val lhsVal = currScope.newIntermediate()
         generateSSAExpr(lhsVal, lhsTree, currScope)
-        currScope.saveInstr(FieldRead(resultVal, lhsVal, FieldResolutionTarget.Unresolved(fieldId)), selectTree)
+        currScope.saveInstr(FieldRead(resultVal, lhsVal, FieldResolutionTarget.UnresolvedField(fieldId)), selectTree)
         None
       case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
         generateUnaryWithProxy(testedExprTree, TypeTest(resultVal, _, typeName), TypePredicate(_, typeName))
@@ -587,7 +587,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val initializerRhs = rhsOf(initializer)
           val rhsVal = currScope.newIntermediate()
           generateSSAExpr(rhsVal, initializerRhs, currScope)
-          initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget.Unresolved(initializer.fieldName), rhsVal), initializer)
+          initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget.UnresolvedField(initializer.fieldName), rhsVal), initializer)
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs), recordOrClassInstTree)
@@ -681,7 +681,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         // TODO check that there are no side-effects (later)
         // TODO non-prefixed calls (implicit this)?
-        case Asts.Call(callee, typeArgs, args) =>
+        case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
             case Asts.VariableRef(funId) =>
               currScope.getLocalValuesContextOpt.flatMap(_.getThisValue).map(_ -> funId)
@@ -691,8 +691,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
           receiverAndFunIdOpt match {
             case Some((receiverFormula, funId)) =>
+              val typeArgs = typeArgTrees.map(mkType(_, currScope))
               val argFormulas = args.flatMap(generateFormula(_, currScope))
-              if argFormulas.size == args.size then Some(Call(receiverFormula, InvocationTarget.Unresolved(funId), argFormulas))
+              if argFormulas.size == args.size then Some(Call(receiverFormula, InvocationTarget.UnresolvedFun(funId), typeArgs, argFormulas))
               else None
             case _ => None
           }
@@ -731,7 +732,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.Select(lhs, field) =>
           for {
             ownerFormula <- generateFormula(lhs, currScope)
-          } yield Select(ownerFormula, FieldResolutionTarget.Unresolved(field))
+          } yield Select(ownerFormula, FieldResolutionTarget.UnresolvedField(field))
         case Asts.ClosureDef(params, body) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")

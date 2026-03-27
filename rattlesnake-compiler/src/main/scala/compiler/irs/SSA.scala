@@ -11,6 +11,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.smt.Simplifier
 import compiler.typing.{ImmutableUnionFind, MutableUnionFind}
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -22,7 +23,7 @@ object SSA {
 
   sealed abstract class Instr {
     private var astNodeOpt: Option[Ast] = None
-    private var _uf: Option[ImmutableUnionFind] = None
+    private var _ufSnapshot: Option[ImmutableUnionFind] = None
 
     def setAstNode(astNode: Ast): this.type = {
       if (this.astNodeOpt.isDefined) {
@@ -36,11 +37,11 @@ object SSA {
 
     def getPosition: Option[Position] = getAstNodeOpt.flatMap(_.getPosition)
 
-    def uf_=(unionFind: ImmutableUnionFind): Unit = {
-      _uf = Some(unionFind)
+    def ufSnapshot_=(unionFind: ImmutableUnionFind): Unit = {
+      _ufSnapshot = Some(unionFind)
     }
 
-    def uf: ImmutableUnionFind = _uf.get
+    def ufSnapshot: ImmutableUnionFind = _ufSnapshot.get
   }
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
@@ -105,7 +106,7 @@ object SSA {
   final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
   final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
 
-  final case class FieldRead(assigned: IdValue, owner: IdValue, field: FieldResolutionTarget) extends AssigningInstr
+  final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr
   final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
@@ -115,7 +116,7 @@ object SSA {
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
 
-  final case class FieldWrite(owner: IdValue, field: FieldResolutionTarget, rhs: IdValue) extends Instr
+  final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends Instr
   final case class Return(retVal: IdValue) extends Instr
   final case class Panic(msg: IdValue) extends Instr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends Instr
@@ -124,38 +125,36 @@ object SSA {
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
 
   enum FieldResolutionTarget {
-    case Unresolved(fieldId: FunOrVarId)
-    case Unresolvable(fieldId: FunOrVarId)
-    case Resolved(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId, instantiatedFieldType: Type)
+    case UnresolvedField(fieldId: FunOrVarId)
+    case UnresolvableField(fieldId: FunOrVarId)
+    case ResolvedField(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId, instantiatedFieldType: Type)
 
     override def toString: String = this match {
-      case Unresolved(fieldId) =>
+      case UnresolvedField(fieldId) =>
         s"$fieldId<resol=?>"
-      case Unresolvable(fieldId) =>
+      case UnresolvableField(fieldId) =>
         s"$fieldId<unres>"
-      case Resolved(receiverSig, fieldId, instantiatedFieldType) =>
+      case ResolvedField(receiverSig, fieldId, instantiatedFieldType) =>
         s"$fieldId<res=${receiverSig.id}:$instantiatedFieldType>"
     }
   }
 
   enum InvocationTarget {
-    case Unresolved(funId: FunOrVarId)
-    case Unresolvable(funId: FunOrVarId)
-    case Resolved(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type)
+    case UnresolvedFun(funId: FunOrVarId)
+    case UnresolvableFun(funId: FunOrVarId)
+    case ResolvedFun(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type)
 
     override def toString: String = this match {
-      case Unresolved(funId) =>
+      case UnresolvedFun(funId) =>
         s"$funId<resol=?>"
-      case Unresolvable(funId) =>
+      case UnresolvableFun(funId) =>
         s"$funId<unres>"
-      case Resolved(encapsulatedTypeSig, funSig, instantiatedReturnType) =>
+      case ResolvedFun(encapsulatedTypeSig, funSig, instantiatedReturnType) =>
         s"${funSig.functionName}<res=${funSig.ownerName}:$instantiatedReturnType>"
     }
   }
 
-  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
-
-    var movingUf: MutableUnionFind = uninitialized
+  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext, val movingUf: MutableUnionFind) extends Instr {
 
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
@@ -172,24 +171,24 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, tpe: Type): Unit = {
+    def saveSmartcast(f: Formula, tpe: Type)(using Simplifier): Unit = {
       movingUf.saveSmartcast(f, tpe)
     }
 
     def currentTypeOf(formula: Formula): Type = {
-      uf.currentTypeOf(formula)
+      movingUf.currentTypeOf(formula)
         .orElse(outScopeOpt.map(_.currentTypeOf(formula)))
         .getOrElse(NothingType)
     }
 
     def typeOfNoSmartcast(idValue: IdValue): Type = {
-      uf.typeOfNoSmartcast(idValue)
+      movingUf.typeOfNoSmartcast(idValue)
         .orElse(outScopeOpt.map(_.typeOfNoSmartcast(idValue)))
         .getOrElse(NothingType)
     }
 
     def smartcastFor(f: Formula): Option[Type] = {
-      uf.smartcastTypeOf(f)
+      movingUf.smartcastTypeOf(f)
         .orElse(outScopeOpt.flatMap(_.smartcastFor(f)))
     }
 
@@ -269,11 +268,11 @@ object SSA {
   object Scope {
 
     def nestedInside(outScope: Scope): Scope = {
-      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
+      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, outScope.movingUf.copy)
     }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx)
+      new Scope(None, globalValuesCtx, MutableUnionFind())
 
     private val scopeUidGen = new AtomicLong(-1)
   }

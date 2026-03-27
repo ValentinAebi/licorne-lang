@@ -1,14 +1,13 @@
-package compiler.typing
+package compiler.smt
 
 import compiler.irs.SSA.Scope
-import compiler.lang.{Formulas, Types}
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, Type, primTypeFor}
 import compiler.lang.Variance.Invariant
-import compiler.simplification.Simplifier
-import compiler.smt.Solver
-import compiler.typing.AbstractInterpreter.someZero
+import compiler.lang.{Formulas, Types}
+import compiler.smt.{Simplifier, Solver}
+import AbstractInterpreter.someZero
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 
 final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {

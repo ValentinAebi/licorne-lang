@@ -2,6 +2,9 @@ package compiler.typing
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.*
+import compiler.irs.SSA.FieldResolutionTarget
+import compiler.irs.SSA.FieldResolutionTarget.*
+import compiler.irs.SSA.InvocationTarget.*
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -13,29 +16,35 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.Solver
+import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
+import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
+import compiler.util.zipCommons
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
-import scala.reflect.{ClassTag, classTag}
+import scala.reflect.ClassTag
 
 
 final class Typer(
+                   funRetTypeOpt: Option[Type],
                    dealiasingCtx: DealiasingContext,
                    resolutionCtx: ResolutionContext,
                    typeVarsCtx: TypeVariablesContext,
                    subtypingCtx: SubtypingContext,
                    meetJoin: MeetJoinComputer,
                    proxyStore: ProxyStore,
-                   absInt: AbstractInterpreter,
                    solver: Solver,
+                   simplifier: Simplifier,
+                   absInt: AbstractInterpreter,
                    er: ErrorReporter
                  )(using CompilationStep) {
 
   private given ResolutionContext = resolutionCtx
+  
+  private given Simplifier = simplifier
 
   def typeFunction(function: Function, ownerTypeParamsCtx: TypeParamsContext)
                   (using subtypingCtx: SubtypingContext): Unit = {
@@ -61,115 +70,168 @@ final class Typer(
   }
 
   def typeInstr(instr: Instr, currScope: Scope)
-               (using typeParamsCtx: TypeParamsContext): Unit = instr match {
-    case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
-      for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
-        (for {
-          recurrence <- varData.recurrenceOpt
-          monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
-          inBodyType <- Some {
-            val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
-            val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
-            val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
-            if monotonicity == NonDecreasing
-            then IntRangeType(preIterationBoundOpt, inferredBound)
-            else IntRangeType(inferredBound, preIterationBoundOpt)
+               (using typeParamsCtx: TypeParamsContext): Unit = {
+    instr.ufSnapshot = currScope.movingUf.snapshot
+    instr match {
+      case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
+        val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
+        for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
+          (for {
+            recurrence <- varData.recurrenceOpt
+            monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
+            inBodyType <- Some {
+              val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
+              val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
+              val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
+              if monotonicity == NonDecreasing
+              then IntRangeType(preIterationBoundOpt, inferredBound)
+              else IntRangeType(inferredBound, preIterationBoundOpt)
+            }
+            feedbackType <- absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)
+          } yield {
+            val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
+            condScope.saveType(condVal, inCondType)
+            bodyScope.saveSmartcast(condVal, inBodyType)
+            varData.handledThroughRecurrenceFlag = true
+          }) orElse {
+            // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
+            val tpe =
+              currScope.getLocalValuesContextUnsafe
+                .valueOf(varId)
+                .asInstanceOf[KnownAndInitialized]
+                .declarationTypeAnnotOpt
+                .getOrElse(currScope.currentTypeOf(beforeLoopVal))
+            condScope.saveType(condVal, tpe)
+            Some(())
           }
-          feedbackType <- absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)
-        } yield {
-          val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
-          condScope.saveType(condVal, inCondType)
-          bodyScope.saveSmartcast(condVal, inBodyType)
-          varData.handledThroughRecurrenceFlag = true
-        }) orElse {
-          // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
-          val tpe =
-            currScope.getLocalValuesContextUnsafe
-              .valueOf(varId)
-              .asInstanceOf[KnownAndInitialized]
-              .declarationTypeAnnotOpt
-              .getOrElse(currScope.currentTypeOf(beforeLoopVal))
-          condScope.saveType(condVal, tpe)
-          Some(())
         }
-      }
-      typeScopeInstructions(condScope, BranchingInfo.empty)
-      subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
-      typeScopeInstructions(bodyScope, infoIfCondTrue)
-      for {
-        varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
-        if !varData.handledThroughRecurrenceFlag
-      } {
-        val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
-        val typeInCond = condScope.currentTypeOf(condVal)
-        subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, s"cannot infer type of variable $varId inside loop, please provide a type annotation", loop.getPosition)
-      }
-      applyBranchInfo(currScope, infoIfCondFalse)
-    case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
-      val condType = currScope.currentTypeOf(condVal)
-      subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
-      typeScopeInstructions(thenBr, infoIfCondTrue)
-      typeScopeInstructions(elseBr, infoIfCondFalse)
-      for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-        val thenType = thenBr.currentTypeOf(afterThenVal)
-        val elseType = elseBr.currentTypeOf(afterElseVal)
-        val joinType = {
-          if elseBr.hasExited then thenType
-          else if thenBr.hasExited then elseType
-          else meetJoin.computeJoin(thenType, elseType)
+        typeScopeInstructions(condScope, BranchingInfo.empty)
+        subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+        typeScopeInstructions(bodyScope, infoIfCondTrue)
+        for {
+          varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
+          if !varData.handledThroughRecurrenceFlag
+        } {
+          val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
+          val typeInCond = condScope.currentTypeOf(condVal)
+          subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, s"cannot infer type of variable $varId inside loop, please provide a type annotation", loop.getPosition)
         }
+        applyBranchInfo(currScope, infoIfCondFalse)
+      case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
+        val condType = currScope.currentTypeOf(condVal)
+        subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
+        val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal)
+        typeScopeInstructions(thenBr, infoIfCondTrue)
+        typeScopeInstructions(elseBr, infoIfCondFalse)
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+          val thenType = thenBr.currentTypeOf(afterThenVal)
+          val elseType = elseBr.currentTypeOf(afterElseVal)
+          val joinType = {
+            if elseBr.hasExited then thenType
+            else if thenBr.hasExited then elseType
+            else meetJoin.computeJoin(thenType, elseType)
+          }
+        }
+      case staticTypeAssert@StaticTypeAssert(value, tpe) =>
+        val valueType = currScope.currentTypeOf(value)
+        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type annotation", staticTypeAssert.getPosition)
+      case StaticAssert(value) => ???
+      case AssignVal(assigned, src) =>
+        currScope.saveType(assigned, currScope.currentTypeOf(src))
+      case AssignIntConst(assigned, src) =>
+        currScope.saveType(assigned, IntRangeType.singleton(src))
+      case AssignBoolConst(assigned, src) =>
+        currScope.saveType(assigned, BoolType)
+      case AssignStringConst(assigned, src) =>
+        currScope.saveType(assigned, StringType)
+      case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
+        typeNumericNeg(operand, currScope, neg.getPosition).filtered(assigned, Invariant)
       }
-    case staticTypeAssert@StaticTypeAssert(value, tpe) =>
-      val valueType = currScope.currentTypeOf(value)
-      subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type annotation", staticTypeAssert.getPosition)
-    case StaticAssert(value) => ???
-    case AssignVal(assigned, src) =>
-      currScope.saveType(assigned, currScope.currentTypeOf(src))
-    case AssignIntConst(assigned, src) =>
-      currScope.saveType(assigned, IntRangeType.singleton(src))
-    case AssignBoolConst(assigned, src) =>
-      currScope.saveType(assigned, BoolType)
-    case AssignStringConst(assigned, src) =>
-      currScope.saveType(assigned, StringType)
-    case neg@NumNeg(assigned, operand) =>
-      val posOpt = neg.getPosition
-      val negType = typeUnaryNeg(operand, currScope, posOpt).filtered(assigned, Invariant)
-      currScope.saveType(assigned, negType)
-    case add@Add(assigned, lhs, rhs) =>
-      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, add.getPosition)
-    case sub@Sub(assigned, lhs, rhs) =>
-      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeMinusType, Operator.Minus, sub.getPosition)
-    case mul@Mul(assigned, lhs, rhs) =>
-      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, mul.getPosition)
-    case div@Div(assigned, lhs, rhs) =>
-      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeDivType, Operator.Div, div.getPosition)
-    case rem@Rem(assigned, lhs, rhs) =>
-      typeNumericBinopForTarget(assigned, lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
-    case and@And(assigned, lhs, rhs) =>
-      typeLogicalBinopForTarget(assigned, lhs, rhs, currScope, Operator.And, and.getPosition)
-    case or@Or(assigned, lhs, rhs) =>
-      typeLogicalBinopForTarget(assigned, lhs, rhs, currScope, Operator.Or, or.getPosition)
-    case LogicNeg(assigned, operand) => ???
-    case Equal(assigned, lhs, rhs) => ???
-    case Leq(assigned, lhs, rhs) => ???
-    case Lt(assigned, lhs, rhs) => ???
-    case FieldRead(assigned, owner, field) => ???
-    case InvokeFunc(assigned, receiver, func, typeArgs, args) => ???
-    case InvokeClosure(assigned, callee, args) => ???
-    case Instantiate(assigned, classOrRecordName, typeArgs) => ???
-    case MkClosure(assigned, params, body) => ???
-    case TypeTest(assigned, testedValue, testedTypeId) => ???
-    case Conversion(assigned, inValue, targetType) => ???
-    case FieldWrite(owner, field, rhs) => ???
-    case Return(retVal) => ???
-    case Panic(msg) => ???
-    case Cast(inValue, target) => ???
-    case Drop(droppedValue) => ???
-    case LocalDecl(localId, tpe) => ???
-    case scope: Scope =>
-      typeScopeInstructions(scope, BranchingInfo.empty)
+      case add@Add(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, add.getPosition)
+      }
+      case sub@Sub(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeMinusType, Operator.Minus, sub.getPosition)
+      }
+      case mul@Mul(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, mul.getPosition)
+      }
+      case div@Div(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeDivType, Operator.Div, div.getPosition)
+      }
+      case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
+      }
+      case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.And, and.getPosition)
+      }
+      case or@Or(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.Or, or.getPosition)
+      }
+      case neg@LogicNeg(assigned, operand) => assignTarget(assigned, currScope) {
+        typeLogicalNeg(operand, currScope, neg.getPosition).filtered(assigned, Invariant)
+      }
+      case leq@Leq(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, leq.getPosition)
+      }
+      case lt@Lt(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, lt.getPosition)
+      }
+      case Equal(assigned, lhs, rhs) =>
+        currScope.saveType(assigned, BoolType)
+      case invk@InvokeFunc(assigned, receiver, UnresolvedFun(funId), typeArgs, args) =>
+        val (invkTarget, tpe) = resolveFunSigAndCheckArgs(receiver, funId, typeArgs, args, currScope, invk.getPosition)
+        invk.func = invkTarget
+        currScope.saveType(assigned, tpe)
+      case fr@FieldRead(assigned, owner, UnresolvedField(fieldId)) =>
+        val ownerType = currScope.currentTypeOf(owner)
+        val (fieldResolTarget, tpe) = resolveFieldAccess(ownerType, fieldId, fr.getPosition)
+        fr.field = fieldResolTarget
+        currScope.saveType(assigned, tpe)
+      case fw@FieldWrite(owner, UnresolvedField(fieldId), rhs) =>
+        val ownerType = currScope.currentTypeOf(owner)
+        val (fieldResolTarget, fieldType) = resolveFieldAccess(ownerType, fieldId, fw.getPosition)
+        fw.field = fieldResolTarget
+        val rhsType = currScope.currentTypeOf(rhs)
+        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field $fieldId", fw.getPosition)
+      case _: (InvokeFunc | FieldRead | FieldWrite) =>
+        throw AssertionError("typing phase run more than once on the same piece of code")
+      case InvokeClosure(assigned, callee, args) => ???
+      case Instantiate(assigned, classOrRecordName, typeArgs) => ???
+      case MkClosure(assigned, params, body) => ???
+      case tt@TypeTest(assigned, testedValue, testedTypeId) =>
+        checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
+        currScope.saveType(assigned, BoolType)
+      case cast@Cast(inValue, target) =>
+        checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
+          currScope.saveSmartcast(inValue, assertedType)
+          proxyStore.getProxy(inValue).foreach { proxy =>
+            currScope.saveSmartcast(proxy, assertedType)
+          }
+        }
+      case conv@Conversion(assigned, inValue, targetType) =>
+        val inValType = currScope.currentTypeOf(inValue)
+        if (TypeConversion.conversionFor(inValType, targetType).isDefined) {
+          currScope.saveType(assigned, targetType)
+        } else {
+          er.reportError(s"cannot convert $inValType to $targetType", conv.getPosition)
+        }
+      case ret@Return(retVal) =>
+        funRetTypeOpt match {
+          case Some(funRetType) =>
+            val retValType = currScope.currentTypeOf(retVal)
+            subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, funRetType, "return value", ret.getPosition)
+          case None =>
+            er.reportError("unexpected return in this position", ret.getPosition)
+        }
+      case panic@Panic(msg) =>
+        val msgType = currScope.currentTypeOf(msg)
+        subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
+      case Drop(droppedValue) => ()
+      case LocalDecl(localId, tpe) => ()
+      case scope: Scope =>
+        typeScopeInstructions(scope, BranchingInfo.empty)
+    }
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
@@ -179,25 +241,24 @@ final class Typer(
       case IntConst(value) => IntType
       case BoolConst(value) => BoolType
       case StringConst(value) => StringType
-      case sel@Select(owner, FieldResolutionTarget.Resolved(_, _, instantiatedFieldType)) =>
+      case sel@Select(owner, ResolvedField(_, _, instantiatedFieldType)) =>
         scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
-      case sel@Select(owner, FieldResolutionTarget.Unresolved(fieldId)) =>
+      case sel@Select(owner, UnresolvedField(fieldId)) =>
         val ownerType = typeFormula(owner, scope, posOpt)
         val (resolvedField, tpe) = resolveFieldAccess(ownerType, fieldId, posOpt)
         sel.field = resolvedField
         scope.smartcastFor(sel).getOrElse(tpe)
-      case Select(owner, _: FieldResolutionTarget.Unresolvable) => NothingType
-      case Call(receiver, InvocationTarget.Resolved(ownerSig, funSig, instantiatedReturnType), args) => instantiatedReturnType
-      case call@Call(receiver, InvocationTarget.Unresolved(funId), args) =>
-        val receiverType = typeFormula(receiver, scope, posOpt)
-        val (invocationTarget, retType) = resolveFunSig(receiverType, funId, posOpt)
+      case Select(owner, _: UnresolvableField) => NothingType
+      case Call(receiver, ResolvedFun(ownerSig, funSig, instantiatedReturnType), typeArgs, args) => instantiatedReturnType
+      case call@Call(receiver, UnresolvedFun(funId), typeArgs, args) =>
+        val (invocationTarget, retType) = resolveFunSigAndCheckArgs(receiver, funId, typeArgs, args, scope, posOpt)
         call.func = invocationTarget
         retType
-      case Call(receiver, _: InvocationTarget.Unresolvable, args) => NothingType
+      case Call(receiver, _: UnresolvableFun, typeArgs, args) => NothingType
       case Plus(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
       case Neg(operand) =>
-        typeUnaryNeg(operand, scope, posOpt)
+        typeNumericNeg(operand, scope, posOpt)
       case Times(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typeTimesType, Operator.Times, posOpt)
       case DivBy(lhs, rhs) =>
@@ -208,19 +269,25 @@ final class Typer(
         typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
       case LogicalOr(lhs, rhs) =>
         typeLogicalBinop(lhs, rhs, scope, Operator.Or, posOpt)
-      case LogicalNot(operand) => ???
-      case Equality(lhs, rhs) => ???
-      case LessOrEq(lhs, rhs) => ???
-      case LessThan(lhs, rhs) => ???
-      case TypePredicate(lhs, rhs) => ???
+      case LogicalNot(operand) =>
+        typeLogicalNeg(operand, scope, posOpt)
+      case LessOrEq(lhs, rhs) =>
+        typeComparisonBinop(lhs, rhs, scope, Operator.LessOrEq, posOpt)
+      case LessThan(lhs, rhs) =>
+        typeComparisonBinop(lhs, rhs, scope, Operator.LessThan, posOpt)
+      case Equality(lhs, rhs) =>
+        typeFormula(lhs, scope, posOpt)
+        typeFormula(rhs, scope, posOpt)
+        BoolType
+      case TypePredicate(subject, tpe) =>
+        checkDowncast(subject, tpe, scope, posOpt)
+        BoolType
     })
 
-  private def typeNumericBinopForTarget(assigTarget: IdValue, lhs: Formula, rhs: Formula, currScope: Scope,
-                                        absIntFunc: (Type, Type) => Option[Type],
-                                        op: Operator, posOpt: Option[Position])
-                                       (using TypeParamsContext): Unit = {
-    val tpe = typeNumericBinop(lhs, rhs, currScope, absIntFunc, op, posOpt).filtered(assigTarget, Invariant)
-    currScope.saveType(assigTarget, tpe)
+  private def assignTarget(assignmentTarget: IdValue, currScope: Scope)
+                          (tpe: Type)
+                          (using TypeParamsContext): Unit = {
+    currScope.saveType(assignmentTarget, tpe.filtered(assignmentTarget, Invariant))
   }
 
   private def typeNumericBinop(lhs: Formula, rhs: Formula, currScope: Scope,
@@ -237,23 +304,31 @@ final class Typer(
     }
   }
 
-  private def typeLogicalBinopForTarget(assignmentTarget: IdValue, lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
-                                       (using TypeParamsContext): Unit = {
-    val tpe = typeLogicalBinop(lhs, rhs, currScope, op, posOpt).filtered(assignmentTarget, Invariant)
-    currScope.saveType(assignmentTarget, tpe)
-  }
-
   private def typeLogicalBinop(lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
                               (using TypeParamsContext): Type = {
     val lhsType = typeFormula(lhs, currScope, posOpt)
-    subtypingCtx.enforceIsSubtypeExpAct(lhsType, BoolType, s"left operand of $op", posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(lhsType, BoolType, s"operand of $op", posOpt)
     val rhsType = typeFormula(rhs, currScope, posOpt)
-    subtypingCtx.enforceIsSubtypeExpAct(rhsType, BoolType, s"right operand of $op", posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(rhsType, BoolType, s"operand of $op", posOpt)
     BoolType
   }
 
-  private def typeUnaryNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
-                          (using TypeParamsContext): Type = {
+  private def typeComparisonBinop(lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
+                                 (using TypeParamsContext): Type = {
+    // TODO warning if result is known (true or false)?
+    val lhsType = typeFormula(lhs, currScope, posOpt)
+    val expectedOperandType = lhsType.principalType match {
+      case tpe@(IntType | DoubleType) => tpe
+      case _ => UnionType(IntType, DoubleType)
+    }
+    subtypingCtx.enforceIsSubtypeExpAct(lhsType, expectedOperandType, s"operand of $op", posOpt)
+    val rhsType = typeFormula(rhs, currScope, posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(rhsType, expectedOperandType, s"operand of $op", posOpt)
+    BoolType
+  }
+
+  private def typeNumericNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
+                            (using TypeParamsContext): Type = {
     val operandType = typeFormula(operand, currScope, posOpt)
     val negatedType = absInt.unaryNegType(operandType) match {
       case Some(negType) => negType
@@ -262,6 +337,24 @@ final class Typer(
         NothingType
     }
     negatedType
+  }
+
+  private def typeLogicalNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
+                            (using TypeParamsContext): Type = {
+    val operandType = typeFormula(operand, currScope, posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(operandType, BoolType, "negation operand", posOpt)
+    BoolType
+  }
+
+  private def checkDowncast(subject: Formula, tid: TypeIdentifier, currScope: Scope, posOpt: Option[Position])
+                           (using TypeParamsContext): Option[Type] = {
+    val subjectType = typeFormula(subject, currScope, posOpt)
+    subtypingCtx.checkDowncastTarget(subjectType, tid) match {
+      case DowncastTargetCheckResult.CanDowncast(tpe) => Some(tpe)
+      case DowncastTargetCheckResult.CannotDowncast(reason) =>
+        er.reportError(s"$tid is not a valid downcast target for type $subjectType", posOpt)
+        None
+    }
   }
 
   def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
@@ -314,9 +407,9 @@ final class Typer(
     }
   }
 
-  def typeField(field: Field, currScope: Scope, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext): Unit = field match {
-    case ReassignableField(id, tpe) => dealiasAndTypeType(tpe, Some(Invariant), currScope, posOpt)
-    case field: StableField => typeStableField(field, currScope, posOpt)
+  def typeField(field: Field, currScope: Scope, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Unit = field match {
+    case ReassignableField(id, tpe) => dealiasAndTypeType(tpe, Some(Invariant), currScope, posOpt)(using typeParamsCtx)
+    case field: StableField => typeStableField(field, currScope, posOpt)(using typeParamsCtx)
   }
 
   def typeStableField(field: StableField, currScope: Scope, posOpt: Option[Position])
@@ -348,29 +441,27 @@ final class Typer(
     }
   }
 
-  def typeFunSig(functionSignature: FunctionSignature)(using typeParamsCtx: TypeParamsContext): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams,
-      paramsInclThis, retType, sigScope, visibility, declPosOpt) = functionSignature
-    for typeParam <- typeParams do {
-      typeFunTypeParam(typeParam, functionSignature.sigScope, functionSignature.declPosOpt)
+  def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = {
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, declPosOpt) = functionSignature
+
+    val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
+      typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
     }
     for (paramId, paramType) <- paramsInclThis do {
-      dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)
+      dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
     }
-    dealiasAndTypeType(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)
+    dealiasAndTypeType(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
     val InterfaceSignature(id, typeParams, functions, directSupertypes, sigScope, declPosOpt) = interfaceSig
 
-    given TypeParamsContext = TypeParamsContext(typeParams)
-
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    for typeParam <- typeParams do {
-      typeTypeTypeParam(typeParam, sigScope, declPosOpt)
+    val fullTypeParamsCtx = processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
+      typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     for (_, funSig) <- functions do {
-      typeFunSig(funSig)
+      typeFunSig(funSig, fullTypeParamsCtx)
     }
     typeSupertypesAsInterfaces(interfaceSig, resolutionCtx)
   }
@@ -378,17 +469,15 @@ final class Typer(
   def typeClassSig(classSig: ClassSignature): Unit = {
     val ClassSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = classSig
 
-    given TypeParamsContext = TypeParamsContext(typeParams)
-
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    for tp <- typeParams do {
-      typeTypeTypeParam(tp, sigScope, declPosOpt)
+    val fullTypeParamsCtx = processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
+      typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     for (_, fld) <- fields do {
-      typeField(fld, sigScope, declPosOpt)
+      typeField(fld, sigScope, fullTypeParamsCtx, declPosOpt)
     }
     for (_, funSig) <- functions do {
-      typeFunSig(funSig)
+      typeFunSig(funSig, fullTypeParamsCtx)
     }
     typeSupertypesAsInterfaces(classSig, resolutionCtx)
   }
@@ -396,10 +485,8 @@ final class Typer(
   def typeObjectSig(objSig: ObjectSignature): Unit = {
     val ObjectSignature(id, functions, directSupertypes, sigScope, declPosOpt) = objSig
 
-    given TypeParamsContext = TypeParamsContext.empty
-
     for (_, funSig) <- functions do {
-      typeFunSig(funSig)
+      typeFunSig(funSig, TypeParamsContext.empty)
     }
     typeSupertypes(objSig, "interface", resolutionCtx)
   }
@@ -407,10 +494,8 @@ final class Typer(
   def typeDatatypeSig(datatypeSig: DatatypeSignature): Unit = {
     val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
 
-    given TypeParamsContext = TypeParamsContext(typeParams)
-
-    for typeParam <- typeParams do {
-      typeTypeTypeParam(typeParam, sigScope, declPosOpt)
+    processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
+      typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     typeSupertypesAsDatatypes(datatypeSig, resolutionCtx)
@@ -453,20 +538,26 @@ final class Typer(
     }
   }
 
-  private def resolveFunSig(receiver: Type, funId: FunOrVarId, posOpt: Option[Position]): (InvocationTarget, Type) = {
+  private def resolveFunSigAndCheckArgs(receiver: Formula, funId: FunOrVarId, typeArgs: List[Type], args: List[Formula], scope: Scope, posOpt: Option[Position])
+                                       (using TypeParamsContext): (InvocationTarget, Type) = {
+    val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
-      er.reportError(s"method $funId not found in type $receiver", posOpt)
-      (InvocationTarget.Unresolvable(funId), NothingType)
+      er.reportError(s"method $funId not found in type $receiverType", posOpt)
+      (UnresolvableFun(funId), NothingType)
     }
 
-    receiver.principalType match {
+    val typedArgs = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
+    receiverType.principalType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFunSig(typeName, funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
-            val typesSubst = instantiateTypes(typeName, funSig.typeParams, typeArgs, posOpt)
+            val typesSubst = instantiateTypes(typeName, funSig.typeParams, typeArgs, subtypingCtx, posOpt, reportErrors = true)
+            val paramTypes = funSig.paramsInclThis.tail
+              .map((_, tpe) => tpe.substitute(typesSubst, Map.empty))
+            checkArgumentsList(paramTypes, typedArgs, funId, posOpt)
             val instantiatedRetType = funSig.retType.substitute(typesSubst, Map.empty)
-            val invocationTarget = InvocationTarget.Resolved(ownerSig, funSig, instantiatedRetType)
+            val invocationTarget = ResolvedFun(ownerSig, funSig, instantiatedRetType)
             (invocationTarget, instantiatedRetType)
           case _ => errorCase()
         }
@@ -478,29 +569,49 @@ final class Typer(
 
     def errorCase() = {
       er.reportError(s"field $fieldId not found in type ${owner.principalType}", posOpt)
-      (FieldResolutionTarget.Unresolvable(fieldId), NothingType)
+      (UnresolvableField(fieldId), NothingType)
     }
 
     owner.principalType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
-            val typeSubst = instantiateTypes(ownerSig.id, ownerSig.typeParams, typeArgs, posOpt)
+            // TODO check that we can indeed ignore errors here (reportErrors = false)
+            val typeSubst = instantiateTypes(ownerSig.id, ownerSig.typeParams, typeArgs, subtypingCtx, posOpt, reportErrors = false)
             val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
-            (FieldResolutionTarget.Resolved(ownerSig, fieldId, instantiatedFieldType), instantiatedFieldType)
+            (ResolvedField(ownerSig, fieldId, instantiatedFieldType), instantiatedFieldType)
           case _ => errorCase()
         }
       case _ => errorCase()
     }
   }
 
-  private def instantiateTypes(tid: TypeIdentifier, typeParams: List[TypeParamInfo], typeArgs: List[Type], posOpt: Option[Position]): Map[TypeIdentifier, Type] = {
-    if typeParams.size == typeArgs.size then typeParams.map(_.tid).zip(typeArgs).toMap
-    else {
-      if (typeArgs.nonEmpty) {
+  private def instantiateTypes(tid: TypeIdentifier, typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, posOpt: Option[Position], reportErrors: Boolean): Map[TypeIdentifier, Type] = {
+    if (typeParams.size == typeArgs.size) {
+      val substBuilder = Map.newBuilder[TypeIdentifier, Type]
+      for ((tParam, tArg) <- typeParams.zip(typeArgs)) {
+        if (reportErrors) {
+          checkTypeIsInBounds(tArg, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt)
+        }
+        substBuilder.addOne(tParam.tid -> tArg)
+      }
+      substBuilder.result()
+    } else {
+      if (reportErrors && typeArgs.nonEmpty) {
         er.reportError(s"wrong number of type parameters for type $tid", posOpt)
       }
-      Map.from(for tp <- typeParams yield tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, posOpt))
+      Map.from(for tp <- typeParams yield {
+        tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt)
+      })
+    }
+  }
+
+  def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position]): Unit = {
+    upperBoundOpt.foreach { upperBound =>
+      subtypingCtx.enforceIsSubtype(tpe, upperBound, s"type $tpe violates upper bound $upperBound", posOpt)
+    }
+    lowerBoundOpt.foreach { lowerBound =>
+      subtypingCtx.enforceIsSubtype(lowerBound, tpe, s"type $tpe violates lower bound $lowerBound", posOpt)
     }
   }
 
@@ -530,6 +641,16 @@ final class Typer(
           er.reportError(s"type $superT expands to $dealiasedSuperT, which cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
     }
+  }
+
+  private def processTypeParamsAccumulating[T <: TypeParamInfo](initialTypeParamsCtx: TypeParamsContext, typeParams: Iterable[T])
+                                                               (action: T => TypeParamsContext ?=> Unit): TypeParamsContext = {
+    var typeParamsCtx = initialTypeParamsCtx
+    for (tParam <- typeParams) {
+      action(tParam)(using typeParamsCtx)
+      typeParamsCtx = typeParamsCtx.extendedWith(tParam)
+    }
+    typeParamsCtx
   }
 
   private def checkSupertypesOfUnencapsulated(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit = {
@@ -567,6 +688,26 @@ final class Typer(
     case (tParam: TypeTypeParamInfo, Some(ambientVariance)) =>
       Some(tParam.variance * ambientVariance)
     case _ => None
+  }
+
+  private def checkArgumentsList(params: Iterable[Type], args: Iterable[(Option[Formula], Type)], funId: FunOrVarId, posOpt: Option[Position]): Unit = {
+    val nParams = params.size
+    val nArgs = args.size
+    if (nParams != nArgs) {
+      er.reportError(s"call to $funId: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
+    }
+    var argIdx = 1
+    for ((paramType, (argOpt, argType)) <- params.zipCommons(args)) {
+      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of call to $funId", posOpt)
+      argIdx += 1
+    }
+  }
+
+  private def nth(i: Int): String = i match {
+    case 1 => "first"
+    case 2 => "second"
+    case 3 => "third"
+    case i => s"${i}th"
   }
 
 }

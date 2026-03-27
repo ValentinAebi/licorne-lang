@@ -12,8 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.simplification.Simplifier
-import compiler.smt.Solver
+import compiler.smt.{AbstractInterpreter, Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -51,7 +50,7 @@ class AbstractInterpreterTests {
   private val `[-a+1,0]` = IntRangeType(-a + 1, 0)
   private val `[-5b,15b]` = IntRangeType(-5 * b, 15 * b)
 
-  @Test def typePlusTypeTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+  @Test def typePlusTypeTest(): Unit = usingFreshInterpreter { (absInt, _, _) =>
     import absInt.typePlusType
     assertEquals(Some(`[-5,15]`), typePlusType(`[0,10]`, `[-5,5]`))
     assertEquals(Some(`[1,a+10]`), typePlusType(`[0,10]`, `[1,a]`))
@@ -60,7 +59,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(`[-10a+1,21a]`), typePlusType(`[-10a,20a]`, `[1,a]`))
   }
 
-  @Test def typeMinusTypeTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+  @Test def typeMinusTypeTest(): Unit = usingFreshInterpreter { (absInt, _, _) =>
     import absInt.typeMinusType
     assertEquals(Some(`[-10,20]`), typeMinusType(`[-5,15]`, `[-5,5]`))
     assertEquals(Some(`[-9,a]`), typeMinusType(`[1,a]`, `[0,10]`))
@@ -69,7 +68,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(`[-11a,20a-1]`), typeMinusType(`[-10a,20a]`, `[1,a]`))
   }
 
-  @Test def typeTimesTypeTest(): Unit = usingFreshInterpreter { (absInt, solver) =>
+  @Test def typeTimesTypeTest(): Unit = usingFreshInterpreter { (absInt, _, solver) =>
     import absInt.typeTimesType
     assertEquals(Some(nonNegative), typeTimesType(nonNegative, nonNegative))
     assertEquals(Some(nonNegative), typeTimesType(nonPositive, nonPositive))
@@ -86,7 +85,7 @@ class AbstractInterpreterTests {
     }
   }
 
-  @Test def typeDivTypeTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+  @Test def typeDivTypeTest(): Unit = usingFreshInterpreter { (absInt, _, _) =>
     import absInt.typeDivType
     assertEquals(Some(nonNegative), typeDivType(nonNegative, strictlyPositive))
     assertEquals(Some(nonNegative), typeDivType(nonPositive, strictlyNegative))
@@ -97,7 +96,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(IntType), typeDivType(`[-5,5]`, `[1,a]`))
   }
 
-  @Test def typeModuloTypeTest(): Unit = usingFreshInterpreter { (absInt, solver) =>
+  @Test def typeModuloTypeTest(): Unit = usingFreshInterpreter { (absInt, _, solver) =>
     import absInt.typeModuloType
     assertEquals(Some(nonNegative), typeModuloType(nonNegative, strictlyPositive))
     assertEquals(Some(nonPositive), typeModuloType(nonPositive, strictlyNegative))
@@ -115,7 +114,7 @@ class AbstractInterpreterTests {
     }
   }
 
-  @Test def typeNegationTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+  @Test def typeNegationTest(): Unit = usingFreshInterpreter { (absInt, _, _) =>
     import absInt.unaryNegType
     assertEquals(Some(`[-50,50]`), unaryNegType(`[-50,50]`))
     assertEquals(Some(`[-10,0]`), unaryNegType(`[0,10]`))
@@ -126,7 +125,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(`[0,a-1]`), unaryNegType(`[-a+1,0]`))
   }
 
-  @Test def interpretUnderAssumptionsTest(): Unit = usingFreshInterpreter { (absInt, _) =>
+  @Test def interpretUnderAssumptionsTest(): Unit = usingFreshInterpreter { (absInt, simplifier, _) =>
     import absInt.interpretUnderAssumptions
 
     given CompilationStep = TypeChecking
@@ -149,7 +148,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(`[1,a]`), interpretUnderAssumptions(x + 1, Map(x -> `[0,a-1]`), None))
   }
 
-  private def usingFreshInterpreter(action: (AbstractInterpreter, Solver) => Unit): Unit = Solver.usingFreshSolver { solver =>
+  private def usingFreshInterpreter(action: (AbstractInterpreter, Simplifier, Solver) => Unit): Unit = Reasoning.usingFreshSolver { solver =>
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())
@@ -162,7 +161,7 @@ class AbstractInterpreterTests {
     val subtypingCtx = SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     val simplifier = Simplifier(subtypingCtx, solver)
     val interpreter = AbstractInterpreter(solver, simplifier)
-    action(interpreter, solver)
+    action(interpreter, simplifier, solver)
   }
 
   private def fail(): Nothing = {

@@ -5,9 +5,8 @@ enum CompilationStep {
   case Parsing
   case SSAGeneration
   case TypeAliasesAnalysis
+  case SubtypingAnalysis
   case DeclarationsAnalysis
-  case Typing1
-  case Typing2
   case TypeChecking
   case StringWriting
 }

@@ -11,7 +11,7 @@ import io.ksmt.sort.{KBoolSort, KIntSort}
 import scala.util.Using
 
 
-final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
+final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
 
   def check(): KSolverStatus = kZ3Solver.check()
 
@@ -136,7 +136,7 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     case StringConst(value) => None
     // TODO encode selects
     case Select(owner, field) => None
-    case Call(receiver, func, args) => None
+    case Call(receiver, func, typeArgs, args) => None
     case Plus(lhs, rhs) =>
       for {
         l <- convertInt(lhs)
@@ -162,8 +162,8 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     case LogicalOr(lhs, rhs) => None
     case LessOrEq(lhs, rhs) => None
     case LessThan(lhs, rhs) => None
+    case Equality(lhs, rhs) => None
     case TypePredicate(subject, tpe) => None
-    // FIXME additional cases
   }
 
   // TODO cache formula conversion
@@ -174,7 +174,7 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
     case StringConst(value) => None
     // TODO encode selects
     case Select(owner, field) => None
-    case Call(receiver, func, args) => None
+    case Call(receiver, func, typeArgs, args) => None
     case Plus(lhs, rhs) => None
     case Neg(operand) => None
     case Times(lhs, rhs) => None
@@ -204,19 +204,12 @@ final class Solver(kCtx: KContext, kZ3Solver: KZ3Solver) {
         l <- convertInt(lhs)
         r <- convertInt(rhs)
       } yield kCtx.mkArithLt(l, r)
+    case Equality(lhs, rhs) =>
+      for {
+        l <- convertInt(lhs)
+        r <- convertInt(rhs)
+      } yield kCtx.mkEq(l, r)
     case TypePredicate(subject, tpe) => None
-    // FIXME additional cases
   }
-
-}
-
-object Solver {
-
-  def usingFreshSolver[T](f: Solver => T): T = Using(KContext()) { kCtx =>
-    Using(KZ3Solver(kCtx)) { kZ3Solver =>
-      val solver = Solver(kCtx, kZ3Solver)
-      f(solver)
-    }.get
-  }.get
 
 }
