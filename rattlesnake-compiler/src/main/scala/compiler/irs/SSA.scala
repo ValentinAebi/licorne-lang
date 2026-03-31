@@ -12,6 +12,7 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Simplifier
+import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -45,13 +46,17 @@ object SSA {
     var recurrenceOpt: Option[Recurrence] = None
     var handledThroughRecurrenceFlag: Boolean = false
 
-    override def toString: String = {
-      val baseStr = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
+    def recurDescr: String = {
       recurrenceOpt match {
         case Some(recurrence) =>
-          s"$baseStr  RECUR: $recurrence"
-        case None => baseStr
+          s"RECUR: $recurrence"
+        case None => ""
       }
+    }
+
+    override def toString: String = {
+      val baseStr = s"$varId: $beforeLoopVal ; ($condVal) { ... $bodyLastVal }"
+      baseStr ++ "  " ++ recurDescr
     }
   }
 
@@ -124,11 +129,11 @@ object SSA {
 
     override def toString: String = this match {
       case UnresolvedField(fieldId) =>
-        s"$fieldId<resol=?>"
+        s"$fieldId<resol:?>"
       case UnresolvableField(fieldId) =>
-        s"$fieldId<unres>"
+        s"$fieldId<unresolved>"
       case ResolvedField(receiverSig, fieldId, instantiatedFieldType) =>
-        s"$fieldId<res=${receiverSig.id}:$instantiatedFieldType>"
+        s"$fieldId<rec:${receiverSig.id};ret:$instantiatedFieldType>"
     }
   }
 
@@ -139,11 +144,11 @@ object SSA {
 
     override def toString: String = this match {
       case UnresolvedFun(funId) =>
-        s"$funId<resol=?>"
+        s"$funId<resol:?>"
       case UnresolvableFun(funId) =>
-        s"$funId<unres>"
+        s"$funId<unresolved>"
       case ResolvedFun(encapsulatedTypeSig, funSig, instantiatedReturnType) =>
-        s"${funSig.functionName}<res=${funSig.ownerName}:$instantiatedReturnType>"
+        s"${funSig.functionName}<rec:${funSig.ownerName};ret:$instantiatedReturnType>"
     }
   }
 
@@ -156,11 +161,11 @@ object SSA {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type): Unit = {
+    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
       if (idVal.definingScope == this) {
         types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
-        outScopeOpt.get.saveType(idVal, tpe)
+        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore)))
       } else {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
@@ -196,7 +201,7 @@ object SSA {
 
     override def toString: String = {
       val outerScopeDescr = outScopeOpt match {
-        case Some(outScope) => s" nested inside ${outScope.uidGen}"
+        case Some(outScope) => s" nested inside ${outScope.scopeUid}"
         case None => ""
       }
       s"scope $scopeUid (depth $depth)" + outerScopeDescr
@@ -215,6 +220,12 @@ object SSA {
 
     def markHasExited(): Unit = {
       getLocalValuesContextUnsafe.markHasExited()
+    }
+
+    def markHasExitedIfNothing(tpe: Type): Unit = {
+      if (tpe == NothingType) {
+        markHasExited()
+      }
     }
 
     def hasExited: Boolean = getLocalValuesContextOpt match {

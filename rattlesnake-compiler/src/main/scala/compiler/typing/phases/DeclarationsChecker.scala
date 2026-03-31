@@ -27,7 +27,7 @@ final class DeclarationsChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, absInt) =>
       
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, solver)
+      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, solver, simplifier, absInt, er)
 
       for ((_, interfaceSig) <- program.interfaces) {

@@ -119,6 +119,8 @@ object Errors {
     }
 
     def getErrors: List[CompilationError] = errors.toList
+    
+    def errorsCnt: Int = errors.size
 
     def displayErrors(): Unit = {
       for error <- errors do {
@@ -161,6 +163,10 @@ object Errors {
       displayErrors()
       displayExitMessage()
       exit(fatalErrorExitCode)
+    }
+    
+    def clear(): Unit = {
+      errors.clear()
     }
 
     private def displayAndDeleteWarnings(): Unit = {

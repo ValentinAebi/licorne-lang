@@ -96,7 +96,9 @@ class LexerTests {
     val actualTokSeq = Lexer(errorReporter)(mockSourceCodeProvider)._1
     assertEquals(expectedTokSeq, actualTokSeq)
     errorReporter.displayErrors()
-    assertTrue(errorsCollector.isEmpty)
+    assertTrue(errorReporter.errorsCnt == 0)
+    // consistency
+    assertTrue(errorsCollector.size == errorReporter.errorsCnt + 1)
   }
 
   private def failExit(exitCode: ExitCode): Nothing = {

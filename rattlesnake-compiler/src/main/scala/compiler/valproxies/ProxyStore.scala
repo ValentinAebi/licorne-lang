@@ -24,30 +24,33 @@ final class ProxyStore {
 
   def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal)
 
-  def extractRawBranchingInfos(cond: IdValue): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
-    case Some(proxy) => infosFor(proxy)
+  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
+    case Some(proxy) => infosFor(proxy, ambientBranchingInfo)
     case None => (BranchingInfo.empty, BranchingInfo.empty)
   }
 
-  private def infosFor(cond: Formula): (BranchingInfo, BranchingInfo) = cond match {
-    case LogicalAnd(lhs, rhs) =>
-      val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
-      val (rightTrueInfos, rightFalseInfos) = infosFor(rhs)
-      (leftTrueInfos ++ rightTrueInfos, BranchingInfo.empty)
-    case LogicalOr(lhs, rhs) =>
-      val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
-      val (rightTrueInfos, rightFalseInfos) = infosFor(rhs)
-      (BranchingInfo.empty, leftFalseInfos ++ rightFalseInfos)
-    case LogicalNot(operand) =>
-      val (operandTrueInfos, operandFalseInfos) = infosFor(operand)
-      (operandFalseInfos, operandTrueInfos)
-    case leq@LessOrEq(lhs, rhs) =>
-      (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
-    case lt@LessThan(lhs, rhs) =>
-      (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lt)))
-    case TypePredicate(subject, tpe) =>
-      (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
-    case _ => (BranchingInfo.empty, BranchingInfo.empty)
+  private def infosFor(cond: Formula, ambientBranchingInfo: BranchingInfo): (BranchingInfo, BranchingInfo) = {
+    val (newIfTrue, newIfFalse) = cond match {
+      case LogicalAnd(lhs, rhs) =>
+        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs, ambientBranchingInfo)
+        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs, ambientBranchingInfo)
+        (leftTrueInfos ++ rightTrueInfos, BranchingInfo.empty)
+      case LogicalOr(lhs, rhs) =>
+        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs, ambientBranchingInfo)
+        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs, ambientBranchingInfo)
+        (BranchingInfo.empty, leftFalseInfos ++ rightFalseInfos)
+      case LogicalNot(operand) =>
+        val (operandTrueInfos, operandFalseInfos) = infosFor(operand, ambientBranchingInfo)
+        (operandFalseInfos, operandTrueInfos)
+      case leq@LessOrEq(lhs, rhs) =>
+        (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
+      case lt@LessThan(lhs, rhs) =>
+        (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lt)))
+      case TypePredicate(subject, tpe) =>
+        (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
+      case _ => (BranchingInfo.empty, BranchingInfo.empty)
+    }
+    (ambientBranchingInfo ++ newIfTrue, ambientBranchingInfo ++ newIfFalse)
   }
 
   override def toString: String = "ProxyStore {\n" ++ proxies.mkString("\n").indent(2) ++ "}"

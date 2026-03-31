@@ -75,7 +75,11 @@ object BranchingInfo {
 
     def tryToSmartcast(originalType: Type, typesReasoningCache: TypesReasoningCache, subtypingCtx: SubtypingContext): Option[Type] = originalType match {
       case NamedType(typeName, typeArgs, args) =>
-        (typesReasoningCache.developUnencapsulated(typeName) match {
+        val candidatesOpt =
+          typesReasoningCache.developUnencapsulated(typeName).map { records =>
+            records.filterNot(r => knownIsNot.exists(forbiddenSuper => subtypingCtx.subToSuperSubst(r.id, forbiddenSuper).isDefined))
+          }
+        (candidatesOpt match {
           case Some(Nil) => Some(NothingType)
           case Some(recordSig :: Nil) =>
             subtypingCtx.checkDowncastTarget(originalType, recordSig.id).asOption

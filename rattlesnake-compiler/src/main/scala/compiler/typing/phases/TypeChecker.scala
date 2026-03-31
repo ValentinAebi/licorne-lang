@@ -15,7 +15,8 @@ import compiler.valproxies.{BranchingInfo, ProxyStore}
 final class TypeChecker(
                          typeVarsCtx: TypeVariablesContext,
                          proxyStore: ProxyStore,
-                         er: ErrorReporter
+                         er: ErrorReporter,
+                         continueIfErrors: Boolean = false
                        ) extends CompilerStep[(Program, SubtypingInfo), Program] {
 
   private given CompilationStep = TypeChecking
@@ -30,7 +31,7 @@ final class TypeChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, absInt) =>
 
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, solver)
+      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
       for ((funSig, func) <- program.functions) {
         checkFunc(funSig, func, dealiasingCtx, resolCtx, subtypingCtx, meetJoin, solver, simplifier, absInt)
       }
@@ -41,7 +42,11 @@ final class TypeChecker(
       )
     }
 
-    er.displayAndTerminateIfErrors()
+    if (continueIfErrors){
+      er.displayErrors()
+    } else {
+      er.displayAndTerminateIfErrors()
+    }
     program
   }
 

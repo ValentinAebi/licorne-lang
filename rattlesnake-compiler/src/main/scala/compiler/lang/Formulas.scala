@@ -216,5 +216,39 @@ object Formulas {
     case LessThan(lhs, rhs) => lhs.isStable && rhs.isStable
     case TypePredicate(subject, tpe) => subject.isStable
   }
+  
+  extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {
+    case value: IdValue => Set(value)
+    case formula: ConstFormula => Set.empty
+    case Select(owner, field) => owner.idValsDependencies
+    case Call(receiver, func, typeArgs, args) =>
+      receiver.idValsDependencies ++ args.flatMap(_.idValsDependencies)
+    case Plus(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case Neg(operand) => operand.idValsDependencies
+    case Times(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case DivBy(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case Modulo(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case LogicalAnd(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case LogicalNot(operand) =>
+      operand.idValsDependencies
+    case LogicalOr(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case Equality(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case LessOrEq(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case LessThan(lhs, rhs) =>
+      lhs.idValsDependencies ++ rhs.idValsDependencies
+    case TypePredicate(subject, tpe) =>
+      subject.idValsDependencies
+  }
+  
+  extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
+    subject.idValsDependencies.forall(_.typeCanMention(dep))
 
 }

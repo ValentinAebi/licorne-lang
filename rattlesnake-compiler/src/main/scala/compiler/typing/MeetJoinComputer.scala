@@ -3,10 +3,10 @@ package compiler.typing
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{AnyType, NothingType}
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
-import compiler.smt.Solver
+import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.util.{SeqSet, asIterableOfType}
 
@@ -18,6 +18,7 @@ final class MeetJoinComputer(
                               dealiasingCtx: DealiasingContext,
                               resolutionCtx: ResolutionContext,
                               subtypingCtx: SubtypingContext,
+                              simplifier: Simplifier,
                               solver: Solver
                             ) {
 
@@ -50,6 +51,9 @@ final class MeetJoinComputer(
         val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
 
         def categorizeType(tpe: Type): Unit = tpe match {
+          case IntType =>
+            primitiveTypes.addOne(IntType)
+            rangeTypes.addOne(IntRangeType(None, None))
           case primitiveType: PrimitiveType =>
             primitiveTypes.addOne(primitiveType)
           case namedType: NamedType =>
@@ -82,11 +86,13 @@ final class MeetJoinComputer(
           }
         }
 
-        if namedTypes.size == retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-        else if rangeTypes.size == retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
-        else if primitiveTypes.size == retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
-        else if closureTypes.size == retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
-        else AnyType
+        val rawJoin =
+          if namedTypes.size == retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+          else if rangeTypes.size == retainedTypesCnt then computeJoinOfRanges (rangeTypes.distinct)
+          else if primitiveTypes.size == retainedTypesCnt then computeJoinOfPrimitives (primitiveTypes)
+          else if closureTypes.size == retainedTypesCnt then computeJoinOfClosures (closureTypes.distinct).getOrElse (AnyType)
+          else AnyType
+        simplifier.simplify(rawJoin)
     }
   }
 
@@ -207,14 +213,19 @@ final class MeetJoinComputer(
     filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMin),
     filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
   )
+  
+  def computeMeet(types: Type*): Type =
+    computeMeet(types.toList)
 
   def computeMeet(types: Iterable[Type]): Type = {
     val nonAnyTypes = types.filterNot(_ == AnyType)
-    if nonAnyTypes.toSet.size == 1 then nonAnyTypes.head
-    else nonAnyTypes.asIterableOfType[IntRangeType] match {
-      case Some(ranges) => computeMeetOfRanges(ranges)
-      case None => AnyType
-    }
+    val rawMeet =
+      if nonAnyTypes.toSet.size == 1 then nonAnyTypes.head
+      else nonAnyTypes.asIterableOfType[IntRangeType] match {
+        case Some(ranges) => computeMeetOfRanges(ranges)
+        case None => AnyType
+      }
+    simplifier.simplify(rawMeet)
   }
 
   def computeMeetOfRanges(types: Iterable[IntRangeType]): IntRangeType = IntRangeType(

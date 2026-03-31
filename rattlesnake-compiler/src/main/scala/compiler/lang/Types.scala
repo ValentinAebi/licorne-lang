@@ -7,6 +7,7 @@ import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
+import compiler.valproxies.ProxyStore
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.SeqMap
@@ -169,7 +170,7 @@ object Types {
 
     def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
 
-    override def toString: String = name
+    override def toString: String = if isResolved then actualTypeIfResolved.get.toString else name
 
     private def goUpPath(tpe: Type): Type = tpe match {
       case tVar: TypeVariable => tVar.actualTypeOpt match {
@@ -223,44 +224,46 @@ object Types {
     case range: IntRangeType => range
   }
 
-  extension (tpe: Type) def filtered(assignmentTarget: IdValue, ambientVariance: Variance)
+  extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
                                     (using resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
-      val newTypeArgs = resolutionCtx.resolveTypeSig(typeName)
-        .map(_.typeParams.map(_.variance))
-        .getOrElse(List.empty)
-        .take(typeArgs.size)
-        .padTo(typeArgs.size, Covariant)
-        .zip(typeArgs)
-        .map((typeParamVariance, typeArg) => typeArg.filtered(assignmentTarget, ambientVariance * typeParamVariance))
+      val newTypeArgs = typeArgs.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
       NamedType(typeName, newTypeArgs, args)
     case ClosureType(params, result) =>
-      ClosureType(params.map(_.filtered(assignmentTarget, ambientVariance * Contravariant)), result.filtered(assignmentTarget, ambientVariance * Covariant))
+      ClosureType(params.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)), result.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
     case UnionType(types) =>
-      UnionType(types.map(_.filtered(assignmentTarget, ambientVariance)))
+      UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntersectionType(types) =>
-      IntersectionType(types.map(_.filtered(assignmentTarget, ambientVariance)))
+      IntersectionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      val newLowerBoundOpt = lowerBoundOpt.filter(assignmentTarget.typeCanMention)
-      val newUpperBoundOpt = upperBoundOpt.filter(assignmentTarget.typeCanMention)
-      ambientVariance match {
-        case Invariant | Covariant =>
-          if newLowerBoundOpt.isEmpty && newUpperBoundOpt.isEmpty then IntType
-          else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
-        case Contravariant =>
-          val boundWasLost = newLowerBoundOpt.size + newUpperBoundOpt.size < lowerBoundOpt.size + upperBoundOpt.size
-          if boundWasLost then NothingType else IntRangeType(newLowerBoundOpt, newUpperBoundOpt)
-      }
+      val newLb = expandBound(lowerBoundOpt, assignmentTarget, _.lowerBoundOpt, currScopeAndProxyStoreOpt)
+      val newUb = expandBound(upperBoundOpt, assignmentTarget, _.upperBoundOpt, currScopeAndProxyStoreOpt)
+      IntRangeType(newLb, newUb)
     case tv: TypeVariable => tv
   }
 
-  extension (tpe: Type) def filtered(assignmentTargetOpt: Option[IdValue], ambientVariance: Variance)
+  extension (tpe: Type) def filtered(assignmentTargetOpt: Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
                                     (using resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Type =
     assignmentTargetOpt match {
       case Some(assignmentTarget) =>
-        tpe.filtered(assignmentTarget, ambientVariance)
+        tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
       case None => tpe
     }
+
+  private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)]): Option[Formula] = boundOpt match {
+    case None => None
+    case sb@Some(bound) if bound.idValsDependencies.forall(assignmentTarget.typeCanMention) => sb
+    case Some(bound) =>
+      currScopeAndProxyStoreOpt match {
+        case Some(currScope, proxyStore) =>
+          currScope.currentTypeOf(bound)(using proxyStore) match {
+            case range: IntRangeType =>
+              expandBound(expansionFunc(range), assignmentTarget, expansionFunc, currScopeAndProxyStoreOpt)
+            case _ => None
+          }
+        case None => None
+      }
+  }
 
 }

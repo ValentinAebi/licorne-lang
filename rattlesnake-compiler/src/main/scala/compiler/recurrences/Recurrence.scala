@@ -12,9 +12,12 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
   def computeMonotonicity(solver: Solver): Monotonicity = monotonicityOpt match {
     case Some(monotonicity) => monotonicity
     case None =>
+      val nonIncreasing = isProvablyNonIncreasing(solver)
+      val nonDecreasing = isProvablyNonDecreasing(solver)
       val monotonicity =
-        if isProvablyNonIncreasing(solver) then NonIncreasing
-        else if isProvablyNonDecreasing(solver) then NonDecreasing
+        if nonIncreasing && nonDecreasing then Constant
+        else if nonDecreasing then NonDecreasing
+        else if nonIncreasing then NonIncreasing
         else NonMonotonous
       monotonicityOpt = Some(monotonicity)
       monotonicity
@@ -44,7 +47,7 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
 object Recurrence {
 
   enum Monotonicity {
-    case NonIncreasing, NonDecreasing, NonMonotonous
+    case Constant, NonDecreasing, NonIncreasing, NonMonotonous
   }
 
 }

@@ -13,6 +13,7 @@ import compiler.reporting.Position
 import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst}
+import compiler.util.zipCommons
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -85,6 +86,8 @@ final class SubtypingContext(
 
   // TODO memoize? But we need to take smartcasts into account
   def isSubtype(subT: Type, superT: Type): Boolean = (dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT)) match {
+    case (tv: TypeVariable, superT) if tv.isResolved => isSubtype(tv.substitutedIfResolved, superT)
+    case (subT, tv: TypeVariable) if tv.isResolved => isSubtype(subT, tv.substitutedIfResolved)
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (_, AnyType) => true
@@ -120,10 +123,21 @@ final class SubtypingContext(
     val NamedType(superTId, superTTypeArgs, superTArgs) = superT
     subTArgs.isEmpty && superTArgs.isEmpty && (subToSuperSubst(subTId, superTId) match {
       case None => false
-      case Some(subst) =>
-        resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId) match {
-          case None => false
-          case Some(superTSig) =>
+      case Some(subToSuperParamsSubst) =>
+        (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subTId), resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId)) match {
+          case (Some(subTSig), Some(superTSig)) =>
+            val subTSubst = subTSig.typeParams.zipCommons(subTTypeArgs).toMap
+            val subst = Map.from(
+              for ((paramInSuper, argInSuper) <- subToSuperParamsSubst) yield
+                paramInSuper -> (argInSuper match {
+                  case NamedType(argInSuperId, Nil, Nil) =>
+                    subTSubst.find((tParam, tArg) => tParam.tid == argInSuperId) match {
+                      case Some(_, tArg) => tArg
+                      case None => argInSuper
+                    }
+                  case _ => argInSuper
+                })
+            )
             superTSig.typeParams.zip(superTTypeArgs).forall { (tParam, tArg) =>
               val expType = subst.apply(tParam.tid)
               tParam.variance match {
@@ -132,6 +146,7 @@ final class SubtypingContext(
                 case Contravariant => isSubtype(expType, tArg)
               }
             }
+          case _ => false
         }
     })
   }

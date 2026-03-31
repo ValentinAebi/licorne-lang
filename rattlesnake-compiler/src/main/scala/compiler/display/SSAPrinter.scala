@@ -189,7 +189,10 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
         pps.newLine().add("body: ")
         printScope(body)
         pps.newLine()
-        printVarData(variables)
+        printVarData(variables){
+          case varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) =>
+            s"$varId: ${maybeTyped(beforeLoopVal, scope)} ; (${maybeTyped(condVal, cond)}) { ... ${maybeTyped(bodyLastVal, body)} } " ++ varData.recurDescr
+        }
       }
       pps.add("END LOOP")
     case SSA.Disjunction(condVal, thenBr, elseBr, variables) =>
@@ -199,7 +202,10 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
         pps.newLine().add("else: ")
         printScope(elseBr)
         pps.newLine()
-        printVarData(variables)
+        printVarData(variables){
+          case varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) =>
+            varIdOpt.map(_.toString + ": ").getOrElse("") ++ s"${maybeTyped(joinedVal, scope)} := phi(${maybeTyped(afterThenVal, thenBr)}, ${maybeTyped(afterElseVal, elseBr)})"
+        }
       }
       pps.add("END IF")
     case SSA.StaticTypeAssert(value, tpe) =>
@@ -274,7 +280,7 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
   }
 
   private def maybeTyped(formula: Formula, scope: Scope): String =
-    if printTypes then s"$formula : ${scope.currentTypeOf(formula)}" else ""
+    if printTypes then s"$formula : ${scope.currentTypeOf(formula)}" else formula.toString
 
   private def printTypeArgsList(typeArgs: List[Type])(using pps: PrettyPrintString): Unit = {
     if (typeArgs.nonEmpty) {
@@ -298,14 +304,14 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
     pps.add(")")
   }
 
-  private def printVarData(variables: Iterable[VarData])(using pps: PrettyPrintString): Unit = {
+  private def printVarData[D <: VarData](variables: Iterable[D])(mkString: D => String)(using pps: PrettyPrintString): Unit = {
     pps.add("variables: ")
     if (variables.isEmpty) {
       pps.add("<none>")
     } else {
       pps.indent {
         traverseIterable(variables.iterator) { varData =>
-          pps.add(varData.toString)
+          pps.add(mkString(varData))
         } {
           pps.newLine()
         }

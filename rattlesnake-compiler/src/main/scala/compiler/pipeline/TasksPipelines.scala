@@ -63,7 +63,7 @@ object TasksPipelines {
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, er))
-      .andThen(TypeChecker(typeVarsCtx, proxyStore, er))
+      .andThen(TypeChecker(typeVarsCtx, proxyStore, er, continueIfErrors = true))
       .andThen(Concurrent(
         SSAPrinter(proxyStore, "  ", printTypes = true).andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
