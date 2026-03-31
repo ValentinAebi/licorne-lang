@@ -10,7 +10,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{AbstractInterpreter, Reasoning, Solver}
-import compiler.typing.{MeetJoinComputer, MutableUnionFind, Typer}
+import compiler.typing.{MeetJoinComputer, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 

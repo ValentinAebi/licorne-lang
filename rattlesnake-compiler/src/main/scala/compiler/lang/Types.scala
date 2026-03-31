@@ -1,11 +1,10 @@
 package compiler.lang
 
-import Formulas.*
-import Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.SSA.Scope
+import compiler.lang.Formulas.*
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
-import compiler.typing.UnionFind
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 

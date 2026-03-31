@@ -21,6 +21,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   export nestedContext.globalCtx
   export globalCtx.resolveObject
   export exitManager.{hasExited, reportHasExitedIfNeeded, markHasExited}
+  export exitManager.reset as resetHasExited
 
   def withOneMoreFrame: LocalValuesContext = new LocalValuesContext(this, level + 1, exitManager.copy)
 
@@ -114,6 +115,10 @@ object LocalValuesContext {
 
   final class ExitManager {
     private var exitedStatus = ExitedStatus.Active
+    
+    def reset(): Unit = {
+      exitedStatus = ExitedStatus.Active
+    }
 
     def copy: ExitManager = {
       val copy = new ExitManager()

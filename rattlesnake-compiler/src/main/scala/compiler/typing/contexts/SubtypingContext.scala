@@ -44,7 +44,7 @@ final class SubtypingContext(
 
   // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
-    originalType match {
+    dealiasingCtx.dealiasType(originalType).principalType match {
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>
@@ -84,8 +84,8 @@ final class SubtypingContext(
   }
 
   // TODO memoize? But we need to take smartcasts into account
-  def isSubtype(subT: Type, superT: Type): Boolean = (subT, superT) match {
-    case _ if subT == superT => true
+  def isSubtype(subT: Type, superT: Type): Boolean = (dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT)) match {
+    case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (_, AnyType) => true
     case (_, UnitType) => true
@@ -160,7 +160,7 @@ final class SubtypingContext(
         }
       case subject => subject.toString
     }
-    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $subjectDescr$superT, found $subT", posOpt)
+    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subjectDescr$subT", posOpt)
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = subjectOpt match {

@@ -57,6 +57,8 @@ final class SeqSet[T] private(private val underlyingMap: mutable.LinkedHashMap[T
     }
     None
   } else None
+  
+  def reverse: Iterable[T] = underlyingMap.keysIterator.toSeq
 
   private def possibleOrderings(ls: List[T]): List[List[T]] = {
 

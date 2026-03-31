@@ -3,7 +3,6 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Types.Type
-import compiler.typing.UnionFind
 import compiler.util.SeqSet
 
 // TODO cleaner pretty-printing system

@@ -125,6 +125,7 @@ object Errors {
         errorsConsumer(error)
         errorsConsumer("\n")
       }
+      errorsConsumer(s"\n${errors.size} errors\n")
     }
 
     /**
@@ -170,7 +171,7 @@ object Errors {
       errors.filterInPlace(!_.isWarning)
     }
 
-    private def displayExitMessage(): Unit = errorsConsumer("Rattlesnake compiler exiting\n")
+    private def displayExitMessage(): Unit = errorsConsumer("\nRattlesnake compiler exiting\n")
 
   }
 

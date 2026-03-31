@@ -23,6 +23,8 @@ final case class FunctionSignature(
                                   ) {
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
+  
+  def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
 
   override def toString: String = {
     val sb = StringBuilder()

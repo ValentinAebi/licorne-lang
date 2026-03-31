@@ -12,7 +12,7 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Simplifier
-import compiler.typing.{ImmutableUnionFind, MutableUnionFind}
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
@@ -23,7 +23,6 @@ object SSA {
 
   sealed abstract class Instr {
     private var astNodeOpt: Option[Ast] = None
-    private var _ufSnapshot: Option[ImmutableUnionFind] = None
 
     def setAstNode(astNode: Ast): this.type = {
       if (this.astNodeOpt.isDefined) {
@@ -36,12 +35,6 @@ object SSA {
     def getAstNodeOpt: Option[Ast] = astNodeOpt
 
     def getPosition: Option[Position] = getAstNodeOpt.flatMap(_.getPosition)
-
-    def ufSnapshot_=(unionFind: ImmutableUnionFind): Unit = {
-      _ufSnapshot = Some(unionFind)
-    }
-
-    def ufSnapshot: ImmutableUnionFind = _ufSnapshot.get
   }
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
@@ -154,7 +147,9 @@ object SSA {
     }
   }
 
-  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext, val movingUf: MutableUnionFind) extends Instr {
+  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
+    private val types = mutable.Map.empty[IdValue, Type]
+    private val smartcasts = mutable.Map.empty[Formula, Type]
 
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
@@ -163,7 +158,7 @@ object SSA {
 
     def saveType(idVal: IdValue, tpe: Type): Unit = {
       if (idVal.definingScope == this) {
-        movingUf.saveType(idVal, tpe)
+        types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
         outScopeOpt.get.saveType(idVal, tpe)
       } else {
@@ -171,25 +166,30 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, tpe: Type)(using Simplifier): Unit = {
-      movingUf.saveSmartcast(f, tpe)
+    def saveSmartcast(f: Formula, tpe: Type): Unit = {
+      smartcasts.put(f, tpe)
     }
 
-    def currentTypeOf(formula: Formula): Type = {
-      movingUf.currentTypeOf(formula)
-        .orElse(outScopeOpt.map(_.currentTypeOf(formula)))
+    def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
+      smartcastFor(formula)
+        .orElse(formula match {
+          case f: IdValue => types.get(f)
+          case _ => None
+        }).orElse(outScopeOpt.map(_.currentTypeOf(formula)))
         .getOrElse(NothingType)
     }
 
     def typeOfNoSmartcast(idValue: IdValue): Type = {
-      movingUf.typeOfNoSmartcast(idValue)
+      types.get(idValue)
         .orElse(outScopeOpt.map(_.typeOfNoSmartcast(idValue)))
         .getOrElse(NothingType)
     }
 
-    def smartcastFor(f: Formula): Option[Type] = {
-      movingUf.smartcastTypeOf(f)
-        .orElse(outScopeOpt.flatMap(_.smartcastFor(f)))
+    def smartcastFor(f: Formula)(using proxyStore: ProxyStore): Option[Type] = {
+      smartcasts.get(f).orElse(f match {
+        case f: IdValue => proxyStore.getProxy(f).flatMap(smartcasts.get)
+        case _ => None
+      }).orElse(outScopeOpt.flatMap(_.smartcastFor(f)))
     }
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
@@ -208,6 +208,10 @@ object SSA {
     }
 
     def getLocalValuesContextUnsafe: LocalValuesContext = valuesCtx.asInstanceOf[LocalValuesContext]
+
+    def resetHasExited(): Unit = {
+      getLocalValuesContextUnsafe.resetHasExited()
+    }
 
     def markHasExited(): Unit = {
       getLocalValuesContextUnsafe.markHasExited()
@@ -267,12 +271,11 @@ object SSA {
 
   object Scope {
 
-    def nestedInside(outScope: Scope): Scope = {
-      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, outScope.movingUf.copy)
-    }
+    def nestedInside(outScope: Scope): Scope =
+      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx, MutableUnionFind())
+      new Scope(None, globalValuesCtx)
 
     private val scopeUidGen = new AtomicLong(-1)
   }

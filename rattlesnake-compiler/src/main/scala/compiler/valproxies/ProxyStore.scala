@@ -38,12 +38,15 @@ final class ProxyStore {
       val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
       val (rightTrueInfos, rightFalseInfos) = infosFor(rhs)
       (BranchingInfo.empty, leftFalseInfos ++ rightFalseInfos)
+    case LogicalNot(operand) =>
+      val (operandTrueInfos, operandFalseInfos) = infosFor(operand)
+      (operandFalseInfos, operandTrueInfos)
     case leq@LessOrEq(lhs, rhs) =>
       (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
     case lt@LessThan(lhs, rhs) =>
       (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lt)))
     case TypePredicate(subject, tpe) =>
-      (BranchingInfo.ofSmartcast(subject, tpe), BranchingInfo.empty)
+      (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
     case _ => (BranchingInfo.empty, BranchingInfo.empty)
   }
 

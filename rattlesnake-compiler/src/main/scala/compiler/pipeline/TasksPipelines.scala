@@ -54,15 +54,23 @@ object TasksPipelines {
     val proxyStore = ProxyStore()
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
+      .andThen(Concurrent(
+        SSAPrinter(proxyStore, "  ", printTypes = false).andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+        IdentityStep(),
+        (_, program) => program
+      ))
       .andThen(MonotonicityAnalysis())
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, er))
+      .andThen(Concurrent(
+        SSAPrinter(proxyStore, "  ", printTypes = true).andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+        IdentityStep(),
+        (_, program) => program
+      ))
       // FIXME this implementation is temporary
       //.andThen(??? /* compilation to bytecode */)
-      .andThen(SSAPrinter("  "))
-      .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true))
       .andThen(MissingCompiler(er, printProgram = false))
   }
 

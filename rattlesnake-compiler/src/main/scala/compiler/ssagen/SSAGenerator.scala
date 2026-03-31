@@ -135,7 +135,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv, posOpt)
     }
-    println(proxyStore) // TODO remove (debug)
     er.displayAndTerminateIfErrors()
     program
   }
@@ -351,7 +350,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, _, _) =>
-              Some(LoopVarData(varId, beforeLoopVal = value, condVal = condScope.newVar(varId),
+              Some(LoopVarData(varId, beforeLoopVal = value, condVal = currScope.newVar(varId),
                 bodyLastVal = bodyScope.newVar(varId)))
             case _ => None
           }

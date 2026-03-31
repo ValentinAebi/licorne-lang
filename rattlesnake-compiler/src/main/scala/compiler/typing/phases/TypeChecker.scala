@@ -9,7 +9,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{AbstractInterpreter, Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
-import compiler.typing.{MeetJoinComputer, MutableUnionFind, SubtypingInfo, Typer}
+import compiler.typing.{MeetJoinComputer, SubtypingInfo, Typer}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 
 final class TypeChecker(
