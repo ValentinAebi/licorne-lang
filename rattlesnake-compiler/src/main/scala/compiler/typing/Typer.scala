@@ -13,6 +13,7 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
+import compiler.recurrences.Recurrence.Monotonicity
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
@@ -43,6 +44,8 @@ final class Typer(
                  )(using CompilationStep) {
 
   private given ResolutionContext = resolutionCtx
+
+  private given MeetJoinComputer = meetJoin
 
   private given ProxyStore = proxyStore
 
@@ -83,26 +86,38 @@ final class Typer(
         (for {
           recurrence <- varData.recurrenceOpt
           monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
-          inBodyType <- Some {
-            val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
-            val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
-            val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
-            simplifier.simplify(
-              monotonicity match {
-                case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
-                case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
-                case NonIncreasing => IntRangeType(inferredBound, preIterationBoundOpt)
-                case NonMonotonous => IntType
-              }
-            )
-          }
-          feedbackType <- absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)
         } yield {
+          val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
+          val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
+          val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
+          val inBodyType = simplifier.simplify(
+            monotonicity match {
+              case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
+              case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
+              case NonIncreasing => IntRangeType(inferredBound, preIterationBoundOpt)
+              case NonMonotonous => IntType
+            }
+          )
+          val feedbackType =
+            absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None).getOrElse {
+              preIterationBoundOpt match {
+                case Some(preIterationBound) =>
+                  simplifier.simplify(
+                    monotonicity match {
+                      case Constant => IntRangeType.singleton(preIterationBound)
+                      case NonDecreasing => IntRangeType.ofLowerBound(preIterationBound)
+                      case NonIncreasing => IntRangeType.ofUpperBound(preIterationBound)
+                      case NonMonotonous => IntType
+                    }
+                  )
+                case None => IntType
+              }
+            }
           val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
-          condScope.saveType(condVal, inCondType) // inside condition
-          bodyScope.saveType(condVal, inBodyType) // inside body
           // TODO maybe detect more precise after-loop-type in the presence of a recurrence
           currScope.saveType(condVal, inCondType) // after loop
+          condScope.saveSmartcast(condVal, inCondType) // inside condition
+          bodyScope.saveSmartcast(condVal, inBodyType) // inside body
           varData.handledThroughRecurrenceFlag = true
         }) orElse {
           // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
@@ -112,7 +127,8 @@ final class Typer(
               .asInstanceOf[KnownAndInitialized]
               .declarationTypeAnnotOpt
               .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
-          condScope.saveType(condVal, tpe)
+          currScope.saveType(condVal, tpe)
+          condScope.saveSmartcast(condVal, tpe)
           Some(())
         }
       }
@@ -652,18 +668,18 @@ final class Typer(
 
   private def leqToSmartcast(lhs: Formula, rhs: Formula): Option[(Formula, Type)] = {
     if (lhs.typeCanMention(rhs)) {
-      Some(lhs -> IntRangeType.ofUpperBound(lhs))
+      Some(lhs -> IntRangeType.ofUpperBound(rhs))
     } else if (rhs.typeCanMention(lhs)) {
-      Some(rhs -> IntRangeType.ofLowerBound(rhs))
+      Some(rhs -> IntRangeType.ofLowerBound(lhs))
     } else None
   }
 
   private def ltToSmartcast(lhs: Formula, rhs: Formula): Option[(Formula, Type)] = {
     import FormulasDsl.*
     if (lhs.typeCanMention(rhs)) {
-      Some(lhs -> IntRangeType.ofUpperBound(lhs - 1))
+      Some(lhs -> IntRangeType.ofUpperBound(rhs - 1))
     } else if (rhs.typeCanMention(lhs)) {
-      Some(rhs -> IntRangeType.ofLowerBound(rhs + 1))
+      Some(rhs -> IntRangeType.ofLowerBound(lhs + 1))
     } else None
   }
 

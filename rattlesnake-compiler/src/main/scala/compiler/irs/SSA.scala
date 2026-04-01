@@ -12,12 +12,13 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Simplifier
+import compiler.typing.MeetJoinComputer
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
-import scala.collection.mutable
+import scala.collection.{immutable, mutable}
 import scala.compiletime.uninitialized
 
 object SSA {
@@ -154,7 +155,21 @@ object SSA {
 
   final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
     private val types = mutable.Map.empty[IdValue, Type]
-    private val smartcasts = mutable.Map.empty[Formula, Type]
+    private val smartcasts = mutable.SeqMap.empty[Formula, Type]
+
+    export valuesCtx.globalCtx as globalValuesCtx
+
+    val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
+
+    val depth: Int = outScopeOpt match {
+      case Some(outScope) => outScope.depth + 1
+      case None => 0
+    }
+
+    private val uidGen = AtomicLong(-1)
+    private val values = mutable.LinkedHashSet.empty[IdValue]
+
+    def getSmartcasts: immutable.SeqMap[Formula, Type] = immutable.SeqMap.from(smartcasts)
 
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
@@ -171,8 +186,12 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, tpe: Type): Unit = {
-      smartcasts.put(f, tpe)
+    def saveSmartcast(f: Formula, tpe: Type)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
+      val newSmartcast = smartcastFor(f) match {
+        case Some(oldSmartcast) => meetJoin.computeMeet(oldSmartcast, tpe)
+        case None => tpe
+      }
+      smartcasts.put(f, newSmartcast)
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
@@ -237,18 +256,6 @@ object SSA {
                                (using CompilationStep): Unit = {
       getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, posOpt)
     }
-
-    export valuesCtx.globalCtx as globalValuesCtx
-
-    val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
-
-    val depth: Int = outScopeOpt match {
-      case Some(outScope) => outScope.depth + 1
-      case None => 0
-    }
-
-    private val uidGen = AtomicLong(-1)
-    private val values = mutable.LinkedHashSet.empty[IdValue]
 
     def newParam(srcId: FunOrVarId): ParamIdValue = newValue {
       ParamIdValue(srcId, this, _)

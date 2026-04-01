@@ -150,12 +150,16 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
 
   private def printScope(scope: Scope)(using pps: PrettyPrintString): Unit = {
     pps.add(s"SCOPE").addSpace().add(scope.scopeUid).addSpace()
-    if (scope.instructions.isEmpty) {
+    val allEntries: Iterable[Instr | (Formula, Type)] = scope.getSmartcasts.toIndexedSeq ++ scope.instructions
+    if (allEntries.isEmpty) {
       pps.add("{ /* empty */ }")
     } else {
       pps.block {
-        traverseIterable(scope.instructions.iterator) { instr =>
-          printInstr(instr, scope)
+        traverseIterable(allEntries.iterator) {
+          case (formula, tpe) =>
+            pps.add(s"smartcast $formula : $tpe")
+          case instr: Instr =>
+            printInstr(instr, scope)
         } {
           pps.newLine()
         }

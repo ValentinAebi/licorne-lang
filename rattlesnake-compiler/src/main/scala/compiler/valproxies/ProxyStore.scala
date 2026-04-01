@@ -45,7 +45,7 @@ final class ProxyStore {
       case leq@LessOrEq(lhs, rhs) =>
         (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
       case lt@LessThan(lhs, rhs) =>
-        (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lt)))
+        (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lhs)))
       case TypePredicate(subject, tpe) =>
         (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
       case _ => (BranchingInfo.empty, BranchingInfo.empty)

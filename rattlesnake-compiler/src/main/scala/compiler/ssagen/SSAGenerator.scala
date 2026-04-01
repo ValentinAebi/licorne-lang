@@ -248,20 +248,22 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope)
       for (stat <- body.stats) {
-        generateSSA(stat, funScope)
+        generateSSA(stat, funScope, newScopeIfBlock = false)
       }
       SSA.Function(owner, funId, Some(funScope))
     case None =>
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean = true)(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Unit = {
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     stat match {
+
       case expr: Asts.Expr =>
         val resultValue = currScope.newIntermediate("dummy")
         generateSSAExpr(resultValue, expr, currScope)
         currScope.saveInstr(Drop(resultValue), expr)
+
       case block@Asts.Block(stats) =>
         val blockScope = if (newScopeIfBlock) {
           val sc = Scope.nestedInside(currScope)
@@ -269,8 +271,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           sc
         } else currScope
         for (stat <- stats) {
-          generateSSA(stat, blockScope)
+          generateSSA(stat, blockScope, newScopeIfBlock = true)
         }
+
       case localDef@Asts.LocalDef(localName, typeAnnotTreeOpt, rhsOpt, reassigPermission) =>
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         typeAnnotOpt.foreach {
@@ -282,15 +285,16 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           reportError(s"$localName is already defined in this scope", stat.getPosition)
         } else rhsOpt match {
           case Some(rhs) =>
-            generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope)
+            generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope, newScopeIfBlock)
             generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
-              .withDesugaringSource(localDef), currScope)
+              .withDesugaringSource(localDef), currScope, newScopeIfBlock)
           case None =>
             typeAnnotOpt.foreach { typeAnnot =>
               currScope.saveInstr(LocalDecl(localName, typeAnnot), localDef)
             }
             currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, reassigPermission, typeAnnotOpt)
         }
+
       case assig@Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhsTree) =>
         if (!currScope.getLocalValuesContextUnsafe.knows(lhsLocalId)) {
           reportError(s"unknown variable: $lhsLocalId", stat.getPosition)
@@ -304,6 +308,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(newValue, rhsTree, currScope)
         currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
+
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
         val ownerVal = currScope.newIntermediate()
         generateSSAExpr(ownerVal, ownerTree, currScope)
@@ -312,14 +317,18 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget.UnresolvedField(fieldId), rhsVal), assig)
+
       case assig@Asts.VarAssig(lhs, typeAnnotOpt, rhs) =>
         reportError("assignment target is not valid", assig.getPosition)
+
       case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
         generateSSA(Asts.VarAssig(lhs, typeAnnot,
           Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
-        ).withDesugaringSource(stat), currScope)
+        ).withDesugaringSource(stat), currScope, newScopeIfBlock)
+
       case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
         reportError("in-place mutation is only allowed on local variables", stat.getPosition)
+
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
         val condVal = currScope.newIntermediate("cond")
         generateSSAExpr(condVal, condTree, currScope)
@@ -344,13 +353,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
         }
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope, variablesB.result()), stat)
+
       case whileLoop@Asts.WhileLoop(condTree, bodyTree) =>
         val condScope = Scope.nestedInside(currScope)
         val bodyScope = Scope.nestedInside(condScope)
         val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, _, _) =>
-              Some(LoopVarData(varId, beforeLoopVal = value, condVal = currScope.newVar(varId),
+              Some(LoopVarData(varId, beforeLoopVal = value, condVal = value.definingScope.newVar(varId),
                 bodyLastVal = bodyScope.newVar(varId)))
             case _ => None
           }
@@ -369,7 +379,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           // give up and generate a disjunction instead
           generateSSA(
             Asts.IfThenElse(condTree, bodyTree, None).withDesugaringSource(whileLoop),
-            currScope
+            currScope,
+            newScopeIfBlock
           )
         } else {
           for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
@@ -385,12 +396,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           currScope.saveInstr(loop, whileLoop)
           loopsCollector.addOne(loop)
         }
+
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
         generateSSA(Asts.Block(
           initStats :+ Asts.WhileLoop(cond, Asts.Block(
-            body +: stepStats
+            body.stats ++ stepStats
           ).withDesugaringSource(forLoop)).withDesugaringSource(forLoop)
-        ).withDesugaringSource(forLoop), currScope)
+        ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
+
       case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
         val retVal = currScope.newIntermediate("ret")
         returnedTreeOpt match {
@@ -640,7 +653,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           paramValsAndTypesB.addOne(paramVal -> tpe)
           bodyScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, ReassigPermission.Val, givenTypeOpt)
         }
-        generateSSA(body, bodyScope)
+        generateSSA(body, bodyScope, newScopeIfBlock = false)
         currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope), closureDefTree)
         None
       case panicTree@Asts.PanicExpr(msgTree) =>
