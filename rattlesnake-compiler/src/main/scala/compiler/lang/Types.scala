@@ -10,6 +10,7 @@ import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection
 import scala.collection.SeqMap
 
 
@@ -192,7 +193,7 @@ object Types {
     }
   }
 
-  extension (tpe: Type) def substitute(typesSubst: Map[TypeIdentifier, Type], valsSubst: Map[IdValue, Formula]): Type = tpe match {
+  extension (tpe: Type) def substitute(typesSubst: collection.Map[TypeIdentifier, Type], valsSubst: collection.Map[IdValue, Formula]): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
       typesSubst.apply(typeName)

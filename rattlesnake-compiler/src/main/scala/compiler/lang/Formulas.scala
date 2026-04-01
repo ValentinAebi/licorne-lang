@@ -5,6 +5,9 @@ import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Types.Type
 import compiler.util.SeqSet
 
+import scala.collection
+
+
 // TODO cleaner pretty-printing system
 object Formulas {
 
@@ -150,7 +153,7 @@ object Formulas {
   }
 
   // TODO may be optimized: when operand(s) do not change, return input as is
-  extension (formula: Formula) def substitute(subst: Map[IdValue, Formula]): Formula = formula match {
+  extension (formula: Formula) def substitute(subst: collection.Map[IdValue, Formula]): Formula = formula match {
     case value: IdValue => subst.getOrElse(value, value)
     case c: IntConst => c
     case c: BoolConst => c

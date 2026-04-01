@@ -497,7 +497,10 @@ final class Typer(
         case Some(sig) =>
           typeTypeArgsList(typeName, sig.typeParams, typeArgs, ambientVarianceOpt, currScope, posOpt)
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
-          checkArgumentsList(sig.params.map(_._2._1), argsWithTypes, sig.id, posOpt)
+          val paramsWithType = sig.params.map {
+            case (paramId, (paramType, paramVal)) => paramVal -> paramType
+          }
+          checkArgumentsList(paramsWithType, argsWithTypes, sig.id, posOpt)
         case None =>
           er.reportError(s"type not found: $typeName", posOpt)
       }
@@ -684,9 +687,9 @@ final class Typer(
             val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Option.when(reportErrors)(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val paramTypes = funSig.paramsWithoutThis
-              .map((_, tpe) => tpe.substitute(composedTypeSubst, Map.empty))
-            checkArgumentsList(paramTypes, typedCallArgs, funId, posOpt)
-            val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, Map.empty)
+              .map((paramVal, tpe) => paramVal -> tpe.substitute(composedTypeSubst, Map.empty))
+            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, funId, posOpt)
+            val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
             val invocationTarget = ResolvedFun(ownerSig, funSig, instantiatedRetType)
             (invocationTarget, instantiatedRetType)
           case _ => errorCase()
@@ -813,18 +816,30 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[Type], args: Iterable[(Option[Formula], Type)], argsTaker: Identifier, posOpt: Option[Position]): Unit = {
+  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], argsTaker: Identifier, posOpt: Option[Position]): collection.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
       er.reportError(s"call to $argsTaker: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
     }
+    val subst = mutable.Map.empty[IdValue, Formula]
     var argIdx = 1
-    for ((paramType, (argOpt, argType)) <- params.zipCommons(args)) {
+    for (((paramVal, paramType), (argOpt, argTypeBeforeSubst)) <- params.zipCommons(args)) {
+      val argType = argTypeBeforeSubst.substitute(Map.empty, subst)
       tryResolveTypeVars(paramType, argType)
       subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of call to $argsTaker", posOpt)
+      argOpt.foreach {
+        case arg if arg.idValsDependencies.forall(_.isInstanceOf[NamedIdValue]) =>
+          subst.put(paramVal, arg)
+        case arg: IdValue =>
+          proxyStore.getProxy(arg).foreach { proxy =>
+            subst.put(paramVal, proxy)
+          }
+        case _ => ()
+      }
       argIdx += 1
     }
+    subst
   }
 
   private def tryResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {
