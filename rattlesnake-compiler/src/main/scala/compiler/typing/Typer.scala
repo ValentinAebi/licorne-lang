@@ -51,16 +51,6 @@ final class Typer(
 
   private given Simplifier = simplifier
 
-  def typeFunction(function: Function, ownerTypeParamsCtx: TypeParamsContext)
-                  (using subtypingCtx: SubtypingContext): Unit = {
-    val Function(ownerId, funId, bodyOpt) = function
-    val funSig = resolutionCtx.resolveFunSig(ownerId, funId).forceGetFunSig
-    bodyOpt.foreach { body =>
-      val typeParamsCtx = ownerTypeParamsCtx.extendedWith(funSig.typeParams)
-      typeScopeInstructions(body, BranchingInfo.empty)(using typeParamsCtx)
-    }
-  }
-
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
       scope.resetHasExited()
@@ -650,7 +640,7 @@ final class Typer(
       }
     }
     for (assumption <- branchInfo.assumptions) {
-      solver.assert(assumption)
+      solver.assert(proxyStore.develop(assumption))
       val smartcastOpt = assumption match {
         case LessOrEq(lhs, rhs) =>
           leqToSmartcast(lhs, rhs)

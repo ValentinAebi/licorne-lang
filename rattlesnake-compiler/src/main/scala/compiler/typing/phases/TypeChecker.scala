@@ -2,6 +2,7 @@ package compiler.typing.phases
 
 import compiler.irs.SSA
 import compiler.lang.FunctionSignature
+import compiler.lang.Types.IntRangeType
 import compiler.lang.Types.PrimitiveType.UnitType
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
@@ -56,7 +57,19 @@ final class TypeChecker(
     func.bodyOpt.foreach { body =>
       val typer = Typer(Some(funSig.retType), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, solver, simplifier, absInt, er)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
-      typer.typeScopeInstructions(body, BranchingInfo.empty)(using TypeParamsContext(ownerSig.typeParams))
+      solver.onNewFrame {
+        funSig.paramsInclThis.foreach {
+          case (paramVal, IntRangeType(lowerBoundOpt, upperBoundOpt)) =>
+            lowerBoundOpt.foreach { lb =>
+              solver.assertLeq(lb, paramVal)
+            }
+            upperBoundOpt.foreach { ub =>
+              solver.assertLeq(paramVal, ub)
+            }
+          case _ => ()
+        }
+        typer.typeScopeInstructions(body, BranchingInfo.empty)(using TypeParamsContext(ownerSig.typeParams))
+      }
       if (funSig.retType != UnitType && !body.hasExited) {
         // TODO also check for closures
         er.reportError(s"cannot prove that method ${funSig.functionName} with non-$UnitType return type always returns", body.getPosition)

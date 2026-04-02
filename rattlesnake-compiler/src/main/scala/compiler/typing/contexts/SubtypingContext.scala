@@ -112,9 +112,10 @@ final class SubtypingContext(
 
   def isSubtype(subject: Formula, subT: Type, superT: Type): Boolean = superT match {
     case superT if isSubtype(subT, superT) => true
-    case IntRangeType(lowerBoundOpt, upperBoundOpt)
-      if lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject))
-        && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub)) => true
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+      val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
+      lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
+        && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
     case _ => false
   }
 

@@ -1,5 +1,6 @@
 package compiler.valproxies
 
+import compiler.irs.SSA.InvocationTarget.ResolvedFun
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
 
@@ -23,6 +24,31 @@ final class ProxyStore {
   }
 
   def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal)
+  
+  def getProxyIfIdValue(formula: Formula): Option[Formula] = formula match {
+    case value: IdValue => getProxy(value)
+    case _ => None
+  }
+  
+  def develop(formula: Formula): Formula = formula match {
+    case value: IdValue => getProxy(value).getOrElse(value)
+    case formula: ConstFormula => formula
+    case Select(owner, field) => Select(develop(owner), field)
+    case Call(receiver, func, typeArgs, args) =>
+      Call(develop(receiver), func, typeArgs, args.map(develop))
+    case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
+    case Neg(operand) => Neg(develop(operand))
+    case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))
+    case DivBy(lhs, rhs) => DivBy(develop(lhs), develop(rhs))
+    case Modulo(lhs, rhs) => Modulo(develop(lhs), develop(rhs))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(develop(lhs), develop(rhs))
+    case LogicalNot(operand) => LogicalNot(develop(operand))
+    case LogicalOr(lhs, rhs) => LogicalOr(develop(lhs), develop(rhs))
+    case Equality(lhs, rhs) => Equality(develop(lhs), develop(rhs))
+    case LessOrEq(lhs, rhs) => LessOrEq(develop(lhs), develop(rhs))
+    case LessThan(lhs, rhs) => LessThan(develop(lhs), develop(rhs))
+    case TypePredicate(subject, tpe) => TypePredicate(develop(subject), tpe)
+  }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
     case Some(proxy) => infosFor(proxy, ambientBranchingInfo)
