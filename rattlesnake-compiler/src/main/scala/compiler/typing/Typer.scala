@@ -645,12 +645,10 @@ final class Typer(
         case LessOrEq(lhs, rhs) =>
           leqToSmartcast(lhs, rhs)
         case LessThan(lhs, rhs) =>
-          leqToSmartcast(lhs, rhs)
+          ltToSmartcast(lhs, rhs)
         case _ => None
       }
       smartcastOpt.foreach { (subject, smartcastType) =>
-        val oldType = scope.currentTypeOf(subject)
-        val newType = meetJoin.computeMeet(oldType, smartcastType)
         scope.saveSmartcast(subject, smartcastType)
       }
     }
