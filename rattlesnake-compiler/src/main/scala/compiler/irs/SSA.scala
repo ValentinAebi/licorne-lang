@@ -2,6 +2,7 @@ package compiler.irs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.Asts.Ast
+import compiler.irs.SSA.InvocationTarget.*
 import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Formulas.*
@@ -143,6 +144,12 @@ object SSA {
     case UnresolvableFun(funId: FunOrVarId)
     case ResolvedFun(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type)
 
+    def functionName: FunOrVarId = this match {
+      case UnresolvedFun(funId) => funId
+      case UnresolvableFun(funId) => funId
+      case ResolvedFun(ownerSig, funSig, instantiatedReturnType) => funSig.functionName
+    }
+    
     override def toString: String = this match {
       case UnresolvedFun(funId) =>
         s"$funId<resol:?>"
@@ -178,6 +185,9 @@ object SSA {
 
     def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
       if (idVal.definingScope == this) {
+        if (types.contains(idVal)){
+          throw IllegalStateException(s"$idVal has already been assigned a type")
+        }
         types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
         outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore)))
@@ -200,12 +210,6 @@ object SSA {
           case f: IdValue => types.get(f)
           case _ => None
         }).orElse(outScopeOpt.map(_.currentTypeOf(formula)))
-        .getOrElse(NothingType)
-    }
-
-    def typeOfNoSmartcast(idValue: IdValue): Type = {
-      types.get(idValue)
-        .orElse(outScopeOpt.map(_.typeOfNoSmartcast(idValue)))
         .getOrElse(NothingType)
     }
 

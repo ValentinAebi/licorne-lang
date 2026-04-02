@@ -30,8 +30,8 @@ final class GlobalValuesContext extends ValuesContext {
       value
     })
     
-  def getNameOfObject(objectVal: IdValue): TypeIdentifier =
-    objNameToId.apply(objectVal)
+  def getNameOfObject(objectVal: IdValue): Option[TypeIdentifier] =
+    objNameToId.get(objectVal)
     
   def saveTypeVariable(tv: TypeVariable, posOpt: Option[Position]): Unit = {
     typeVariables.addOne((tv, posOpt))

@@ -7,10 +7,10 @@ import compiler.irs.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.ssagen.SSAGenerator
+import compiler.typing.TypeHintsStore
 import compiler.typing.contexts.TypeVariablesContext
-import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalysis, SubtypingChecker, TypeAliasesAnalyzer, TypeChecker}
+import compiler.typing.phases.*
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
@@ -52,20 +52,24 @@ object TasksPipelines {
                            er: ErrorReporter) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
+    val typeHintsStore = TypeHintsStore()
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, "  ", printTypes = false).andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+        SSAPrinter(proxyStore, "  ", printTypes = false)
+          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
       ))
       .andThen(MonotonicityAnalysis())
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, er))
+      .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
-      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, er))
-      .andThen(TypeChecker(typeVarsCtx, proxyStore, er, continueIfErrors = true))
+      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, er))
+      .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, er, continueIfErrors = true))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, "  ", printTypes = true).andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+        SSAPrinter(proxyStore, "  ", printTypes = true)
+          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
       ))

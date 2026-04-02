@@ -9,6 +9,7 @@ import compiler.pipeline.CompilationStep
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.typing.contexts.ResolutionContext.FuncResolResult.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.smartcasting.TypesReasoningCache
 import compiler.util.zipCommons
@@ -43,11 +44,11 @@ final case class ResolutionContext(
 
   def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
     resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
-      case None => FuncResolResult.OwnerNotFound
+      case None => OwnerNotFound
       case Some(ownerSig) =>
         ownerSig.functions.get(funId) match {
-          case None => FuncResolResult.FuncNotFound(ownerSig)
-          case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
+          case None => FuncNotFound(ownerSig)
+          case Some(funSig) => Success(ownerSig, funSig)
         }
     }
   }
@@ -90,6 +91,11 @@ object ResolutionContext {
     def forceGetFunSig: FunctionSignature = this match {
       case Success(_, funSig) => funSig
       case _ => throw UnsupportedOperationException("function resolution failed")
+    }
+    
+    def asOption: Option[FunctionSignature] = this match {
+      case Success(ownerSig, funSig) => Some(funSig)
+      case _ => None
     }
   }
 

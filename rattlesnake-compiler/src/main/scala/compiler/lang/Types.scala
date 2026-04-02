@@ -70,7 +70,7 @@ object Types {
     override def toString: String = s"(${params.mkString(", ")}) -> $result"
   }
 
-  final case class UnionType(types: SeqSet[Type]) extends RefinedType {
+  final case class UnionType private(types: SeqSet[Type]) extends RefinedType {
     override def principalType: PrincipalType = if types.size == 1 then types.head.principalType else AnyType
 
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
@@ -79,11 +79,24 @@ object Types {
   }
 
   object UnionType {
-    def apply(types: Type*): UnionType =
-      UnionType(SeqSet(types))
+
+    def apply(types: SeqSet[Type]): Type = {
+      val flattenedTypes = types.flatMap {
+        case UnionType(types) => types
+        case tpe => List(tpe)
+      }
+      flattenedTypes.size match {
+        case 0 => NothingType
+        case 1 => flattenedTypes.head
+        case 2 => new UnionType(flattenedTypes)
+      }
+    }
+
+    def apply(types: Type*): Type =
+      apply(SeqSet(types))
   }
 
-  final case class IntersectionType(types: SeqSet[Type]) extends RefinedType {
+  final case class IntersectionType private(types: SeqSet[Type]) extends RefinedType {
     override def principalType: PrincipalType = AnyType
 
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
@@ -92,14 +105,21 @@ object Types {
   }
 
   object IntersectionType {
-    def apply(types: Type*): IntersectionType = {
-      val typesB = SeqSet.newBuilder[Type]
-      types.foreach {
-        case IntersectionType(nestedTypes) => typesB.addAll(nestedTypes)
-        case tpe => typesB.addOne(tpe)
+
+    def apply(types: SeqSet[Type]): Type = {
+      val flattenedTypes = types.flatMap {
+        case IntersectionType(types) => types
+        case tpe => List(tpe)
       }
-      IntersectionType(typesB.build())
+      flattenedTypes.size match {
+        case 0 => AnyType
+        case 1 => flattenedTypes.head
+        case _ => new IntersectionType(flattenedTypes)
+      }
     }
+
+    def apply(types: Type*): Type =
+      apply(SeqSet(types))
   }
 
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends RefinedType {

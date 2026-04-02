@@ -28,6 +28,9 @@ final class SeqSet[T] private(private val underlyingMap: mutable.LinkedHashMap[T
   override def map[B](f: T => B): SeqSet[B] =
     new SeqSet(underlyingMap.map((k, _) => (f(k), null)))
 
+  override def flatMap[B](f: T => IterableOnce[B]): SeqSet[B] =
+    new SeqSet(underlyingMap.flatMap((k, _) => f(k).iterator.map(_ -> null)))
+
   def matches[R](pfs: PartialFunction[T, R]*): Option[List[R]] = if pfs.size == size then {
 
     def tryToMatchOrdering(ordering: List[T]): Option[List[R]] = {

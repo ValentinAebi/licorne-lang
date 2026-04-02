@@ -209,10 +209,18 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeJoinOfRanges(types: Iterable[IntRangeType]): IntRangeType = IntRangeType(
-    filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMin),
-    filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
-  )
+  def computeJoinOfRanges(types: Iterable[IntRangeType]): IntRangeType = {
+
+    def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
+      if bounds.isEmpty || bounds.exists(_.isEmpty) then None
+      else minOrMax(bounds.flatten)
+    }
+
+    IntRangeType(
+      filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMin),
+      filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
+    )
+  }
 
   def computeMeet(types: Type*): Type =
     computeMeet(types.toList)
@@ -231,14 +239,17 @@ final class MeetJoinComputer(
     simplifier.simplify(rawMeet)
   }
 
-  def computeMeetOfRanges(types: Iterable[IntRangeType]): IntRangeType = IntRangeType(
-    filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMax),
-    filterNoEmpty(types.map(_.upperBoundOpt), solver.intMin)
-  )
+  def computeMeetOfRanges(types: Iterable[IntRangeType]): IntRangeType = {
 
-  private def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
-    if bounds.isEmpty || bounds.exists(_.isEmpty) then None
-    else minOrMax(bounds.flatten)
+    def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
+      if bounds.isEmpty || bounds.forall(_.isEmpty) then None
+      else minOrMax(bounds.flatten)
+    }
+
+    IntRangeType(
+      filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMax),
+      filterNoEmpty(types.map(_.upperBoundOpt), solver.intMin)
+    )
   }
 
 }

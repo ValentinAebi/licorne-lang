@@ -13,7 +13,6 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
-import compiler.recurrences.Recurrence.Monotonicity
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
@@ -21,7 +20,7 @@ import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
-import compiler.util.zipCommons
+import compiler.util.{SeqSet, zipCommons}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
@@ -37,6 +36,7 @@ final class Typer(
                    subtypingCtx: SubtypingContext,
                    meetJoin: MeetJoinComputer,
                    proxyStore: ProxyStore,
+                   typeHintsStore: TypeHintsStore,
                    solver: Solver,
                    simplifier: Simplifier,
                    absInt: AbstractInterpreter,
@@ -162,7 +162,8 @@ final class Typer(
     case StaticAssert(value) => ???
 
     case AssignVal(assigned, src) =>
-      currScope.saveType(assigned, currScope.currentTypeOf(src))
+      val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src))
+      currScope.saveType(assigned, assignedType)
 
     case AssignIntConst(assigned, src) =>
       currScope.saveType(assigned, IntRangeType.singleton(src))
@@ -296,6 +297,22 @@ final class Typer(
 
     case scope: Scope =>
       typeScopeInstructions(scope, BranchingInfo.empty)
+  }
+
+  private def tryToApplyHint(srcVal: IdValue, regularType: Type): Type = {
+    val appliedHints = mutable.ListBuffer.empty[Type]
+    val hintsIter = typeHintsStore.getHints(srcVal).iterator
+    while (hintsIter.hasNext) {
+      val hint = hintsIter.next()
+      if (!subtypingCtx.isSubtype(regularType, hint) && subtypingCtx.canProveHasType(srcVal, hint)) {
+        appliedHints.addOne(hint)
+      }
+    }
+    if appliedHints.isEmpty then regularType
+    else if appliedHints.forall(hint => subtypingCtx.isSubtype(hint, regularType)) then IntersectionType(SeqSet(appliedHints))
+    else {
+      IntersectionType(SeqSet(regularType +: appliedHints))
+    }
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
@@ -555,7 +572,9 @@ final class Typer(
     }
     for (paramId, paramType) <- paramsInclThis do {
       dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
-      sigScope.saveType(paramId, paramType)(using fullTypeParamsCtx)
+      if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty){
+        sigScope.saveType(paramId, paramType)(using fullTypeParamsCtx)
+      }
     }
     dealiasAndTypeType(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
   }
@@ -642,6 +661,8 @@ final class Typer(
     for (assumption <- branchInfo.assumptions) {
       solver.assert(proxyStore.develop(assumption))
       val smartcastOpt = assumption match {
+        // TODO maybe we should rather isolate the term with the most narrow scope?
+        //  (could be for instance x in x + y <= a + b + 1)
         case LessOrEq(lhs, rhs) =>
           leqToSmartcast(lhs, rhs)
         case LessThan(lhs, rhs) =>

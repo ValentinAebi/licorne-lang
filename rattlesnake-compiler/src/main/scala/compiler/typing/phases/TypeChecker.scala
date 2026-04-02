@@ -10,12 +10,13 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{AbstractInterpreter, Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
-import compiler.typing.{MeetJoinComputer, SubtypingInfo, Typer}
+import compiler.typing.{MeetJoinComputer, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 
 final class TypeChecker(
                          typeVarsCtx: TypeVariablesContext,
                          proxyStore: ProxyStore,
+                         typeHintsStore: TypeHintsStore,
                          er: ErrorReporter,
                          continueIfErrors: Boolean = false
                        ) extends CompilerStep[(Program, SubtypingInfo), Program] {
@@ -38,7 +39,7 @@ final class TypeChecker(
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(
-        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, solver, simplifier, absInt, er),
+        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, solver, simplifier, absInt, er),
         er
       )
     }
@@ -55,7 +56,7 @@ final class TypeChecker(
 
   private def checkFunc(funSig: FunctionSignature, func: SSA.Function, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, subtypingCtx: SubtypingContext, meetJoin: MeetJoinComputer, solver: Solver, simplifier: Simplifier, absInt: AbstractInterpreter): Unit =
     func.bodyOpt.foreach { body =>
-      val typer = Typer(Some(funSig.retType), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, solver, simplifier, absInt, er)
+      val typer = Typer(Some(funSig.retType), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, solver, simplifier, absInt, er)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
       solver.onNewFrame {
         funSig.paramsInclThis.foreach {

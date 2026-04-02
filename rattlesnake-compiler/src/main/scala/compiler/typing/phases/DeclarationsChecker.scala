@@ -5,13 +5,14 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.Reasoning
-import compiler.typing.{MeetJoinComputer, SubtypingInfo, Typer}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.typing.{MeetJoinComputer, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
 final class DeclarationsChecker(
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
+                                 typeHintsStore: TypeHintsStore,
                                  er: ErrorReporter
                                ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
@@ -26,9 +27,17 @@ final class DeclarationsChecker(
     Reasoning.usingFreshReasoningToolkit { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, absInt) =>
+
+      // save types of objects
+      val globalValsCtx = program.globalValuesContext
+      val globalScope = globalValsCtx.globalScope
+      for ((objectId, objectSig) <- program.objects) {
+        val objVal = globalValsCtx.resolveObject(objectId)
+        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, resolCtx, proxyStore)
+      }
       
       val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, solver, simplifier, absInt, er)
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, solver, simplifier, absInt, er)
 
       for ((_, interfaceSig) <- program.interfaces) {
         typer.typeInterfaceSig(interfaceSig)
