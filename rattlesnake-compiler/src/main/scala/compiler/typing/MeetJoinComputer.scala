@@ -225,7 +225,7 @@ final class MeetJoinComputer(
         case None =>
           types.asIterableOfType[IntRangeType] match {
             case Some(ranges) => computeMeetOfRanges(ranges)
-            case None => types.lastOption.getOrElse(NothingType)
+            case None => types.lastOption.getOrElse(AnyType)
           }
       }
     simplifier.simplify(rawMeet)
