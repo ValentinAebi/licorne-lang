@@ -2,7 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.{Formula, IdValue, IntermediateIdValue}
+import compiler.lang.Formulas.{ConstFormula, Formula, IdValue, IntermediateIdValue}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -112,7 +112,7 @@ final class SubtypingContext(
 
   def isSubtype(subject: Formula, subT: Type, superT: Type): Boolean =
     isSubtype(subT, superT) || canProveHasType(subject, superT)
-  
+
   def canProveHasType(subject: Formula, tpe: Type): Boolean = tpe match {
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
@@ -170,15 +170,16 @@ final class SubtypingContext(
     enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
-    val subjectDescr = subject match {
+    val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.getProxy(subject) match {
-          case Some(proxy) => s"$proxy : "
-          case None => ""
+          case Some(proxy: ConstFormula) => proxy.toString
+          case Some(proxy) => s"$proxy : $subT"
+          case None => subT.toString
         }
       case subject => subject.toString
     }
-    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subjectDescr$subT", posOpt)
+    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr", posOpt)
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = subjectOpt match {

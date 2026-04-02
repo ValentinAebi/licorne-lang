@@ -626,6 +626,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
         }
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
+        // FIXME should not use smartcasts anymore, maybe remap to result value
+        // Also need to modify SSA.Cast to take an input value and a result value
+        // Goal: smartcasts should not be updated in the middle of a scope, since they are recorded for subsequent phases
         generateSSAExpr(resultVal, castExprTree, currScope)
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None

@@ -269,11 +269,11 @@ final class Typer(
       }
 
     case conv@Conversion(assigned, inValue, targetType) =>
-      val inValType = currScope.currentTypeOf(inValue)
-      if (TypeConversion.conversionFor(inValType, targetType).isDefined) {
+      val inValType = currScope.currentTypeOf(inValue).principalType
+      if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
         currScope.saveType(assigned, targetType)
       } else {
-        er.reportError(s"cannot convert $inValType to $targetType", conv.getPosition)
+        er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
       }
 
     case ret@Return(retVal) =>
@@ -304,15 +304,13 @@ final class Typer(
     val hintsIter = typeHintsStore.getHints(srcVal).iterator
     while (hintsIter.hasNext) {
       val hint = hintsIter.next()
-      if (!subtypingCtx.isSubtype(regularType, hint) && subtypingCtx.canProveHasType(srcVal, hint)) {
+      if (subtypingCtx.canProveHasType(srcVal, hint)) {
         appliedHints.addOne(hint)
       }
     }
     if appliedHints.isEmpty then regularType
     else if appliedHints.forall(hint => subtypingCtx.isSubtype(hint, regularType)) then IntersectionType(SeqSet(appliedHints))
-    else {
-      IntersectionType(SeqSet(regularType +: appliedHints))
-    }
+    else IntersectionType(SeqSet(regularType +: appliedHints))
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])

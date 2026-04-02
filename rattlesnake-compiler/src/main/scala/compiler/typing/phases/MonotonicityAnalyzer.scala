@@ -9,7 +9,7 @@ import io.ksmt.solver.z3.KZ3Solver
 
 import scala.util.Using
 
-final class MonotonicityAnalysis extends CompilerStep[Program, Program] {
+final class MonotonicityAnalyzer extends CompilerStep[Program, Program] {
 
   override def apply(program: Program): Program = {
     for (loop <- program.loops) {

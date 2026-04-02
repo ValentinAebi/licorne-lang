@@ -21,7 +21,7 @@ final class TypeHintsStore {
   }
 
   override def toString: String = hints.map { (idVal, hints) =>
-    s"$idVal: ${hints.mkString("{ ", ", ", " }")}"
-  }.mkString("{\n", ",\n", "\n")
+    s"   $idVal: ${hints.mkString("{ ", ", ", " }")}"
+  }.mkString("{\n", ",\n", "\n}")
 
 }

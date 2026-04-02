@@ -3,7 +3,7 @@ typealias AtLeast(i: Int) = [i,]
 
 object Main {
 
-   fn clamp(x: Int, min: Int, max: Int) -> [min, max] {
+   fn clamp(x: Int, min: Int, max: [min,]) -> [min, max] {
       return
         when x < min then min
         else when x < max then x
@@ -15,7 +15,7 @@ object Main {
    }
 
    fn bar() {
-      foo(42, "Hello")  //> E : method argument: expected AtLeast(42), found String
+      foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found String
    }
 
    fn abc(ls: List[Bool]) {

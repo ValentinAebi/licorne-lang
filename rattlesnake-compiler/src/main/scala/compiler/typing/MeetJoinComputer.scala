@@ -87,10 +87,10 @@ final class MeetJoinComputer(
         }
 
         val rawJoin =
-          if namedTypes.size == retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-          else if rangeTypes.size == retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
-          else if primitiveTypes.size == retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
-          else if closureTypes.size == retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+          if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+          else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
+          else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
+          else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
           else AnyType
         simplifier.simplify(rawJoin)
     }

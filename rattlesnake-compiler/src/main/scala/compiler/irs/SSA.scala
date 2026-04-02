@@ -149,7 +149,7 @@ object SSA {
       case UnresolvableFun(funId) => funId
       case ResolvedFun(ownerSig, funSig, instantiatedReturnType) => funSig.functionName
     }
-    
+
     override def toString: String = this match {
       case UnresolvedFun(funId) =>
         s"$funId<resol:?>"
@@ -176,6 +176,8 @@ object SSA {
     private val uidGen = AtomicLong(-1)
     private val values = mutable.LinkedHashSet.empty[IdValue]
 
+    val scopeUid: Long = scopeUidGen.incrementAndGet()
+
     def getSmartcasts: immutable.SeqMap[Formula, Type] = immutable.SeqMap.from(smartcasts)
 
     def isNestedIn(outerScope: Scope): Boolean =
@@ -196,12 +198,10 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, tpe: Type)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
-      val newSmartcast = smartcastFor(f) match {
-        case Some(oldSmartcast) => meetJoin.computeMeet(oldSmartcast, tpe)
-        case None => tpe
-      }
-      smartcasts.put(f, newSmartcast)
+    def saveSmartcast(f: Formula, smartcastType: Type)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
+      val oldType = currentTypeOf(f)
+      val newType = meetJoin.computeMeet(oldType, smartcastType)
+      smartcasts.put(f, newType)
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
@@ -214,13 +214,16 @@ object SSA {
     }
 
     def smartcastFor(f: Formula)(using proxyStore: ProxyStore): Option[Type] = {
-      smartcasts.get(f).orElse(f match {
-        case f: IdValue => proxyStore.getProxy(f).flatMap(smartcasts.get)
-        case _ => None
-      }).orElse(outScopeOpt.flatMap(_.smartcastFor(f)))
+      smartcasts.get(f).orElse {
+        outScopeOpt.flatMap(_.smartcastFor(f))
+      }
     }
 
-    val scopeUid: Long = scopeUidGen.incrementAndGet()
+    private def typeOfNoSmartcast(idValue: IdValue): Type = {
+      types.get(idValue).orElse {
+        outScopeOpt.map(_.typeOfNoSmartcast(idValue))
+      }.getOrElse(NothingType)
+    }
 
     override def toString: String = {
       val outerScopeDescr = outScopeOpt match {

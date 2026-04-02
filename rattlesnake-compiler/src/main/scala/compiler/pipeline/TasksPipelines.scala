@@ -61,7 +61,7 @@ object TasksPipelines {
         IdentityStep(),
         (_, program) => program
       ))
-      .andThen(MonotonicityAnalysis())
+      .andThen(MonotonicityAnalyzer())
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore))
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
