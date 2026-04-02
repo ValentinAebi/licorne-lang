@@ -59,6 +59,18 @@ final class PrettyPrintString(indentUnit: String) {
     this
   }
 
+  def addAligned(s: String, alignmentGranularity: Int, padChar: Char = ' ', padIfExact: Boolean = true): this.type = {
+    if (lines.nonEmpty) {
+      val currLineLen = lines.last.length
+      val paddingLen =
+        if !padIfExact && currLineLen % alignmentGranularity == 0
+        then 0
+        else alignmentGranularity - currLineLen % alignmentGranularity
+      add(padChar.toString.repeat(paddingLen))
+    }
+    add(s)
+  }
+
   def addln(s: String): this.type = {
     add(s).newLine()
   }

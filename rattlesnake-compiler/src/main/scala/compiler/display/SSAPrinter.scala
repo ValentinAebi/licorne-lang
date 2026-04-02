@@ -13,7 +13,12 @@ import compiler.valproxies.ProxyStore
 
 import java.util.stream.Collectors
 
-final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: Boolean) extends CompilerStep[Program, String] {
+final class SSAPrinter(
+                        proxyStore: ProxyStore,
+                        indentUnit: String,
+                        printTypes: Boolean,
+                        commentsAlignmentGranularity: Int = 30
+                      ) extends CompilerStep[Program, String] {
 
   private given ProxyStore = proxyStore
 
@@ -212,12 +217,14 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
         }
       }
       pps.add("END IF")
-    case SSA.StaticTypeAssert(value, tpe) =>
-      pps.add(s"TYPE-ASSERT ${maybeTyped(value, scope)} : $tpe")
-    case SSA.StaticAssert(value) =>
-      pps.add(s"ASSERT ${maybeTyped(value, scope)}")
+    case SSA.StaticTypeAssert(assertedValue, tpe) =>
+      pps.add(s"TYPE-ASSERT ${maybeTyped(assertedValue, scope)} : $tpe")
+    case SSA.StaticAssert(assertionValue) =>
+      pps.add(s"ASSERT ${maybeTyped(assertionValue, scope)}")
+      maybePrintProxyOf(assertionValue)
     case AssignVal(assigned, src) =>
       pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
+      maybePrintProxyOf(src)
     case AssignIntConst(assigned, src) =>
       pps.add(s"INTC ${maybeTyped(assigned, scope)} := $src")
     case AssignBoolConst(assigned, src) =>
@@ -285,6 +292,13 @@ final class SSAPrinter(proxyStore: ProxyStore, indentUnit: String, printTypes: B
 
   private def maybeTyped(formula: Formula, scope: Scope): String =
     if printTypes then s"$formula : ${scope.currentTypeOf(formula)}" else formula.toString
+
+  private def maybePrintProxyOf(idValue: IdValue)(using pps: PrettyPrintString): Unit =
+    proxyStore.getProxy(idValue) match {
+      case Some(proxy) if proxy != idValue =>
+        pps.addAligned(s"// $idValue := $proxy", alignmentGranularity = commentsAlignmentGranularity)
+      case _ => ()
+    }
 
   private def printTypeArgsList(typeArgs: List[Type])(using pps: PrettyPrintString): Unit = {
     if (typeArgs.nonEmpty) {
