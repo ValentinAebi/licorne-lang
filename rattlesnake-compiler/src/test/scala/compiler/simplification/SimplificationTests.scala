@@ -27,7 +27,7 @@ final class SimplificationTests {
   private val dummyScope = Scope.root(GlobalValuesContext())
 
   private def mkVal(id: String): ValIdValue =
-    ValIdValue(NormalFunOrVarId(id), dummyScope, 0)
+    ValIdValue(NormalFunOrVarId(id), dummyScope, 0, None)
 
   private val a = mkVal("a")
   private val b = mkVal("b")

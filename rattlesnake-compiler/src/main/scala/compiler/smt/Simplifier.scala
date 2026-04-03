@@ -20,15 +20,15 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
       val simplifiedTypes = types.map(simplify)
       val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
       filteredTypes.size match {
-        case 0 => AnyType
+        case 0 => NothingType
         case 1 => simplifiedTypes.head
         case _ => UnionType(simplifiedTypes)
       }
     case IntersectionType(originalTypes) =>
       val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
-      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(otherType, tpe)))
+      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => otherType != tpe && subtypingCtx.isSubtype(otherType, tpe)))
       filteredTypes.size match {
-        case 0 => NothingType
+        case 0 => AnyType
         case 1 => filteredTypes.head
         case _ => IntersectionType(filteredTypes)
       }

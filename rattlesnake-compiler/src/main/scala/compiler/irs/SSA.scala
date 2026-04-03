@@ -1,7 +1,7 @@
 package compiler.irs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.Asts.Ast
+import compiler.irs.Asts.{Ast, Source}
 import compiler.irs.SSA.InvocationTarget.*
 import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
@@ -111,7 +111,7 @@ object SSA {
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
-  final case class MkClosure(assigned: IdValue, params: List[(ValIdValue, Type)], var body: Scope) extends AssigningInstr
+  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope) extends AssigningInstr
 
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
@@ -187,7 +187,7 @@ object SSA {
 
     def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
       if (idVal.definingScope == this) {
-        if (types.contains(idVal)){
+        if (types.contains(idVal)) {
           throw IllegalStateException(s"$idVal has already been assigned a type")
         }
         types.put(idVal, tpe)
@@ -264,16 +264,16 @@ object SSA {
       getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, posOpt)
     }
 
-    def newParam(srcId: FunOrVarId): ParamIdValue = newValue {
-      ParamIdValue(srcId, this, _)
+    def newParam(srcId: FunOrVarId, posOpt: Option[Position]): ParamIdValue = newValue {
+      ParamIdValue(srcId, this, _, posOpt)
     }
 
-    def newVal(srcId: FunOrVarId): ValIdValue = newValue {
-      ValIdValue(srcId, this, _)
+    def newVal(srcId: FunOrVarId, posOpt: Option[Position]): ValIdValue = newValue {
+      ValIdValue(srcId, this, _, posOpt)
     }
 
-    def newVar(srcId: FunOrVarId): VarIdValue = newValue {
-      VarIdValue(srcId, this, _)
+    def newVar(srcId: FunOrVarId, descrOpt: Option[String], posOpt: Option[Position]): VarIdValue = newValue {
+      VarIdValue(srcId, this, _, descrOpt, posOpt)
     }
 
     def newIntermediate(): IntermediateIdValue = newValue {
@@ -296,8 +296,16 @@ object SSA {
 
   object Scope {
 
-    def nestedInside(outScope: Scope): Scope =
-      new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
+    def nestedInside(outScope: Scope, astNode: Asts.Ast): Scope =
+      nestedInside(outScope, Some(astNode))
+
+    def nestedInside(outScope: Scope, astNodeOpt: Option[Asts.Ast]): Scope = {
+      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
+      astNodeOpt.foreach { astNode =>
+        newScope.setAstNode(astNode)
+      }
+      newScope
+    }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
       new Scope(None, globalValuesCtx)

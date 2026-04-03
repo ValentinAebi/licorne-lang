@@ -3,6 +3,7 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Types.Type
+import compiler.reporting.Position
 import compiler.util.SeqSet
 
 import scala.collection
@@ -22,23 +23,42 @@ object Formulas {
   sealed trait NamedIdValue(valKindDescr: String) extends IdValue {
     def name: String
 
-    override def toString: String =
+    def posOpt: Option[Position]
+
+    def irDescr: String =
       s"$name#$uid@${definingScope.scopeUid}$valKindDescr"
+
   }
 
-  final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long) extends NamedIdValue("p") {
+  final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p") {
     override def name: String = id.stringId
+
+    override def toString: String = name
   }
 
-  final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long) extends NamedIdValue("s") {
+  final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s") {
     override def name: String = id.stringId
+
+    override def toString: String = name
   }
 
-  final case class VarIdValue(id: FunOrVarId, definingScope: Scope, uid: Long) extends NamedIdValue("r") {
+  final case class VarIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r") {
     override def name: String = id.stringId
+
+    override def toString: String = (descrOpt, posOpt) match {
+      case (Some(descr), Some(position)) => s"$name<$descr@${position.lineColonColumn}>"
+      case (Some(descr), None) => s"$name<$descr>"
+      case (None, Some(position)) => s"$name<${position.lineColonColumn}>"
+      case (None, None) => irDescr
+    }
   }
 
-  final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c")
+  final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c") {
+    override def posOpt: Option[Position] = None
+
+    override def toString: String =
+      if uid == 0 then name else irDescr
+  }
 
   final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHintOpt: Option[String]) extends IdValue {
     override def toString: String = s"${"$"}$uid@${definingScope.scopeUid}i"
@@ -219,7 +239,7 @@ object Formulas {
     case LessThan(lhs, rhs) => lhs.isStable && rhs.isStable
     case TypePredicate(subject, tpe) => subject.isStable
   }
-  
+
   extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {
     case value: IdValue => Set(value)
     case formula: ConstFormula => Set.empty
@@ -250,7 +270,7 @@ object Formulas {
     case TypePredicate(subject, tpe) =>
       subject.idValsDependencies
   }
-  
+
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
     subject.idValsDependencies.forall(_.typeCanMention(dep))
 

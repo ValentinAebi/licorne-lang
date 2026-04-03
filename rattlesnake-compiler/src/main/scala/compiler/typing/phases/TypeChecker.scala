@@ -73,7 +73,7 @@ final class TypeChecker(
       }
       if (funSig.retType != UnitType && !body.hasExited) {
         // TODO also check for closures
-        er.reportError(s"cannot prove that method ${funSig.functionName} with non-$UnitType return type always returns", body.getPosition)
+        er.reportError(s"missing return in non-$UnitType method", body.getPosition)
       }
     }
 

@@ -11,7 +11,7 @@ object Lists {
          len += 1;
          ls = ls.tail;
       };
-      return ls.head;   //> E : field head not found in Nil
+      return ls.head;   //> E : field head not found in type Nil
    }
 
    fn tail[U](ls: List[U]) -> List[U] =

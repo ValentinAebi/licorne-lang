@@ -19,7 +19,7 @@ object Main {
    }
 
    fn abc(ls: List[Bool]) {
-      ls.indexOf(true) : String     //> E : type ascription: expected String, found Idx(ls$0)
+      ls.indexOf(true) : String     //> E : type ascription: expected String, found Idx(ls)
    }
 
 }

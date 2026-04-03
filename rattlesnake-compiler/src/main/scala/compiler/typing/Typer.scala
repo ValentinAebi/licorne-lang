@@ -168,7 +168,7 @@ final class Typer(
 
     case staticTypeAssert@StaticTypeAssert(value, tpe) =>
       val valueType = currScope.currentTypeOf(value)
-      subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type annotation", staticTypeAssert.getPosition)
+      subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", staticTypeAssert.getPosition)
 
     case StaticAssert(value) => ???
 
@@ -320,8 +320,7 @@ final class Typer(
       }
     }
     if appliedHints.isEmpty then regularType
-    else if appliedHints.forall(hint => subtypingCtx.isSubtype(hint, regularType)) then IntersectionType(SeqSet(appliedHints))
-    else IntersectionType(SeqSet(regularType +: appliedHints))
+    else simplifier.simplify(IntersectionType(SeqSet(regularType +: appliedHints)))
   }
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
@@ -723,6 +722,7 @@ final class Typer(
             val paramTypes = funSig.paramsWithoutThis
               .map((paramVal, tpe) => paramVal -> tpe.substitute(composedTypeSubst, Map.empty))
             val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, funId, posOpt)
+            addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
             val invocationTarget = ResolvedFun(ownerSig, funSig, instantiatedRetType)
             (invocationTarget, instantiatedRetType)
@@ -850,7 +850,7 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], argsTaker: Identifier, posOpt: Option[Position]): collection.Map[IdValue, Formula] = {
+  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], argsTaker: Identifier, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
@@ -858,22 +858,25 @@ final class Typer(
     }
     val subst = mutable.Map.empty[IdValue, Formula]
     var argIdx = 1
-    for (((paramVal, paramType), (argOpt, argTypeBeforeSubst)) <- params.zipCommons(args)) {
-      val argType = argTypeBeforeSubst.substitute(Map.empty, subst)
+    for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+      val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
       tryResolveTypeVars(paramType, argType)
       subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of call to $argsTaker", posOpt)
-      argOpt.foreach {
-        case arg if arg.idValsDependencies.forall(_.isInstanceOf[NamedIdValue]) =>
-          subst.put(paramVal, arg)
-        case arg: IdValue =>
-          proxyStore.getProxy(arg).foreach { proxy =>
-            subst.put(paramVal, proxy)
-          }
-        case _ => ()
-      }
+      addToSubstIfValid(paramVal, argOpt, subst)
       argIdx += 1
     }
     subst
+  }
+
+  private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {
+    argOpt.foreach { rawArg =>
+      proxyStore.getProxyIfIdValue(rawArg)
+        .orElse(Some(rawArg).filter(_.idValsDependencies.forall(_.isInstanceOf[NamedIdValue])))
+        .filter(_.isStable)
+        .foreach { repl =>
+          subst.put(paramVal, repl)
+        }
+    }
   }
 
   private def tryResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {

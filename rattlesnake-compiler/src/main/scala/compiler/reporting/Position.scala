@@ -23,8 +23,10 @@ final case class Position(srcCodeProviderName: String, line: Int, col: Int) exte
     else if lineComp != 0 then lineComp
     else colComp
   }
+  
+  def lineColonColumn: String = s"$line:$col"
 
-  override def toString: String = s"$srcCodeProviderName:$line:$col"
+  override def toString: String = s"$srcCodeProviderName:$lineColonColumn"
 
 }
 

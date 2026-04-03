@@ -28,8 +28,8 @@ class AbstractInterpreterTests {
   private val globalValuesContext = GlobalValuesContext()
   private val abScope = Scope.root(globalValuesContext)
 
-  private val a: IdValue = abScope.newVal(NormalFunOrVarId("a"))
-  private val b: IdValue = abScope.newVal(NormalFunOrVarId("b"))
+  private val a: IdValue = abScope.newVal(NormalFunOrVarId("a"), None)
+  private val b: IdValue = abScope.newVal(NormalFunOrVarId("b"), None)
 
   private val `[0,10]` = IntRangeType(0, 10)
   private val `[-10,0]` = IntRangeType(-10, 0)
@@ -138,8 +138,8 @@ class AbstractInterpreterTests {
 
     given TypeParamsContext = TypeParamsContext(Map.empty)
 
-    val xScope = Scope.nestedInside(abScope)
-    val x = xScope.newVal(NormalFunOrVarId("x"))
+    val xScope = Scope.nestedInside(abScope, None)
+    val x = xScope.newVal(NormalFunOrVarId("x"), None)
 
     assertEquals(Some(IntRangeType(1, 19)), interpretUnderAssumptions(2 * a - 1, Map(a -> IntRangeType(1, 10)), None))
     assertEquals(Some(IntRangeType.singleton((a + 1) * b)), interpretUnderAssumptions((a + 1) * b, Map(a -> IntRangeType(0, 5), b -> IntRangeType(0, a)), Some(x)))

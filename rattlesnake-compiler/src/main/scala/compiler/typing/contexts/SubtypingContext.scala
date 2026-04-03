@@ -118,6 +118,10 @@ final class SubtypingContext(
       val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
       lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
         && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
+    case UnionType(types) =>
+      types.exists(canProveHasType(subject, _))
+    case IntersectionType(types) =>
+      types.forall(canProveHasType(subject, _))
     case _ => false
   }
 
@@ -144,7 +148,7 @@ final class SubtypingContext(
             superTSig.typeParams.zip(superTTypeArgs).forall { (tParam, tArg) =>
               val expType = subst.apply(tParam.tid)
               tParam.variance match {
-                case Invariant => tArg == expType
+                case Invariant => tArg.withTypeVarsExpanded == expType.withTypeVarsExpanded
                 case Covariant => isSubtype(tArg, expType)
                 case Contravariant => isSubtype(expType, tArg)
               }
@@ -170,7 +174,7 @@ final class SubtypingContext(
     enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
-    val foundDescr = subject match {
+    lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.getProxy(subject) match {
           case Some(proxy: ConstFormula) => proxy.toString
