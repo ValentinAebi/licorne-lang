@@ -154,13 +154,13 @@ final class SubtypingContext(
     })
   }
 
-  def enforceIsSubtype(subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
+  def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position]): Unit = {
     if (!isSubtype(subT, superT)) {
       er.reportError(msg, posOpt)
     }
   }
 
-  def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: String, posOpt: Option[Position]): Unit = {
+  def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: => String, posOpt: Option[Position]): Unit = {
     if (!isSubtype(subject, subT, superT)) {
       er.reportError(msg, posOpt)
     }

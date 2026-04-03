@@ -9,12 +9,14 @@ import compiler.lang.{ClassSignature, DatatypeSignature, Field, Formulas, Functi
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Position
+import compiler.typing.TypeHintsStore
 import compiler.valproxies.ProxyStore
 
 import java.util.stream.Collectors
 
 final class SSAPrinter(
                         proxyStore: ProxyStore,
+                        typeHintsStore: TypeHintsStore,
                         indentUnit: String,
                         printTypes: Boolean,
                         commentsAlignmentGranularity: Int = 30
@@ -190,115 +192,125 @@ final class SSAPrinter(
     }
   }
 
-  private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = instr match {
-    case SSA.Loop(cond, condVal, body, variables) =>
-      pps.add("LOOP").indentln {
-        pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")
-        printScope(cond)
-        pps.newLine().add("body: ")
-        printScope(body)
-        pps.newLine()
-        printVarData(variables){
-          case varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) =>
-            s"$varId: ${maybeTyped(beforeLoopVal, scope)} ; (${maybeTyped(condVal, cond)}) { ... ${maybeTyped(bodyLastVal, body)} } " ++ varData.recurDescr
+  private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
+    instr match {
+      case SSA.Loop(cond, condVal, body, variables) =>
+        pps.add("LOOP").indentln {
+          pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")
+          printScope(cond)
+          pps.newLine().add("body: ")
+          printScope(body)
+          pps.newLine()
+          printVarData(variables) {
+            case varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) =>
+              s"$varId: ${maybeTyped(beforeLoopVal, scope)} ; (${maybeTyped(condVal, cond)}) { ... ${maybeTyped(bodyLastVal, body)} } " ++ varData.recurDescr
+          }
         }
-      }
-      pps.add("END LOOP")
-    case SSA.Disjunction(condVal, thenBr, elseBr, variables) =>
-      pps.add("IF [cond = ").add(maybeTyped(condVal, scope)).add("]").indentln {
-        pps.add("then: ")
-        printScope(thenBr)
-        pps.newLine().add("else: ")
-        printScope(elseBr)
-        pps.newLine()
-        printVarData(variables){
-          case varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) =>
-            varIdOpt.map(_.toString + ": ").getOrElse("") ++ s"${maybeTyped(joinedVal, scope)} := phi(${maybeTyped(afterThenVal, thenBr)}, ${maybeTyped(afterElseVal, elseBr)})"
+        pps.add("END LOOP")
+      case SSA.Disjunction(condVal, thenBr, elseBr, variables) =>
+        pps.add("IF [cond = ").add(maybeTyped(condVal, scope)).add("]").indentln {
+          pps.add("then: ")
+          printScope(thenBr)
+          pps.newLine().add("else: ")
+          printScope(elseBr)
+          pps.newLine()
+          printVarData(variables) {
+            case varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) =>
+              varIdOpt.map(_.toString + ": ").getOrElse("") ++ s"${maybeTyped(joinedVal, scope)} := phi(${maybeTyped(afterThenVal, thenBr)}, ${maybeTyped(afterElseVal, elseBr)})"
+          }
         }
-      }
-      pps.add("END IF")
-    case SSA.StaticTypeAssert(assertedValue, tpe) =>
-      pps.add(s"TYPE-ASSERT ${maybeTyped(assertedValue, scope)} : $tpe")
-    case SSA.StaticAssert(assertionValue) =>
-      pps.add(s"ASSERT ${maybeTyped(assertionValue, scope)}")
-      maybePrintProxyOf(assertionValue)
-    case AssignVal(assigned, src) =>
-      pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
-      maybePrintProxyOf(src)
-    case AssignIntConst(assigned, src) =>
-      pps.add(s"INTC ${maybeTyped(assigned, scope)} := $src")
-    case AssignBoolConst(assigned, src) =>
-      pps.add(s"BOOLC ${maybeTyped(assigned, scope)} := $src")
-    case AssignStringConst(assigned, src) =>
-      pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"$src\"")
-    case NumNeg(assigned, operand) =>
-      pps.add(s"NEG ${maybeTyped(assigned, scope)} := -$operand")
-    case Add(assigned, lhs, rhs) =>
-      pps.add(s"ADD ${maybeTyped(assigned, scope)} := $lhs + $rhs")
-    case Sub(assigned, lhs, rhs) =>
-      pps.add(s"SUB ${maybeTyped(assigned, scope)} := $lhs - $rhs")
-    case Mul(assigned, lhs, rhs) =>
-      pps.add(s"MUL ${maybeTyped(assigned, scope)} := $lhs * $rhs")
-    case Div(assigned, lhs, rhs) =>
-      pps.add(s"DIV ${maybeTyped(assigned, scope)} := $lhs / $rhs")
-    case Rem(assigned, lhs, rhs) =>
-      pps.add(s"REM ${maybeTyped(assigned, scope)} := $lhs % $rhs")
-    case LogicNeg(assigned, operand) =>
-      pps.add(s"NOT ${maybeTyped(assigned, scope)} := !$operand")
-    case And(assigned, lhs, rhs) =>
-      pps.add(s"AND ${maybeTyped(assigned, scope)} := $lhs & $rhs")
-    case Or(assigned, lhs, rhs) =>
-      pps.add(s"OR ${maybeTyped(assigned, scope)} := $lhs | $rhs")
-    case Equal(assigned, lhs, rhs) =>
-      pps.add(s"EQ ${maybeTyped(assigned, scope)} := $lhs == $rhs")
-    case Leq(assigned, lhs, rhs) =>
-      pps.add(s"LEQ ${maybeTyped(assigned, scope)} := $lhs <= $rhs")
-    case Lt(assigned, lhs, rhs) =>
-      pps.add(s"LT ${maybeTyped(assigned, scope)} := $lhs < $rhs")
-    case FieldRead(assigned, owner, field) =>
-      pps.add(s"FIELD-RD ${maybeTyped(assigned, scope)} := $owner.$field")
-    case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
-      pps.add(s"INVK-MTH ${maybeTyped(assigned, scope)} := $receiver.$func")
-      printTypeArgsList(typeArgs)
-      printArgsList(args)
-    case InvokeClosure(assigned, callee, args) =>
-      pps.add(s"INVK-CLOS ${maybeTyped(assigned, scope)} := $callee")
-    case Instantiate(assigned, classOrRecordName, typeArgs) =>
-      pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
-      printTypeArgsList(typeArgs)
-    case MkClosure(assigned, params, body) =>
-      pps.add(s"MK-CLOS ${maybeTyped(assigned, scope)} := (").add(mkFunctionParamsDescr(params)).add(")").indent {
-        pps.add("body: ")
-        printScope(body)
-      }
-    case TypeTest(assigned, testedValue, testedTypeId) =>
-      pps.add(s"TYPE-TEST ${maybeTyped(assigned, scope)} := $testedValue is $testedTypeId")
-    case Conversion(assigned, inValue, targetType) =>
-      pps.add(s"CONVERT ${maybeTyped(assigned, scope)} := $inValue as $targetType")
-    case SSA.FieldWrite(owner, field, rhs) =>
-      pps.add(s"FIELD-WR $owner.$field := ${maybeTyped(rhs, scope)}")
-    case SSA.Return(retVal) =>
-      pps.add(s"RET ${maybeTyped(retVal, scope)}")
-    case SSA.Panic(msg) =>
-      pps.add(s"PANIC ${maybeTyped(msg, scope)}")
-    case SSA.Cast(inValue, target) =>
-      pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
-    case SSA.Drop(droppedValue) =>
-      pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
-    case SSA.LocalDecl(localId, tpe) =>
-      pps.add(s"DECL-LOCAL $localId : $tpe")
-    case scope: Scope => printScope(scope)
+        pps.add("END IF")
+      case SSA.StaticTypeAssert(assertedValue, tpe) =>
+        pps.add(s"TYPE-ASSERT ${maybeTyped(assertedValue, scope)} : $tpe")
+      case SSA.StaticAssert(assertionValue) =>
+        pps.add(s"ASSERT ${maybeTyped(assertionValue, scope)}")
+      case AssignVal(assigned, src) =>
+        pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
+      case AssignIntConst(assigned, src) =>
+        pps.add(s"INTC ${maybeTyped(assigned, scope)} := $src")
+      case AssignBoolConst(assigned, src) =>
+        pps.add(s"BOOLC ${maybeTyped(assigned, scope)} := $src")
+      case AssignStringConst(assigned, src) =>
+        pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"$src\"")
+      case NumNeg(assigned, operand) =>
+        pps.add(s"NEG ${maybeTyped(assigned, scope)} := -$operand")
+      case Add(assigned, lhs, rhs) =>
+        pps.add(s"ADD ${maybeTyped(assigned, scope)} := $lhs + $rhs")
+      case Sub(assigned, lhs, rhs) =>
+        pps.add(s"SUB ${maybeTyped(assigned, scope)} := $lhs - $rhs")
+      case Mul(assigned, lhs, rhs) =>
+        pps.add(s"MUL ${maybeTyped(assigned, scope)} := $lhs * $rhs")
+      case Div(assigned, lhs, rhs) =>
+        pps.add(s"DIV ${maybeTyped(assigned, scope)} := $lhs / $rhs")
+      case Rem(assigned, lhs, rhs) =>
+        pps.add(s"REM ${maybeTyped(assigned, scope)} := $lhs % $rhs")
+      case LogicNeg(assigned, operand) =>
+        pps.add(s"NOT ${maybeTyped(assigned, scope)} := !$operand")
+      case And(assigned, lhs, rhs) =>
+        pps.add(s"AND ${maybeTyped(assigned, scope)} := $lhs & $rhs")
+      case Or(assigned, lhs, rhs) =>
+        pps.add(s"OR ${maybeTyped(assigned, scope)} := $lhs | $rhs")
+      case Equal(assigned, lhs, rhs) =>
+        pps.add(s"EQ ${maybeTyped(assigned, scope)} := $lhs == $rhs")
+      case Leq(assigned, lhs, rhs) =>
+        pps.add(s"LEQ ${maybeTyped(assigned, scope)} := $lhs <= $rhs")
+      case Lt(assigned, lhs, rhs) =>
+        pps.add(s"LT ${maybeTyped(assigned, scope)} := $lhs < $rhs")
+      case FieldRead(assigned, owner, field) =>
+        pps.add(s"FIELD-RD ${maybeTyped(assigned, scope)} := $owner.$field")
+      case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+        pps.add(s"INVK-MTH ${maybeTyped(assigned, scope)} := $receiver.$func")
+        printTypeArgsList(typeArgs)
+        printArgsList(args)
+      case InvokeClosure(assigned, callee, args) =>
+        pps.add(s"INVK-CLOS ${maybeTyped(assigned, scope)} := $callee")
+      case Instantiate(assigned, classOrRecordName, typeArgs) =>
+        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
+        printTypeArgsList(typeArgs)
+      case MkClosure(assigned, params, body) =>
+        pps.add(s"MK-CLOS ${maybeTyped(assigned, scope)} := (").add(mkFunctionParamsDescr(params)).add(")").indent {
+          pps.add("body: ")
+          printScope(body)
+        }
+      case TypeTest(assigned, testedValue, testedTypeId) =>
+        pps.add(s"TYPE-TEST ${maybeTyped(assigned, scope)} := $testedValue is $testedTypeId")
+      case Conversion(assigned, inValue, targetType) =>
+        pps.add(s"CONVERT ${maybeTyped(assigned, scope)} := $inValue as $targetType")
+      case SSA.FieldWrite(owner, field, rhs) =>
+        pps.add(s"FIELD-WR $owner.$field := ${maybeTyped(rhs, scope)}")
+      case SSA.Return(retVal) =>
+        pps.add(s"RET ${maybeTyped(retVal, scope)}")
+      case SSA.Panic(msg) =>
+        pps.add(s"PANIC ${maybeTyped(msg, scope)}")
+      case SSA.Cast(inValue, target) =>
+        pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
+      case SSA.Drop(droppedValue) =>
+        pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
+      case SSA.LocalDecl(localId, tpe) =>
+        pps.add(s"DECL-LOCAL $localId : $tpe")
+      case scope: Scope => printScope(scope)
+    }
+    instr match {
+      case assignInstr: AssigningInstr =>
+        maybePrintHintsFor(assignInstr.assigned)
+      case _ => ()
+    }
   }
 
   private def maybeTyped(formula: Formula, scope: Scope): String =
     if printTypes then s"$formula : ${scope.currentTypeOf(formula)}" else formula.toString
 
-  private def maybePrintProxyOf(idValue: IdValue)(using pps: PrettyPrintString): Unit =
-    proxyStore.getProxy(idValue) match {
-      case Some(proxy) if proxy != idValue =>
-        pps.addAligned(s"// $idValue := $proxy", alignmentGranularity = commentsAlignmentGranularity)
-      case _ => ()
+  private def maybePrintHintsFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
+    val hints = typeHintsStore.getHints(idValue)
+    if (hints.nonEmpty) {
+      pps.addAligned(s"// hints: ", alignmentGranularity = commentsAlignmentGranularity)
+      traverseIterable(hints.iterator) { hint =>
+        pps.add(hint.toString)
+      } {
+        pps.add(", ")
+      }
     }
+  }
 
   private def printTypeArgsList(typeArgs: List[Type])(using pps: PrettyPrintString): Unit = {
     if (typeArgs.nonEmpty) {

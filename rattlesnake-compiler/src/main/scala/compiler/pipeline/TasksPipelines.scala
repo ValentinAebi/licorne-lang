@@ -56,7 +56,7 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, "  ", printTypes = false)
+        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
@@ -68,7 +68,7 @@ object TasksPipelines {
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, er, continueIfErrors = true))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, "  ", printTypes = true)
+        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program

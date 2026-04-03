@@ -12,7 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.Simplifier
+import compiler.smt.{Simplifier, Solver}
 import compiler.typing.MeetJoinComputer
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore

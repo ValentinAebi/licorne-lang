@@ -22,6 +22,7 @@ import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolRe
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.util.{SeqSet, zipCommons}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
+import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
@@ -116,6 +117,10 @@ final class Typer(
               .valueOf(varId)
               .asInstanceOf[KnownAndInitialized]
               .declarationTypeAnnotOpt
+              .orElse(typeHintsStore.getHints(condVal).find { hint =>
+                subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
+                  && subtypingCtx.isSubtype(bodyScope.currentTypeOf(bodyLastVal), hint)
+              })
               .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
           currScope.saveType(condVal, tpe)
           condScope.saveSmartcast(condVal, tpe)
@@ -131,7 +136,13 @@ final class Typer(
       } {
         val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
         val typeInCond = condScope.currentTypeOf(condVal)
-        subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site", loop.getPosition)
+        lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
+          case KnownAndInitialized(value, reassigStatus, Some(declTypeAnnot)) =>
+            s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
+          case _ =>
+            s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+        }
+        subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
       }
       applyBranchInfo(currScope, infoIfCondFalse)
 
@@ -570,7 +581,7 @@ final class Typer(
     }
     for (paramId, paramType) <- paramsInclThis do {
       dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
-      if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty){
+      if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty) {
         sigScope.saveType(paramId, paramType)(using fullTypeParamsCtx)
       }
     }

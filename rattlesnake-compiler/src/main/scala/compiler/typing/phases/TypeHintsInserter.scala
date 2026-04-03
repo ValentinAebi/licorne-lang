@@ -50,6 +50,13 @@ final class TypeHintsInserter(
   private def traverseInstr(instr: Instr, expRetType: Type)
                            (using resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext): Unit = instr match {
     case Loop(cond, condVal, body, variables) =>
+      for {
+        LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables
+        th <- typeHintsStore.getHints(condVal)
+      } {
+        typeHintsStore.addHint(beforeLoopVal, th)
+        typeHintsStore.addHint(bodyLastVal, th)
+      }
       traverseScope(body, expRetType)
       traverseScope(cond, expRetType)
     case Disjunction(condVal, thenBr, elseBr, variables) =>
