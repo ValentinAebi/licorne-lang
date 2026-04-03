@@ -120,6 +120,7 @@ object SSA {
   final case class Drop(droppedValue: IdValue) extends Instr
 
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
+  final case class Smartcast(formula: Formula, tpe: Type) extends Instr
 
   final class FieldResolutionTarget(val fieldId: FunOrVarId) {
     private var receiverSigOpt = Option.empty[UserInstantiableTypeSig]
@@ -222,9 +223,11 @@ object SSA {
                              objectInitializedInThisScopeOpt: Option[IdValue]
                            ) extends Instr {
     private val types = mutable.Map.empty[IdValue, Type]
-    
-    // FIXME add specific instructions for smartcasts, instead of only keeping them here
-    // Reason: they can be updated in the middle of the typing of a scope, making them invalid for subsequent phases
+
+    /**
+     * WARNING: To be used only by Typer, might contain incorrect data during later phases because of insertion of 
+     * smartcasts in the middle of scopes
+     */
     private val smartcasts = mutable.SeqMap.empty[Formula, Type]
 
     export valuesCtx.globalCtx as globalValuesCtx
@@ -241,7 +244,15 @@ object SSA {
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 
-    def getSmartcasts: immutable.SeqMap[Formula, Type] = immutable.SeqMap.from(smartcasts)
+    private val pendingSmartcasts = mutable.ListBuffer.empty[(Int, Formula, Type)]
+
+    def applyPendingSmartcasts(): Unit = {
+      pendingSmartcasts.sortBy(-_._1)
+      for ((idx, formula, tpe) <- pendingSmartcasts) {
+        instructions.insert(idx, Smartcast(formula, tpe))
+      }
+      pendingSmartcasts.clear()
+    }
 
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
@@ -261,7 +272,7 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
+    def saveSmartcast(f: Formula, smartcastType: Type, idxInScope: Int)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
       // TODO see if this causes issues (overwriting the default type, not found by currentTypeOf?)
       val oldType = currentTypeOf(f)
       val newType =
@@ -269,6 +280,7 @@ object SSA {
         then smartcastType
         else meetJoin.computeMeet(oldType, smartcastType)
       smartcasts.put(f, newType)
+      pendingSmartcasts.addOne(idxInScope, f, smartcastType)
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
@@ -291,7 +303,7 @@ object SSA {
         outScopeOpt.map(_.typeOfNoSmartcast(idValue))
       }.getOrElse(NothingType)
     }
-    
+
     def isInitScopeOf(idValue: IdValue): Boolean =
       objectInitializedInThisScopeOpt.contains(idValue)
 

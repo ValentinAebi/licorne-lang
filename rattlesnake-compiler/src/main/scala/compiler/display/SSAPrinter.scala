@@ -157,16 +157,12 @@ final class SSAPrinter(
 
   private def printScope(scope: Scope)(using pps: PrettyPrintString): Unit = {
     pps.add(s"SCOPE").addSpace().add(scope.scopeUid).addSpace()
-    val allEntries: Iterable[Instr | (Formula, Type)] = scope.getSmartcasts.toIndexedSeq ++ scope.instructions
-    if (allEntries.isEmpty) {
+    if (scope.instructions.isEmpty) {
       pps.add("{ /* empty */ }")
     } else {
       pps.block {
-        traverseIterable(allEntries.iterator) {
-          case (formula, tpe) =>
-            pps.add(s"smartcast $formula : $tpe")
-          case instr: Instr =>
-            printInstr(instr, scope)
+        traverseIterable(scope.instructions.iterator) { instr =>
+          printInstr(instr, scope)
         } {
           pps.newLine()
         }
@@ -288,6 +284,8 @@ final class SSAPrinter(
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
+      case Smartcast(formula, tpe) =>
+        pps.add(s"SMARTCAST $formula : $tpe")
       case scope: Scope => printScope(scope)
     }
     instr match {
