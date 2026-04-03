@@ -138,7 +138,7 @@ class AbstractInterpreterTests {
 
     given TypeParamsContext = TypeParamsContext(Map.empty)
 
-    val xScope = Scope.nestedInside(abScope, None)
+    val xScope = Scope.nestedInsideNodeOpt(abScope, None)
     val x = xScope.newVal(NormalFunOrVarId("x"), None)
 
     assertEquals(Some(IntRangeType(1, 19)), interpretUnderAssumptions(2 * a - 1, Map(a -> IntRangeType(1, 10)), None))

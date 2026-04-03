@@ -184,6 +184,16 @@ object Types {
         actualTypeOpt = Some(actualTpe)
       }
     }
+    
+    def remap(tpe: Type): Unit = {
+      if (!isResolved) {
+        throw IllegalStateException("cannot remap an unresolved type variable")
+      }
+      val actualTpe = goUpPath(tpe)
+      if (actualTpe != this) {
+        actualTypeOpt = Some(actualTpe)
+      }
+    }
 
     def actualTypeIfResolved: Option[Type] = actualTypeOpt.map(goUpPath)
 

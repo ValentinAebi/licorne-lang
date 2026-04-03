@@ -1,10 +1,8 @@
 package compiler.typing
 
-import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
+import compiler.identifiers.{Identifier, TypeIdentifier}
 import compiler.irs.SSA
 import compiler.irs.SSA.*
-import compiler.irs.SSA.FieldResolutionTarget.*
-import compiler.irs.SSA.InvocationTarget.*
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -22,7 +20,6 @@ import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolRe
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.util.{SeqSet, zipCommons}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
-import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
@@ -51,6 +48,8 @@ final class Typer(
   private given ProxyStore = proxyStore
 
   private given Simplifier = simplifier
+
+  private given Typer = this
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
@@ -232,24 +231,27 @@ final class Typer(
     case Equal(assigned, lhs, rhs) =>
       currScope.saveType(assigned, BoolType)
 
-    case invk@InvokeFunc(assigned, receiver, UnresolvedFun(funId), typeArgs, args) =>
-      val (invkTarget, returnType) = resolveFunSigAndCheckArgs(receiver, funId, typeArgs, args, currScope, invk.getPosition)
-      invk.func = invkTarget
+    case invk@InvokeFunc(assigned, receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+      val returnType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, invk.getPosition)
       currScope.saveType(assigned, returnType)
       currScope.markHasExitedIfNothing(returnType)
 
-    case fr@FieldRead(assigned, owner, UnresolvedField(fieldId)) =>
+    case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
       val ownerType = currScope.currentTypeOf(owner)
-      val (fieldResolTarget, tpe) = resolveFieldAccess(ownerType, fieldId, fr.getPosition)
-      fr.field = fieldResolTarget
-      currScope.saveType(assigned, tpe)
+      val tpe = resolveFieldAccess(ownerType, field, fr.getPosition)
+      proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor) match {
+        case Some(smartcastType) =>
+          currScope.saveType(assigned, smartcastType)
+        case None =>
+          currScope.saveType(assigned, tpe)
+      }
 
-    case fw@FieldWrite(owner, UnresolvedField(fieldId), rhs) =>
+    case fw@FieldWrite(owner, field, rhs) if field.isNotResolvedYet =>
       val ownerType = currScope.currentTypeOf(owner)
-      val (fieldResolTarget, fieldType) = resolveFieldAccess(ownerType, fieldId, fw.getPosition)
-      fw.field = fieldResolTarget
+      val fieldType = resolveFieldAccess(ownerType, field, fw.getPosition)
       val rhsType = currScope.currentTypeOf(rhs)
-      subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field $fieldId", fw.getPosition)
+      tryToResolveTypeVars(fieldType, rhsType, allowWidening = currScope.isInitScopeOf(owner))
+      subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${field.fieldId}", fw.getPosition)
 
     case _: (InvokeFunc | FieldRead | FieldWrite) =>
       throw AssertionError("typing phase run more than once on the same piece of code")
@@ -330,20 +332,21 @@ final class Typer(
       case IntConst(value) => IntType
       case BoolConst(value) => BoolType
       case StringConst(value) => StringType
-      case sel@Select(owner, ResolvedField(_, _, instantiatedFieldType)) =>
-        scope.smartcastFor(sel).getOrElse(instantiatedFieldType)
-      case sel@Select(owner, UnresolvedField(fieldId)) =>
+      case sel@Select(owner, field) if field.isResolved =>
+        scope.smartcastFor(sel).getOrElse(field.getInstantiatedFieldTypeUnsafe)
+      case sel@Select(owner, field) if field.isNotResolvedYet =>
         val ownerType = typeFormula(owner, scope, posOpt)
-        val (resolvedField, tpe) = resolveFieldAccess(ownerType, fieldId, posOpt)
-        sel.field = resolvedField
+        val tpe = resolveFieldAccess(ownerType, field, posOpt)
         scope.smartcastFor(sel).getOrElse(tpe)
-      case Select(owner, _: UnresolvableField) => NothingType
-      case Call(receiver, ResolvedFun(ownerSig, funSig, instantiatedReturnType), typeArgs, args) => instantiatedReturnType
-      case call@Call(receiver, UnresolvedFun(funId), typeArgs, args) =>
-        val (invocationTarget, retType) = resolveFunSigAndCheckArgs(receiver, funId, typeArgs, args, scope, posOpt)
-        call.func = invocationTarget
-        retType
-      case Call(receiver, _: UnresolvableFun, typeArgs, args) => NothingType
+      case Select(owner, field) =>
+        assert(field.isUnresolvable)
+        NothingType
+      case Call(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
+      case call@Call(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+        resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
+      case Call(receiver, func, typeArgs, args) =>
+        assert(func.isUnresolvable)
+        NothingType
       case Plus(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
       case Neg(operand) =>
@@ -384,29 +387,33 @@ final class Typer(
       case value: IdValue =>
         namedOrNone(scope.currentTypeOf(value))
       case Select(owner, field) =>
-        field match {
-          case UnresolvedField(fieldId) =>
-            detectNominalTypeForSmartcast(owner, scope) match {
-              case Some(ownerType) =>
-                val (_, selectType) = resolveFieldAccess(ownerType, fieldId, None, reportErrors = false)
-                namedOrNone(selectType)
-              case None => None
-            }
-          case ResolvedField(receiverSig, fieldId, instantiatedFieldType: NamedType) => Some(instantiatedFieldType)
-          case _ => None
-        }
+        if (field.isNotResolvedYet) {
+          detectNominalTypeForSmartcast(owner, scope) match {
+            case Some(ownerType) =>
+              val selectType = resolveFieldAccess(ownerType, field, None)
+              namedOrNone(selectType)
+            case None => None
+          }
+        } else if (field.isResolved) {
+          field.getInstantiatedFieldTypeUnsafe match {
+            case instType: NamedType => Some(instType)
+            case _ => None
+          }
+        } else None
       case Call(receiver, func, typeArgs, args) =>
-        func match {
-          case UnresolvedFun(funId) =>
-            detectNominalTypeForSmartcast(receiver, scope) match {
-              case Some(receiverType) =>
-                val (_, retType) = resolveFunSigAndCheckArgs(receiver, funId, typeArgs, args, scope, None, reportErrors = false)
-                namedOrNone(retType)
-              case None => None
-            }
-          case ResolvedFun(ownerSig, funSig, instantiatedReturnType: NamedType) => Some(instantiatedReturnType)
-          case _ => None
-        }
+        if (func.isNotResolvedYet) {
+          detectNominalTypeForSmartcast(receiver, scope) match {
+            case Some(receiverType) =>
+              val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None, reportErrors = false)
+              namedOrNone(retType)
+            case None => None
+          }
+        } else if (func.isResolved) {
+          func.getInstantiatedReturnTypeUnsafe match {
+            case instType: NamedType => Some(instType)
+            case _ => None
+          }
+        } else None
       case _ => None
     }
   }
@@ -650,8 +657,7 @@ final class Typer(
     typeSupertypesAsDatatypes(recordSig, resolutionCtx)
   }
 
-  private def applyBranchInfo(scope: Scope, branchInfoRaw: BranchingInfo)(using TypeParamsContext): Unit = {
-    val branchInfo = branchInfoRaw.filteredStable(this)
+  private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectNominalTypeForSmartcast(subject, scope)
@@ -667,8 +673,9 @@ final class Typer(
       }
     }
     for (assumption <- branchInfo.assumptions) {
-      solver.assert(proxyStore.develop(assumption))
-      val smartcastOpt = assumption match {
+      val developedAssumption = proxyStore.develop(assumption)
+      solver.assert(developedAssumption)
+      val smartcastOpt = developedAssumption match {
         // TODO maybe we should rather isolate the term with the most narrow scope?
         //  (could be for instance x in x + y <= a + b + 1)
         case LessOrEq(lhs, rhs) =>
@@ -700,55 +707,56 @@ final class Typer(
     } else None
   }
 
-  private def resolveFunSigAndCheckArgs(receiver: Formula, funId: FunOrVarId, callTypeArgs: List[Type], callArgs: List[Formula], scope: Scope, posOpt: Option[Position], reportErrors: Boolean = true)
-                                       (using TypeParamsContext): (InvocationTarget, Type) = {
+  private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type], callArgs: List[Formula], scope: Scope, posOpt: Option[Position], reportErrors: Boolean = true)
+                                       (using TypeParamsContext): Type = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
       if (reportErrors) {
-        er.reportError(s"method $funId not found in type $receiverType", posOpt)
+        er.reportError(s"method ${invkTarget.funId} not found in type $receiverType", posOpt)
       }
-      (UnresolvableFun(funId), NothingType)
+      invkTarget.markUnresolvable()
+      NothingType
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
     receiverType.principalType match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
-        resolutionCtx.resolveFunSig(typeName, funId) match {
+        resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
             val receiverTypeSubst = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, posOpt, None)
             val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Option.when(reportErrors)(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val paramTypes = funSig.paramsWithoutThis
               .map((paramVal, tpe) => paramVal -> tpe.substitute(composedTypeSubst, Map.empty))
-            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, funId, posOpt)
+            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, invkTarget.funId, posOpt)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
-            val invocationTarget = ResolvedFun(ownerSig, funSig, instantiatedRetType)
-            (invocationTarget, instantiatedRetType)
+            invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
+            instantiatedRetType
           case _ => errorCase()
         }
       case _ => errorCase()
     }
   }
 
-  private def resolveFieldAccess(owner: Type, fieldId: FunOrVarId, posOpt: Option[Position], reportErrors: Boolean = true): (FieldResolutionTarget, Type) = {
+  private def resolveFieldAccess(owner: Type, fieldResolTarget: FieldResolutionTarget, posOpt: Option[Position]): Type = {
 
     def errorCase() = {
-      if (reportErrors) {
-        er.reportError(s"field $fieldId not found in type ${owner.principalType}", posOpt)
-      }
-      (UnresolvableField(fieldId), NothingType)
+      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type ${owner.principalType}", posOpt)
+      fieldResolTarget.markUnresolvable()
+      NothingType
     }
 
     owner.principalType match {
       case NamedType(typeName, typeArgs, args) =>
-        resolutionCtx.resolveFieldAccess(typeName, fieldId) match {
+        resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
             // TODO check that we can indeed ignore errors here (reportErrors = false)
             val typeSubst = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, posOpt, None)
             val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
-            (ResolvedField(ownerSig, fieldId, instantiatedFieldType), instantiatedFieldType)
+            fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
+            instantiatedFieldType
           case _ => errorCase()
         }
       case _ => errorCase()
@@ -856,11 +864,20 @@ final class Typer(
     if (nParams != nArgs) {
       er.reportError(s"call to $argsTaker: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
     }
+
+    // first pass: try to resolve type variables
     val subst = mutable.Map.empty[IdValue, Formula]
+    for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+      val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
+      tryToResolveTypeVars(paramType, argType, allowWidening = true)
+      addToSubstIfValid(paramVal, argOpt, subst)
+    }
+
+    // second pass: actually check types
+    subst.clear()
     var argIdx = 1
     for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      tryResolveTypeVars(paramType, argType)
       subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of call to $argsTaker", posOpt)
       addToSubstIfValid(paramVal, argOpt, subst)
       argIdx += 1
@@ -878,19 +895,22 @@ final class Typer(
         }
     }
   }
-
-  private def tryResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {
+  
+  private def tryToResolveTypeVars(paramType: Type, argType: Type, allowWidening: Boolean): Unit = (paramType, argType) match {
     case (NamedType(_, paramTypeArgs, _), NamedType(_, argsTypeArgs, _)) =>
+      // FIXME account for variance?
       for ((tParam, tArg) <- paramTypeArgs.zipCommons(argsTypeArgs)) {
-        tryResolveTypeVars(tParam, tArg)
+        tryToResolveTypeVars(tParam, tArg, allowWidening)
       }
     case (ClosureType(paramParams, paramRes), ClosureType(argParams, argRes)) =>
       for ((tParam, tArg) <- paramParams.zipCommons(argParams)) {
-        tryResolveTypeVars(tParam, tArg)
+        tryToResolveTypeVars(tParam, tArg, allowWidening)
       }
-      tryResolveTypeVars(paramRes, argRes)
+      tryToResolveTypeVars(paramRes, argRes, allowWidening)
     case (tv: TypeVariable, argType) if !tv.isResolved =>
       tv.resolve(argType)
+    case (tv: TypeVariable, argType) if allowWidening && tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
+      tv.remap(argType)
     case _ => ()
   }
 

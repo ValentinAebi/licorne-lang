@@ -1,8 +1,8 @@
 package compiler.valproxies
 
-import compiler.irs.SSA.InvocationTarget.ResolvedFun
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
+import compiler.typing.Typer
 
 import scala.collection.mutable
 
@@ -50,8 +50,10 @@ final class ProxyStore {
     case TypePredicate(subject, tpe) => TypePredicate(develop(subject), tpe)
   }
 
-  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
-    case Some(proxy) => infosFor(proxy, ambientBranchingInfo)
+  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo)(using typer: Typer): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
+    case Some(proxy) =>
+      val (infoIfTrue, infoIfFalse) = infosFor(proxy, ambientBranchingInfo)
+      (infoIfTrue.filteredStable(typer), infoIfFalse.filteredStable(typer))
     case None => (BranchingInfo.empty, BranchingInfo.empty)
   }
 

@@ -97,7 +97,7 @@ final class TypeHintsInserter(
         case proxy: IdValue =>
           for {
             objId <- globalValsCtx.getNameOfObject(proxy)
-            funSig <- resolutionCtx.resolveFunSig(objId, func.functionName).asOption
+            funSig <- resolutionCtx.resolveFunSig(objId, func.funId).asOption
           } {
             val subst = mutable.Map.empty[IdValue, Formula]
             for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zipCommons(args)) {

@@ -53,11 +53,19 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigStatus: ReassigPermission, declarationTypeAnnot: Option[Type]): Unit = {
-    val saved = saveNewLocal(id, value, reassigStatus, declarationTypeAnnot)
+  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Unit = {
+    val saved = saveNewLocal(id, value, reassigPermission, declarationTypeAnnot)
     if (!saved) {
       remap(id, value)
     }
+  }
+  
+  def createShallowCopy(id: FunOrVarId): Boolean = queryLocal(id) match {
+    case Some(localInfo) =>
+      values(id) = localInfo.copy()
+      true
+    case None =>
+      false
   }
 
   def valueOf(id: FunOrVarId): ValueQueryResult = queryLocal(id) match {

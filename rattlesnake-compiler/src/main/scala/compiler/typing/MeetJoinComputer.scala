@@ -5,10 +5,10 @@ import compiler.lang.Formulas.Formula
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
-import compiler.lang.{RuntimeTypeSignature, Types}
+import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo, Types}
 import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
-import compiler.util.{SeqSet, asIterableOfType}
+import compiler.util.{SeqSet, asIterableOfType, zipCommons}
 
 import scala.collection.mutable
 import scala.util.boundary
@@ -34,9 +34,11 @@ final class MeetJoinComputer(
   def computeJoin(inputTypes: Iterable[Type]): Type = {
 
     // first pass: flatten UnionTypes and remove duplicates
-    val expandedTypes = SeqSet(inputTypes.flatMap {
-      case UnionType(unitedTypes) => unitedTypes
-      case tpe => List(tpe)
+    val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
+      tpe.withTypeVarsExpanded match {
+        case UnionType(unitedTypes) => unitedTypes
+        case tpe => List(tpe)
+      }
     })
 
     expandedTypes.size match {
@@ -107,14 +109,27 @@ final class MeetJoinComputer(
   }
 
   def computeJoinOfNamed(types: Iterable[NamedType]): Option[NamedType] = {
+    val typesToSubst = Map.from(for {
+      tpe@NamedType(tid, typeArgs, args) <- types
+    } yield {
+      tpe -> (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](tid) match {
+        case Some(tSig) =>
+          tSig.typeParams.map(_.tid).zipCommons(typeArgs).toMap
+        case None =>
+          Map.empty[TypeIdentifier, Type]
+      })
+    })
     val candidatesIdsIter = computeJoinOfTypeIds(types.map(_.typeName))
     while (candidatesIdsIter.hasNext) {
       val candidateSig = candidatesIdsIter.next()
-      val typeArgsMap = mutable.Map.empty[TypeIdentifier, Type]
       val candidateSubstOpt = boundary {
         val candidateSubstB = Map.newBuilder[TypeIdentifier, Type]
         for (tParam <- candidateSig.typeParams) yield {
-          val instantiated = Set.from(for (tpe <- types) yield subtypingCtx.subToSuperSubst(tpe.typeName, candidateSig.id).get.apply(tParam.tid))
+          val instantiated = SeqSet(for ((tpe, tpeSubst) <- typesToSubst) yield {
+            subtypingCtx.subToSuperSubst(tpe.typeName, candidateSig.id).get
+              .apply(tParam.tid)
+              .substitute(tpeSubst, Map.empty)
+          })
 
           def checkAndSaveOrAbort(inferredTArg: Type) = {
             if (subtypingCtx.checkBounds(tParam, inferredTArg)) {
@@ -226,14 +241,15 @@ final class MeetJoinComputer(
     computeMeet(types.toList)
 
   def computeMeet(types: Iterable[Type]): Type = {
+    val expandedTypes = types.map(_.withTypeVarsExpanded)
     val rawMeet =
-      if types.toSet.size == 1 then types.head
-      else types.find(subT => types.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
+      if expandedTypes.toSet.size == 1 then expandedTypes.head
+      else expandedTypes.find(subT => expandedTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
         case Some(meet) => meet
         case None =>
-          types.asIterableOfType[IntRangeType] match {
+          expandedTypes.asIterableOfType[IntRangeType] match {
             case Some(ranges) => computeMeetOfRanges(ranges)
-            case None => types.lastOption.getOrElse(AnyType)
+            case None => expandedTypes.lastOption.getOrElse(AnyType)
           }
       }
     simplifier.simplify(rawMeet)

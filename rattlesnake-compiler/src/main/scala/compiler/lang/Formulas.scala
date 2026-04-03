@@ -76,11 +76,11 @@ object Formulas {
 
   final case class StringConst(value: String) extends ConstFormula
 
-  final case class Select(owner: Formula, var field: FieldResolutionTarget) extends Formula {
+  final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
     override def toString: String = s"$owner.$field"
   }
 
-  final case class Call(receiver: Formula, var func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
+  final case class Call(receiver: Formula, func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
     override def toString: String = {
       val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       s"$receiver.$func" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
@@ -199,8 +199,8 @@ object Formulas {
       (idValue.definingScope == otherValue.definingScope && idValue.uid > otherValue.uid) ||
         idValue.definingScope.isNestedIn(otherValue.definingScope)
     case formula: ConstFormula => true
-    case Select(owner, FieldResolutionTarget.ResolvedField(receiverSig, fieldId, instantiatedFieldType)) =>
-      receiverSig.fields(fieldId).isStable && typeCanMention(owner)
+    case Select(owner, field) if field.isResolved =>
+      field.getReceiverSigUnsafe.fields(field.fieldId).isStable && typeCanMention(owner)
     case Select(owner, field) => false
     // TODO maybe check side-effects
     case Call(receiver, func, typeArgs, args) => false
@@ -220,8 +220,8 @@ object Formulas {
 
   extension (formula: Formula) def isStable: Boolean = formula match {
     case value: IdValue => true
-    case Select(owner, FieldResolutionTarget.ResolvedField(receiverSig, fieldId, instantiatedFieldType)) =>
-      receiverSig.fields(fieldId).isStable
+    case Select(owner, field) if field.isResolved =>
+      field.getReceiverSigUnsafe.fields(field.fieldId).isStable
     case _: Select => false
     case formula: ConstFormula => true
     // TODO maybe check side-effects

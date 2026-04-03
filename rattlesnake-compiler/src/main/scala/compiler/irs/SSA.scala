@@ -1,8 +1,7 @@
 package compiler.irs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.Asts.{Ast, Source}
-import compiler.irs.SSA.InvocationTarget.*
+import compiler.irs.Asts.Ast
 import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Formulas.*
@@ -12,15 +11,13 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{Simplifier, Solver}
-import compiler.typing.MeetJoinComputer
+import compiler.typing.{MeetJoinComputer, Typer}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.{immutable, mutable}
-import scala.compiletime.uninitialized
 
 object SSA {
 
@@ -124,44 +121,110 @@ object SSA {
 
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
 
-  enum FieldResolutionTarget {
-    case UnresolvedField(fieldId: FunOrVarId)
-    case UnresolvableField(fieldId: FunOrVarId)
-    case ResolvedField(receiverSig: UserInstantiableTypeSig, fieldId: FunOrVarId, instantiatedFieldType: Type)
+  final class FieldResolutionTarget(val fieldId: FunOrVarId) {
+    private var receiverSigOpt = Option.empty[UserInstantiableTypeSig]
+    private var instantiatedFieldTypeOpt = Option.empty[Type]
+    private var cannotResolveFlag = false
 
-    override def toString: String = this match {
-      case UnresolvedField(fieldId) =>
-        s"$fieldId<resol:?>"
-      case UnresolvableField(fieldId) =>
-        s"$fieldId<unresolved>"
-      case ResolvedField(receiverSig, fieldId, instantiatedFieldType) =>
-        s"$fieldId<rec:${receiverSig.id};ret:$instantiatedFieldType>"
+    // TODO is this safe?
+    override def equals(obj: Any): Boolean = obj match {
+      case obj: FieldResolutionTarget => this.fieldId == obj.fieldId
+      case _ => false
+    }
+
+    // TODO is this safe?
+    override def hashCode(): Int = fieldId.hashCode()
+
+    def isResolved: Boolean = receiverSigOpt.isDefined
+
+    def isUnresolvable: Boolean = cannotResolveFlag
+
+    def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
+
+    def resolve(receiverSig: UserInstantiableTypeSig, instantiatedFieldType: Type): Unit = {
+      if (isResolved) {
+        throw AssertionError("trying to resolve an already resolved field resolution target")
+      } else if (isUnresolvable) {
+        throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
+      }
+      receiverSigOpt = Some(receiverSig)
+      instantiatedFieldTypeOpt = Some(instantiatedFieldType)
+    }
+
+    def getReceiverSigUnsafe: UserInstantiableTypeSig = receiverSigOpt.get
+
+    def getInstantiatedFieldTypeUnsafe: Type = instantiatedFieldTypeOpt.get
+
+    def markUnresolvable(): Unit = {
+      cannotResolveFlag = true
+    }
+
+    override def toString: String = {
+      if isResolved then s"$fieldId<rec:${getReceiverSigUnsafe.id};ret:$getInstantiatedFieldTypeUnsafe>"
+      else if isUnresolvable then s"$fieldId<unresolved>"
+      else s"$fieldId<resol:?>"
     }
   }
 
-  enum InvocationTarget {
-    case UnresolvedFun(funId: FunOrVarId)
-    case UnresolvableFun(funId: FunOrVarId)
-    case ResolvedFun(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type)
+  final class InvocationTarget(val funId: FunOrVarId) {
+    private var receiverSigOpt = Option.empty[EncapsulatedTypeSig]
+    private var funSigOpt = Option.empty[FunctionSignature]
+    private var instantiatedReturnTypeOpt = Option.empty[Type]
+    private var cannotResolveFlag = false
 
-    def functionName: FunOrVarId = this match {
-      case UnresolvedFun(funId) => funId
-      case UnresolvableFun(funId) => funId
-      case ResolvedFun(ownerSig, funSig, instantiatedReturnType) => funSig.functionName
+    // TODO is this safe?
+    override def equals(obj: Any): Boolean = obj match {
+      case obj: InvocationTarget =>
+        this.funId == obj.funId
+      case _ => false
     }
 
-    override def toString: String = this match {
-      case UnresolvedFun(funId) =>
-        s"$funId<resol:?>"
-      case UnresolvableFun(funId) =>
-        s"$funId<unresolved>"
-      case ResolvedFun(encapsulatedTypeSig, funSig, instantiatedReturnType) =>
-        s"${funSig.functionName}<rec:${funSig.ownerName};ret:$instantiatedReturnType>"
+    // TODO is this safe?
+    override def hashCode(): Int = funId.hashCode()
+
+    def isResolved: Boolean = receiverSigOpt.isDefined
+
+    def isUnresolvable: Boolean = cannotResolveFlag
+
+    def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
+
+    def resolve(receiverSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
+      if (isResolved) {
+        throw AssertionError("trying to resolve an already resolved field resolution target")
+      } else if (isUnresolvable) {
+        throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
+      }
+      receiverSigOpt = Some(receiverSig)
+      funSigOpt = Some(funSig)
+      instantiatedReturnTypeOpt = Some(instantiatedReturnType)
+    }
+
+    def getReceiverSigUnsafe: EncapsulatedTypeSig = receiverSigOpt.get
+
+    def getFunSigUnsafe: FunctionSignature = funSigOpt.get
+
+    def getInstantiatedReturnTypeUnsafe: Type = instantiatedReturnTypeOpt.get
+
+    def markUnresolvable(): Unit = {
+      cannotResolveFlag = true
+    }
+
+    override def toString: String = {
+      if isResolved then s"$funId<rec:${getFunSigUnsafe.ownerName};ret:$getInstantiatedReturnTypeUnsafe>"
+      else if isUnresolvable then s"$funId<unresolved>"
+      else s"$funId<resol:?>"
     }
   }
 
-  final class Scope private(val outScopeOpt: Option[Scope], val valuesCtx: ValuesContext) extends Instr {
+  final class Scope private(
+                             val outScopeOpt: Option[Scope],
+                             val valuesCtx: ValuesContext,
+                             objectInitializedInThisScopeOpt: Option[IdValue]
+                           ) extends Instr {
     private val types = mutable.Map.empty[IdValue, Type]
+    
+    // FIXME add specific instructions for smartcasts, instead of only keeping them here
+    // Reason: they can be updated in the middle of the typing of a scope, making them invalid for subsequent phases
     private val smartcasts = mutable.SeqMap.empty[Formula, Type]
 
     export valuesCtx.globalCtx as globalValuesCtx
@@ -199,8 +262,12 @@ object SSA {
     }
 
     def saveSmartcast(f: Formula, smartcastType: Type)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
+      // TODO see if this causes issues (overwriting the default type, not found by currentTypeOf?)
       val oldType = currentTypeOf(f)
-      val newType = meetJoin.computeMeet(oldType, smartcastType)
+      val newType =
+        if oldType == NothingType
+        then smartcastType
+        else meetJoin.computeMeet(oldType, smartcastType)
       smartcasts.put(f, newType)
     }
 
@@ -224,6 +291,9 @@ object SSA {
         outScopeOpt.map(_.typeOfNoSmartcast(idValue))
       }.getOrElse(NothingType)
     }
+    
+    def isInitScopeOf(idValue: IdValue): Boolean =
+      objectInitializedInThisScopeOpt.contains(idValue)
 
     override def toString: String = {
       val outerScopeDescr = outScopeOpt match {
@@ -296,11 +366,11 @@ object SSA {
 
   object Scope {
 
-    def nestedInside(outScope: Scope, astNode: Asts.Ast): Scope =
-      nestedInside(outScope, Some(astNode))
+    def nestedInside(outScope: Scope, astNode: Asts.Ast, objInitializedHereOpt: Option[IdValue] = None): Scope =
+      nestedInsideNodeOpt(outScope, Some(astNode), objInitializedHereOpt)
 
-    def nestedInside(outScope: Scope, astNodeOpt: Option[Asts.Ast]): Scope = {
-      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame)
+    def nestedInsideNodeOpt(outScope: Scope, astNodeOpt: Option[Asts.Ast], objInitializedHereOpt: Option[IdValue] = None): Scope = {
+      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, objInitializedHereOpt)
       astNodeOpt.foreach { astNode =>
         newScope.setAstNode(astNode)
       }
@@ -308,7 +378,7 @@ object SSA {
     }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx)
+      new Scope(None, globalValuesCtx, None)
 
     private val scopeUidGen = new AtomicLong(-1)
   }

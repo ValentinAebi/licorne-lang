@@ -145,12 +145,12 @@ final class SubtypingContext(
                   case _ => argInSuper
                 })
             )
-            superTSig.typeParams.zip(superTTypeArgs).forall { (tParam, tArg) =>
-              val expType = subst.apply(tParam.tid)
+            superTTypeArgs.zip(superTSig.typeParams).forall { (expTypeArg, tParam) =>
+              val actTypeArg = subst.apply(tParam.tid)
               tParam.variance match {
-                case Invariant => tArg.withTypeVarsExpanded == expType.withTypeVarsExpanded
-                case Covariant => isSubtype(tArg, expType)
-                case Contravariant => isSubtype(expType, tArg)
+                case Invariant => actTypeArg.withTypeVarsExpanded == expTypeArg.withTypeVarsExpanded
+                case Covariant => isSubtype(actTypeArg, expTypeArg)
+                case Contravariant => isSubtype(expTypeArg, actTypeArg)
               }
             }
           case _ => false
