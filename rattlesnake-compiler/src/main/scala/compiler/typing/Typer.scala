@@ -250,7 +250,7 @@ final class Typer(
       val ownerType = currScope.currentTypeOf(owner)
       val fieldType = resolveFieldAccess(ownerType, field, fw.getPosition)
       val rhsType = currScope.currentTypeOf(rhs)
-      tryToResolveTypeVars(fieldType, rhsType, allowWidening = currScope.isInitScopeOf(owner))
+      tryToResolveTypeVars(fieldType, rhsType)
       subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${field.fieldId}", fw.getPosition)
 
     case _: (InvokeFunc | FieldRead | FieldWrite) =>
@@ -872,7 +872,7 @@ final class Typer(
     val subst = mutable.Map.empty[IdValue, Formula]
     for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      tryToResolveTypeVars(paramType, argType, allowWidening = true)
+      tryToResolveTypeVars(paramType, argType)
       addToSubstIfValid(paramVal, argOpt, subst)
     }
 
@@ -899,21 +899,21 @@ final class Typer(
     }
   }
 
-  private def tryToResolveTypeVars(paramType: Type, argType: Type, allowWidening: Boolean): Unit = (paramType, argType) match {
+  private def tryToResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {
     case (NamedType(_, paramTypeArgs, _), NamedType(_, argsTypeArgs, _)) =>
       // FIXME account for variance?
       for ((tParam, tArg) <- paramTypeArgs.zipCommons(argsTypeArgs)) {
-        tryToResolveTypeVars(tParam, tArg, allowWidening)
+        tryToResolveTypeVars(tParam, tArg)
       }
     case (ClosureType(paramParams, paramRes), ClosureType(argParams, argRes)) =>
       for ((tParam, tArg) <- paramParams.zipCommons(argParams)) {
-        tryToResolveTypeVars(tParam, tArg, allowWidening)
+        tryToResolveTypeVars(tParam, tArg)
       }
-      tryToResolveTypeVars(paramRes, argRes, allowWidening)
+      tryToResolveTypeVars(paramRes, argRes)
     case (tv: TypeVariable, argType) if !tv.isResolved =>
       tv.resolve(argType)
-    case (tv: TypeVariable, argType) if allowWidening && tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
-      tv.remap(argType)
+    case (tv: TypeVariable, argType) if tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
+      tv.remapIfNotLocked(argType)
     case _ => ()
   }
 

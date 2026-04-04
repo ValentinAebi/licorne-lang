@@ -172,6 +172,7 @@ object Types {
   final class TypeVariable private(name: String, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
+    private var lockedFlag = false
 
     override def formulaDependencies: List[Formula] = List.empty
 
@@ -184,15 +185,24 @@ object Types {
         actualTypeOpt = Some(actualTpe)
       }
     }
-    
-    def remap(tpe: Type): Unit = {
+
+    def remapIfNotLocked(tpe: Type): Unit = {
       if (!isResolved) {
         throw IllegalStateException("cannot remap an unresolved type variable")
       }
-      val actualTpe = goUpPath(tpe)
-      if (actualTpe != this) {
-        actualTypeOpt = Some(actualTpe)
+      if (!lockedFlag) {
+        val actualTpe = goUpPath(tpe)
+        if (actualTpe != this) {
+          actualTypeOpt = Some(actualTpe)
+        }
       }
+    }
+
+    def lock(): Unit = {
+      if (!isResolved) {
+        throw IllegalStateException("cannot lock an unresolved type variable")
+      }
+      lockedFlag = true
     }
 
     def actualTypeIfResolved: Option[Type] = actualTypeOpt.map(goUpPath)
