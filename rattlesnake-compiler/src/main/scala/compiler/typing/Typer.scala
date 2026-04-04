@@ -119,7 +119,6 @@ final class Typer(
               .declarationTypeAnnotOpt
               .orElse(typeHintsStore.getHints(condVal).find { hint =>
                 subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
-                  && subtypingCtx.isSubtype(bodyScope.currentTypeOf(bodyLastVal), hint)
               })
               .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
           currScope.saveType(condVal, tpe)
