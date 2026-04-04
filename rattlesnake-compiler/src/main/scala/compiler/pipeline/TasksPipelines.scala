@@ -62,9 +62,9 @@ object TasksPipelines {
         (_, program) => program
       ))
       .andThen(MonotonicityAnalyzer())
-      .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore))
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
+      .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, er, continueIfErrors = true))
       .andThen(Concurrent(
