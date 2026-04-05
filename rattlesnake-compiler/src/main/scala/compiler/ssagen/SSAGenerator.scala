@@ -467,11 +467,16 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     def generateUnaryWithProxy(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormula: Formula => Formula): Option[Formula] =
       generateUnary(operandTree, mkInstr, Some(mkFormula))
 
-    def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None): Option[Formula] = {
-      val lhsVal = currScope.newIntermediate()
+    def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
+      var lhsVal = currScope.newIntermediate()
       val lhsProxyOpt = generateSSAExpr(lhsVal, lhs, currScope)
-      val rhsVal = currScope.newIntermediate()
+      var rhsVal = currScope.newIntermediate()
       val rhsProxyOpt = generateSSAExpr(rhsVal, rhs, currScope)
+      if (swapOperands) {
+        val lhsBefore = lhsVal
+        lhsVal = rhsVal
+        rhsVal = lhsBefore
+      }
       currScope.saveInstr(mkInstr(lhsVal, rhsVal), expr)
       for {
         mkFormula <- mkFormulaOpt
@@ -480,8 +485,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       } yield mkFormula(lhsProxy, rhsProxy)
     }
 
-    def generateBinaryWithProxy(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormula: (Formula, Formula) => Formula): Option[Formula] =
-      generateBinary(lhs, rhs, mkInstr, Some(mkFormula))
+    def generateBinaryWithProxy(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormula: (Formula, Formula) => Formula, swapOperands: Boolean = false): Option[Formula] =
+      generateBinary(lhs, rhs, mkInstr, Some(mkFormula), swapOperands = swapOperands)
 
     val proxyOpt = expr match {
       case Asts.UnitLit() =>
@@ -567,11 +572,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessThan, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Lt(resultVal, _, _), LessThan(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterThan, rhsTree) =>
-        recurseOnDesugared(Asts.BinaryOp(rhsTree, Operator.LessThan, lhsTree).withDesugaringSource(binopTree))
+        generateBinaryWithProxy(lhsTree, rhsTree, Lt(resultVal, _, _), LessThan(_, _), swapOperands = true)
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessOrEq, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterOrEq, rhsTree) =>
-        recurseOnDesugared(Asts.BinaryOp(rhsTree, Operator.LessOrEq, lhsTree).withDesugaringSource(binopTree))
+        generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _), swapOperands = true)
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree) =>
         generateBinary(lhsTree, rhsTree, Equal(resultVal, _, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Inequality, rhsTree) =>
