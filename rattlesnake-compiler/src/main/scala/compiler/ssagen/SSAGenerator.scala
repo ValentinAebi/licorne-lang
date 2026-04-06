@@ -394,8 +394,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
               init <- proxyStore.getProxy(beforeLoopVal)
-              induct <- proxyStore.getProxy(bodyLastLocalVal)
-            } yield Recurrence(init, induct, condVal)
+            } yield Recurrence(init, proxyStore.develop(bodyLastLocalVal), condVal)
             bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
@@ -469,13 +468,16 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
       var lhsVal = currScope.newIntermediate()
-      val lhsProxyOpt = generateSSAExpr(lhsVal, lhs, currScope)
+      var lhsProxyOpt = generateSSAExpr(lhsVal, lhs, currScope)
       var rhsVal = currScope.newIntermediate()
-      val rhsProxyOpt = generateSSAExpr(rhsVal, rhs, currScope)
+      var rhsProxyOpt = generateSSAExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
         lhsVal = rhsVal
         rhsVal = lhsBefore
+        val lhsProxyOptBefore = lhsProxyOpt
+        lhsProxyOpt = rhsProxyOpt
+        rhsProxyOpt = lhsProxyOptBefore
       }
       currScope.saveInstr(mkInstr(lhsVal, rhsVal), expr)
       for {

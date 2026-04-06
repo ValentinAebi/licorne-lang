@@ -30,24 +30,28 @@ final class ProxyStore {
     case _ => None
   }
   
-  def develop(formula: Formula): Formula = formula match {
-    case value: IdValue => getProxy(value).getOrElse(value)
-    case formula: ConstFormula => formula
-    case Select(owner, field) => Select(develop(owner), field)
-    case Call(receiver, func, typeArgs, args) =>
-      Call(develop(receiver), func, typeArgs, args.map(develop))
-    case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
-    case Neg(operand) => Neg(develop(operand))
-    case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))
-    case DivBy(lhs, rhs) => DivBy(develop(lhs), develop(rhs))
-    case Modulo(lhs, rhs) => Modulo(develop(lhs), develop(rhs))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(develop(lhs), develop(rhs))
-    case LogicalNot(operand) => LogicalNot(develop(operand))
-    case LogicalOr(lhs, rhs) => LogicalOr(develop(lhs), develop(rhs))
-    case Equality(lhs, rhs) => Equality(develop(lhs), develop(rhs))
-    case LessOrEq(lhs, rhs) => LessOrEq(develop(lhs), develop(rhs))
-    case LessThan(lhs, rhs) => LessThan(develop(lhs), develop(rhs))
-    case TypePredicate(subject, tpe) => TypePredicate(develop(subject), tpe)
+  def develop(formula: Formula): Formula = {
+    val oneStepRes = formula match {
+      case value: IdValue => getProxy(value).getOrElse(value)
+      case formula: ConstFormula => formula
+      case Select(owner, field) => Select(develop(owner), field)
+      case Call(receiver, func, typeArgs, args) =>
+        Call(develop(receiver), func, typeArgs, args.map(develop))
+      case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
+      case Neg(operand) => Neg(develop(operand))
+      case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))
+      case DivBy(lhs, rhs) => DivBy(develop(lhs), develop(rhs))
+      case Modulo(lhs, rhs) => Modulo(develop(lhs), develop(rhs))
+      case LogicalAnd(lhs, rhs) => LogicalAnd(develop(lhs), develop(rhs))
+      case LogicalNot(operand) => LogicalNot(develop(operand))
+      case LogicalOr(lhs, rhs) => LogicalOr(develop(lhs), develop(rhs))
+      case Equality(lhs, rhs) => Equality(develop(lhs), develop(rhs))
+      case LessOrEq(lhs, rhs) => LessOrEq(develop(lhs), develop(rhs))
+      case LessThan(lhs, rhs) => LessThan(develop(lhs), develop(rhs))
+      case TypePredicate(subject, tpe) => TypePredicate(develop(subject), tpe)
+    }
+    if oneStepRes == formula then oneStepRes
+    else develop(oneStepRes)
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo)(using typer: Typer): (BranchingInfo, BranchingInfo) = getProxy(cond) match {

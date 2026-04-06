@@ -11,6 +11,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.smt.Simplifier
 import compiler.typing.{MeetJoinComputer, Typer}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
@@ -272,15 +273,15 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type, idxInScope: Int)(using meetJoin: MeetJoinComputer, proxyStore: ProxyStore): Unit = {
+    def saveSmartcast(f: Formula, smartcastType: Type, idxInScope: Int)(using meetJoin: MeetJoinComputer, simplifier: Simplifier, proxyStore: ProxyStore): Unit = {
       // TODO see if this causes issues (overwriting the default type, not found by currentTypeOf?)
       val oldType = currentTypeOf(f)
       val newType =
         if oldType == NothingType
-        then smartcastType
+        then simplifier.simplify(smartcastType)
         else meetJoin.computeMeet(oldType, smartcastType)
       smartcasts.put(f, newType)
-      pendingSmartcasts.addOne(idxInScope, f, smartcastType)
+      pendingSmartcasts.addOne(idxInScope, f, newType)
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {

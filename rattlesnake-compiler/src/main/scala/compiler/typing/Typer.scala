@@ -122,7 +122,6 @@ final class Typer(
               })
               .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
           currScope.saveType(condVal, tpe)
-          condScope.saveSmartcast(condVal, tpe, 0)
           Some(())
         }
       }

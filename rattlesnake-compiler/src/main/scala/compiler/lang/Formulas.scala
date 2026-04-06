@@ -272,6 +272,6 @@ object Formulas {
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
-    subject.idValsDependencies.forall(_.typeCanMention(dep))
+    !subject.isInstanceOf[ConstFormula] && subject.idValsDependencies.forall(_.typeCanMention(dep))
 
 }
