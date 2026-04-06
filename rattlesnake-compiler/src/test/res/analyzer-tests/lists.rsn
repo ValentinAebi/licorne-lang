@@ -1,0 +1,103 @@
+
+typealias Length = [0,]
+
+datatype List[+T]
+record Nil : List[Nothing]
+record Cons[+T](head: T, tail: List[T]) : List[T]
+
+object Lists {
+
+   fn length[A](var ls: List[A]) -> Length {
+      var len = 0;
+      while ls is Cons {
+         len += 1;
+         ls = ls.tail;
+      };
+      return len;
+   }
+
+   fn length_bad[A](var ls: List[A]) -> Length {
+      var len = -1;
+      while ls is Cons {
+         len += 1;
+         ls = ls.tail;
+      };
+      return len;   //> E : return value: expected Length, found len<loop-body-start@21:24> : [-1,]
+   }
+
+   fn sum(var ls: List[[0,]]) -> [0,] {
+      var s = 0;
+      while ls is Cons {
+         s += ls.head;
+         ls = ls.tail;
+      };
+      return s;
+   }
+
+   fn sum_bad(var ls: List[[,1000]]) -> [0,] {
+      var s = 0;
+      while ls is Cons {    //> E : inferred incorrect type [0,] for variable s at loop body start, please provide a type annotation at variable declaration site
+         s += ls.head;
+         ls = ls.tail;
+      };
+      return s;
+   }
+
+   fn reverse[T](var ls: List[T]) -> List[T] {
+      var reversed = new Nil();
+      while ls is Cons {
+         reversed = new Cons(head = ls.head, tail = reversed);
+         ls = ls.tail;
+      };
+      return reversed;
+   }
+
+   fn filterLessOrEq(a: Int, var ls: List[Int]) -> List[[,a]] {
+      var filteredReversed = new Nil();
+      while ls is Cons {
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn filterLessThan(a: Int, var ls: List[Int]) -> List[[,a-1]] {
+      var filteredReversed = new Nil();
+      while ls is Cons {
+         if ls.head < a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[,a-1]] {
+      var filteredReversed = new Nil();
+      while ls is Cons {        //> E : inferred incorrect type List[[,a - 1]] for variable filteredReversed at loop body start, please provide a type annotation at variable declaration site
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[,a-1]] {
+      var filteredReversed: List[[,a-1]] = new Nil();
+      while ls is Cons {    //> E : update of variable filteredReversed in loop violate its type annotation List[[,a - 1]]
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn isSingletonList[T](ls: List[T]) -> Bool =
+      ls is Cons && ls.tail is Nil
+
+}
+

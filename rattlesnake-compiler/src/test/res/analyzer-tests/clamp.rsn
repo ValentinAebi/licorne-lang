@@ -1,0 +1,64 @@
+
+object Clamp {
+
+   fn clamp1(min: Int, max: [min,], x: Int) -> [min, max] =
+     when x < min then min
+     else when x < max then x
+     else max
+
+   fn clamp2(min: Int, max: Int, x: Int) -> [min, max] =
+     when x < min then min              //> E : return value: expected [min,max], found Int
+     else when x < max then x
+     else max
+
+   fn clamp3(min: Int, max: [min,], x: Int) -> [min, max] =
+     when x < min then min              //> E : return value: expected [min,max], found [min - 1,max]
+     else when x < max then x - 1
+     else max
+
+   // this case is more intricate because the order of parameters prevents x from being smartcast to [min,max] in the second branch
+   fn clamp4(x: Int, min: Int, max: [min,]) -> [min, max] =
+     when x < min then min
+     else when x < max then x
+     else max
+
+   fn clamp5(min: Int, max: [min,], x: Int) -> [min, max] {
+      if x < min {
+         return min;
+      } else if x < max {
+         return x;
+      } else {
+         return max;
+      }
+   }
+
+   fn clamp6(min: Int, max: [min,], x: Int) -> [min, max] {
+      if x < min {
+         return min - 1;    //> E : return value: expected [min,max], found min - 1 : Int
+      } else if x < max {
+         return x;
+      } else {
+         return max;
+      }
+   }
+
+   fn foo(in: Array[Int], a: [-2,]) -> Array[[0,a]] {
+      val out = new Array(len = in.length());
+      for var i = 0; i < in.length(); i += 1 {
+         val c = clamp1(0, a, in.at(i));    //> E : second argument of call to clamp1: expected [0,], found a : [-2,]
+         out.set(i, c);
+      };
+      return out;
+   }
+
+}
+
+class Array[T](len: [0,]) {
+   fn length(this) -> [0,] = this.len
+   fn at(this, i: Int) -> T {           // TODO restrict type of i
+      panic "not implemented"
+   }
+   fn set(this, i: Int, value: T) {     // TODO restrict type of i
+      panic "not implemented"
+   }
+}
