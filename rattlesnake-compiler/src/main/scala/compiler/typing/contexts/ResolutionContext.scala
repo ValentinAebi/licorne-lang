@@ -1,18 +1,13 @@
 package compiler.typing.contexts
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.*
-import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.pipeline.CompilationStep
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.typing.contexts.ResolutionContext.FuncResolResult.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.smartcasting.TypesReasoningCache
-import compiler.util.zipCommons
 
 import scala.collection.immutable.SeqMap
 import scala.reflect.ClassTag
@@ -42,13 +37,23 @@ final case class ResolutionContext(
       case _ => None
     }
 
-  def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
+  def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId)
+                   (using subtypingCtx: SubtypingContext): FuncResolResult = {
     resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
-      case None => OwnerNotFound
+      case None => FuncResolResult.OwnerNotFound
       case Some(ownerSig) =>
         ownerSig.functions.get(funId) match {
-          case None => FuncNotFound(ownerSig)
-          case Some(funSig) => Success(ownerSig, funSig)
+          case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
+          case None =>
+            ownerSig.directSupertypes.iterator.map { superT =>
+              resolveFunSig(superT.typeName, funId) match {
+                case FuncResolResult.Success(superOwnerSig, superFunSig) =>
+                  val subst = subtypingCtx.subToSuperSubst(receiverId, superT.typeName).get
+                  FuncResolResult.Success(ownerSig, superFunSig.substitute(receiverId, subst))
+                case failure => failure
+              }
+            }.find(_.isInstanceOf[FuncResolResult.Success])
+            .getOrElse(FuncResolResult.FuncNotFound(ownerSig))
         }
     }
   }

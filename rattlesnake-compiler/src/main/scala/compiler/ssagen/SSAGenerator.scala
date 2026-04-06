@@ -77,7 +77,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 fields(paramId) = StableField(paramId, paramType, fieldValue)
                 classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
             }
-            val noFunctionsSig = ClassSignature(id, typeParams, fields, Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
+            val noFunctionsSig = ClassSignature(id, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -98,7 +98,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = RecordSignature(id, typeParams, stableFields, directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
+            val sig = RecordSignature(id, typeParams, SeqMap.from(stableFields), directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
               datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
@@ -116,7 +116,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 typeAliasParams(paramId) = (paramType, paramValue)
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams, itValue, typeAliasParams, mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
+            val sig = TypeAliasSignature(typeName, typeParams, itValue, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
@@ -210,7 +210,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val ownerId = functionsProvider.id
         val funId = funDef.id
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
-        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, paramsInclThis, retType, funSigScope, funDef.visibility, funDef.getPosition)
+        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), retType, funSigScope, funDef.visibility, funDef.getPosition)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig -> function)
       }

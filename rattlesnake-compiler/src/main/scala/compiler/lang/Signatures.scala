@@ -7,9 +7,10 @@ import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.reporting.Position
-import compiler.util.SeqSet
+import compiler.util.{SeqSet, mapVals}
 
-import scala.collection.{SeqMap, mutable}
+import scala.collection.mutable
+import scala.collection.immutable.SeqMap
 
 final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
@@ -25,6 +26,17 @@ final case class FunctionSignature(
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
   
   def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
+  
+  def substitute(newOwnerName: TypeIdentifier, typesSubst: Map[TypeIdentifier, Type]): FunctionSignature = FunctionSignature(
+    newOwnerName,
+    functionName,
+    typeParams,
+    paramsInclThis.mapVals(_.substitute(typesSubst, Map.empty)),
+    retType.substitute(typesSubst, Map.empty),
+    sigScope,
+    visibility,
+    declPosOpt
+  )
 
   override def toString: String = {
     val sb = StringBuilder()
@@ -86,7 +98,7 @@ final case class TypeAliasSignature(
                                    ) extends TypeSignature
 
 sealed trait RuntimeTypeSignature extends TypeSignature {
-  override def params: SeqMap[FunOrVarId, (Type, IdValue)] = mutable.LinkedHashMap.empty
+  override def params: SeqMap[FunOrVarId, (Type, IdValue)] = SeqMap.empty
 
   def directSupertypes: List[NamedType]
 }

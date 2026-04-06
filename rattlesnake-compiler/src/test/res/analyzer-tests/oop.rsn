@@ -23,7 +23,7 @@ object Main {
    }
 
    private fn feed1(lizard: Lizard, insect: Insect){
-      lizard.eat(insect)   //> E : method argument: expected List[Insect], found Insect
+      lizard.eat(insect)   //> E : first argument of call to eat: expected List[Insect], found insect : Insect
    }
 
    private fn feed2(lizard: Lizard, insect: Insect){

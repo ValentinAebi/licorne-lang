@@ -42,6 +42,8 @@ final class Typer(
                  )(using CompilationStep) {
 
   private given ResolutionContext = resolutionCtx
+  
+  private given SubtypingContext = subtypingCtx
 
   private given MeetJoinComputer = meetJoin
 
