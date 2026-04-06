@@ -167,7 +167,7 @@ final class SubtypingChecker(
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, superFunRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)
+                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)
                 }
                 if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
                   er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", subFunDeclPosOpt)
