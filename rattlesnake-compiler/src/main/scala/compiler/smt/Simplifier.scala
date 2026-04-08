@@ -102,27 +102,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
     case TypePredicate(subject, tpe) => None
   }
 
-  private def evalNumericBinop(lhs: Formula, rhs: Formula, intBinop: (Int, Int) => Int, doubleBinop: (Double, Double) => Double, rhsCanBeZero: Boolean): Option[IntConst] =
-    (eval(lhs), eval(rhs)) match {
-      case (_, Some(IntConst(0) /* TODO | DoubleConst(0) */)) if !rhsCanBeZero => None
-      case (Some(IntConst(lc)), Some(IntConst(rc))) => Some(IntConst(intBinop(lc, rc)))
-      // TODO Double
-      case _ => None
-    }
-
-  private def evalLogicalBinop(lhs: Formula, rhs: Formula, logicalBinop: (Boolean, Boolean) => Boolean): Option[BoolConst] =
-    (eval(lhs), eval(rhs)) match {
-      case (Some(BoolConst(lc)), Some(BoolConst(rc))) => Some(BoolConst(logicalBinop(lc, rc)))
-      case _ => None
-    }
-
-  private def evalComparisonBinop[C <: ConstFormula : ClassTag](lhs: Formula, rhs: Formula, comparisonBinop: (C, C) => Boolean): Option[BoolConst] =
-    (eval(lhs), eval(rhs)) match {
-      case (Some(l: C), Some(r: C)) => Some(BoolConst(comparisonBinop(l, r)))
-      case _ => None
-    }
-
-  private def linearize(formula: Formula): Map[Formula, Int] = formula match {
+  def linearize(formula: Formula): Map[Formula, Int] = formula match {
     case value: IdValue => Map(value -> 1)
     case IntConst(cst) => Map(IntConst(1) -> cst)
     case formula: ConstFormula => Map(formula -> 1)
@@ -160,5 +140,25 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
     case LogicalOr(lhs, rhs) => Map.empty
     case TypePredicate(subject, tpe) => Map.empty
   }
+
+  private def evalNumericBinop(lhs: Formula, rhs: Formula, intBinop: (Int, Int) => Int, doubleBinop: (Double, Double) => Double, rhsCanBeZero: Boolean): Option[IntConst] =
+    (eval(lhs), eval(rhs)) match {
+      case (_, Some(IntConst(0) /* TODO | DoubleConst(0) */)) if !rhsCanBeZero => None
+      case (Some(IntConst(lc)), Some(IntConst(rc))) => Some(IntConst(intBinop(lc, rc)))
+      // TODO Double
+      case _ => None
+    }
+
+  private def evalLogicalBinop(lhs: Formula, rhs: Formula, logicalBinop: (Boolean, Boolean) => Boolean): Option[BoolConst] =
+    (eval(lhs), eval(rhs)) match {
+      case (Some(BoolConst(lc)), Some(BoolConst(rc))) => Some(BoolConst(logicalBinop(lc, rc)))
+      case _ => None
+    }
+
+  private def evalComparisonBinop[C <: ConstFormula : ClassTag](lhs: Formula, rhs: Formula, comparisonBinop: (C, C) => Boolean): Option[BoolConst] =
+    (eval(lhs), eval(rhs)) match {
+      case (Some(l: C), Some(r: C)) => Some(BoolConst(comparisonBinop(l, r)))
+      case _ => None
+    }
 
 }

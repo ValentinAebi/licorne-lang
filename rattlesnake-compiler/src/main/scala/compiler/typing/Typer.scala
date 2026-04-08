@@ -42,7 +42,7 @@ final class Typer(
                  )(using CompilationStep) {
 
   private given ResolutionContext = resolutionCtx
-  
+
   private given SubtypingContext = subtypingCtx
 
   private given MeetJoinComputer = meetJoin
@@ -679,36 +679,56 @@ final class Typer(
     for (assumption <- branchInfo.assumptions) {
       val developedAssumption = proxyStore.develop(assumption)
       solver.assert(developedAssumption)
-      val smartcastOpt = developedAssumption match {
-        // TODO maybe we should rather isolate the term with the most narrow scope?
-        //  (could be for instance x in x + y <= a + b + 1)
+      val smartcasts = developedAssumption match {
         case LessOrEq(lhs, rhs) =>
-          leqToSmartcast(lhs, rhs)
+          leqToSmartcasts(lhs, rhs)
         case LessThan(lhs, rhs) =>
-          ltToSmartcast(lhs, rhs)
-        case _ => None
+          ltToSmartcasts(lhs, rhs)
+        case _ => List.empty
       }
-      smartcastOpt.foreach { (subject, smartcastType) =>
+      smartcasts.foreach { (subject, smartcastType) =>
         scope.saveSmartcast(subject, smartcastType, idxInScope)
       }
     }
   }
 
-  private def leqToSmartcast(lhs: Formula, rhs: Formula): Option[(Formula, Type)] = {
-    if (lhs.typeCanMention(rhs)) {
-      Some(lhs -> IntRangeType.ofUpperBound(rhs))
-    } else if (rhs.typeCanMention(lhs)) {
-      Some(rhs -> IntRangeType.ofLowerBound(lhs))
-    } else None
+  private def leqToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
+    val directlyInferredSmartcastOpt =
+      if (lhs.typeCanMention(rhs)) {
+        Some(lhs -> IntRangeType.ofUpperBound(rhs))
+      } else if (rhs.typeCanMention(lhs)) {
+        Some(rhs -> IntRangeType.ofLowerBound(lhs))
+      } else None
+    val linear = simplifier.linearize(Plus(lhs, Neg(rhs)))
+    var smartcastSubjectOpt = Option.empty[(Formula, Int)]
+    val otherTerms = mutable.ListBuffer.empty[(Formula, Int)]
+    for (term@(f, idx) <- linear) {
+      if (smartcastSubjectOpt.isEmpty && linear.forall((lf, _) => lf == f || f.typeCanMention(lf))) {
+        smartcastSubjectOpt = Some(term)
+      } else {
+        otherTerms.addOne(term)
+      }
+    }
+    val linSmartcastOpt = smartcastSubjectOpt match {
+      case Some((smartcastSubject, smartcastSubjectCoef)) if otherTerms.forall((f, coef) => coef % Math.abs(smartcastSubjectCoef) == 0) =>
+        val bound = otherTerms.foldLeft[Formula](IntConst(0)) {
+          case (acc, (f, coef)) =>
+            Plus(acc, Times(IntConst(-coef / smartcastSubjectCoef), f))
+        }
+        val range = simplifier.simplify(
+          if smartcastSubjectCoef < 0
+          then IntRangeType.ofLowerBound(bound)
+          else IntRangeType.ofUpperBound(bound)
+        )
+        Some(smartcastSubject -> range)
+      case _ => None
+    }
+    directlyInferredSmartcastOpt.toList ++ linSmartcastOpt
   }
 
-  private def ltToSmartcast(lhs: Formula, rhs: Formula): Option[(Formula, Type)] = {
+  private def ltToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
     import FormulasDsl.*
-    if (lhs.typeCanMention(rhs)) {
-      Some(lhs -> IntRangeType.ofUpperBound(rhs - 1))
-    } else if (rhs.typeCanMention(lhs)) {
-      Some(rhs -> IntRangeType.ofLowerBound(lhs + 1))
-    } else None
+    leqToSmartcasts(lhs + 1, rhs)
   }
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type], callArgs: List[Formula], scope: Scope, posOpt: Option[Position], reportErrors: Boolean = true)
