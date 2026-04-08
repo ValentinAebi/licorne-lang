@@ -666,7 +666,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
           val paramVal = currScope.newParam(id, posOpt)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, bodyScope))
-          val tpe = givenTypeOpt.getOrElse(TypeVariable(id.stringId, None, None) {
+          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None) {
             bodyScope.valuesCtx.globalCtx.saveTypeVariable(_, closureDefTree.getPosition)
           })
           paramValsAndTypesB.addOne(paramVal -> tpe)

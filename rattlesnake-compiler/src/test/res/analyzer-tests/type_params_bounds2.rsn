@@ -10,7 +10,7 @@ object Test {
 
    fn testF(animal: Animal, dog: Dog) -> Unit {
       new R(a = animal, b = dog);
-      new R(a = dog, b = animal);    //> E : type variable B has been assigned to type Animal, which violates its bounds
+      new R(a = dog, b = animal);    //> E : type variable B has been resolved to type Animal, which violates its upper bound Dog
    }
 
 }

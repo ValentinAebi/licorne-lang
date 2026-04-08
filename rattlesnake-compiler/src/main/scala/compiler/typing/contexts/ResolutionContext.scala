@@ -9,18 +9,14 @@ import compiler.reporting.Position
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.smartcasting.TypesReasoningCache
 
-import scala.collection.immutable.SeqMap
 import scala.reflect.ClassTag
 
 final case class ResolutionContext(
-                                    interfaces: SeqMap[TypeIdentifier, InterfaceSignature],
-                                    classes: SeqMap[TypeIdentifier, ClassSignature],
-                                    objects: SeqMap[TypeIdentifier, ObjectSignature],
-                                    datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
-                                    records: SeqMap[TypeIdentifier, RecordSignature],
+                                    program: Program,
                                     typeVarsCtx: TypeVariablesContext,
                                     er: ErrorReporter
                                   )(using CompilationStep) {
+  import program.*
 
   val typesReasoningCache: TypesReasoningCache = TypesReasoningCache(this)
 
@@ -29,7 +25,8 @@ final case class ResolutionContext(
       orElse classes.get(typeId)
       orElse objects.get(typeId)
       orElse datatypes.get(typeId)
-      orElse records.get(typeId))
+      orElse records.get(typeId)
+      orElse typeAliases.get(typeId))
 
   def resolveTypeSigAs[S <: TypeSignature : ClassTag](typeId: TypeIdentifier): Option[S] =
     resolveTypeSig(typeId) match {
@@ -75,18 +72,6 @@ final case class ResolutionContext(
 }
 
 object ResolutionContext {
-
-  def apply(program: Program, typeVarsCtx: TypeVariablesContext, er: ErrorReporter)
-           (using CompilationStep): ResolutionContext =
-    ResolutionContext(
-      program.interfaces,
-      program.classes,
-      program.objects,
-      program.datatypes,
-      program.records,
-      typeVarsCtx,
-      er
-    )
 
   enum FuncResolResult {
     case OwnerNotFound

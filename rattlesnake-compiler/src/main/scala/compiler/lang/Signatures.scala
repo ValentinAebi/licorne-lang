@@ -203,14 +203,20 @@ sealed trait TypeParamInfo {
   val tid: TypeIdentifier
   val upperBoundOpt: Option[Type]
   val lowerBoundOpt: Option[Type]
+  
+  def varianceOpt: Option[Variance]
 }
 
 final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
+  override def varianceOpt: Option[Variance] = Some(variance)
+
   override def toString: String =
     s"${varianceDescr(variance)}$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
 }
 
 final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
+  override def varianceOpt: Option[Variance] = None
+
   override def toString: String =
     s"$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
 }

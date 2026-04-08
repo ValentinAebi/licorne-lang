@@ -535,6 +535,13 @@ final class Typer(
         if (typeArgs.nonEmpty) {
           er.reportError(s"$typeName is a type variable, hence it cannot take type arguments", posOpt)
         }
+        for {
+          tpVariance <- tpInfo.varianceOpt
+          ambientVariance <- ambientVarianceOpt
+          if !tpVariance.isAssignableTo(ambientVariance)
+        } {
+          er.reportError(s"variance error: $tpVariance type parameter $typeName in $ambientVariance position", posOpt)
+        }
       case None => resolutionCtx.resolveTypeSig(typeName) match {
         case Some(sig) =>
           typeTypeArgsList(typeName, sig.typeParams, typeArgs, ambientVarianceOpt, currScope, posOpt)
@@ -589,11 +596,13 @@ final class Typer(
     val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
     }
+    var isReceiver = true
     for (paramId, paramType) <- paramsInclThis do {
-      dealiasAndTypeType(paramType, Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+      dealiasAndTypeType(paramType, if isReceiver then None else Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
       if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty) {
         sigScope.saveType(paramId, paramType)(using fullTypeParamsCtx)
       }
+      isReceiver = false
     }
     dealiasAndTypeType(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
   }
@@ -608,7 +617,7 @@ final class Typer(
     for (_, funSig) <- functions do {
       typeFunSig(funSig, fullTypeParamsCtx)
     }
-    typeSupertypesAsInterfaces(interfaceSig, resolutionCtx)
+    typeSupertypesAsInterfaces(interfaceSig, resolutionCtx, fullTypeParamsCtx)
   }
 
   def typeClassSig(classSig: ClassSignature): Unit = {
@@ -624,7 +633,7 @@ final class Typer(
     for (_, funSig) <- functions do {
       typeFunSig(funSig, fullTypeParamsCtx)
     }
-    typeSupertypesAsInterfaces(classSig, resolutionCtx)
+    typeSupertypesAsInterfaces(classSig, resolutionCtx, fullTypeParamsCtx)
   }
 
   def typeObjectSig(objSig: ObjectSignature): Unit = {
@@ -633,32 +642,30 @@ final class Typer(
     for (_, funSig) <- functions do {
       typeFunSig(funSig, TypeParamsContext.empty)
     }
-    typeSupertypes(objSig, "interface", resolutionCtx)
+    typeSupertypes(objSig, "interface", resolutionCtx, TypeParamsContext.empty)
   }
 
   def typeDatatypeSig(datatypeSig: DatatypeSignature): Unit = {
     val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
 
-    processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
+    val fullTypeParamsCtx = processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
-    typeSupertypesAsDatatypes(datatypeSig, resolutionCtx)
+    typeSupertypesAsDatatypes(datatypeSig, resolutionCtx, fullTypeParamsCtx)
   }
 
   def typeRecordSig(recordSig: RecordSignature): Unit = {
     val RecordSignature(id, typeParams, fields, directSupertypes, sigScope, declPosOpt) = recordSig
 
-    given TypeParamsContext = TypeParamsContext(typeParams)
-
-    for typeParam <- typeParams do {
-      typeTypeTypeParam(typeParam, sigScope, declPosOpt)
+    val fullTypeParamsCtx = processTypeParamsAccumulating(TypeParamsContext.empty, typeParams) {
+      typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     checkTypeParamsAreDistinct(typeParams, declPosOpt)
     for (_, fld) <- fields do {
-      typeStableField(fld, sigScope, declPosOpt)
+      typeStableField(fld, sigScope, declPosOpt)(using fullTypeParamsCtx)
     }
-    typeSupertypesAsDatatypes(recordSig, resolutionCtx)
+    typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
   }
 
   private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo, idxInScope: Int)(using TypeParamsContext): Unit = {
@@ -792,7 +799,7 @@ final class Typer(
       val substBuilder = Map.newBuilder[TypeIdentifier, Type]
       for ((tParam, tArg) <- typeParams.zip(typeArgs)) {
         ctxDescrForReportingOpt.foreach { ctxDescr =>
-          checkTypeIsInBounds(tArg, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt)
+          checkTypeIsInBounds(tArg, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt, tParam.tid)
         }
         substBuilder.addOne(tParam.tid -> tArg)
       }
@@ -804,17 +811,17 @@ final class Typer(
         }
       }
       Map.from(for tp <- typeParams yield {
-        tp.tid -> typeVarsCtx.newTypeVariable(tp.tid.stringId, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt)
+        tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt)
       })
     }
   }
 
-  def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position]): Unit = {
+  def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier): Unit = {
     upperBoundOpt.foreach { upperBound =>
-      subtypingCtx.enforceIsSubtype(tpe, upperBound, s"type $tpe violates upper bound $upperBound", posOpt)
+      subtypingCtx.enforceIsSubtype(tpe, upperBound, s"type variable $typeVarId has been resolved to type $tpe, which violates its upper bound $upperBound", posOpt)
     }
     lowerBoundOpt.foreach { lowerBound =>
-      subtypingCtx.enforceIsSubtype(lowerBound, tpe, s"type $tpe violates lower bound $lowerBound", posOpt)
+      subtypingCtx.enforceIsSubtype(lowerBound, tpe, s"type variable $typeVarId has been resolved to type $tpe, which violates its lower bound $lowerBound", posOpt)
     }
   }
 
@@ -827,16 +834,17 @@ final class Typer(
     }
   }
 
-  private def typeSupertypesAsInterfaces(sig: EncapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit =
-    typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx)
+  private def typeSupertypesAsInterfaces(sig: EncapsulatedTypeSig, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Unit =
+    typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx, typeParamsCtx)
 
-  private def typeSupertypesAsDatatypes(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit =
-    typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx)
+  private def typeSupertypesAsDatatypes(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Unit =
+    typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx, typeParamsCtx)
 
-  private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext): Unit = {
+  private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Unit = {
     for (superT <- sig.directSupertypes) {
       dealiasingCtx.dealiasType(superT) match {
         case namedType: NamedType =>
+          typeNamedTypeDealiased(namedType, Some(Covariant), sig.sigScope, sig.declPosOpt)(using typeParamsCtx)
           if (resolutionCtx.resolveTypeSigAs[S](superT.typeName).isEmpty) {
             er.reportError(s"$superTKindDescr not found: ${superT.typeName}", sig.declPosOpt)
           }

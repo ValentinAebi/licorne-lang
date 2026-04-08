@@ -1,6 +1,6 @@
 package compiler.lang
 
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{Identifier, TypeIdentifier}
 import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
@@ -169,7 +169,7 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  final class TypeVariable private(name: String, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
+  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
     private var lockedFlag = false
@@ -211,7 +211,7 @@ object Types {
 
     def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
 
-    override def toString: String = if isResolved then actualTypeIfResolved.get.toString else name
+    override def toString: String = if isResolved then actualTypeIfResolved.get.toString else id.toString
 
     private def goUpPath(tpe: Type): Type = tpe match {
       case tVar: TypeVariable => tVar.actualTypeOpt match {
@@ -226,8 +226,8 @@ object Types {
   }
 
   object TypeVariable {
-    def apply(name: String, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
-      val tv = new TypeVariable(name, upperBoundOpt, lowerBoundOpt)
+    def apply(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
+      val tv = new TypeVariable(id, upperBoundOpt, lowerBoundOpt)
       tvRegistrator(tv)
       tv
     }
