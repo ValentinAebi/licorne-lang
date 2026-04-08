@@ -254,26 +254,32 @@ final class SSAPrinter(
         pps.add(s"LT ${maybeTyped(assigned, scope)} := $lhs < $rhs")
       case FieldRead(assigned, owner, field) =>
         pps.add(s"FIELD-RD ${maybeTyped(assigned, scope)} := $owner.$field")
+      case HeapVarRead(assigned, heapVar) =>
+        pps.add(s"HEAP-VAR-RD $assigned := *{$heapVar}")
       case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
         pps.add(s"INVK-MTH ${maybeTyped(assigned, scope)} := $receiver.$func")
         printTypeArgsList(typeArgs)
         printArgsList(args)
       case InvokeClosure(assigned, callee, args) =>
-        pps.add(s"INVK-CLOS ${maybeTyped(assigned, scope)} := $callee")
+        pps.add(s"INVK-CLOSURE ${maybeTyped(assigned, scope)} := $callee" ++ args.mkString("(", ",", ")"))
       case Instantiate(assigned, classOrRecordName, typeArgs) =>
         pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
         printTypeArgsList(typeArgs)
       case MkClosure(assigned, params, body) =>
-        pps.add(s"MK-CLOS ${maybeTyped(assigned, scope)} := (").add(mkFunctionParamsDescr(params)).add(")").indent {
+        pps.add(s"MK-CLOSURE ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params)).add(" ->").indent {
           pps.add("body: ")
           printScope(body)
         }
+      case MkHeapVar(assigned) =>
+        pps.add(s"MK-HEAP-VAR $assigned")
       case TypeTest(assigned, testedValue, testedTypeId) =>
         pps.add(s"TYPE-TEST ${maybeTyped(assigned, scope)} := $testedValue is $testedTypeId")
       case Conversion(assigned, inValue, targetType) =>
         pps.add(s"CONVERT ${maybeTyped(assigned, scope)} := $inValue as $targetType")
       case SSA.FieldWrite(owner, field, rhs) =>
         pps.add(s"FIELD-WR $owner.$field := ${maybeTyped(rhs, scope)}")
+      case SSA.HeapVarWrite(heapVar, newValue) =>
+        pps.add(s"HEAP-VAR-WR *{$heapVar} := ${maybeTyped(newValue, scope)}")
       case SSA.Return(retVal) =>
         pps.add(s"RET ${maybeTyped(retVal, scope)}")
       case SSA.Panic(msg) =>

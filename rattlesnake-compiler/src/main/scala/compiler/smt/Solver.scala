@@ -2,6 +2,7 @@ package compiler.smt
 
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
+import compiler.lang.Types.IntRangeType
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
@@ -125,6 +126,15 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
       r <- convertInt(rhs)
     } do {
       kZ3Solver.assert(kCtx.lt(l, r))
+    }
+  }
+
+  def assertInRange(formula: Formula, range: IntRangeType): Unit = {
+    range.lowerBoundOpt.foreach { lb =>
+      assertLeq(lb, formula)
+    }
+    range.upperBoundOpt.foreach { ub =>
+      assertLeq(formula, ub)
     }
   }
 

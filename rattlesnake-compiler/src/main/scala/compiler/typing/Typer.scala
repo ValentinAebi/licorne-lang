@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.identifiers.{Identifier, TypeIdentifier}
+import compiler.identifiers.{Identifier, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.SSA
 import compiler.irs.SSA.*
 import compiler.lang
@@ -35,23 +35,22 @@ final class Typer(
                    meetJoin: MeetJoinComputer,
                    proxyStore: ProxyStore,
                    typeHintsStore: TypeHintsStore,
+                   heapVarsTypeStore: HeapVarsTypeStore,
                    solver: Solver,
                    simplifier: Simplifier,
                    absInt: AbstractInterpreter,
-                   er: ErrorReporter
+                   er: ErrorReporter,
+                   closuresCollectorFunc: ClosureInfo => Unit = _ => ()
                  )(using CompilationStep) {
 
+  // @formatter:off
   private given ResolutionContext = resolutionCtx
-
   private given SubtypingContext = subtypingCtx
-
   private given MeetJoinComputer = meetJoin
-
   private given ProxyStore = proxyStore
-
   private given Simplifier = simplifier
-
   private given Typer = this
+  // @formatter:on
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
@@ -257,7 +256,33 @@ final class Typer(
     case _: (InvokeFunc | FieldRead | FieldWrite) =>
       throw AssertionError("typing phase run more than once on the same piece of code")
 
-    case InvokeClosure(assigned, callee, args) => ???
+    case HeapVarRead(assigned, heapVar) =>
+      val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
+      currScope.saveType(assigned, tpe)
+
+    case heapVarWrite@HeapVarWrite(heapVar, newValue) =>
+      val newValType = currScope.currentTypeOf(newValue)
+      heapVarsTypeStore.getType(heapVar) match {
+        case Some(expType) =>
+          subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWrite.getPosition)
+        case None =>
+          // TODO maybe try to save refined types also here, instead of falling back to the principal type?
+          heapVarsTypeStore.saveType(heapVar, newValType.principalType)
+      }
+
+    case invkClosure@InvokeClosure(assigned, callee, args) =>
+      currScope.currentTypeOf(callee) match {
+        case ClosureType(paramTypes, resultType) =>
+          val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg))
+          checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
+          currScope.saveType(assigned, resultType)
+        case calleeType =>
+          er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
+      }
+
+    case mkHeapVar@MkHeapVar(assigned) =>
+      // defer typing to first write
+      ()
 
     case instantiate@Instantiate(assigned, classOrRecordName, typeArgs) =>
       resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
@@ -268,7 +293,19 @@ final class Typer(
           er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
       }
 
-    case MkClosure(assigned, params, body) => ???
+    case MkClosure(assigned, params, body) =>
+      val id = NormalFunOrVarId(assigned match {
+        case assigned: NamedIdValue => assigned.irDescr
+        case assigned: IntermediateIdValue => assigned.toString
+      })
+      val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, body.getPosition)
+      val paramTypesB = List.newBuilder[Type]
+      for ((paramVal, paramType) <- params) {
+        body.saveType(paramVal, paramType)
+        paramTypesB.addOne(paramType)
+      }
+      currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar))
+      closuresCollectorFunc(ClosureInfo(params, body, resultTypeVar, branchInfo, typeParamsCtx))
 
     case tt@TypeTest(assigned, testedValue, testedTypeId) =>
       checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
@@ -434,7 +471,7 @@ final class Typer(
                               (using TypeParamsContext): Type = {
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt))
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt))
-    absIntFunc(lhsType, rhsType) match {
+    absIntFunc(lhsType.withTypeVarsExpanded, rhsType.withTypeVarsExpanded) match {
       case Some(tpe) => tpe
       case None =>
         er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
@@ -468,7 +505,7 @@ final class Typer(
   private def typeNumericNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
                             (using TypeParamsContext): Type = {
     val operandType = dealiasingCtx.dealiasType(typeFormula(operand, currScope, posOpt))
-    val negatedType = absInt.unaryNegType(operandType) match {
+    val negatedType = absInt.unaryNegType(operandType.withTypeVarsExpanded) match {
       case Some(negType) => negType
       case None =>
         er.reportError(s"no unary operator ${Operator.Modulo} found for operand type $operandType", posOpt)
@@ -555,7 +592,7 @@ final class Typer(
           val typeArgsSubst = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, posOpt, Some(s"application of type $typeName"))
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
           val paramsWithType = sig.params.map { case (paramId, (paramType, paramVal)) =>
-            paramVal -> paramType.substitute(typeArgsSubst, Map.empty)
+            Some(paramVal) -> paramType.substitute(typeArgsSubst, Map.empty)
           }
           checkArgumentsList(paramsWithType, argsWithTypes, s"application of ${sig.id}", posOpt)
         case None =>
@@ -759,15 +796,16 @@ final class Typer(
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-    receiverType.principalType match {
+    receiverType.principalType.withTypeVarsExpanded match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
             val receiverTypeSubst = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, posOpt, None)
             val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Option.when(reportErrors)(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
-            val paramTypes = funSig.paramsWithoutThis
-              .map((paramVal, tpe) => paramVal -> tpe.substitute(composedTypeSubst, Map.empty))
+            val paramTypes = funSig.paramsWithoutThis.map { (paramVal, tpe) =>
+              Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
+            }
             val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, s"call to ${invkTarget.funId}", posOpt)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
@@ -886,7 +924,7 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
+  private def checkArgumentsList(params: Iterable[(Option[IdValue], Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
@@ -895,19 +933,23 @@ final class Typer(
 
     // first pass: try to resolve type variables
     val subst = mutable.Map.empty[IdValue, Formula]
-    for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
       tryToResolveTypeVars(paramType, argType)
-      addToSubstIfValid(paramVal, argOpt, subst)
+      paramValOpt.foreach { paramVal =>
+        addToSubstIfValid(paramVal, argOpt, subst)
+      }
     }
 
     // second pass: actually check types
     subst.clear()
     var argIdx = 1
-    for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
       subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of $ctxDescr", posOpt)
-      addToSubstIfValid(paramVal, argOpt, subst)
+      paramValOpt.foreach { paramVal =>
+        addToSubstIfValid(paramVal, argOpt, subst)
+      }
       argIdx += 1
     }
     subst

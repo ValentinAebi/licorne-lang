@@ -102,6 +102,7 @@ final class TypeHintsInserter(
     case Leq(assigned, lhs, rhs) => ()
     case Lt(assigned, lhs, rhs) => ()
     case FieldRead(assigned, owner, field) => ()
+    case HeapVarWrite(heapVar, newValue) => ()
     case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       for {
         receiverTypeId <- resolveReceiver(receiver, currFunSig)
@@ -121,6 +122,7 @@ final class TypeHintsInserter(
     case InvokeClosure(assigned, callee, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs) => ()
     case MkClosure(assigned, params, body) => ()
+    case MkHeapVar(assigned) => ()
     case TypeTest(assigned, testedValue, testedTypeId) => ()
     case Conversion(assigned, inValue, targetType) => ()
     case FieldWrite(owner, fieldResolTarget, rhs) =>
@@ -131,6 +133,7 @@ final class TypeHintsInserter(
       } {
         typeHintsStore.addHint(rhs, field.tpe)
       }
+    case HeapVarWrite(heapVar, newValue) => ()
     case Return(retVal) =>
       typeHintsStore.addHint(retVal, currFunSig.retType)
     case Panic(msg) => ()

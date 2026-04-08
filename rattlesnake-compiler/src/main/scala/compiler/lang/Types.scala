@@ -169,6 +169,7 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
+  // FIXME try recording all constraints and inferring the type only at the end
   final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
@@ -211,7 +212,8 @@ object Types {
 
     def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
 
-    override def toString: String = if isResolved then actualTypeIfResolved.get.toString else id.toString
+    override def toString: String =
+      if isResolved then actualTypeIfResolved.get.toString else s"?$id"
 
     private def goUpPath(tpe: Type): Type = tpe match {
       case tVar: TypeVariable => tVar.actualTypeOpt match {

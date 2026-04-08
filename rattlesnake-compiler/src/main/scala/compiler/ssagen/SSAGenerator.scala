@@ -306,8 +306,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val newValue = currScope.newVar(lhsLocalId, None, assig.getPosition)
         generateSSAExpr(newValue, rhsTree, currScope)
-        currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
+        currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId) match {
+          case KnownAndInitialized(heapVarAddr: HeapVarIdValue, reassigStatus, declarationTypeAnnotOpt) =>
+            currScope.saveInstr(HeapVarWrite(heapVarAddr, newValue), assig)
+          case _ =>
+            currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
+        }
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
         val ownerVal = currScope.newIntermediate()
@@ -513,6 +518,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case LocalValuesContext.KnownButUninitialized(id, _, _) =>
             reportError(s"$id might not have been initialized", varRefTree.getPosition)
             None
+          case KnownAndInitialized(heapAddr: HeapVarIdValue, reassigStatus, declarationTypeAnnotOpt) =>
+            currScope.saveInstr(HeapVarRead(resultVal, heapAddr), expr)
+            None
           case KnownAndInitialized(value, _, _) =>
             currScope.saveInstr(AssignVal(resultVal, value), expr)
             Some(value)
@@ -665,12 +673,21 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
           val paramVal = currScope.newParam(id, posOpt)
+          proxyStore.saveProxy(paramVal, paramVal)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, bodyScope))
           val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None) {
             bodyScope.valuesCtx.globalCtx.saveTypeVariable(_, closureDefTree.getPosition)
           })
           paramValsAndTypesB.addOne(paramVal -> tpe)
           bodyScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, ReassigPermission.Val, givenTypeOpt)
+        }
+        for (varId <- externalVarsAssignedIn(bodyTree)) {
+          val heapAddr = currScope.newHeapVar(varId, closureDefTree.getPosition)
+          currScope.saveInstr(MkHeapVar(heapAddr), closureDefTree)
+          currScope.getLocalValuesContextUnsafe.valueOf(varId).toOption.foreach { initVal =>
+            currScope.saveInstr(HeapVarWrite(heapAddr, initVal), closureDefTree)
+          }
+          currScope.getLocalValuesContextUnsafe.remap(varId, heapAddr)
         }
         generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)
         currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope), closureDefTree)

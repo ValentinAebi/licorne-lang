@@ -8,7 +8,7 @@ import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
-import compiler.typing.TypeHintsStore
+import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
 import compiler.valproxies.ProxyStore
@@ -53,6 +53,7 @@ object TasksPipelines {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val typeHintsStore = TypeHintsStore()
+    val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(Concurrent(
@@ -62,11 +63,11 @@ object TasksPipelines {
         (_, program) => program
       ))
       .andThen(MonotonicityAnalyzer())
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, er))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, er, continueIfErrors = true))
+      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, continueIfErrors = true))
       .andThen(Concurrent(
         SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),

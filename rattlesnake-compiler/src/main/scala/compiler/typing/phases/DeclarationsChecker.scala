@@ -5,7 +5,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.Reasoning
-import compiler.typing.{MeetJoinComputer, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.typing.{HeapVarsTypeStore, MeetJoinComputer, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
@@ -13,6 +13,7 @@ final class DeclarationsChecker(
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
                                  typeHintsStore: TypeHintsStore,
+                                 heapVarsTypeStore: HeapVarsTypeStore,
                                  er: ErrorReporter
                                ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
@@ -37,7 +38,7 @@ final class DeclarationsChecker(
       }
       
       val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, solver, simplifier, absInt, er)
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
 
       for ((_, interfaceSig) <- program.interfaces) {
         typer.typeInterfaceSig(interfaceSig)

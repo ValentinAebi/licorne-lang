@@ -53,6 +53,12 @@ object Formulas {
     }
   }
 
+  final case class HeapVarIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("h") {
+    override def name: String = id.stringId
+
+    override def toString: String = s"$name<heap>"
+  }
+
   final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c") {
     override def posOpt: Option[Position] = None
 

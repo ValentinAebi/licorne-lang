@@ -7,14 +7,18 @@ object Test {
       ifDog[Unit](animal, fn (dog) -> dog.eat(new Kibbles()));  // OK, drop return value of eat
       ifDog[Bool](animal, fn (dog) -> dog.isHungry());
       ifDog[Bool](animal, fn (dog) -> { dog.isHungry() });      //> E : missing return in non-Unit closure
-      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected Int, found Unit
+      ifDogOrElse(animal, 0, fn (dog) -> dog.woof());           //> E : return value: expected [0,0], found Unit
 
       ifDogOrElse(animal, 0, fn (dog) -> { panic "test..." });  // OK
-      ifDogOrElse(animal, panic "crash", fn (dog) -> dog.woof());     //> E : return value: expected Nothing, found Unit
-      ifDogOrElse(animal, crash(), fn (dog) -> { panic "test..." });  // OK
 
       ifDogOrElse(animal, unit, fn (dog) -> dog.woof());        // OK
       ifDogOrElse(animal, unit, fn (dog) -> dog);               // OK
+
+      var x = 0;
+      ifDogOrElse(animal, "Hi", fn (dog) -> {
+        x += 1;
+        return x;                           //> E : return value: expected String, found Int
+      });
 
    }
 
@@ -28,10 +32,6 @@ object Test {
       when animal is Dog
         then f(animal)
         else default
-
-   private fn crash() -> Nothing {
-      panic "error..."
-   }
 
 }
 

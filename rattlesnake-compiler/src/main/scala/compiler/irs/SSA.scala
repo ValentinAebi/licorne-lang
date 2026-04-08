@@ -105,16 +105,19 @@ object SSA {
   final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
 
   final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr
+  final case class HeapVarRead(assigned: IdValue, heapVar: HeapVarIdValue) extends AssigningInstr
   final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
   final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope) extends AssigningInstr
+  final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr
 
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
 
   final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends Instr
+  final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends Instr
   final case class Return(retVal: IdValue) extends Instr
   final case class Panic(msg: IdValue) extends Instr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends Instr
@@ -357,6 +360,10 @@ object SSA {
 
     def newVar(srcId: FunOrVarId, descrOpt: Option[String], posOpt: Option[Position]): VarIdValue = newValue {
       VarIdValue(srcId, this, _, descrOpt, posOpt)
+    }
+
+    def newHeapVar(srcId: FunOrVarId, posOpt: Option[Position]): HeapVarIdValue = newValue {
+      HeapVarIdValue(srcId, this, _, posOpt)
     }
 
     def newIntermediate(): IntermediateIdValue = newValue {
