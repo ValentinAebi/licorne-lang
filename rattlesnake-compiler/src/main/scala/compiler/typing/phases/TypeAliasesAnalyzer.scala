@@ -43,7 +43,7 @@ final class TypeAliasesAnalyzer(
         for ((paramId, (paramType, paramVal)) <- tSig.params) {
           sigScope.saveType(paramVal, paramType)(using typeParamsCtx, resolutionCtx, proxyStore)
         }
-        typer.dealiasAndTypeType(tSig.rhs, None, sigScope, tSig.declPosOpt)(using typeParamsCtx)
+        typer.typeTypeApp(tSig.rhs, None, sigScope, tSig.declPosOpt)(using typeParamsCtx)
       }
     }
 

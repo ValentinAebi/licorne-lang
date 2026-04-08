@@ -1,6 +1,6 @@
 interface Array[T] {
    fn at1(this, i: Idx[T](this)) -> T
-   fn at2(this, i: Idx[Int](this)) -> T     //> E : type application: expected Array[Int], found Array[T]
+   fn at2(this, i: Idx[Int](this)) -> T     //> E : first argument of application of Idx: expected Array[Int], found this : Array[T]
    fn at3(this, i: Idx(this)) -> T
    fn length(this) -> [0,]
 }

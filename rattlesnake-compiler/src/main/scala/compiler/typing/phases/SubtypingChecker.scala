@@ -92,9 +92,11 @@ final class SubtypingChecker(
         }
       }
 
-      val subtypeSig = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subtypeId).get
-      for (supertype1 <- subtypeSig.directSupertypes) {
-        val supertype1Sig = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](supertype1.typeName).get
+      for {
+        subtypeSig <- resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subtypeId)
+        supertype1 <- subtypeSig.directSupertypes
+        supertype1Sig <- resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](supertype1.typeName)
+      } {
         val oneStepSubst = (supertype1Sig.typeParams.map(_._1) zip supertype1.typeArgs).toMap
         checkAndSave(supertype1.typeName, oneStepSubst, subtypeSig.declPosOpt)
         for ((supertype2Id, superSubst) <- flattenedSupertypesSubstitutions(supertype1.typeName)) {

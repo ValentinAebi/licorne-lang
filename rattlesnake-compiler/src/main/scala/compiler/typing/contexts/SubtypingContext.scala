@@ -197,7 +197,7 @@ final class SubtypingContext(
           case Some(proxy) => s"$proxy : $subT"
           case None => subT.toString
         }
-      case subject => subject.toString
+      case subject => s"$subject : $subT"
     }
     enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr", posOpt)
   }

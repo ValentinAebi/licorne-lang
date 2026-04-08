@@ -495,24 +495,24 @@ final class Typer(
     }
   }
 
-  def dealiasAndTypeType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
-                        (using tParamsCtx: TypeParamsContext): Unit = {
-    dealiasingCtx.dealiasType(tpe) match {
+  def typeTypeApp(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
+                 (using tParamsCtx: TypeParamsContext): Unit = {
+    tpe match {
       case primitiveType: PrimitiveType => ()
-      case namedType: NamedType => typeNamedTypeDealiased(namedType, ambientVarianceOpt, currScope, posOpt)
+      case namedType: NamedType => typeNamedTypeApp(namedType, ambientVarianceOpt, currScope, posOpt, subTIfInSuperTPos = None)
       case ClosureType(paramTypes, resultType) =>
         for paramType <- paramTypes do {
-          dealiasAndTypeType(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
+          typeTypeApp(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
         }
-        dealiasAndTypeType(resultType, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
+        typeTypeApp(resultType, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
       case tv: TypeVariable => ()
       case UnionType(types) =>
         for tpe <- types do {
-          dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
+          typeTypeApp(tpe, ambientVarianceOpt, currScope, posOpt)
         }
       case IntersectionType(types) =>
         for tpe <- types do {
-          dealiasAndTypeType(tpe, ambientVarianceOpt, currScope, posOpt)
+          typeTypeApp(tpe, ambientVarianceOpt, currScope, posOpt)
         }
       case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
         untypedLowerBoundOpt.foreach {
@@ -524,16 +524,20 @@ final class Typer(
     }
   }
 
-  def typeNamedTypeDealiased(namedType: NamedType, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
-                            (using typeParamsCtx: TypeParamsContext): Unit = {
+  def typeNamedTypeApp(namedType: NamedType, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position], subTIfInSuperTPos: Option[TypeIdentifier])
+                      (using typeParamsCtx: TypeParamsContext): Unit = {
     val NamedType(typeName, typeArgs, args) = namedType
-    if (args.nonEmpty) {
-      er.reportError(s"unexpected value arguments for type $typeName", posOpt)
-    }
     typeParamsCtx.resolve(typeName) match {
       case Some(tpInfo) =>
+        subTIfInSuperTPos.foreach { subT =>
+          // TODO is there a way of allowing that? Most likely not really, but that could be powerful...
+          er.reportError(s"$subT cannot extend its own type parameter", posOpt)
+        }
         if (typeArgs.nonEmpty) {
           er.reportError(s"$typeName is a type variable, hence it cannot take type arguments", posOpt)
+        }
+        if (args.nonEmpty) {
+          er.reportError(s"$typeName is a type variable, hence it cannot take arguments", posOpt)
         }
         for {
           tpVariance <- tpInfo.varianceOpt
@@ -544,12 +548,16 @@ final class Typer(
         }
       case None => resolutionCtx.resolveTypeSig(typeName) match {
         case Some(sig) =>
-          typeTypeArgsList(typeName, sig.typeParams, typeArgs, ambientVarianceOpt, currScope, posOpt)
-          val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
-          val paramsWithType = sig.params.map {
-            case (paramId, (paramType, paramVal)) => paramVal -> paramType
+          if (subTIfInSuperTPos.isDefined && sig.typeParams.nonEmpty && typeArgs.isEmpty) {
+            er.reportError(s"missing type arguments for $typeName", posOpt)
           }
-          checkArgumentsList(paramsWithType, argsWithTypes, sig.id, posOpt)
+          typeTypeArgsList(sig.typeParams, typeArgs, ambientVarianceOpt, currScope, posOpt)
+          val typeArgsSubst = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, posOpt, Some(s"application of type $typeName"))
+          val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
+          val paramsWithType = sig.params.map { case (paramId, (paramType, paramVal)) =>
+            paramVal -> paramType.substitute(typeArgsSubst, Map.empty)
+          }
+          checkArgumentsList(paramsWithType, argsWithTypes, s"application of ${sig.id}", posOpt)
         case None =>
           er.reportError(s"type not found: $typeName", posOpt)
       }
@@ -557,14 +565,14 @@ final class Typer(
   }
 
   def typeField(field: Field, currScope: Scope, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Unit = field match {
-    case ReassignableField(id, tpe) => dealiasAndTypeType(tpe, Some(Invariant), currScope, posOpt)(using typeParamsCtx)
+    case ReassignableField(id, tpe) => typeTypeApp(tpe, Some(Invariant), currScope, posOpt)(using typeParamsCtx)
     case field: StableField => typeStableField(field, currScope, posOpt)(using typeParamsCtx)
   }
 
   def typeStableField(field: StableField, currScope: Scope, posOpt: Option[Position])
                      (using typeParamsCtx: TypeParamsContext): Unit = {
     val StableField(id, tpe, value) = field
-    dealiasAndTypeType(tpe, Some(Covariant), currScope, posOpt)
+    typeTypeApp(tpe, Some(Covariant), currScope, posOpt)
   }
 
   // TODO merge with typeFunTypeParam?
@@ -572,10 +580,10 @@ final class Typer(
                        (using typeParamsCtx: TypeParamsContext): Unit = {
     val TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt) = typeTypeParamInfo
     upperBoundOpt.foreach {
-      dealiasAndTypeType(_, None, currScope, posOpt)
+      typeTypeApp(_, None, currScope, posOpt)
     }
     lowerBoundOpt.foreach {
-      dealiasAndTypeType(_, None, currScope, posOpt)
+      typeTypeApp(_, None, currScope, posOpt)
     }
   }
 
@@ -583,10 +591,10 @@ final class Typer(
                       (using typeParamsCtx: TypeParamsContext): Unit = {
     val FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt) = functionTypeParamInfo
     upperBoundOpt.foreach {
-      dealiasAndTypeType(_, None, currScope, posOpt)
+      typeTypeApp(_, None, currScope, posOpt)
     }
     lowerBoundOpt.foreach {
-      dealiasAndTypeType(_, None, currScope, posOpt)
+      typeTypeApp(_, None, currScope, posOpt)
     }
   }
 
@@ -598,13 +606,13 @@ final class Typer(
     }
     var isReceiver = true
     for (paramId, paramType) <- paramsInclThis do {
-      dealiasAndTypeType(paramType, if isReceiver then None else Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+      typeTypeApp(paramType, if isReceiver then None else Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
       if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty) {
         sigScope.saveType(paramId, paramType)(using fullTypeParamsCtx)
       }
       isReceiver = false
     }
-    dealiasAndTypeType(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+    typeTypeApp(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
@@ -760,7 +768,7 @@ final class Typer(
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val paramTypes = funSig.paramsWithoutThis
               .map((paramVal, tpe) => paramVal -> tpe.substitute(composedTypeSubst, Map.empty))
-            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, invkTarget.funId, posOpt)
+            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, s"call to ${invkTarget.funId}", posOpt)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
             invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
@@ -841,15 +849,15 @@ final class Typer(
     typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx, typeParamsCtx)
 
   private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Unit = {
-    for (superT <- sig.directSupertypes) {
-      dealiasingCtx.dealiasType(superT) match {
-        case namedType: NamedType =>
-          typeNamedTypeDealiased(namedType, Some(Covariant), sig.sigScope, sig.declPosOpt)(using typeParamsCtx)
-          if (resolutionCtx.resolveTypeSigAs[S](superT.typeName).isEmpty) {
-            er.reportError(s"$superTKindDescr not found: ${superT.typeName}", sig.declPosOpt)
+    for (superTBeforeDealiasing <- sig.directSupertypes) {
+      typeNamedTypeApp(superTBeforeDealiasing, Some(Covariant), sig.sigScope, sig.declPosOpt, subTIfInSuperTPos = Some(sig.id))(using typeParamsCtx)
+      dealiasingCtx.dealiasType(superTBeforeDealiasing) match {
+        case superTDealiased: NamedType =>
+          if (resolutionCtx.resolveTypeSigAs[S](superTDealiased.typeName).isEmpty) {
+            er.reportError(s"$superTKindDescr not found: ${superTDealiased.typeName}", sig.declPosOpt)
           }
-        case dealiasedSuperT =>
-          er.reportError(s"type $superT expands to $dealiasedSuperT, which cannot be a supertype of ${sig.id}", sig.declPosOpt)
+        case superTDealiased =>
+          er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
     }
   }
@@ -864,23 +872,11 @@ final class Typer(
     typeParamsCtx
   }
 
-  private def checkSupertypesOfUnencapsulated(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext): Unit = {
-    for (superT <- sig.directSupertypes) {
-      if (resolutionCtx.resolveTypeSigAs[DatatypeSignature](superT.typeName).isEmpty) {
-        er.reportError(s"datatype not found: ${superT.typeName}", sig.declPosOpt)
-      }
-    }
-  }
-
-  private def typeTypeArgsList(tid: TypeIdentifier, tParams: List[TypeParamInfo], tArgs: List[Type], ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
+  private def typeTypeArgsList(tParams: List[TypeParamInfo], tArgs: List[Type], ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
                               (using TypeParamsContext): Unit = {
-    if (tParams.size != tArgs.size) {
-      er.reportError(s"wrong number of type parameters for $tid: expected ${tParams.size}, was ${tArgs.size}", posOpt)
-    }
-    val tInfosIter = tParams.iterator
-    for (tArg <- tArgs) {
-      val nestedAmbientVariance = tInfosIter.nextOption().flatMap(expVariance(ambientVarianceOpt, _))
-      dealiasAndTypeType(tArg, nestedAmbientVariance, currScope, posOpt)
+    tParams.zip(tArgs).foreach { (tParam, tArg) =>
+      val expVar = expVariance(ambientVarianceOpt, tParam)
+      typeTypeApp(tArg, expVar, currScope, posOpt)
     }
   }
 
@@ -890,11 +886,11 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], argsTaker: Identifier, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
+  private def checkArgumentsList(params: Iterable[(IdValue, Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
-      er.reportError(s"call to $argsTaker: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
+      er.reportError(s"$ctxDescr: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
     }
 
     // first pass: try to resolve type variables
@@ -910,7 +906,7 @@ final class Typer(
     var argIdx = 1
     for (((paramVal, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of call to $argsTaker", posOpt)
+      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of $ctxDescr", posOpt)
       addToSubstIfValid(paramVal, argOpt, subst)
       argIdx += 1
     }
