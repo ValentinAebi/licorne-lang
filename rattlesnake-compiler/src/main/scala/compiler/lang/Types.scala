@@ -169,11 +169,17 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  // FIXME try recording all constraints and inferring the type only at the end
   final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
     private var lockedFlag = false
+
+    private def setActualType(tpe: Type): Unit = {
+      actualTypeOpt = Some(tpe match {
+        case IntRangeType(Some(lb), Some(ub)) if lb == ub => IntType
+        case tpe => tpe
+      })
+    }
 
     override def formulaDependencies: List[Formula] = List.empty
 
@@ -183,7 +189,7 @@ object Types {
       }
       val actualTpe = goUpPath(tpe)
       if (actualTpe != this) {
-        actualTypeOpt = Some(actualTpe)
+        setActualType(actualTpe)
       }
     }
 
@@ -194,7 +200,7 @@ object Types {
       if (!lockedFlag) {
         val actualTpe = goUpPath(tpe)
         if (actualTpe != this) {
-          actualTypeOpt = Some(actualTpe)
+          setActualType(actualTpe)
         }
       }
     }
@@ -219,7 +225,7 @@ object Types {
       case tVar: TypeVariable => tVar.actualTypeOpt match {
         case Some(actualType) =>
           val repr = goUpPath(actualType)
-          tVar.actualTypeOpt = Some(repr)
+          tVar.setActualType(repr)
           repr
         case None => tpe
       }
