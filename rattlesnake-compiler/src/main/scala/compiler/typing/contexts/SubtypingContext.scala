@@ -86,13 +86,17 @@ final class SubtypingContext(
 
   // TODO memoize? But we need to take smartcasts into account
   def isSubtype(subT: Type, superT: Type): Boolean = (dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT)) match {
+    case (subT, superT) if subT == superT => true
+    case (NothingType, _) => true
+    case (_, AnyType) => true
+    case (_, UnitType) => true
     case (tv: TypeVariable, superT) =>
       if (tv.isResolved) {
         tv.lock()
         isSubtype(tv.substitutedIfResolved, superT)
       } else {
         tv.resolve(superT)
-        tv.lock()
+        // do NOT lock: it's OK if the type gets widened later
         true
       }
     case (subT, tv: TypeVariable) =>
@@ -104,10 +108,6 @@ final class SubtypingContext(
         tv.lock()
         true
       }
-    case (subT, superT) if subT == superT => true
-    case (NothingType, _) => true
-    case (_, AnyType) => true
-    case (_, UnitType) => true
     case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
     case (IntRangeType(_, _), IntType) => true
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
