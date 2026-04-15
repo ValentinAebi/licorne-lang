@@ -300,15 +300,20 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
 
       case assig@Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhsTree) =>
-        if (!currScope.getLocalValuesContextUnsafe.knows(lhsLocalId)) {
+        val varIsKnown = currScope.getLocalValuesContextUnsafe.knows(lhsLocalId)
+        if (!varIsKnown) {
           reportError(s"unknown variable: $lhsLocalId", stat.getPosition)
         }
-        if (!currScope.getLocalValuesContextUnsafe.isReassignableOrUnknown(lhsLocalId)
-          && currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId).isInstanceOf[KnownAndInitialized]) {
+        val varIsReassignableOrUnknown = currScope.getLocalValuesContextUnsafe.isReassignableOrUnknown(lhsLocalId)
+        if (!varIsReassignableOrUnknown && currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId).isInstanceOf[KnownAndInitialized]) {
           reportError(s"illegal reassignment of value $lhsLocalId", assig.getPosition)
         }
+        val varIsReassignable = varIsKnown && varIsReassignableOrUnknown
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
-        val newValue = currScope.newVar(lhsLocalId, None, assig.getPosition)
+        val newValue =
+          if varIsReassignable
+          then currScope.newVar(lhsLocalId, None, assig.getPosition)
+          else currScope.newVal(lhsLocalId, assig.getPosition)
         generateSSAExpr(newValue, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
         currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId) match {
