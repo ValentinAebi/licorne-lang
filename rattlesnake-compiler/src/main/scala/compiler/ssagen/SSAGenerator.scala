@@ -331,8 +331,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
         ).withDesugaringSource(stat), currScope, newScopeIfBlock)
 
+      case Asts.VarModif(lhs@Asts.Select(Asts.ThisRef(), selected), typeAnnot, rhs, op) =>
+        generateSSA(Asts.VarAssig(lhs, typeAnnot,
+          Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
+        ).withDesugaringSource(stat), currScope, newScopeIfBlock)
+
       case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
-        reportError("in-place mutation is only allowed on local variables", stat.getPosition)
+        reportError(s"in-place mutation is only allowed on local variables and selects on $ThisId", stat.getPosition)
 
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
         val condVal = currScope.newIntermediate("cond")
