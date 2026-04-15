@@ -1,18 +1,25 @@
 package compiler.smt
 
+import compiler.identifiers.FunOrVarId
+import compiler.irs.SSA
+import compiler.irs.SSA.InvocationTarget
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
 import compiler.lang.Types.IntRangeType
+import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, IntType}
+import compiler.smt.Solver.{javaList, selectFuncPrefix}
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
-import io.ksmt.sort.{KBoolSort, KIntSort}
+import io.ksmt.sort.{KBoolSort, KIntSort, KSort, KUninterpretedSort}
 
-import scala.util.Using
+import scala.util.boundary
 
 
+// TODO cache formula conversion
 final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
+  private val anySort = kCtx.mkUninterpretedSort(AnyType.toString)
 
   def check(): KSolverStatus = kZ3Solver.check()
 
@@ -138,14 +145,16 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
     }
   }
 
-  // TODO cache formula conversion
   private def convertInt(formula: Formula): Option[KExpr[KIntSort]] = formula match {
     case value: IdValue => Some(kCtx.mkConst(value.toString, kCtx.mkIntSort()))
     case IntConst(value) => Some(kCtx.mkIntNum(value))
     case BoolConst(value) => None
     case StringConst(value) => None
-    // TODO encode selects
+    case Select(owner, field) if field.isResolvedAndStable =>
+      mkSelect(owner, field.fieldId, kCtx.mkIntSort())
     case Select(owner, field) => None
+    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      mkFunApp(receiver, func, args, kCtx.mkIntSort())
     case Call(receiver, func, typeArgs, args) => None
     case Plus(lhs, rhs) =>
       for {
@@ -176,14 +185,17 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
     case TypePredicate(subject, tpe) => None
   }
 
-  // TODO cache formula conversion
   private def convertBool(formula: Formula): Option[KExpr[KBoolSort]] = formula match {
     case value: IdValue => Some(kCtx.mkConst(value.toString, kCtx.mkBoolSort()))
     case IntConst(value) => None
     case BoolConst(value) => Some(kCtx.mkBool(value))
     case StringConst(value) => None
     // TODO encode selects
+    case Select(owner, field) if field.isResolvedAndStable =>
+      mkSelect(owner, field.fieldId, kCtx.mkBoolSort())
     case Select(owner, field) => None
+    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      mkFunApp(receiver, func, args, kCtx.mkBoolSort())
     case Call(receiver, func, typeArgs, args) => None
     case Plus(lhs, rhs) => None
     case Neg(operand) => None
@@ -220,6 +232,68 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
         r <- convertInt(rhs)
       } yield kCtx.mkEq(l, r)
     case TypePredicate(subject, tpe) => None
+  }
+
+  private def convertObj(formula: Formula): Option[KExpr[KUninterpretedSort]] = formula match {
+    case value: IdValue => Some(kCtx.mkConst(value.toString, anySort))
+    case formula: ConstFormula => None
+    case Select(owner, field) if field.isResolvedAndStable =>
+      mkSelect(owner, field.fieldId, anySort)
+    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      mkFunApp(receiver, func, args, anySort)
+    case _ => None
+  }
+
+  private def mkSelect[S <: KSort](owner: Formula, fieldId: FunOrVarId, sort: S): Option[KExpr[S]] = {
+    for {
+      ow <- convertObj(owner)
+    } yield {
+      val funDecl = kCtx.mkFuncDecl(selectFuncPrefix + fieldId, sort, javaList(anySort))
+      kCtx.mkApp(funDecl, javaList(ow))
+    }
+  }
+
+  private def mkFunApp[S <: KSort](receiver: Formula, func: InvocationTarget, args: List[Formula], sort: S): Option[KExpr[S]] = boundary {
+    val funSig = func.getFunSigUnsafe
+    for {
+      rec <- convertObj(receiver)
+      if funSig.paramsWithoutThis.size == args.size
+    } yield {
+      val paramsList = new java.util.ArrayList[KSort]()
+      val argsList = new java.util.ArrayList[KExpr[?]]()
+      paramsList.add(anySort)
+      argsList.add(rec)
+      for (((paramIdVal, paramType), arg) <- funSig.paramsInclThis zip args) {
+        val (paramSort, kArgOpt) = paramType match {
+          case IntType => kCtx.mkIntSort() -> convertInt(arg)
+          case BoolType => kCtx.mkBoolSort() -> convertBool(arg)
+          case _ => anySort -> convertObj(arg)
+        }
+        kArgOpt match {
+          case Some(kArg) =>
+            paramsList.add(paramSort)
+            argsList.add(kArg)
+          case None =>
+            boundary.break(None)
+        }
+      }
+      val decl = kCtx.mkFuncDecl(funSig.smtFunctionCode, sort, paramsList)
+      kCtx.mkApp(decl, argsList)
+    }
+  }
+
+}
+
+object Solver {
+
+  private val selectFuncPrefix: String = "select$fld$"
+
+  private def javaList[T](elems: T*): java.util.List[T] = {
+    val ls = new java.util.ArrayList[T](elems.size)
+    for (elem <- elems) {
+      ls.add(elem)
+    }
+    ls
   }
 
 }

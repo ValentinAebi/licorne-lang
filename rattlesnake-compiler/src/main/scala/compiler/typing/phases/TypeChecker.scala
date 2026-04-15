@@ -88,7 +88,7 @@ final class TypeChecker(
                        ): Unit =
     func.bodyOpt.foreach { funcBody =>
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
-      val funcTyper = Typer(Some(funSig.retType), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
+      val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
         proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
       solver.onNewFrame {
@@ -102,8 +102,8 @@ final class TypeChecker(
       checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
 
       while (closuresCollector.nonEmpty) {
-        val ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, typeParamsCtx) = closuresCollector.dequeue()
-        val closureTyper = Typer(Some(closureRetType), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
+        val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
+        val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
           proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {

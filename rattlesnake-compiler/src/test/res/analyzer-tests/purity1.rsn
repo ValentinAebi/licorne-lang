@@ -1,0 +1,29 @@
+
+interface I {
+   pure fn foo(this, i: Int) -> String
+   fn bar(this, s: String) -> Int
+}
+
+class A : I {
+
+   pure fn foo(this, i: Int) -> String {
+      panic "not implemented"
+   }
+
+   fn bar(this, s: String) -> Int {
+      panic "not implemented"
+   }
+
+}
+
+object B : I {
+
+   fn foo(i: Int) -> String {   //> E : foo in B overrides foo in I but violates its declared purity
+      panic "not implemented"
+   }
+
+   pure fn bar(s: String) -> Int {
+      panic "not implemented"
+   }
+
+}

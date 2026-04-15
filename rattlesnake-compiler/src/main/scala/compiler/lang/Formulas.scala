@@ -4,8 +4,8 @@ import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Types.Type
 import compiler.reporting.Position
-import compiler.util.SeqSet
 
+import java.util.Objects
 import scala.collection
 
 
@@ -83,13 +83,31 @@ object Formulas {
   final case class StringConst(value: String) extends ConstFormula
 
   final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
-    override def toString: String = s"$owner.$field"
+
+    override def equals(that: Any): Boolean = that match {
+      case Select(thatOwner, thatField) =>
+        this.owner == thatOwner && this.field.fieldId == thatField.fieldId
+      case _ => false
+    }
+
+    override def hashCode(): Int = Objects.hash(owner, field.fieldId)
+
+    override def toString: String = s"$owner.${field.fieldId}"
   }
 
   final case class Call(receiver: Formula, func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
+
+    override def equals(that: Any): Boolean = that match {
+      case Call(thatReceiver, thatFunc, _, thatArgs) =>
+        this.receiver == thatReceiver && this.func.funId == thatFunc.funId && this.args == thatArgs
+      case _ => false
+    }
+
+    override def hashCode(): Int = Objects.hash(receiver, func.funId, args)
+
     override def toString: String = {
       val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
-      s"$receiver.$func" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
+      s"$receiver.${func.funId}" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
     }
   }
 
@@ -208,8 +226,8 @@ object Formulas {
     case Select(owner, field) if field.isResolved =>
       field.getReceiverSigUnsafe.fields(field.fieldId).isStable && typeCanMention(owner)
     case Select(owner, field) => false
-    // TODO maybe check side-effects
-    case Call(receiver, func, typeArgs, args) => false
+    case Call(receiver, func, typeArgs, args) =>
+      typeCanMention(receiver) && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(typeCanMention)
     case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Neg(operand) => typeCanMention(operand)
     case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
@@ -224,26 +242,26 @@ object Formulas {
     case TypePredicate(subject, tpe) => false
   }
 
-  extension (formula: Formula) def isStable: Boolean = formula match {
+  extension (formula: Formula) def isPure: Boolean = formula match {
     case value: IdValue => true
     case Select(owner, field) if field.isResolved =>
       field.getReceiverSigUnsafe.fields(field.fieldId).isStable
     case _: Select => false
     case formula: ConstFormula => true
-    // TODO maybe check side-effects
-    case Call(receiver, func, typeArgs, args) => false
-    case Plus(lhs, rhs) => lhs.isStable && rhs.isStable
-    case Neg(operand) => operand.isStable
-    case Times(lhs, rhs) => lhs.isStable && rhs.isStable
-    case DivBy(lhs, rhs) => lhs.isStable && rhs.isStable
-    case Modulo(lhs, rhs) => lhs.isStable && rhs.isStable
-    case LogicalAnd(lhs, rhs) => lhs.isStable && rhs.isStable
-    case LogicalNot(operand) => operand.isStable
-    case LogicalOr(lhs, rhs) => lhs.isStable && rhs.isStable
-    case Equality(lhs, rhs) => lhs.isStable && rhs.isStable
-    case LessOrEq(lhs, rhs) => lhs.isStable && rhs.isStable
-    case LessThan(lhs, rhs) => lhs.isStable && rhs.isStable
-    case TypePredicate(subject, tpe) => subject.isStable
+    case Call(receiver, func, typeArgs, args) =>
+      receiver.isPure && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(_.isPure)
+    case Plus(lhs, rhs) => lhs.isPure && rhs.isPure
+    case Neg(operand) => operand.isPure
+    case Times(lhs, rhs) => lhs.isPure && rhs.isPure
+    case DivBy(lhs, rhs) => lhs.isPure && rhs.isPure
+    case Modulo(lhs, rhs) => lhs.isPure && rhs.isPure
+    case LogicalAnd(lhs, rhs) => lhs.isPure && rhs.isPure
+    case LogicalNot(operand) => operand.isPure
+    case LogicalOr(lhs, rhs) => lhs.isPure && rhs.isPure
+    case Equality(lhs, rhs) => lhs.isPure && rhs.isPure
+    case LessOrEq(lhs, rhs) => lhs.isPure && rhs.isPure
+    case LessThan(lhs, rhs) => lhs.isPure && rhs.isPure
+    case TypePredicate(subject, tpe) => subject.isPure
   }
 
   extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {

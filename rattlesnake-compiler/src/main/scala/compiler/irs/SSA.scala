@@ -131,16 +131,10 @@ object SSA {
     private var instantiatedFieldTypeOpt = Option.empty[Type]
     private var cannotResolveFlag = false
 
-    // TODO is this safe?
-    override def equals(obj: Any): Boolean = obj match {
-      case obj: FieldResolutionTarget => this.fieldId == obj.fieldId
-      case _ => false
-    }
-
-    // TODO is this safe?
-    override def hashCode(): Int = fieldId.hashCode()
-
     def isResolved: Boolean = receiverSigOpt.isDefined
+
+    def isResolvedAndStable: Boolean =
+      receiverSigOpt.exists(_.fields.get(fieldId).exists(_.isStable))
 
     def isUnresolvable: Boolean = cannotResolveFlag
 
@@ -177,17 +171,9 @@ object SSA {
     private var instantiatedReturnTypeOpt = Option.empty[Type]
     private var cannotResolveFlag = false
 
-    // TODO is this safe?
-    override def equals(obj: Any): Boolean = obj match {
-      case obj: InvocationTarget =>
-        this.funId == obj.funId
-      case _ => false
-    }
-
-    // TODO is this safe?
-    override def hashCode(): Int = funId.hashCode()
-
     def isResolved: Boolean = receiverSigOpt.isDefined
+
+    def isResolvedAndPure: Boolean = funSigOpt.exists(_.isPure)
 
     def isUnresolvable: Boolean = cannotResolveFlag
 

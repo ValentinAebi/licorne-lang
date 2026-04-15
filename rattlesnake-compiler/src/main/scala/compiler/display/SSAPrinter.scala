@@ -5,7 +5,7 @@ import compiler.irs.SSA
 import compiler.irs.SSA.*
 import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Types.{NamedType, Type}
-import compiler.lang.{ClassSignature, DatatypeSignature, Field, Formulas, FunctionSignature, InterfaceSignature, ObjectSignature, RecordSignature, TypeAliasSignature, TypeParamInfo, Types}
+import compiler.lang.*
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Position
@@ -145,8 +145,9 @@ final class SSAPrinter(
 
   private def printFunction(funSig: FunctionSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, funSigScope, visibility, declPosOpt) = funSig
-    pps.add(s"METHOD ($visibility, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis)} -> $retType${mkPosDescr(declPosOpt)}")
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, funSigScope, visibility, purity, isMain, declPosOpt) = funSig
+    pps.add(if isMain then "MAIN " else "")
+      .add(s"METHOD ($visibility, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis)} -> $retType${mkPosDescr(declPosOpt)}")
     program.functions.get(funSig)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>

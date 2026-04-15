@@ -29,9 +29,9 @@ final case class BranchingInfo(
     this.assumptions.concat(that.assumptions)
   )
 
-  def filteredStable(typer: Typer): BranchingInfo = BranchingInfo(
-    smartcasts.filter((subject, _) => subject.isStable),
-    assumptions.filter(_.isStable)
+  def filteredPure(typer: Typer): BranchingInfo = BranchingInfo(
+    smartcasts.filter((subject, _) => subject.isPure),
+    assumptions.filter(_.isPure)
   )
 
   def boundFor(subject: IdValue, boundMode: BoundMode, solver: Solver): Option[Formula] = boundary {

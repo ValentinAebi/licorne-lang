@@ -3,13 +3,13 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.Scope
 import compiler.lang.Field.StableField
-import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
+import compiler.lang.Formulas.{IdValue, NamedIdValue}
 import compiler.lang.Keyword.{Sub, Super}
+import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type}
 import compiler.reporting.Position
 import compiler.util.{SeqSet, mapVals}
 
-import scala.collection.mutable
 import scala.collection.immutable.SeqMap
 
 final case class FunctionSignature(
@@ -20,13 +20,26 @@ final case class FunctionSignature(
                                     retType: Type,
                                     sigScope: Scope,
                                     visibility: Visibility,
+                                    purity: Purity,
+                                    isMain: Boolean,
                                     declPosOpt: Option[Position]
-                                  ) {
+                                  ) extends ExecutionEnvironment {
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
-  
+
   def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
-  
+
+  def isPure: Boolean = purity == Purity.Pure
+
+  def smtFunctionCode: String =
+    functionName.toString ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("(", "$", ")")
+
+  override def expectedResultType: Type = retType
+
+  override def requiresPurityInBody: Boolean = isPure
+
+  override def root: FunctionSignature = this
+
   def substitute(newOwnerName: TypeIdentifier, typesSubst: Map[TypeIdentifier, Type]): FunctionSignature = FunctionSignature(
     newOwnerName,
     functionName,
@@ -35,11 +48,19 @@ final case class FunctionSignature(
     retType.substitute(typesSubst, Map.empty),
     sigScope,
     visibility,
+    purity,
+    isMain,
     declPosOpt
   )
 
   override def toString: String = {
     val sb = StringBuilder()
+    if (isPure) {
+      sb.append(Purity.Pure).append(" ")
+    }
+    if (isMain) {
+      sb.append(Keyword.Main).append(" ")
+    }
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
     printListIfNonEmpty(typeParams, "[", "]", sb)
     printListIfNonEmpty(paramsInclThis, "(", ")", sb) { case (param, tpe) => s"$param: $tpe" }
@@ -203,7 +224,7 @@ sealed trait TypeParamInfo {
   val tid: TypeIdentifier
   val upperBoundOpt: Option[Type]
   val lowerBoundOpt: Option[Type]
-  
+
   def varianceOpt: Option[Variance]
 }
 

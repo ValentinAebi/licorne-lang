@@ -27,7 +27,7 @@ import scala.reflect.ClassTag
 
 
 final class Typer(
-                   funRetTypeOpt: Option[Type],
+                   executionEnvirOpt: Option[ExecutionEnvironment],
                    dealiasingCtx: DealiasingContext,
                    resolutionCtx: ResolutionContext,
                    typeVarsCtx: TypeVariablesContext,
@@ -42,6 +42,7 @@ final class Typer(
                    er: ErrorReporter,
                    closuresCollectorFunc: ClosureInfo => Unit = _ => ()
                  )(using CompilationStep) {
+  private val instantiatedClosures = mutable.Map.empty[IdValue, ClosureInfo]
 
   // @formatter:off
   private given ResolutionContext = resolutionCtx
@@ -51,6 +52,8 @@ final class Typer(
   private given Simplifier = simplifier
   private given Typer = this
   // @formatter:on
+
+  private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
@@ -73,14 +76,14 @@ final class Typer(
                (using typeParamsCtx: TypeParamsContext): Unit = instr match {
 
     case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
-      for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars) {
+      val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
+      for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal) <- loopUpdatedVars) {
         (for {
           recurrence <- varData.recurrenceOpt
           monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
         } yield {
           val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
-          val inferredBound = infoIfCondTrue.boundFor(condVal, boundMode, solver)
+          val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
           val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
           val inBodyType = simplifier.simplify(
             monotonicity match {
@@ -107,9 +110,9 @@ final class Typer(
             }
           val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
           // TODO maybe detect more precise after-loop-type in the presence of a recurrence
-          currScope.saveType(condVal, inCondType) // after loop
-          condScope.saveSmartcast(condVal, inCondType, 0) // inside condition
-          bodyScope.saveSmartcast(condVal, inBodyType, 0) // inside body
+          currScope.saveType(inCondVal, inCondType) // after loop
+          condScope.saveSmartcast(inCondVal, inCondType, 0) // inside condition
+          bodyScope.saveSmartcast(inCondVal, inBodyType, 0) // inside body
           varData.handledThroughRecurrenceFlag = true
         }) orElse {
           // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
@@ -118,16 +121,17 @@ final class Typer(
               .valueOf(varId)
               .asInstanceOf[KnownAndInitialized]
               .declarationTypeAnnotOpt
-              .orElse(typeHintsStore.getHints(condVal).find { hint =>
+              .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
                 subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
               })
               .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
-          currScope.saveType(condVal, tpe)
+          currScope.saveType(inCondVal, tpe)
           Some(())
         }
       }
       typeScopeInstructions(condScope, BranchingInfo.empty)
       subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
       typeScopeInstructions(bodyScope, infoIfCondTrue)
       for {
         varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
@@ -238,7 +242,7 @@ final class Typer(
 
     case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
       val ownerType = currScope.currentTypeOf(owner)
-      val tpe = resolveFieldAccess(ownerType, field, fr.getPosition)
+      val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
       proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor) match {
         case Some(smartcastType) =>
           currScope.saveType(assigned, smartcastType)
@@ -248,7 +252,7 @@ final class Typer(
 
     case fw@FieldWrite(owner, field, rhs) if field.isNotResolvedYet =>
       val ownerType = currScope.currentTypeOf(owner)
-      val fieldType = resolveFieldAccess(ownerType, field, fw.getPosition)
+      val fieldType = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = true, fw.getPosition)
       val rhsType = currScope.currentTypeOf(rhs)
       tryToResolveTypeVars(fieldType, rhsType)
       subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${field.fieldId}", fw.getPosition)
@@ -256,19 +260,21 @@ final class Typer(
     case _: (InvokeFunc | FieldRead | FieldWrite) =>
       throw AssertionError("typing phase run more than once on the same piece of code")
 
-    case HeapVarRead(assigned, heapVar) =>
+    case heapVarRd@HeapVarRead(assigned, heapVar) =>
       val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
       currScope.saveType(assigned, tpe)
+      forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarRd.getPosition)
 
-    case heapVarWrite@HeapVarWrite(heapVar, newValue) =>
+    case heapVarWr@HeapVarWrite(heapVar, newValue) =>
       val newValType = currScope.currentTypeOf(newValue)
       heapVarsTypeStore.getType(heapVar) match {
         case Some(expType) =>
-          subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWrite.getPosition)
+          subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
         case None =>
           // TODO maybe try to save refined types also here, instead of falling back to the principal type?
           heapVarsTypeStore.saveType(heapVar, newValType.principalType)
       }
+      forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
     case invkClosure@InvokeClosure(assigned, callee, args) =>
       currScope.currentTypeOf(callee) match {
@@ -278,6 +284,14 @@ final class Typer(
           currScope.saveType(assigned, resultType)
         case calleeType =>
           er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
+      }
+      if (isPurityRequired) {
+        instantiatedClosures.get(callee) match {
+          case Some(closureInfo) =>
+            closureInfo.raisePurityFlag()
+          case None =>
+            er.reportError("purity error: cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
+        }
       }
 
     case mkHeapVar@MkHeapVar(assigned) =>
@@ -293,7 +307,7 @@ final class Typer(
           er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
       }
 
-    case MkClosure(assigned, params, body) =>
+    case mkClosure@MkClosure(assigned, params, body) =>
       val id = NormalFunOrVarId(assigned match {
         case assigned: NamedIdValue => assigned.irDescr
         case assigned: IntermediateIdValue => assigned.toString
@@ -305,7 +319,14 @@ final class Typer(
         paramTypesB.addOne(paramType)
       }
       currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar))
-      closuresCollectorFunc(ClosureInfo(params, body, resultTypeVar, branchInfo, typeParamsCtx))
+      executionEnvirOpt match {
+        case Some(executionEnvir) =>
+          val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, executionEnvir, typeParamsCtx)
+          instantiatedClosures.put(assigned, closureInfo)
+          closuresCollectorFunc(closureInfo)
+        case None =>
+          er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
+      }
 
     case tt@TypeTest(assigned, testedValue, testedTypeId) =>
       checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
@@ -328,10 +349,10 @@ final class Typer(
       }
 
     case ret@Return(retVal) =>
-      funRetTypeOpt match {
-        case Some(funRetType) =>
+      executionEnvirOpt match {
+        case Some(executionEnvir) =>
           val retValType = currScope.currentTypeOf(retVal)
-          subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, funRetType, "return value", ret.getPosition)
+          subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
         case None =>
           er.reportError("unexpected return in this position", ret.getPosition)
       }
@@ -377,7 +398,7 @@ final class Typer(
         scope.smartcastFor(sel).getOrElse(field.getInstantiatedFieldTypeUnsafe)
       case sel@Select(owner, field) if field.isNotResolvedYet =>
         val ownerType = typeFormula(owner, scope, posOpt)
-        val tpe = resolveFieldAccess(ownerType, field, posOpt)
+        val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
         scope.smartcastFor(sel).getOrElse(tpe)
       case Select(owner, field) =>
         assert(field.isUnresolvable)
@@ -431,7 +452,7 @@ final class Typer(
         if (field.isNotResolvedYet) {
           detectNominalTypeForSmartcast(owner, scope) match {
             case Some(ownerType) =>
-              val selectType = resolveFieldAccess(ownerType, field, None)
+              val selectType = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, None)
               namedOrNone(selectType)
             case None => None
           }
@@ -445,7 +466,7 @@ final class Typer(
         if (func.isNotResolvedYet) {
           detectNominalTypeForSmartcast(receiver, scope) match {
             case Some(receiverType) =>
-              val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None, reportErrors = false)
+              val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None)
               namedOrNone(retType)
             case None => None
           }
@@ -551,12 +572,18 @@ final class Typer(
         for tpe <- types do {
           typeTypeApp(tpe, ambientVarianceOpt, currScope, posOpt)
         }
-      case IntRangeType(untypedLowerBoundOpt, untypedUpperBoundOpt) =>
-        untypedLowerBoundOpt.foreach {
-          typeFormula(_, currScope, posOpt)
+      case tpe@IntRangeType(lbOpt, ubOpt) =>
+        lbOpt.foreach { lb =>
+          typeFormula(lb, currScope, posOpt)
+          if (!lb.isPure) {
+            er.reportError(s"cannot prove that lower bound of $tpe is pure", posOpt)
+          }
         }
-        untypedUpperBoundOpt.foreach {
-          typeFormula(_, currScope, posOpt)
+        ubOpt.foreach { ub =>
+          typeFormula(ub, currScope, posOpt)
+          if (!ub.isPure) {
+            er.reportError(s"cannot prove that upper bound of $tpe is pure", posOpt)
+          }
         }
     }
   }
@@ -636,7 +663,7 @@ final class Typer(
   }
 
   def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, declPosOpt) = functionSignature
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, purity, isMain, declPosOpt) = functionSignature
 
     val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
@@ -729,8 +756,11 @@ final class Typer(
       }
     }
     for (assumption <- branchInfo.assumptions) {
+      solver.assert(assumption)
       val developedAssumption = proxyStore.develop(assumption)
-      solver.assert(developedAssumption)
+      if (developedAssumption.isPure) {
+        solver.assert(developedAssumption)
+      }
       val smartcasts = developedAssumption match {
         case LessOrEq(lhs, rhs) =>
           leqToSmartcasts(lhs, rhs)
@@ -783,14 +813,19 @@ final class Typer(
     leqToSmartcasts(lhs + 1, rhs)
   }
 
-  private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type], callArgs: List[Formula], scope: Scope, posOpt: Option[Position], reportErrors: Boolean = true)
+  private def forbiddenIfImpure(msg: String, posOpt: Option[Position]): Unit = {
+    if (isPurityRequired) {
+      er.reportError(msg, posOpt)
+    }
+  }
+
+  private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
+                                        callArgs: List[Formula], scope: Scope, posOpt: Option[Position])
                                        (using TypeParamsContext): Type = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
-      if (reportErrors) {
-        er.reportError(s"method ${invkTarget.funId} not found in type $receiverType", posOpt)
-      }
+      er.reportError(s"method ${invkTarget.funId} not found in type $receiverType", posOpt)
       invkTarget.markUnresolvable()
       NothingType
     }
@@ -801,15 +836,19 @@ final class Typer(
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
             val receiverTypeSubst = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, posOpt, None)
-            val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Option.when(reportErrors)(s"type $typeName"))
+            val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
-            val paramTypes = funSig.paramsWithoutThis.map { (paramVal, tpe) =>
+            val paramTypesInclThis = funSig.paramsInclThis.map { (paramVal, tpe) =>
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
             }
-            val argsSubst = checkArgumentsList(paramTypes, typedCallArgs, s"call to ${invkTarget.funId}", posOpt)
+            val argsSubst = checkArgumentsList(paramTypesInclThis, (Some(receiver), receiverType) :: typedCallArgs,
+              s"call to ${invkTarget.funId}", posOpt, argsIncludeReceiver = true)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
             invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
+            if (isPurityRequired && !funSig.isPure) {
+              er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
+            }
             instantiatedRetType
           case _ => errorCase()
         }
@@ -817,15 +856,21 @@ final class Typer(
     }
   }
 
-  private def resolveFieldAccess(owner: Type, fieldResolTarget: FieldResolutionTarget, posOpt: Option[Position]): Type = {
+  private def resolveFieldAccess(owner: Formula, ownerType: Type, fieldResolTarget: FieldResolutionTarget, currScope: Scope,
+                                 needsWriteAccess: Boolean, posOpt: Option[Position]): Type = {
+
+    def isInitScopeOfOwner: Boolean = owner match {
+      case owner: IdValue => currScope.isInitScopeOf(owner)
+      case _ => false
+    }
 
     def errorCase() = {
-      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type ${owner.principalType}", posOpt)
+      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type ${ownerType.principalType}", posOpt)
       fieldResolTarget.markUnresolvable()
       NothingType
     }
 
-    owner.principalType match {
+    ownerType.principalType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
@@ -833,6 +878,12 @@ final class Typer(
             val typeSubst = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, posOpt, None)
             val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
             fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
+            if (needsWriteAccess && field.isStable && !isInitScopeOfOwner) {
+              er.reportError(s"illegal update of ${Keyword.Val}-field ${field.id}", posOpt)
+            }
+            if (isPurityRequired && !field.isStable && !isInitScopeOfOwner) {
+              er.reportError(s"illegal access to impure field ${field.id}", posOpt)
+            }
             instantiatedFieldType
           case _ => errorCase()
         }
@@ -924,7 +975,7 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[(Option[IdValue], Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position]): mutable.Map[IdValue, Formula] = {
+  private def checkArgumentsList(params: Iterable[(Option[IdValue], Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position], argsIncludeReceiver: Boolean = false): mutable.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
@@ -943,10 +994,10 @@ final class Typer(
 
     // second pass: actually check types
     subst.clear()
-    var argIdx = 1
+    var argIdx = if argsIncludeReceiver then 0 else 1
     for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nth(argIdx)} argument of $ctxDescr", posOpt)
+      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", posOpt)
       paramValOpt.foreach { paramVal =>
         addToSubstIfValid(paramVal, argOpt, subst)
       }
@@ -959,7 +1010,7 @@ final class Typer(
     argOpt.foreach { rawArg =>
       proxyStore.getProxyIfIdValue(rawArg)
         .orElse(Some(rawArg).filter(_.idValsDependencies.forall(_.isInstanceOf[NamedIdValue])))
-        .filter(_.isStable)
+        .filter(_.isPure)
         .foreach { repl =>
           subst.put(paramVal, repl)
         }
@@ -984,11 +1035,12 @@ final class Typer(
     case _ => ()
   }
 
-  private def nth(i: Int): String = i match {
-    case 1 => "first"
-    case 2 => "second"
-    case 3 => "third"
-    case i => s"${i}th"
+  private def nthArgument(i: Int): String = i match {
+    case 0 => "receiver"
+    case 1 => "first argument"
+    case 2 => "second argument"
+    case 3 => "third argument"
+    case i => s"${i}th argument"
   }
 
 }

@@ -2,7 +2,7 @@ package compiler.irs
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.lang.Types.PrimitiveType
-import compiler.lang.{Operator, ReassigPermission, Variance, Visibility}
+import compiler.lang.{Operator, Purity, ReassigPermission, Variance, Visibility}
 import compiler.reporting.Position
 
 
@@ -158,7 +158,7 @@ object Asts {
   }
 
   final case class FunDef(id: FunOrVarId, typeParams: List[TypeParamWithoutVariance], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
-                          visibility: Visibility, isMain: Boolean) extends Ast {
+                          visibility: Visibility, purity: Purity, isMain: Boolean) extends Ast {
     override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }
 

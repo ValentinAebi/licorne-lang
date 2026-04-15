@@ -8,7 +8,7 @@ import compiler.parser.TreeParsers.{opt, opt as :::, *}
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
-import compiler.lang.{Keyword, Operator, Operators, ReassigPermission, Types, Variance, Visibility}
+import compiler.lang.{Keyword, Operator, Operators, Purity, ReassigPermission, Types, Variance, Visibility}
 import compiler.lang.Types.PrimitiveType.IntType
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.*
@@ -130,10 +130,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "typeAliasDef"
 
   private lazy val funDef = {
-    opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
-      case optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
+      case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(
             ReturnStat(Some(expr)).withDesugaringSource(expr)
@@ -142,6 +142,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         }
         FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
+          purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure,
           isMain = optModif.contains(Main)
         )
     }

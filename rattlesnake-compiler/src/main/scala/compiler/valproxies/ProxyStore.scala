@@ -9,7 +9,7 @@ import scala.collection.mutable
 
 final class ProxyStore {
   private val proxies = mutable.Map.empty[IdValue, Formula]
-  
+
   def hasProxyFor(idVal: IdValue): Boolean = proxies.contains(idVal)
 
   def saveProxy(idVal: IdValue, proxyOpt: Option[Formula]): Unit = proxyOpt.foreach { proxy =>
@@ -24,12 +24,12 @@ final class ProxyStore {
   }
 
   def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal)
-  
+
   def getProxyIfIdValue(formula: Formula): Option[Formula] = formula match {
     case value: IdValue => getProxy(value)
     case _ => None
   }
-  
+
   def develop(formula: Formula): Formula = {
     val oneStepRes = formula match {
       case value: IdValue => getProxy(value).getOrElse(value)
@@ -54,25 +54,30 @@ final class ProxyStore {
     else develop(oneStepRes)
   }
 
-  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo)(using typer: Typer): (BranchingInfo, BranchingInfo) = getProxy(cond) match {
-    case Some(proxy) =>
-      val (infoIfTrue, infoIfFalse) = infosFor(proxy, ambientBranchingInfo)
-      (infoIfTrue.filteredStable(typer), infoIfFalse.filteredStable(typer))
-    case None => (BranchingInfo.empty, BranchingInfo.empty)
+  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo)(using typer: Typer): (BranchingInfo, BranchingInfo) = {
+    val (directInfoIfTrue, directInfoIfFalse) = infosFor(cond)
+    val (proxyInfoIfTrue, proxyInfoIfFalse) = getProxy(cond) match {
+      case Some(proxy) if proxy.isPure =>
+        val (infoIfTrue, infoIfFalse) = infosFor(proxy)
+        (infoIfTrue.filteredPure(typer), infoIfFalse.filteredPure(typer))
+      case _ => (BranchingInfo.empty, BranchingInfo.empty)
+    }
+    (ambientBranchingInfo ++ directInfoIfTrue ++ proxyInfoIfTrue,
+      ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
   }
 
-  private def infosFor(cond: Formula, ambientBranchingInfo: BranchingInfo): (BranchingInfo, BranchingInfo) = {
-    val (newIfTrue, newIfFalse) = cond match {
+  private def infosFor(cond: Formula): (BranchingInfo, BranchingInfo) = {
+    cond match {
       case LogicalAnd(lhs, rhs) =>
-        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs, ambientBranchingInfo)
-        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs, ambientBranchingInfo)
+        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
+        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs)
         (leftTrueInfos ++ rightTrueInfos, BranchingInfo.empty)
       case LogicalOr(lhs, rhs) =>
-        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs, ambientBranchingInfo)
-        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs, ambientBranchingInfo)
+        val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
+        val (rightTrueInfos, rightFalseInfos) = infosFor(rhs)
         (BranchingInfo.empty, leftFalseInfos ++ rightFalseInfos)
       case LogicalNot(operand) =>
-        val (operandTrueInfos, operandFalseInfos) = infosFor(operand, ambientBranchingInfo)
+        val (operandTrueInfos, operandFalseInfos) = infosFor(operand)
         (operandFalseInfos, operandTrueInfos)
       case leq@LessOrEq(lhs, rhs) =>
         (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
@@ -82,7 +87,6 @@ final class ProxyStore {
         (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
       case _ => (BranchingInfo.empty, BranchingInfo.empty)
     }
-    (ambientBranchingInfo ++ newIfTrue, ambientBranchingInfo ++ newIfFalse)
   }
 
   override def toString: String = "ProxyStore {\n" ++ proxies.mkString("\n").indent(2) ++ "}"

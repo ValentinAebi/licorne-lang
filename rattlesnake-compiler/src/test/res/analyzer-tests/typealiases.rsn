@@ -2,7 +2,7 @@ interface Array[T] {
    fn at1(this, i: Idx[T](this)) -> T
    fn at2(this, i: Idx[Int](this)) -> T     //> E : first argument of application of Idx: expected Array[Int], found this : Array[T]
    fn at3(this, i: Idx(this)) -> T
-   fn length(this) -> [0,]
+   pure fn length(this) -> [0,]
 }
 
 typealias Idx[T](array: Array[T]) = [ 0, array.length()-1 ]

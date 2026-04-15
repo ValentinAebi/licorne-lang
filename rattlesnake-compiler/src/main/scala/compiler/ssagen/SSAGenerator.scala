@@ -1,7 +1,7 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
-import compiler.irs.Asts.Expr
+import compiler.irs.Asts.{Expr, ObjectDef}
 import compiler.irs.SSA.*
 import compiler.irs.{Asts, SSA}
 import compiler.lang.*
@@ -210,9 +210,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val ownerId = functionsProvider.id
         val funId = funDef.id
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
-        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), retType, funSigScope, funDef.visibility, funDef.getPosition)
+        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), retType,
+          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig -> function)
+        if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
+          reportError("main methods are only allowed in objects", funDef.getPosition)
+        }
       }
     }
     er.displayAndTerminateIfErrors()
@@ -545,8 +549,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget(funId), typeArgs, argVals), expr)
-        None
+        val invkTarget = InvocationTarget(funId)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
+        mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
         val receiverVal = currScope.getLocalValuesContextUnsafe.getThisValue match {
@@ -557,8 +562,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, InvocationTarget(funId), typeArgs, argVals), expr)
-        None
+        val invkTarget = InvocationTarget(funId)
+        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
+        mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
@@ -711,6 +717,18 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     proxyOpt
   }
 
+  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]) = {
+    for {
+      recProxy <- proxyStore.getProxy(receiverVal)
+      argsProxies <- argVals.foldRight[Option[List[Formula]]](Some(Nil)) {
+        case (arg, Some(acc)) => proxyStore.getProxy(arg) map { argProxy =>
+          argProxy :: acc
+        }
+        case (_, None) => None
+      }
+    } yield Call(recProxy, invkTarget, typeArgs, argsProxies)
+  }
+
   private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = boundary {
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
@@ -732,7 +750,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.ItRef() => ???
         case Asts.ObjectRef(objectName) => Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
-        // TODO check that there are no side-effects (later)
         // TODO non-prefixed calls (implicit this)?
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
