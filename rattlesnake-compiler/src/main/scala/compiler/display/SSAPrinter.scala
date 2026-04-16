@@ -289,11 +289,12 @@ final class SSAPrinter(
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
       case SSA.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
+      case scope: Scope => printScope(scope)
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
-      case Smartcast(formula, tpe) =>
-        pps.add(s"SMARTCAST $formula : $tpe")
-      case scope: Scope => printScope(scope)
+      case Smartcast(subject, tpe, eGraph) =>
+        val classDescr = eGraph.classOfId(subject).explicitFormulasView.mkString("{", ",", "}")
+        pps.add(s"SMARTCAST $classDescr : $tpe")
     }
     instr match {
       case assignInstr: AssigningInstr =>

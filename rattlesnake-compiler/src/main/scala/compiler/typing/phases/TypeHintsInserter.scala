@@ -142,7 +142,7 @@ final class TypeHintsInserter(
     case LocalDecl(localId, tpe) => ()
     case scope: Scope =>
       traverseScope(scope, currFunSig)
-    case Smartcast(formula, tpe) =>
+    case _: Smartcast =>
       throw AssertionError(s"unexpected smartcast in ${classOf[TypeHintsInserter].getSimpleName}")
   }
 

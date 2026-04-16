@@ -6,23 +6,23 @@ import Operator.Precedence.{Add, Comparison, Mul}
 /**
  * Operator or separator
  */
-enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence]) {
+enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val isCommutative: Boolean = false) {
 
   case Assig extends Operator("=", None)
 
-  case Plus extends Operator("+", Some(Precedence.Add))
+  case Plus extends Operator("+", Some(Precedence.Add), isCommutative = true)
   case Minus extends Operator("-", Some(Precedence.Add))
-  case Times extends Operator("*", Some(Precedence.Mul))
+  case Times extends Operator("*", Some(Precedence.Mul), isCommutative = true)
   case Div extends Operator("/", Some(Precedence.Mul))
   case Modulo extends Operator("%", Some(Precedence.Mul))
-  case Equality extends Operator("==", Some(Precedence.Comparison))
-  case Inequality extends Operator("!=", Some(Precedence.Comparison))
+  case Equality extends Operator("==", Some(Precedence.Comparison), isCommutative = true)
+  case Inequality extends Operator("!=", Some(Precedence.Comparison), isCommutative = true)
   case LessThan extends Operator("<", Some(Precedence.Comparison))
   case LessOrEq extends Operator("<=", Some(Precedence.Comparison))
   case GreaterThan extends Operator(">", Some(Precedence.Comparison))
   case GreaterOrEq extends Operator(">=", Some(Precedence.Comparison))
-  case And extends Operator("&&", Some(Precedence.And))
-  case Or extends Operator("||", Some(Precedence.Or))
+  case And extends Operator("&&", Some(Precedence.And), isCommutative = true)
+  case Or extends Operator("||", Some(Precedence.Or), isCommutative = true)
 
   case ExclamationMark extends Operator("!", None)
 

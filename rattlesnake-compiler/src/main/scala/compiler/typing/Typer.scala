@@ -58,21 +58,23 @@ final class Typer(
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
       scope.resetHasExited()
-      applyBranchInfo(scope, branchInfo, 0)
-      if (solver.checkUnsat()) {
-        scope.markHasExited()
-      }
-      for ((instr, idxInScope) <- scope.instructions.zipWithIndex) {
-        if (!instr.isInstanceOf[Drop]) {
-          scope.reportHasExitedIfNeeded(er, instr.getPosition)
+      scope.forTraversal { instrIter =>
+        applyBranchInfo(scope, branchInfo)
+        if (solver.checkUnsat()) {
+          scope.markHasExited()
         }
-        typeInstr(instr, scope, branchInfo, idxInScope)
+        while (instrIter.hasNext){
+          val instr = instrIter.next()
+          if (!instr.isInstanceOf[Drop]) {
+            scope.reportHasExitedIfNeeded(er, instr.getPosition)
+          }
+          typeInstr(instr, scope, branchInfo)
+        }
       }
-      scope.applyPendingSmartcasts()
     }
   }
 
-  def typeInstr(instr: Instr, currScope: Scope, branchInfo: BranchingInfo, idxInScope: Int)
+  def typeInstr(instr: RealInstr, currScope: Scope, branchInfo: BranchingInfo)
                (using typeParamsCtx: TypeParamsContext): Unit = instr match {
 
     case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
@@ -111,8 +113,8 @@ final class Typer(
           val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
           // TODO maybe detect more precise after-loop-type in the presence of a recurrence
           currScope.saveType(inCondVal, inCondType) // after loop
-          condScope.saveSmartcast(inCondVal, inCondType, 0) // inside condition
-          bodyScope.saveSmartcast(inCondVal, inBodyType, 0) // inside body
+          condScope.saveSmartcast(inCondVal, inCondType) // inside condition
+          bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
           varData.handledThroughRecurrenceFlag = true
         }) orElse {
           // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
@@ -147,7 +149,7 @@ final class Typer(
         }
         subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
       }
-      applyBranchInfo(currScope, infoIfCondFalse, idxInScope + 1)
+      applyBranchInfo(currScope, infoIfCondFalse)
 
     case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
       val condType = currScope.currentTypeOf(condVal)
@@ -334,9 +336,9 @@ final class Typer(
 
     case cast@Cast(inValue, target) =>
       checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
-        currScope.saveSmartcast(inValue, assertedType, idxInScope + 1)
+        currScope.saveSmartcast(inValue, assertedType)
         proxyStore.getProxy(inValue).foreach { proxy =>
-          currScope.saveSmartcast(proxy, assertedType, idxInScope + 1)
+          currScope.saveSmartcast(proxy, assertedType)
         }
       }
 
@@ -365,13 +367,8 @@ final class Typer(
 
     case Drop(droppedValue) => ()
 
-    case LocalDecl(localId, tpe) => ()
-
     case scope: Scope =>
       typeScopeInstructions(scope, BranchingInfo.empty)
-
-    case Smartcast(formula, tpe) =>
-      throw AssertionError(s"unexpected smartcast in ${classOf[Typer].getSimpleName}")
   }
 
   private def tryToApplyHint(srcVal: IdValue, regularType: Type): Type = {
@@ -740,7 +737,7 @@ final class Typer(
     typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
   }
 
-  private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo, idxInScope: Int)(using TypeParamsContext): Unit = {
+  private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectNominalTypeForSmartcast(subject, scope)
@@ -751,7 +748,7 @@ final class Typer(
         } else {
           val oldType = scope.currentTypeOf(subject)
           val newType = meetJoin.computeMeet(oldType, smartcastType)
-          scope.saveSmartcast(subject, smartcastType, idxInScope)
+          scope.saveSmartcast(subject, smartcastType)
         }
       }
     }
@@ -769,7 +766,7 @@ final class Typer(
         case _ => List.empty
       }
       smartcasts.foreach { (subject, smartcastType) =>
-        scope.saveSmartcast(subject, smartcastType, idxInScope)
+        scope.saveSmartcast(subject, smartcastType)
       }
     }
   }

@@ -14,6 +14,7 @@ import compiler.reporting.Position
 import compiler.smt.Simplifier
 import compiler.typing.{MeetJoinComputer, Typer}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.typing.smartcasting.egraphs.{EClass, EGraph}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -70,16 +71,18 @@ object SSA {
     }
   }
 
-  sealed trait ControlFlowInstr extends Instr
+  sealed trait RealInstr extends Instr
+
+  sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
     val invariants: mutable.Seq[Formula] = mutable.ListBuffer.empty[Formula]
   }
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
-  final case class StaticTypeAssert(value: IdValue, tpe: Type) extends Instr
-  final case class StaticAssert(value: IdValue) extends Instr
+  final case class StaticTypeAssert(value: IdValue, tpe: Type) extends RealInstr
+  final case class StaticAssert(value: IdValue) extends RealInstr
 
-  sealed trait AssigningInstr extends Instr {
+  sealed trait AssigningInstr extends RealInstr {
     val assigned: IdValue
   }
 
@@ -116,15 +119,12 @@ object SSA {
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
 
-  final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends Instr
-  final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends Instr
-  final case class Return(retVal: IdValue) extends Instr
-  final case class Panic(msg: IdValue) extends Instr
-  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends Instr
-  final case class Drop(droppedValue: IdValue) extends Instr
-
-  final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends Instr
-  final case class Smartcast(formula: Formula, tpe: Type) extends Instr
+  final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends RealInstr
+  final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends RealInstr
+  final case class Return(retVal: IdValue) extends RealInstr
+  final case class Panic(msg: IdValue) extends RealInstr
+  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr
+  final case class Drop(droppedValue: IdValue) extends RealInstr
 
   final class FieldResolutionTarget(val fieldId: FunOrVarId) {
     private var receiverSigOpt = Option.empty[UserInstantiableTypeSig]
@@ -211,14 +211,17 @@ object SSA {
                              val outScopeOpt: Option[Scope],
                              val valuesCtx: ValuesContext,
                              objectInitializedInThisScopeOpt: Option[IdValue]
-                           ) extends Instr {
+                           ) extends RealInstr {
     private val types = mutable.Map.empty[IdValue, Type]
 
     /**
-     * WARNING: To be used only by Typer, might contain incorrect data during later phases because of insertion of 
+     * WARNING: To be used only by Typer, might contain incorrect data during later phases because of insertion of
      * smartcasts in the middle of scopes
      */
-    private val smartcasts = mutable.SeqMap.empty[Formula, Type]
+    private lazy val smartcastsEGraph: EGraph = outScopeOpt match {
+      case Some(outEGraph) => outEGraph.smartcastsEGraph.deepCopy
+      case None => EGraph.newEmpty
+    }
 
     export valuesCtx.globalCtx as globalValuesCtx
 
@@ -234,14 +237,27 @@ object SSA {
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 
-    private val pendingSmartcasts = mutable.ListBuffer.empty[(Int, Formula, Type)]
+    private var realInstrIterOpt = Option.empty[Scope.RealInstrIter]
 
-    def applyPendingSmartcasts(): Unit = {
-      pendingSmartcasts.sortBy(-_._1)
-      for ((idx, formula, tpe) <- pendingSmartcasts) {
-        instructions.insert(idx, Smartcast(formula, tpe))
+    def forTraversal[T](action: Scope.RealInstrIter => T): T = {
+      if (realInstrIterOpt.isDefined){
+        throw IllegalStateException(s"another traversal of $this is already underway")
       }
-      pendingSmartcasts.clear()
+      val iter = Scope.RealInstrIter(this)
+      realInstrIterOpt = Some(iter)
+      val result = action(iter)
+      realInstrIterOpt = None
+      result
+    }
+
+    def insertPseudoInstr(pseudoInstr: PseudoInstr): Unit = {
+      realInstrIterOpt match {
+        case None =>
+          val idx = instructions.indexWhere(_.isInstanceOf[RealInstr])
+          instructions.insert(idx, pseudoInstr)
+        case Some(iter) =>
+          iter.insertPseudoInstr(pseudoInstr)
+      }
     }
 
     def isNestedIn(outerScope: Scope): Boolean =
@@ -262,15 +278,11 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type, idxInScope: Int)(using meetJoin: MeetJoinComputer, simplifier: Simplifier, proxyStore: ProxyStore): Unit = {
-      // TODO see if this causes issues (overwriting the default type, not found by currentTypeOf?)
-      val oldType = currentTypeOf(f)
-      val newType =
-        if oldType == NothingType
-        then simplifier.simplify(smartcastType)
-        else meetJoin.computeMeet(oldType, smartcastType)
-      smartcasts.put(f, newType)
-      pendingSmartcasts.addOne(idxInScope, f, newType)
+    def saveSmartcast(f: Formula, smartcastType: Type)(using meetJoin: MeetJoinComputer, simplifier: Simplifier, proxyStore: ProxyStore): Unit = {
+      smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastType =>
+        val eClId = smartcastsEGraph.classIdOf(f)
+        insertPseudoInstr(Smartcast(eClId, newSmartcastType, smartcastsEGraph.deepCopy))
+      }
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
@@ -283,15 +295,7 @@ object SSA {
     }
 
     def smartcastFor(f: Formula)(using proxyStore: ProxyStore): Option[Type] = {
-      smartcasts.get(f).orElse {
-        outScopeOpt.flatMap(_.smartcastFor(f))
-      }
-    }
-
-    private def typeOfNoSmartcast(idValue: IdValue): Type = {
-      types.get(idValue).orElse {
-        outScopeOpt.map(_.typeOfNoSmartcast(idValue))
-      }.getOrElse(NothingType)
+      smartcastsEGraph.smartcastFor(f)
     }
 
     def isInitScopeOf(idValue: IdValue): Boolean =
@@ -387,6 +391,37 @@ object SSA {
       new Scope(None, globalValuesCtx, None)
 
     private val scopeUidGen = new AtomicLong(-1)
+
+    final class RealInstrIter(scope: Scope) extends Iterator[RealInstr] {
+      private var nextIdx = 0
+
+      override def hasNext: Boolean = {
+        skipPseudoInstr()
+        nextIdx < scope.instructions.size
+      }
+
+      override def next(): RealInstr = {
+        skipPseudoInstr()
+        val result = scope.instructions(nextIdx)
+        nextIdx += 1
+        result.asInstanceOf[RealInstr]
+      }
+
+      def insertPseudoInstr(pseudoInstr: PseudoInstr): Unit = {
+        scope.instructions.insert(nextIdx, pseudoInstr)
+      }
+
+      private def skipPseudoInstr(): Unit = {
+        while (nextIdx < scope.instructions.size && scope.instructions(nextIdx).isInstanceOf[PseudoInstr]) {
+          nextIdx += 1
+        }
+      }
+    }
+
   }
+
+  sealed trait PseudoInstr extends Instr
+  final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends PseudoInstr
+  final case class Smartcast(subject: EClass.Id, tpe: Type, eGraphSnapshot: EGraph) extends PseudoInstr
 
 }
