@@ -1,12 +1,23 @@
 package compiler.typing.smartcasting.egraphs
 
+import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
-import compiler.lang.Formulas.{Call, Formula, IntConst, Select, ValIdValue}
+import compiler.lang.Formulas.{Call, Formula, Select, ValIdValue}
+import compiler.valproxies.ProxyStore
 import compiler.lang.FormulasDsl.{autoConvertIntToIConst, *}
+import compiler.pipeline.CompilationStep
+import compiler.pipeline.CompilationStep.TypeChecking
+import compiler.program.Program
+import compiler.reporting.Errors.ErrorReporter
+import compiler.smt.{Reasoning, Simplifier}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.valuesconversion.GlobalValuesContext
 import org.junit.Assert.{assertFalse, assertTrue}
 import org.junit.Test
+
+import scala.collection.immutable.SeqMap
+import scala.collection.mutable
 
 class EGraphTests {
 
@@ -19,7 +30,7 @@ class EGraphTests {
     assertTrue(eg.areEqual(x + y, y + x))
   }
 
-  @Test def transitivityTest(): Unit = {
+  @Test def transitivityTest(): Unit = usingSimplifier {
     val x = newValue("x")
     val y = newValue("y")
     val z = newValue("z")
@@ -38,7 +49,7 @@ class EGraphTests {
     assertTrue(eg.areEqual(y, z))
   }
 
-  @Test def congruenceTest1(): Unit = {
+  @Test def congruenceTest1(): Unit = usingSimplifier {
     val x = newValue("x")
     val y = newValue("y")
     val z = newValue("z")
@@ -54,7 +65,7 @@ class EGraphTests {
     assertFalse(eg.areEqual(y, z))
   }
 
-  @Test def congurenceTest2(): Unit = {
+  @Test def congurenceTest2(): Unit = usingSimplifier {
     val a = newValue("a")
     val b = newValue("b")
     val c = newValue("c")
@@ -72,7 +83,17 @@ class EGraphTests {
     assertFalse(eg.areEqual(a.call("foo", b + 1, c - 2), x.call("foo", y + 2, z - 2)))
   }
 
-  private val dummyScope = Scope.root(GlobalValuesContext())
+  private given CompilationStep = TypeChecking
+
+  private val er = ErrorReporter(_ => fail(), _ => fail())
+  private val typeVarsCtx = TypeVariablesContext()
+  private val proxyStore = ProxyStore()
+  private val globalValuesContext = GlobalValuesContext(proxyStore)
+  private val dummyScope = Scope.root(globalValuesContext)
+  private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+  private val dealiasingCtx = DealiasingContext(Map.empty)
+  private val resolCtx = ResolutionContext(program, typeVarsCtx, er)
+
 
   private def newValue(name: String) = ValIdValue(NormalFunOrVarId(name), dummyScope, 0, None)
 
@@ -84,6 +105,19 @@ class EGraphTests {
   extension (rec: Formula) private def call(funName: String, args: Formula*): Formula = {
     val invkTarget = InvocationTarget(NormalFunOrVarId(funName))
     Call(rec, invkTarget, List.empty, args.toList)
+  }
+
+  private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
+      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, er)
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
+      action(using simplifier)
+    }
+  }
+
+  private def fail(): Nothing = {
+    org.junit.Assert.fail()
+    throw AssertionError("cannot happen")
   }
 
 }

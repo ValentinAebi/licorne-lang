@@ -14,7 +14,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
+import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -45,6 +45,7 @@ final class Typer(
   private val instantiatedClosures = mutable.Map.empty[IdValue, ClosureInfo]
 
   // @formatter:off
+  private given DealiasingContext = dealiasingCtx
   private given ResolutionContext = resolutionCtx
   private given SubtypingContext = subtypingCtx
   private given MeetJoinComputer = meetJoin
@@ -63,7 +64,7 @@ final class Typer(
         if (solver.checkUnsat()) {
           scope.markHasExited()
         }
-        while (instrIter.hasNext){
+        while (instrIter.hasNext) {
           val instr = instrIter.next()
           if (!instr.isInstanceOf[Drop]) {
             scope.reportHasExitedIfNeeded(er, instr.getPosition)
@@ -78,7 +79,7 @@ final class Typer(
                (using typeParamsCtx: TypeParamsContext): Unit = instr match {
 
     case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
-      val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
+      val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
       for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal) <- loopUpdatedVars) {
         (for {
           recurrence <- varData.recurrenceOpt
@@ -133,7 +134,7 @@ final class Typer(
       }
       typeScopeInstructions(condScope, BranchingInfo.empty)
       subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
+      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
       typeScopeInstructions(bodyScope, infoIfCondTrue)
       for {
         varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
@@ -154,7 +155,7 @@ final class Typer(
     case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
       val condType = currScope.currentTypeOf(condVal)
       subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo)
+      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
       typeScopeInstructions(thenBr, infoIfCondTrue)
       typeScopeInstructions(elseBr, infoIfCondFalse)
       for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
@@ -180,15 +181,19 @@ final class Typer(
     case AssignVal(assigned, src) =>
       val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src))
       currScope.saveType(assigned, assignedType)
+      currScope.eMerge(assigned, src)
 
     case AssignIntConst(assigned, src) =>
       currScope.saveType(assigned, IntRangeType.singleton(src))
+      currScope.eMerge(assigned, IntConst(src))
 
     case AssignBoolConst(assigned, src) =>
       currScope.saveType(assigned, BoolType)
+      currScope.eMerge(assigned, BoolConst(src))
 
     case AssignStringConst(assigned, src) =>
       currScope.saveType(assigned, StringType)
+      currScope.eMerge(assigned, StringConst(src))
 
     case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
       typeNumericNeg(operand, currScope, neg.getPosition)
@@ -753,6 +758,11 @@ final class Typer(
       }
     }
     for (assumption <- branchInfo.assumptions) {
+      assumption match {
+        case Equality(lhs, rhs) =>
+          scope.eMerge(lhs, rhs)
+        case _ => ()
+      }
       solver.assert(assumption)
       val developedAssumption = proxyStore.develop(assumption)
       if (developedAssumption.isPure) {
@@ -862,7 +872,7 @@ final class Typer(
     }
 
     def errorCase() = {
-      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type ${ownerType.principalType}", posOpt)
+      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type $ownerType", posOpt)
       fieldResolTarget.markUnresolvable()
       NothingType
     }

@@ -12,14 +12,13 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Simplifier
-import compiler.typing.{MeetJoinComputer, Typer}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.{EClass, EGraph}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
 import java.util.concurrent.atomic.AtomicLong
-import scala.collection.{immutable, mutable}
+import scala.collection.mutable
 
 object SSA {
 
@@ -210,7 +209,8 @@ object SSA {
   final class Scope private(
                              val outScopeOpt: Option[Scope],
                              val valuesCtx: ValuesContext,
-                             objectInitializedInThisScopeOpt: Option[IdValue]
+                             objectInitializedInThisScopeOpt: Option[IdValue],
+                             private val proxyStore: ProxyStore
                            ) extends RealInstr {
     private val types = mutable.Map.empty[IdValue, Type]
 
@@ -240,7 +240,7 @@ object SSA {
     private var realInstrIterOpt = Option.empty[Scope.RealInstrIter]
 
     def forTraversal[T](action: Scope.RealInstrIter => T): T = {
-      if (realInstrIterOpt.isDefined){
+      if (realInstrIterOpt.isDefined) {
         throw IllegalStateException(s"another traversal of $this is already underway")
       }
       val iter = Scope.RealInstrIter(this)
@@ -260,12 +260,17 @@ object SSA {
       }
     }
 
+    def eMerge(f1: Formula, f2: Formula)(using Simplifier): Unit = {
+      smartcastsEGraph.merge(f1, f2)
+    }
+
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
+    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
+      smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
         if (types.contains(idVal)) {
           throw IllegalStateException(s"$idVal has already been assigned a type")
@@ -278,24 +283,33 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type)(using meetJoin: MeetJoinComputer, simplifier: Simplifier, proxyStore: ProxyStore): Unit = {
-      smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastType =>
-        val eClId = smartcastsEGraph.classIdOf(f)
-        insertPseudoInstr(Smartcast(eClId, newSmartcastType, smartcastsEGraph.deepCopy))
+    def saveSmartcast(f: Formula, smartcastType: Type)(using Simplifier): Unit = {
+      smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastTypes =>
+        val eGraphSnapshot = smartcastsEGraph.deepCopy
+        val eClId = eGraphSnapshot.classOf(f)
+        insertPseudoInstr(Smartcast(eClId, newSmartcastTypes, eGraphSnapshot))
       }
     }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
       smartcastFor(formula)
-        .orElse(formula match {
-          case f: IdValue => types.get(f)
-          case _ => None
-        }).orElse(outScopeOpt.map(_.currentTypeOf(formula)))
+        .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)
     }
 
-    def smartcastFor(f: Formula)(using proxyStore: ProxyStore): Option[Type] = {
+    def smartcastFor(f: Formula): Option[Type] = {
       smartcastsEGraph.smartcastFor(f)
+    }
+
+    private def typeOfNoSmartcastIfIdVal(f: Formula): Option[Type] = f match {
+      case f: IdValue => typeOfNoSmartcast(f)
+      case _ => None
+    }
+
+    private def typeOfNoSmartcast(idValue: IdValue): Option[Type] = {
+      types.get(idValue).orElse {
+        outScopeOpt.flatMap(_.typeOfNoSmartcast(idValue))
+      }
     }
 
     def isInitScopeOf(idValue: IdValue): Boolean =
@@ -380,7 +394,7 @@ object SSA {
       nestedInsideNodeOpt(outScope, Some(astNode), objInitializedHereOpt)
 
     def nestedInsideNodeOpt(outScope: Scope, astNodeOpt: Option[Asts.Ast], objInitializedHereOpt: Option[IdValue] = None): Scope = {
-      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, objInitializedHereOpt)
+      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, objInitializedHereOpt, outScope.proxyStore)
       astNodeOpt.foreach { astNode =>
         newScope.setAstNode(astNode)
       }
@@ -388,7 +402,7 @@ object SSA {
     }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx, None)
+      new Scope(None, globalValuesCtx, None, globalValuesCtx.proxyStore)
 
     private val scopeUidGen = new AtomicLong(-1)
 
@@ -422,6 +436,6 @@ object SSA {
 
   sealed trait PseudoInstr extends Instr
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends PseudoInstr
-  final case class Smartcast(subject: EClass.Id, tpe: Type, eGraphSnapshot: EGraph) extends PseudoInstr
+  final case class Smartcast(subject: EClass, tpe: Type, eGraphSnapshot: EGraph) extends PseudoInstr
 
 }

@@ -7,6 +7,7 @@ import compiler.lang.Types.PrimitiveType
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.immutable.SeqMap
@@ -32,10 +33,10 @@ final case class Program(
 
 object Program {
 
-  final class Builder(er: ErrorReporter) {
+  final class Builder(er: ErrorReporter, proxyStore: ProxyStore) {
     private val signatures = mutable.LinkedHashMap.empty[TypeIdentifier, TypeSignature]
 
-    val globalValuesContext: GlobalValuesContext = GlobalValuesContext()
+    val globalValuesContext: GlobalValuesContext = GlobalValuesContext(proxyStore)
 
     def saveSignature(sig: TypeSignature, posOpt: Option[Position]): Unit = {
       if (PrimitiveType.values.exists(_.str == sig.id.toString)) {

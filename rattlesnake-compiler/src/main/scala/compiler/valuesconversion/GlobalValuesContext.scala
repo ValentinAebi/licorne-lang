@@ -6,11 +6,12 @@ import compiler.lang.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.lang.Keyword
 import compiler.lang.Types.TypeVariable
 import compiler.reporting.Position
+import compiler.valproxies.ProxyStore
 
 import java.util
 import scala.collection.mutable
 
-final class GlobalValuesContext extends ValuesContext {
+final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContext {
   private val idToObjName = mutable.Map.empty[TypeIdentifier, UninterpretedConstIdValue]
   private val objNameToId = mutable.Map.empty[IdValue, TypeIdentifier]
   private val typeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
@@ -23,10 +24,17 @@ final class GlobalValuesContext extends ValuesContext {
   val trueVal: IdValue = globalScope.newUninterpretedConst("true")
   val falseVal: IdValue = globalScope.newUninterpretedConst("false")
 
+  {
+    proxyStore.saveProxy(unitVal, unitVal)
+    proxyStore.saveProxy(trueVal, trueVal)
+    proxyStore.saveProxy(falseVal, falseVal)
+  }
+
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =
     idToObjName.getOrElseUpdate(objectId, {
       val value = globalScope.newUninterpretedConst(objectId.stringId)
       objNameToId(value) = objectId
+      proxyStore.saveProxy(value, value)
       value
     })
     

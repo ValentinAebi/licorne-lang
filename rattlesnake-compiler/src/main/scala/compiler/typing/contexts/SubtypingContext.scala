@@ -2,7 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.{ConstFormula, Formula, IdValue, IntermediateIdValue}
+import compiler.lang.Formulas.{ConstFormula, Formula, IdValue, IntConst, IntermediateIdValue}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -164,7 +164,7 @@ final class SubtypingContext(
             superTTypeArgs.zip(superTSig.typeParams).forall { (expTypeArg, tParam) =>
               val actTypeArg = subst.apply(tParam.tid)
               tParam.variance match {
-                case Invariant => actTypeArg.withTypeVarsExpanded == expTypeArg.withTypeVarsExpanded
+                case Invariant => isSubtype(actTypeArg, expTypeArg) && isSubtype(expTypeArg, actTypeArg)
                 case Covariant => isSubtype(actTypeArg, expTypeArg)
                 case Contravariant => isSubtype(expTypeArg, actTypeArg)
               }
@@ -190,14 +190,19 @@ final class SubtypingContext(
     enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
+
+    def toStringAlongSubT(f: Formula): String = f match {
+      case f: IntConst => f.toString
+      case f => s"$f : $subT"
+    }
+
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.getProxy(subject) match {
-          case Some(proxy: ConstFormula) => proxy.toString
-          case Some(proxy) => s"$proxy : $subT"
+          case Some(proxy) => toStringAlongSubT(proxy)
           case None => subT.toString
         }
-      case subject => s"$subject : $subT"
+      case subject => toStringAlongSubT(subject)
     }
     enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr", posOpt)
   }

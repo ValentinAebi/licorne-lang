@@ -4,8 +4,8 @@ import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.Reasoning
-import compiler.typing.{HeapVarsTypeStore, MeetJoinComputer, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.smt.{MeetJoinComputer, Reasoning}
+import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
@@ -25,19 +25,18 @@ final class DeclarationsChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, typeVarsCtx, er)
     
-    Reasoning.usingFreshReasoningToolkit { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
-    } { (solver, subtypingCtx, simplifier, absInt) =>
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       // save types of objects
       val globalValsCtx = program.globalValuesContext
       val globalScope = globalValsCtx.globalScope
       for ((objectId, objectSig) <- program.objects) {
         val objVal = globalValsCtx.resolveObject(objectId)
-        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, resolCtx, proxyStore)
+        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolCtx, proxyStore)
       }
       
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
 
       for ((_, interfaceSig) <- program.interfaces) {

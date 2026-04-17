@@ -5,7 +5,9 @@ import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
-import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.smt.MeetJoinComputer
+import compiler.typing.TypeHintsStore
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 
@@ -92,6 +94,9 @@ object Types {
       }
     }
 
+    def apply(types: Iterable[Type]): Type =
+      apply(SeqSet(types))
+
     def apply(types: Type*): Type =
       apply(SeqSet(types))
   }
@@ -117,6 +122,9 @@ object Types {
         case _ => new IntersectionType(flattenedTypes)
       }
     }
+
+    def apply(types: Iterable[Type]): Type =
+      apply(SeqSet(types))
 
     def apply(types: Type*): Type =
       apply(SeqSet(types))

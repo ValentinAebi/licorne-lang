@@ -293,7 +293,7 @@ final class SSAPrinter(
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
       case Smartcast(subject, tpe, eGraph) =>
-        val classDescr = eGraph.classOfId(subject).explicitFormulasView.mkString("{", ",", "}")
+        val classDescr = subject.getExplicitFormulas.mkString("{", ",", "}")
         pps.add(s"SMARTCAST $classDescr : $tpe")
     }
     instr match {

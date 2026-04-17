@@ -1,0 +1,29 @@
+
+typealias Nat = [0,]
+
+object Test {
+
+   fn congruence(a: Int, b: Int) -> [1,] {
+      if foo(a) > 0 && a == b {
+         return foo(b);     // OK
+      } else if foo(a) > 10 {
+         return foo(b);     //> E : return value: expected [1,], found Int
+      } else {
+         return 1;
+      }
+   }
+   
+   fn transitivity(i: Nat, j: Nat, k: Nat) {
+      if i != j {
+         return
+      };
+      if i < k {
+         j : [0,k-1]        // OK
+      } else {
+         j : [0,k]          //> E : type ascription: expected [0,k], found j : [k,]
+      }
+   }
+
+   pure fn foo(x: Int) -> Int = x * x + 1
+
+}

@@ -1,4 +1,4 @@
-package compiler.typing
+package compiler.smt
 
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
@@ -18,9 +18,10 @@ final class MeetJoinComputer(
                               dealiasingCtx: DealiasingContext,
                               resolutionCtx: ResolutionContext,
                               subtypingCtx: SubtypingContext,
-                              simplifier: Simplifier,
                               solver: Solver
                             ) {
+  
+  private[smt] val simplifier = Simplifier(subtypingCtx, solver, this)
 
   def dealiasAndComputeJoin(types: Type*): Type =
     dealiasAndComputeJoin(Iterable.from(types))

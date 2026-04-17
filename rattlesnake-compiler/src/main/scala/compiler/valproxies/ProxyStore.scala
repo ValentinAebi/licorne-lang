@@ -1,8 +1,10 @@
 package compiler.valproxies
 
+import compiler.irs.SSA.Scope
 import compiler.lang.Formulas
 import compiler.lang.Formulas.*
 import compiler.typing.Typer
+import compiler.typing.contexts.DealiasingContext
 
 import scala.collection.mutable
 
@@ -54,11 +56,11 @@ final class ProxyStore {
     else develop(oneStepRes)
   }
 
-  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo)(using typer: Typer): (BranchingInfo, BranchingInfo) = {
-    val (directInfoIfTrue, directInfoIfFalse) = infosFor(cond)
+  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)(using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
+    val (directInfoIfTrue, directInfoIfFalse) = infosFor(cond)(using outerScope)
     val (proxyInfoIfTrue, proxyInfoIfFalse) = getProxy(cond) match {
       case Some(proxy) if proxy.isPure =>
-        val (infoIfTrue, infoIfFalse) = infosFor(proxy)
+        val (infoIfTrue, infoIfFalse) = infosFor(proxy)(using outerScope)
         (infoIfTrue.filteredPure(typer), infoIfFalse.filteredPure(typer))
       case _ => (BranchingInfo.empty, BranchingInfo.empty)
     }
@@ -66,7 +68,9 @@ final class ProxyStore {
       ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
   }
 
-  private def infosFor(cond: Formula): (BranchingInfo, BranchingInfo) = {
+  def entriesView: Iterable[(IdValue, Formula)] = proxies
+
+  private def infosFor(cond: Formula)(using outerScope: Scope, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
     cond match {
       case LogicalAnd(lhs, rhs) =>
         val (leftTrueInfos, leftFalseInfos) = infosFor(lhs)
@@ -79,6 +83,11 @@ final class ProxyStore {
       case LogicalNot(operand) =>
         val (operandTrueInfos, operandFalseInfos) = infosFor(operand)
         (operandFalseInfos, operandTrueInfos)
+      // TODO maybe add a reference equality operator? or force overrides of equal to only work on two objects of exact same type
+      case eq@Equality(lhs, rhs)
+        if dealiasingCtx.isPrimitiveType(outerScope.currentTypeOf(lhs)(using this))
+          && dealiasingCtx.isPrimitiveType(outerScope.currentTypeOf(rhs)(using this)) =>
+        (BranchingInfo.ofAssumption(Equality(lhs, rhs)), BranchingInfo.empty)
       case leq@LessOrEq(lhs, rhs) =>
         (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
       case lt@LessThan(lhs, rhs) =>

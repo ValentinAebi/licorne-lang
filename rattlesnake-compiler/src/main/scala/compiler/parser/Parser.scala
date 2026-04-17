@@ -12,6 +12,7 @@ import compiler.lang.{Keyword, Operator, Operators, Purity, ReassigPermission, T
 import compiler.lang.Types.PrimitiveType.IntType
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.*
+import compiler.lang.Types.PrimitiveType
 
 import scala.compiletime.uninitialized
 
@@ -130,6 +131,12 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "typeAliasDef"
 
   private lazy val funDef = {
+
+    def isUnitType(typeTree: TypeTree): Boolean = typeTree match {
+      case PrimitiveTypeTree(PrimitiveType.UnitType) => true
+      case _ => false
+    }
+
     opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
@@ -139,6 +146,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
             ReturnStat(Some(expr)).withDesugaringSource(expr)
           )).withDesugaringSource(expr)
           case block: Block => block
+        }
+        if (bodyOptRaw.exists(_.isInstanceOf[Expr]) && optRetType.forall(isUnitType)) {
+          errorReporter.report(Err(Parsing, s"single-expression methods are not allowed to return ${PrimitiveType.UnitType}", bodyOptRaw.get.getPosition))
         }
         FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,

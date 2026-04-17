@@ -6,11 +6,12 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext
+import compiler.util.asIterableOfType
 
 import scala.reflect.ClassTag
 
 // TODO caching?
-final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
+final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, meetJoinComputer: MeetJoinComputer) {
 
   def simplify(tpe: Type): Type = tpe match {
     case nominalType: NominalType => nominalType
@@ -19,18 +20,30 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver) {
     case UnionType(types) =>
       val simplifiedTypes = types.map(simplify)
       val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
-      filteredTypes.size match {
-        case 0 => NothingType
-        case 1 => simplifiedTypes.head
-        case _ => UnionType(simplifiedTypes)
+      filteredTypes.asIterableOfType[IntRangeType] match {
+        case Some(filteredTypes) =>
+          meetJoinComputer.computeJoinOfRanges(filteredTypes)
+        case None =>
+          // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
+          filteredTypes.size match {
+            case 0 => NothingType
+            case 1 => simplifiedTypes.head
+            case _ => UnionType(simplifiedTypes)
+          }
       }
     case IntersectionType(originalTypes) =>
       val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
       val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => otherType != tpe && subtypingCtx.isSubtype(otherType, tpe)))
-      filteredTypes.size match {
-        case 0 => AnyType
-        case 1 => filteredTypes.head
-        case _ => IntersectionType(filteredTypes)
+      filteredTypes.asIterableOfType[IntRangeType] match {
+        case Some(filteredTypes) =>
+          meetJoinComputer.computeMeetOfRanges(filteredTypes)
+        case None =>
+          // TODO if datatypes/structs, maybe compute intersection (?)
+          filteredTypes.size match {
+            case 0 => AnyType
+            case 1 => filteredTypes.head
+            case _ => IntersectionType(filteredTypes)
+          }
       }
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {

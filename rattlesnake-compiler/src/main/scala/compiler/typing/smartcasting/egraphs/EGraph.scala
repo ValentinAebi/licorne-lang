@@ -1,79 +1,102 @@
 package compiler.typing.smartcasting.egraphs
 
-import compiler.lang.{Formulas, Operator}
+import compiler.lang.Formulas
 import compiler.lang.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
-import compiler.typing.MeetJoinComputer
-import compiler.util.SeqSet
+import compiler.smt.{MeetJoinComputer, Simplifier}
+import compiler.typing.contexts.SubtypingContext
 
 import scala.collection.mutable
 
-final class EGraph private {
-  private val idToClass = mutable.LinkedHashMap.empty[EClass.Id, EClass]
-  private val nodeToClassId = mutable.LinkedHashMap.empty[ENode, EClass.Id]
-  
-  def classOfId(id: EClass.Id): EClass =
-    idToClass.apply(id)
 
-  def deepCopy: EGraph = {
-    val copy = EGraph()
-    for ((id, cl) <- idToClass) {
-      copy.idToClass.put(id, cl.deepCopy)
+final class EGraph private() {
+  private val nodeToClass = mutable.LinkedHashMap.empty[ENode, EClass.Ref]
+
+  private[egraphs] def getNodeToClassMapping: Iterable[(ENode, EClass.Ref)] = nodeToClass
+
+  private[egraphs] def initNodeToClassMapping(mapping: IterableOnce[(ENode, EClass.Ref)]): Unit = {
+    if (this.nodeToClass.nonEmpty) {
+      throw new IllegalStateException("e-graph has already been initialized")
     }
-    copy.nodeToClassId.addAll(this.nodeToClassId)
-    copy
+    this.nodeToClass.addAll(mapping)
   }
 
-  def classOf(formula: Formula): EClass = {
-    val id = classIdOf(formula)
-    classOfId(id)
-  }
+  def classOf(formula: Formula): EClass =
+    classRefOf(formula).getTarget
 
-  def classIdOf(formula: Formula): EClass.Id = {
-    val node = encode(formula)
-    val id = nodeToClassId.get(node) match {
-      case Some(classId) => classId
-      case None => newClass(node)
-    }
-    classOfId(id).addExplicitFormula(formula)
-    id
-  }
+  def deepCopy: EGraph =
+    (new EGraphsCopier).copyGraph(this)
 
   def areEqual(f1: Formula, f2: Formula): Boolean =
-    classOf(f1) == classOf(f2)
+    classOf(f1) eq classOf(f2)
 
-  def areEqual(clId1: EClass.Id, clId2: EClass.Id): Boolean =
-    classOfId(clId1) == classOfId(clId2)
-
-  def merge(f1: Formula, f2: Formula): Unit = {
-    val cl1Id = classIdOf(f1)
-    val cl2Id = classIdOf(f2)
-    merge(cl1Id, cl2Id)
-  }
-
-  def merge(cl1Id: EClass.Id, cl2Id: EClass.Id): Unit = {
-    if (cl1Id == cl2Id) {
+  def merge(f1: Formula, f2: Formula)(using Simplifier): Unit = {
+    val cl1Ref = classRefOf(f1)
+    val cl1 = cl1Ref.getTarget
+    val cl2 = classOf(f2)
+    if (cl1 eq cl2) {
       return
     }
-    val cl1 = classOfId(cl1Id)
-    val cl2 = classOfId(cl2Id)
-    if (cl1 == cl2) {
-      return
+    val affectedNodes = mutable.ListBuffer.empty[(ENode, EClass.Ref)]
+    for {
+      ref <- cl2.currentReferencesView
+      n <- ref.getNodesWithThisRefAsOperand
+    } {
+      affectedNodes.addOne(n -> nodeToClass.apply(n))
+    }
+    for ((n, _) <- affectedNodes) {
+      nodeToClass.remove(n)
+    }
+    for (ref <- cl2.currentReferencesView) {
+      ref.setTarget(cl1)
+    }
+    assert(cl2.currentReferencesView.isEmpty, "unexpected remaining references in merged class")
+    for ((n, clRef) <- affectedNodes) {
+      nodeToClass.put(n, clRef)
     }
     for (n <- cl2.nodesView) {
-      addNodeToClass(n, cl1Id)
+      addNodeToClass(n, cl1Ref)
     }
-    for (f <- cl2.explicitFormulasView) {
-      cl1.addExplicitFormula(f)
+    for (explFormula <- cl2.getExplicitFormulas) {
+      cl1.addExplicitFormula(explFormula)
+    }
+    cl2.getSmartcastType.foreach { tpe =>
+      cl1.saveSmartcast(tpe)  // FIXME use return value
     }
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type)(using MeetJoinComputer): Option[Type] = {
+  def saveSmartcast(formula: Formula, tpe: Type)(using Simplifier): Option[Type] = {
     classOf(formula).saveSmartcast(tpe)
   }
 
-  def smartcastFor(formula: Formula): Option[Type] = classOf(formula).getSmartcast
+  def smartcastFor(formula: Formula): Option[Type] =
+    classOf(formula).getSmartcastType
+
+  private def classRefOf(formula: Formula): EClass.Ref = {
+    val node = encode(formula)
+    for (ref <- node.operands) {
+      ref.addNodeWithThisRefAsOperand(node)
+    }
+    val classRef = nodeToClass.get(node) match {
+      case Some(classRef) => classRef
+      case None => newSingletonClass(node)
+    }
+    classRef.getTarget.addExplicitFormula(formula)
+    classRef
+  }
+
+  private def newSingletonClass(n: ENode): EClass.Ref = {
+    val clazz = EClass()
+    val ref = EClass.Ref(clazz)
+    addNodeToClass(n, ref)
+    ref
+  }
+
+  private def addNodeToClass(n: ENode, clRef: EClass.Ref): Unit = {
+    nodeToClass.put(n, clRef)
+    clRef.getTarget.addNode(n)
+  }
 
   private def encode(formula: Formula): ENode = formula match {
     case value: IdValue =>
@@ -81,56 +104,33 @@ final class EGraph private {
     case formula: ConstFormula =>
       ConstNode(formula.value)
     case Select(owner, field) =>
-      SelectNode(classIdOf(owner), field.fieldId)
+      SelectNode(classRefOf(owner), field.fieldId)
     case Call(receiver, func, typeArgs, args) =>
-      CallNode(classIdOf(receiver), func.funId, args.map(classIdOf))
+      CallNode(classRefOf(receiver), func.funId, args.map(classRefOf))
     case Plus(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpPlus, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpPlus, classRefOf(rhs))
     case Neg(operand) =>
-      UnaryOpNode(OpMinus, classIdOf(operand))
+      UnaryOpNode(OpMinus, classRefOf(operand))
     case Times(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpTimes, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpTimes, classRefOf(rhs))
     case DivBy(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpDiv, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpDiv, classRefOf(rhs))
     case Modulo(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpModulo, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpModulo, classRefOf(rhs))
     case LogicalAnd(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpAnd, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpAnd, classRefOf(rhs))
     case LogicalNot(operand) =>
-      UnaryOpNode(OpLogicNeg, classIdOf(operand))
+      UnaryOpNode(OpLogicNeg, classRefOf(operand))
     case LogicalOr(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpOr, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpOr, classRefOf(rhs))
     case Equality(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpEq, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpEq, classRefOf(rhs))
     case LessOrEq(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpLeq, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpLeq, classRefOf(rhs))
     case LessThan(lhs, rhs) =>
-      BinaryOpNode(classIdOf(lhs), OpLt, classIdOf(rhs))
+      BinaryOpNode(classRefOf(lhs), OpLt, classRefOf(rhs))
     case TypePredicate(subject, tpe) =>
-      TypePredicateNode(classIdOf(subject), tpe)
-  }
-
-  private def newClass(nodes: ENode*): EClass.Id = {
-    val clazzId = new EClass.Id
-    val clazz = EClass()
-    idToClass.put(clazzId, clazz)
-    for (node <- nodes) {
-      addNodeToClass(node, clazzId)
-    }
-    clazzId
-  }
-
-  private def addNodeToClass(node: ENode, classId: EClass.Id, isRecursiveCommutAdd: Boolean = false): Unit = {
-    nodeToClassId.put(node, classId)
-    classOfId(classId).addNode(node)
-    node match {
-      case BinaryOpNode(lhs, op, rhs) if !isRecursiveCommutAdd && op.isCommutative =>
-        val commutNode = BinaryOpNode(rhs, op, lhs)
-        if (!nodeToClassId.contains(commutNode)) {
-          addNodeToClass(commutNode, classId, isRecursiveCommutAdd = true)
-        }
-      case _ => ()
-    }
+      TypePredicateNode(classRefOf(subject), tpe)
   }
 
 }

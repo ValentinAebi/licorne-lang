@@ -32,9 +32,9 @@ final class TypeHintsInserter(
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, typeVarsCtx, er)
-    Reasoning.usingFreshReasoningToolkit { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
-    } { (solver, subtypingCtx, simplifier, absInt) =>
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       for {
         (funSig, func) <- program.functions
         body <- func.bodyOpt

@@ -9,8 +9,8 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{AbstractInterpreter, Reasoning, Solver}
-import compiler.typing.{HeapVarsTypeStore, MeetJoinComputer, TypeHintsStore, Typer}
+import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Reasoning, Solver}
+import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
@@ -32,17 +32,16 @@ final class TypeAliasesAnalyzer(
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
-    } { (solver, subtypingCtx, simplifier, absInt) =>
-
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, simplifier, solver)
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
+      
       val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
       for (tid, tSig) <- program.typeAliases do {
         val sigScope = tSig.sigScope
         val typeParamsCtx = TypeParamsContext(tSig.typeParams)
         for ((paramId, (paramType, paramVal)) <- tSig.params) {
-          sigScope.saveType(paramVal, paramType)(using typeParamsCtx, resolutionCtx, proxyStore)
+          sigScope.saveType(paramVal, paramType)(using typeParamsCtx, simplifier, resolutionCtx, proxyStore)
         }
         typer.typeTypeApp(tSig.rhs, None, sigScope, tSig.declPosOpt)(using typeParamsCtx)
       }

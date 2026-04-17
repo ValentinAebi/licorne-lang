@@ -36,5 +36,18 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       IntersectionType(types.map(dealiasType))
     case intRangeType: IntRangeType => intRangeType
   }
+
+  def isPrimitiveType(tpe: Type): Boolean = dealiasType(tpe) match {
+    case primitiveType: PrimitiveType => true
+    case NamedType(typeName, typeArgs, args) => false
+    case ClosureType(params, result) => false
+    case tv: TypeVariable =>
+      tv.actualTypeIfResolved.exists(isPrimitiveType)
+    case UnionType(types) =>
+      types.forall(isPrimitiveType)
+    case IntersectionType(types) =>
+      types.exists(isPrimitiveType)
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
+  }
   
 }

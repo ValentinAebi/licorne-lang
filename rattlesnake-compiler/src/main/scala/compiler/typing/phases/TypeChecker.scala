@@ -9,7 +9,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{AbstractInterpreter, Reasoning, Simplifier, Solver}
+import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -34,13 +34,12 @@ final class TypeChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, typeVarsCtx, er)
 
-    Reasoning.usingFreshReasoningToolkit { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
-    } { (solver, subtypingCtx, simplifier, absInt) =>
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore)
+      saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, simplifier)
 
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, simplifier, solver)
       for ((funSig, func) <- program.functions) {
         checkFunc(funSig, func, dealiasingCtx, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
       }
@@ -61,12 +60,14 @@ final class TypeChecker(
 
   // TODO check that user-provided assignments of type parameters match bounds
 
-  private def saveTypesOfGlobalConstants(globalValsCtx: GlobalValuesContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
+  private def saveTypesOfGlobalConstants(globalValsCtx: GlobalValuesContext, resolCtx: ResolutionContext,
+                                         proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
 
     // @formatter:off
     given TypeParamsContext = TypeParamsContext.empty
     given ResolutionContext = resolCtx
     given ProxyStore = proxyStore
+    given Simplifier = simplifier
     // @formatter:on
 
     globalValsCtx.globalScope.saveType(globalValsCtx.unitVal, UnitType)

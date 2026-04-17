@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.lang.Formulas.IdValue
+import compiler.lang.Formulas.{Formula, IdValue}
 import compiler.lang.Types.Type
 
 import scala.collection.mutable
@@ -18,6 +18,11 @@ final class TypeHintsStore {
       case Some(hints) => hints
       case None => List.empty
     }
+  }
+
+  def getHintsIfIdVal(f: Formula): Iterable[Type] = f match {
+    case idVal: IdValue => getHints(idVal)
+    case _ => List.empty
   }
 
   override def toString: String = hints.map { (idVal, hints) =>

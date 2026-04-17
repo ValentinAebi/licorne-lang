@@ -11,15 +11,15 @@ object Main {
    }
 
    fn foo(a: Int, x: AtLeast(a)) -> String {
-      return clamp(x, 0, 10)    //> E : return value: expected String, found [0,10]
+      return clamp(x, 0, 10)    //> E : return value: expected String, found Main.clamp(x,0,10) : [0,10]
    }
 
    fn bar() {
-      foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found String
+      foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found "Hello" : String
    }
 
    fn abc(ls: List[Bool]) {
-      ls.indexOf(true) : String     //> E : type ascription: expected String, found Idx(ls)
+      ls.indexOf(true) : String     //> E : type ascription: expected String, found ls.indexOf(true) : Idx(ls)
    }
 
 }

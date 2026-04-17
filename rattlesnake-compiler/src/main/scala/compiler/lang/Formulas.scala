@@ -62,8 +62,7 @@ object Formulas {
   final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c") {
     override def posOpt: Option[Position] = None
 
-    override def toString: String =
-      if uid == 0 then name else irDescr
+    override def toString: String = name
   }
 
   final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHintOpt: Option[String]) extends IdValue {
@@ -80,7 +79,9 @@ object Formulas {
 
   final case class BoolConst(value: Boolean) extends ConstFormula
 
-  final case class StringConst(value: String) extends ConstFormula
+  final case class StringConst(value: String) extends ConstFormula {
+    override def toString: String = s"\"$value\""
+  }
 
   final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
 

@@ -32,7 +32,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   private given CompilationStep = CompilationStep.SSAGeneration
 
   override def apply(input: List[Asts.Source]): Program = {
-    val programBuilder = Program.Builder(er)
+    val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
     val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
@@ -520,10 +520,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.CharLit(value) => ???
       case Asts.BoolLit(value) =>
         currScope.saveInstr(AssignBoolConst(resultVal, value), expr)
-        None
+        Some(BoolConst(value))
       case Asts.StringLit(value) =>
         currScope.saveInstr(AssignStringConst(resultVal, value), expr)
-        None
+        Some(StringConst(value))
       case varRefTree@Asts.VariableRef(name) =>
         currScope.getLocalValuesContextUnsafe.valueOf(name) match {
           case LocalValuesContext.Unknown(id) =>
@@ -604,7 +604,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterOrEq, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _), swapOperands = true)
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Equal(resultVal, _, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Equal(resultVal, _, _), Equality(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Inequality, rhsTree) =>
         recurseOnDesugared(Asts.UnaryOp(Operator.ExclamationMark,
           Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree).withDesugaringSource(binopTree)
@@ -660,9 +660,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         ), ternaryTree)
         // retrieve info from lowering
         proxyStore.getProxy(thenVal) match {
-          case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
+          case Some(BoolConst(true)) =>
+            for {
+              cv <- proxyStore.getProxy(condVal)
+              ev <- proxyStore.getProxy(elseVal)
+            } yield LogicalOr(cv, ev)
           case _ => proxyStore.getProxy(elseVal) match {
-            case Some(BoolConst(false)) => Some(LogicalAnd(condVal, thenVal))
+            case Some(BoolConst(false)) =>
+              for {
+                cv <- proxyStore.getProxy(condVal)
+                tv <- proxyStore.getProxy(thenVal)
+              } yield LogicalAnd(cv, tv)
             case _ => None
           }
         }

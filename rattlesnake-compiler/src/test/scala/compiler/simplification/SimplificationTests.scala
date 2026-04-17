@@ -24,7 +24,8 @@ import scala.collection.immutable.SeqMap
 
 final class SimplificationTests {
 
-  private val dummyScope = Scope.root(GlobalValuesContext())
+  private val proxyStore = ProxyStore()
+  private val dummyScope = Scope.root(GlobalValuesContext(proxyStore))
 
   private def mkVal(id: String): ValIdValue =
     ValIdValue(NormalFunOrVarId(id), dummyScope, 0, None)
@@ -67,19 +68,20 @@ final class SimplificationTests {
     // @formatter:on
   }
 
-  private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = Reasoning.usingFreshSolver { solver =>
+  private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = {
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())
-    val globalValuesCtx = GlobalValuesContext()
+    val globalValuesCtx = GlobalValuesContext(proxyStore)
     val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
     val typeVarsCtx = TypeVariablesContext()
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
-    val proxyStore = ProxyStore()
-    val subtypingCtx = SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
-    val simplifier = Simplifier(subtypingCtx, solver)
-    action(simplifier, solver)
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx) { solver =>
+      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+    } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
+      action(simplifier, solver)
+    }
   }
 
   private def fail(): Nothing = {
