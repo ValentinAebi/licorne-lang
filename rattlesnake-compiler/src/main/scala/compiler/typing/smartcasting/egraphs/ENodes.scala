@@ -7,23 +7,29 @@ import compiler.lang.Operator
 import java.util.Objects
 
 sealed trait ENode {
-  def operands: List[EClass.Ref]
+  def operands: List[EClass]
 }
 
 final case class IdValNode(idValue: IdValue) extends ENode {
-  override def operands: List[EClass.Ref] = List.empty
+  override def operands: List[EClass] = List.empty
+
+  override def toString: String = idValue.toString
 }
 
 final case class ConstNode(cst: Any) extends ENode {
-  override def operands: List[EClass.Ref] = List.empty
+  override def operands: List[EClass] = List.empty
+
+  override def toString: String = cst.toString
 }
 
-final case class UnaryOpNode(op: Operator, operand: EClass.Ref) extends ENode {
-  override def operands: List[EClass.Ref] = List(operand)
+final case class UnaryOpNode(op: Operator, var operand: EClass) extends ENode {
+  override def operands: List[EClass] = List(operand)
+
+  override def toString: String = s"$op($operand)"
 }
 
-final case class BinaryOpNode(lhs: EClass.Ref, op: Operator, rhs: EClass.Ref) extends ENode {
-  override def operands: List[EClass.Ref] = List(lhs, rhs)
+final case class BinaryOpNode(var lhs: EClass, op: Operator, var rhs: EClass) extends ENode {
+  override def operands: List[EClass] = List(lhs, rhs)
 
   override def equals(that: Any): Boolean = that match {
     case that: BinaryOpNode =>
@@ -35,16 +41,24 @@ final case class BinaryOpNode(lhs: EClass.Ref, op: Operator, rhs: EClass.Ref) ex
   }
 
   override def hashCode(): Int = Objects.hash(op, Set(lhs, rhs))
+
+  override def toString: String = s"$op($lhs,$rhs)"
 }
 
-final case class CallNode(receiver: EClass.Ref, funId: FunOrVarId, args: List[EClass.Ref]) extends ENode {
-  override def operands: List[EClass.Ref] = receiver :: args
+final case class CallNode(var receiver: EClass, funId: FunOrVarId, var args: List[EClass]) extends ENode {
+  override def operands: List[EClass] = receiver :: args
+
+  override def toString: String = s"{$receiver}.$funId" ++ args.mkString("(", ",", ")")
 }
 
-final case class SelectNode(receiver: EClass.Ref, fieldId: FunOrVarId) extends ENode {
-  override def operands: List[EClass.Ref] = List(receiver)
+final case class SelectNode(var receiver: EClass, fieldId: FunOrVarId) extends ENode {
+  override def operands: List[EClass] = List(receiver)
+
+  override def toString: String = s"{$receiver}.$fieldId"
 }
 
-final case class TypePredicateNode(subject: EClass.Ref, tpe: TypeIdentifier) extends ENode {
-  override def operands: List[EClass.Ref] = List(subject)
+final case class TypePredicateNode(var subject: EClass, tpe: TypeIdentifier) extends ENode {
+  override def operands: List[EClass] = List(subject)
+
+  override def toString: String = s"{$subject}-is-$tpe"
 }

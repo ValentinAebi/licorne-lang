@@ -582,7 +582,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.UnaryOp(Operator.Minus, operandTree) =>
         generateUnaryWithProxy(operandTree, NumNeg(resultVal, _), Neg(_))
       case Asts.UnaryOp(Operator.ExclamationMark, operandTree) =>
-        generateUnary(operandTree, LogicNeg(resultVal, _))
+        generateUnaryWithProxy(operandTree, LogicNeg(resultVal, _), LogicalNot(_))
       case Asts.UnaryOp(operator, operand) => throw AssertionError(s"unexpected $operator as unary operator")
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Plus, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Add(resultVal, _, _), Plus(_, _))

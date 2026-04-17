@@ -60,6 +60,7 @@ final class Typer(
     solver.onNewFrame {
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
+        scope.applyProxies()
         applyBranchInfo(scope, branchInfo)
         if (solver.checkUnsat()) {
           scope.markHasExited()
@@ -167,6 +168,15 @@ final class Typer(
           else meetJoin.computeJoin(thenType, elseType)
         }
         currScope.saveType(joinedVal, joinType)
+      }
+      if (elseBr.hasExited) {
+        // in that case, variables are remapped to their value in thenScope by the SSAGenerator
+        applyBranchInfo(currScope, infoIfCondTrue)
+        currScope.absorbSmartcastsEGraphFrom(thenBr)
+      } else if (thenBr.hasExited) {
+        // in that case, variables are remapped to their value in elseScope by the SSAGenerator
+        applyBranchInfo(currScope, infoIfCondFalse)
+        currScope.absorbSmartcastsEGraphFrom(elseBr)
       }
       if (thenBr.hasExited && elseBr.hasExited) {
         currScope.markHasExited()

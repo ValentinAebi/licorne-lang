@@ -5,45 +5,50 @@ import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.smt.Solver
-import compiler.typing.contexts.SubtypingContext
+import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
 import compiler.util.asIterableOfType
 
 import scala.reflect.ClassTag
 
 // TODO caching?
-final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, meetJoinComputer: MeetJoinComputer) {
+final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer) {
 
   def simplify(tpe: Type): Type = tpe match {
     case nominalType: NominalType => nominalType
     case ClosureType(params, result) => ClosureType(params.map(simplify), simplify(result))
     case variable: TypeVariable => variable
     case UnionType(types) =>
-      val simplifiedTypes = types.map(simplify)
-      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
-      filteredTypes.asIterableOfType[IntRangeType] match {
-        case Some(filteredTypes) =>
-          meetJoinComputer.computeJoinOfRanges(filteredTypes)
-        case None =>
-          // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
-          filteredTypes.size match {
-            case 0 => NothingType
-            case 1 => simplifiedTypes.head
-            case _ => UnionType(simplifiedTypes)
+      val simplifiedTypes = types.map(simplify).filter(_ != NothingType)
+      if simplifiedTypes.size == 1 then simplifiedTypes.head
+      else {
+        val filteredTypes =
+          simplifiedTypes.map(dealiasingCtx.dealiasType)
+            .filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
+        // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
+        filteredTypes.size match {
+          case 0 => NothingType
+          case 1 => simplifiedTypes.head
+          case _ => filteredTypes.asIterableOfType[IntRangeType] match {
+            case Some(filteredTypes) =>
+              meetJoinComputer.computeJoinOfRanges(filteredTypes)
+            case None => UnionType(simplifiedTypes)
           }
+        }
       }
     case IntersectionType(originalTypes) =>
       val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
-      val filteredTypes = simplifiedTypes.filter(tpe => !simplifiedTypes.exists(otherType => otherType != tpe && subtypingCtx.isSubtype(otherType, tpe)))
-      filteredTypes.asIterableOfType[IntRangeType] match {
-        case Some(filteredTypes) =>
-          meetJoinComputer.computeMeetOfRanges(filteredTypes)
-        case None =>
-          // TODO if datatypes/structs, maybe compute intersection (?)
-          filteredTypes.size match {
-            case 0 => AnyType
-            case 1 => filteredTypes.head
-            case _ => IntersectionType(filteredTypes)
-          }
+      val filteredTypes =
+        simplifiedTypes.map(dealiasingCtx.dealiasType)
+          .filter(tpe => !simplifiedTypes.exists(otherType => otherType != tpe && subtypingCtx.isSubtype(otherType, tpe)))
+      // TODO if datatypes/structs, maybe compute intersection (?)
+      filteredTypes.size match {
+        case 0 => AnyType
+        case 1 => filteredTypes.head
+        case _ => filteredTypes.asIterableOfType[IntRangeType] match {
+          case Some(filteredTypes) =>
+            meetJoinComputer.computeMeetOfRanges(filteredTypes)
+          case None => IntersectionType(filteredTypes)
+        }
       }
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {

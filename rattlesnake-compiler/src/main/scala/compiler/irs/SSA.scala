@@ -218,10 +218,7 @@ object SSA {
      * WARNING: To be used only by Typer, might contain incorrect data during later phases because of insertion of
      * smartcasts in the middle of scopes
      */
-    private lazy val smartcastsEGraph: EGraph = outScopeOpt match {
-      case Some(outEGraph) => outEGraph.smartcastsEGraph.deepCopy
-      case None => EGraph.newEmpty
-    }
+    private var smartcastsEGraphOpt = Option.empty[EGraph]
 
     export valuesCtx.globalCtx as globalValuesCtx
 
@@ -233,7 +230,7 @@ object SSA {
     }
 
     private val uidGen = AtomicLong(-1)
-    private val values = mutable.LinkedHashSet.empty[IdValue]
+    private val valuesDefinedHere = mutable.LinkedHashSet.empty[IdValue]
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 
@@ -264,6 +261,15 @@ object SSA {
       smartcastsEGraph.merge(f1, f2)
     }
 
+    def applyProxies()(using Simplifier): Unit = {
+      for {
+        value <- valuesDefinedHere
+        proxy <- proxyStore.getProxy(value)
+      } {
+        eMerge(value, proxy)
+      }
+    }
+
     def isNestedIn(outerScope: Scope): Boolean =
       outerScope.depth < this.depth && (
         outScopeOpt.contains(outerScope) ||
@@ -286,8 +292,8 @@ object SSA {
     def saveSmartcast(f: Formula, smartcastType: Type)(using Simplifier): Unit = {
       smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastTypes =>
         val eGraphSnapshot = smartcastsEGraph.deepCopy
-        val eClId = eGraphSnapshot.classOf(f)
-        insertPseudoInstr(Smartcast(eClId, newSmartcastTypes, eGraphSnapshot))
+        val eClass = eGraphSnapshot.classOf(f)
+        insertPseudoInstr(Smartcast(eClass, newSmartcastTypes, eGraphSnapshot))
       }
     }
 
@@ -299,6 +305,21 @@ object SSA {
 
     def smartcastFor(f: Formula): Option[Type] = {
       smartcastsEGraph.smartcastFor(f)
+    }
+
+    def absorbSmartcastsEGraphFrom(src: Scope): Unit = {
+      smartcastsEGraphOpt = src.smartcastsEGraphOpt
+    }
+
+    private def smartcastsEGraph: EGraph = smartcastsEGraphOpt match {
+      case Some(eGraph) => eGraph
+      case None =>
+        val eGraph = outScopeOpt match {
+          case Some(outEGraph) => outEGraph.smartcastsEGraph.deepCopy
+          case None => EGraph.newEmpty
+        }
+        smartcastsEGraphOpt = Some(eGraph)
+        eGraph
     }
 
     private def typeOfNoSmartcastIfIdVal(f: Formula): Option[Type] = f match {
@@ -383,7 +404,9 @@ object SSA {
     }
 
     private def newValue[T <: IdValue](creation: Long => T): T = {
-      creation(uidGen.incrementAndGet())
+      val value = creation(uidGen.incrementAndGet())
+      valuesDefinedHere.add(value)
+      value
     }
 
   }

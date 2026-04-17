@@ -20,17 +20,11 @@ final class MeetJoinComputer(
                               subtypingCtx: SubtypingContext,
                               solver: Solver
                             ) {
-  
-  private[smt] val simplifier = Simplifier(subtypingCtx, solver, this)
 
-  def dealiasAndComputeJoin(types: Type*): Type =
-    dealiasAndComputeJoin(Iterable.from(types))
+  private[smt] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this)
 
   def computeJoin(types: Type*): Type =
     computeJoin(Iterable.from(types))
-
-  def dealiasAndComputeJoin(types: Iterable[Type]): Type =
-    computeJoin(types.map(dealiasingCtx.dealiasType))
 
   def computeJoin(inputTypes: Iterable[Type]): Type = {
 
@@ -46,56 +40,62 @@ final class MeetJoinComputer(
       case 0 => NothingType
       case 1 => expandedTypes.head
       case _ =>
+        val dealiasedTypes = expandedTypes.map(dealiasingCtx.dealiasType)
+        dealiasedTypes.size match {
+          case 0 => NothingType
+          case 1 => dealiasedTypes.head
+          case _ =>
 
-        // second pass: remove Nothing, shortcut if Any
-        val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
-        val namedTypes = mutable.ListBuffer.empty[NamedType]
-        val closureTypes = mutable.ListBuffer.empty[ClosureType]
-        val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
+            // second pass: remove Nothing, shortcut if Any
+            val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
+            val namedTypes = mutable.ListBuffer.empty[NamedType]
+            val closureTypes = mutable.ListBuffer.empty[ClosureType]
+            val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
 
-        def categorizeType(tpe: Type): Unit = tpe match {
-          case IntType =>
-            primitiveTypes.addOne(IntType)
-            rangeTypes.addOne(IntRangeType(None, None))
-          case primitiveType: PrimitiveType =>
-            primitiveTypes.addOne(primitiveType)
-          case namedType: NamedType =>
-            namedTypes.addOne(namedType)
-          case closureType: ClosureType =>
-            closureTypes.addOne(closureType)
-          case tv: TypeVariable =>
-            throw AssertionError(s"unexpected type variable: $tv")
-          case unionType: UnionType =>
-            throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
-          case IntersectionType(types) =>
-            for (tpe <- types) {
-              categorizeType(tpe)
+            def categorizeType(tpe: Type): Unit = tpe match {
+              case IntType =>
+                primitiveTypes.addOne(IntType)
+                rangeTypes.addOne(IntRangeType(None, None))
+              case primitiveType: PrimitiveType =>
+                primitiveTypes.addOne(primitiveType)
+              case namedType: NamedType =>
+                namedTypes.addOne(namedType)
+              case closureType: ClosureType =>
+                closureTypes.addOne(closureType)
+              case tv: TypeVariable =>
+                throw AssertionError(s"unexpected type variable: $tv")
+              case unionType: UnionType =>
+                throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
+              case IntersectionType(types) =>
+                for (tpe <- types) {
+                  categorizeType(tpe)
+                }
+              case intRangeType: IntRangeType =>
+                rangeTypes.addOne(intRangeType)
             }
-          case intRangeType: IntRangeType =>
-            rangeTypes.addOne(intRangeType)
-        }
 
-        // third pass: categorize types
-        var retainedTypesCnt = 0
-        val typesIter = expandedTypes.iterator
-        while (typesIter.hasNext) {
-          typesIter.next() match {
-            case (_: TypeVariable) | AnyType =>
-              return AnyType
-            case NothingType => ()
-            case tpe =>
-              categorizeType(tpe)
-              retainedTypesCnt += 1
-          }
-        }
+            // third pass: categorize types
+            var retainedTypesCnt = 0
+            val typesIter = dealiasedTypes.iterator
+            while (typesIter.hasNext) {
+              typesIter.next() match {
+                case (_: TypeVariable) | AnyType =>
+                  return AnyType
+                case NothingType => ()
+                case tpe =>
+                  categorizeType(tpe)
+                  retainedTypesCnt += 1
+              }
+            }
 
-        val rawJoin =
-          if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-          else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
-          else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
-          else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
-          else AnyType
-        simplifier.simplify(rawJoin)
+            val rawJoin =
+              if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+              else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
+              else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
+              else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+              else AnyType
+            simplifier.simplify(rawJoin)
+        }
     }
   }
 
@@ -225,48 +225,64 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeJoinOfRanges(types: Iterable[IntRangeType]): IntRangeType = {
+  def computeJoinOfRanges(types: Iterable[IntRangeType]): Type = {
 
     def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
       if bounds.isEmpty || bounds.exists(_.isEmpty) then None
       else minOrMax(bounds.flatten)
     }
 
-    IntRangeType(
-      filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMin),
-      filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
-    )
+    mapUnboundedToInt {
+      IntRangeType(
+        filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMin),
+        filterNoEmpty(types.map(_.upperBoundOpt), solver.intMax)
+      )
+    }
   }
 
   def computeMeet(types: Type*): Type =
     computeMeet(types.toList)
 
   def computeMeet(types: Iterable[Type]): Type = {
-    val expandedTypes = types.map(_.withTypeVarsExpanded)
-    val rawMeet =
-      if expandedTypes.toSet.size == 1 then expandedTypes.head
-      else expandedTypes.find(subT => expandedTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
-        case Some(meet) => meet
-        case None =>
-          expandedTypes.asIterableOfType[IntRangeType] match {
-            case Some(ranges) => computeMeetOfRanges(ranges)
-            case None => expandedTypes.lastOption.getOrElse(AnyType)
-          }
-      }
-    simplifier.simplify(rawMeet)
+    val expandedTypes = SeqSet(types).map(_.withTypeVarsExpanded)
+    if expandedTypes.size == 1 then expandedTypes.head
+    else {
+      val dealiasedTypes = expandedTypes.map(dealiasingCtx.dealiasType)
+      val rawMeet =
+        if dealiasedTypes.size == 1 then dealiasedTypes.head
+        else dealiasedTypes.find(subT => dealiasedTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
+          case Some(meet) => meet
+          case None =>
+            dealiasedTypes.asIterableOfType[IntRangeType] match {
+              case Some(ranges) => computeMeetOfRanges(ranges)
+              case None => dealiasedTypes.lastOption.getOrElse(AnyType)
+            }
+        }
+      simplifier.simplify(rawMeet)
+    }
   }
 
-  def computeMeetOfRanges(types: Iterable[IntRangeType]): IntRangeType = {
+  def computeMeetOfRanges(types: Iterable[IntRangeType]): Type = {
 
     def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
       if bounds.isEmpty || bounds.forall(_.isEmpty) then None
       else minOrMax(bounds.flatten)
     }
 
-    IntRangeType(
+    val rawMeet = IntRangeType(
       filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMax),
       filterNoEmpty(types.map(_.upperBoundOpt), solver.intMin)
     )
+    mapUnboundedToInt {
+      types.find { tpe =>
+        subtypingCtx.isSubtype(tpe, rawMeet) && !subtypingCtx.isSubtype(rawMeet, tpe)
+      }.getOrElse(rawMeet)
+    }
+  }
+
+  private def mapUnboundedToInt(tpe: Type): Type = tpe match {
+    case IntRangeType(None, None) => IntType
+    case tpe => tpe
   }
 
 }
