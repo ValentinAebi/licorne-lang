@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.identifiers.{Identifier, NormalFunOrVarId, TypeIdentifier}
+import compiler.identifiers.{Identifier, NormalFunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.SSA
 import compiler.irs.SSA.*
 import compiler.lang
@@ -77,313 +77,339 @@ final class Typer(
   }
 
   def typeInstr(instr: RealInstr, currScope: Scope, branchInfo: BranchingInfo)
-               (using typeParamsCtx: TypeParamsContext): Unit = instr match {
+               (using typeParamsCtx: TypeParamsContext): Unit = {
+    
+    def saveEquality(f1: Formula, f2: Formula): Unit = {
+      currScope.eMerge(f1, f2)
+      solver.assertEq(f1, f2)
+    }
+    
+    instr match {
 
-    case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
-      val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-      for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal) <- loopUpdatedVars) {
-        (for {
-          recurrence <- varData.recurrenceOpt
-          monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
-        } yield {
-          val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
-          val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
-          val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
-          val inBodyType = simplifier.simplify(
-            monotonicity match {
-              case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
-              case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
-              case NonIncreasing => IntRangeType(inferredBound, preIterationBoundOpt)
-              case NonMonotonous => IntType
-            }
-          )
-          val feedbackType =
-            absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None).getOrElse {
-              preIterationBoundOpt match {
-                case Some(preIterationBound) =>
-                  simplifier.simplify(
-                    monotonicity match {
-                      case Constant => IntRangeType.singleton(preIterationBound)
-                      case NonDecreasing => IntRangeType.ofLowerBound(preIterationBound)
-                      case NonIncreasing => IntRangeType.ofUpperBound(preIterationBound)
-                      case NonMonotonous => IntType
-                    }
-                  )
-                case None => IntType
+      case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
+        val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
+        for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal) <- loopUpdatedVars) {
+          (for {
+            recurrence <- varData.recurrenceOpt
+            monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
+          } yield {
+            val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
+            val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
+            val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
+            val inBodyType = simplifier.simplify(
+              monotonicity match {
+                case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
+                case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
+                case NonIncreasing => IntRangeType(inferredBound, preIterationBoundOpt)
+                case NonMonotonous => IntType
               }
-            }
-          val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
-          // TODO maybe detect more precise after-loop-type in the presence of a recurrence
-          currScope.saveType(inCondVal, inCondType) // after loop
-          condScope.saveSmartcast(inCondVal, inCondType) // inside condition
-          bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
-          varData.handledThroughRecurrenceFlag = true
-        }) orElse {
-          // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
-          val tpe =
-            currScope.getLocalValuesContextUnsafe
-              .valueOf(varId)
-              .asInstanceOf[KnownAndInitialized]
-              .declarationTypeAnnotOpt
-              .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
-                subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
-              })
-              .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
-          currScope.saveType(inCondVal, tpe)
-          Some(())
+            )
+            val feedbackType =
+              absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None).getOrElse {
+                preIterationBoundOpt match {
+                  case Some(preIterationBound) =>
+                    simplifier.simplify(
+                      monotonicity match {
+                        case Constant => IntRangeType.singleton(preIterationBound)
+                        case NonDecreasing => IntRangeType.ofLowerBound(preIterationBound)
+                        case NonIncreasing => IntRangeType.ofUpperBound(preIterationBound)
+                        case NonMonotonous => IntType
+                      }
+                    )
+                  case None => IntType
+                }
+              }
+            val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
+            // TODO maybe detect more precise after-loop-type in the presence of a recurrence
+            currScope.saveType(inCondVal, inCondType) // after loop
+            condScope.saveSmartcast(inCondVal, inCondType) // inside condition
+            bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
+            varData.handledThroughRecurrenceFlag = true
+          }) orElse {
+            // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
+            val tpe =
+              currScope.getLocalValuesContextUnsafe
+                .valueOf(varId)
+                .asInstanceOf[KnownAndInitialized]
+                .declarationTypeAnnotOpt
+                .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
+                  subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
+                })
+                .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
+            currScope.saveType(inCondVal, tpe)
+            Some(())
+          }
         }
-      }
-      typeScopeInstructions(condScope, BranchingInfo.empty)
-      subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-      typeScopeInstructions(bodyScope, infoIfCondTrue)
-      for {
-        varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
-        if !varData.handledThroughRecurrenceFlag
-      } {
-        val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
-        val typeInCond = condScope.currentTypeOf(condVal)
-        lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
-          case KnownAndInitialized(value, reassigStatus, Some(declTypeAnnot)) =>
-            s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
-          case _ =>
-            s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+        typeScopeInstructions(condScope, BranchingInfo.empty)
+        subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+        val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
+        typeScopeInstructions(bodyScope, infoIfCondTrue)
+        for {
+          varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
+          if !varData.handledThroughRecurrenceFlag
+        } {
+          val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
+          val typeInCond = condScope.currentTypeOf(condVal)
+          lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
+            case KnownAndInitialized(value, reassigStatus, Some(declTypeAnnot)) =>
+              s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
+            case _ =>
+              s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+          }
+          subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
         }
-        subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
-      }
-      applyBranchInfo(currScope, infoIfCondFalse)
-
-    case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
-      val condType = currScope.currentTypeOf(condVal)
-      subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
-      val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-      typeScopeInstructions(thenBr, infoIfCondTrue)
-      typeScopeInstructions(elseBr, infoIfCondFalse)
-      for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-        val thenType = thenBr.currentTypeOf(afterThenVal)
-        val elseType = elseBr.currentTypeOf(afterElseVal)
-        val joinType = {
-          if elseBr.hasExited then thenType
-          else if thenBr.hasExited then elseType
-          else meetJoin.computeJoin(thenType, elseType)
-        }
-        currScope.saveType(joinedVal, joinType)
-      }
-      if (elseBr.hasExited) {
-        // in that case, variables are remapped to their value in thenScope by the SSAGenerator
-        applyBranchInfo(currScope, infoIfCondTrue)
-        currScope.absorbSmartcastsEGraphFrom(thenBr)
-      } else if (thenBr.hasExited) {
-        // in that case, variables are remapped to their value in elseScope by the SSAGenerator
         applyBranchInfo(currScope, infoIfCondFalse)
-        currScope.absorbSmartcastsEGraphFrom(elseBr)
-      }
-      if (thenBr.hasExited && elseBr.hasExited) {
-        currScope.markHasExited()
-      }
 
-    case staticTypeAssert@StaticTypeAssert(value, tpe) =>
-      val valueType = currScope.currentTypeOf(value)
-      subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", staticTypeAssert.getPosition)
+      case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
+        val condType = currScope.currentTypeOf(condVal)
+        subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
+        val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
+        typeScopeInstructions(thenBr, infoIfCondTrue)
+        typeScopeInstructions(elseBr, infoIfCondFalse)
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+          val thenType = thenBr.currentTypeOf(afterThenVal)
+          val elseType = elseBr.currentTypeOf(afterElseVal)
+          val joinType = {
+            if elseBr.hasExited then thenType
+            else if thenBr.hasExited then elseType
+            else meetJoin.computeJoin(thenType, elseType)
+          }
+          currScope.saveType(joinedVal, joinType)
+        }
+        if (elseBr.hasExited) {
+          // in that case, variables are remapped to their value in thenScope by the SSAGenerator
+          applyBranchInfo(currScope, infoIfCondTrue)
+          currScope.absorbSmartcastsEGraphFrom(thenBr)
+        } else if (thenBr.hasExited) {
+          // in that case, variables are remapped to their value in elseScope by the SSAGenerator
+          applyBranchInfo(currScope, infoIfCondFalse)
+          currScope.absorbSmartcastsEGraphFrom(elseBr)
+        }
+        if (thenBr.hasExited && elseBr.hasExited) {
+          currScope.markHasExited()
+        }
 
-    case StaticAssert(value) => ???
+      case staticTypeAssert@StaticTypeAssert(value, tpe) =>
+        val valueType = currScope.currentTypeOf(value)
+        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", staticTypeAssert.getPosition)
 
-    case AssignVal(assigned, src) =>
-      val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src))
-      currScope.saveType(assigned, assignedType)
-      currScope.eMerge(assigned, src)
+      case StaticAssert(value) => ???
 
-    case AssignIntConst(assigned, src) =>
-      currScope.saveType(assigned, IntRangeType.singleton(src))
-      currScope.eMerge(assigned, IntConst(src))
+      case AssignVal(assigned, src) =>
+        val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src))
+        currScope.saveType(assigned, assignedType)
+        saveEquality(assigned, src)
 
-    case AssignBoolConst(assigned, src) =>
-      currScope.saveType(assigned, BoolType)
-      currScope.eMerge(assigned, BoolConst(src))
+      case AssignIntConst(assigned, src) =>
+        currScope.saveType(assigned, IntRangeType.singleton(src))
+        saveEquality(assigned, IntConst(src))
 
-    case AssignStringConst(assigned, src) =>
-      currScope.saveType(assigned, StringType)
-      currScope.eMerge(assigned, StringConst(src))
+      case AssignBoolConst(assigned, src) =>
+        currScope.saveType(assigned, BoolType)
+        saveEquality(assigned, BoolConst(src))
 
-    case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
-      typeNumericNeg(operand, currScope, neg.getPosition)
-    }
+      case AssignStringConst(assigned, src) =>
+        currScope.saveType(assigned, StringType)
+        saveEquality(assigned, StringConst(src))
 
-    case add@Add(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeNumericBinop(lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, add.getPosition)
-    }
-
-    case sub@Sub(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeNumericBinop(lhs, rhs, currScope, absInt.typeMinusType, Operator.Minus, sub.getPosition)
-    }
-
-    case mul@Mul(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeNumericBinop(lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, mul.getPosition)
-    }
-
-    case div@Div(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeNumericBinop(lhs, rhs, currScope, absInt.typeDivType, Operator.Div, div.getPosition)
-    }
-
-    case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
-    }
-
-    case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeLogicalBinop(lhs, rhs, currScope, Operator.And, and.getPosition)
-    }
-
-    case or@Or(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeLogicalBinop(lhs, rhs, currScope, Operator.Or, or.getPosition)
-    }
-
-    case neg@LogicNeg(assigned, operand) => assignTarget(assigned, currScope) {
-      typeLogicalNeg(operand, currScope, neg.getPosition)
-    }
-
-    case leq@Leq(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, leq.getPosition)
-    }
-
-    case lt@Lt(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-      typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, lt.getPosition)
-    }
-
-    case Equal(assigned, lhs, rhs) =>
-      currScope.saveType(assigned, BoolType)
-
-    case invk@InvokeFunc(assigned, receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-      val returnType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, invk.getPosition)
-      currScope.saveType(assigned, returnType)
-      currScope.markHasExitedIfNothing(returnType)
-
-    case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
-      val ownerType = currScope.currentTypeOf(owner)
-      val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-      proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor) match {
-        case Some(smartcastType) =>
-          currScope.saveType(assigned, smartcastType)
-        case None =>
-          currScope.saveType(assigned, tpe)
+      case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
+        typeNumericNeg(operand, currScope, neg.getPosition)
       }
 
-    case fw@FieldWrite(owner, field, rhs) if field.isNotResolvedYet =>
-      val ownerType = currScope.currentTypeOf(owner)
-      val fieldType = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = true, fw.getPosition)
-      val rhsType = currScope.currentTypeOf(rhs)
-      tryToResolveTypeVars(fieldType, rhsType)
-      subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${field.fieldId}", fw.getPosition)
-
-    case _: (InvokeFunc | FieldRead | FieldWrite) =>
-      throw AssertionError("typing phase run more than once on the same piece of code")
-
-    case heapVarRd@HeapVarRead(assigned, heapVar) =>
-      val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
-      currScope.saveType(assigned, tpe)
-      forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarRd.getPosition)
-
-    case heapVarWr@HeapVarWrite(heapVar, newValue) =>
-      val newValType = currScope.currentTypeOf(newValue)
-      heapVarsTypeStore.getType(heapVar) match {
-        case Some(expType) =>
-          subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
-        case None =>
-          // TODO maybe try to save refined types also here, instead of falling back to the principal type?
-          heapVarsTypeStore.saveType(heapVar, newValType.principalType)
+      case add@Add(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, add.getPosition)
       }
-      forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
-    case invkClosure@InvokeClosure(assigned, callee, args) =>
-      currScope.currentTypeOf(callee) match {
-        case ClosureType(paramTypes, resultType) =>
-          val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg))
-          checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
-          currScope.saveType(assigned, resultType)
-        case calleeType =>
-          er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
+      case sub@Sub(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeMinusType, Operator.Minus, sub.getPosition)
       }
-      if (isPurityRequired) {
-        instantiatedClosures.get(callee) match {
-          case Some(closureInfo) =>
-            closureInfo.raisePurityFlag()
+
+      case mul@Mul(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, mul.getPosition)
+      }
+
+      case div@Div(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeDivType, Operator.Div, div.getPosition)
+      }
+
+      case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
+      }
+
+      case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.And, and.getPosition)
+      }
+
+      case or@Or(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.Or, or.getPosition)
+      }
+
+      case neg@LogicNeg(assigned, operand) => assignTarget(assigned, currScope) {
+        typeLogicalNeg(operand, currScope, neg.getPosition)
+      }
+
+      case leq@Leq(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, leq.getPosition)
+      }
+
+      case lt@Lt(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, lt.getPosition)
+      }
+
+      case Equal(assigned, lhs, rhs) =>
+        currScope.saveType(assigned, BoolType)
+
+      case invk@InvokeFunc(assigned, receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+        val returnType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, invk.getPosition)
+        currScope.saveType(assigned, returnType)
+        currScope.markHasExitedIfNothing(returnType)
+
+      case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
+        val ownerType = currScope.currentTypeOf(owner)
+        val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
+        proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor) match {
+          case Some(smartcastType) =>
+            currScope.saveType(assigned, smartcastType)
           case None =>
-            er.reportError("purity error: cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
+            currScope.saveType(assigned, tpe)
         }
-      }
 
-    case mkHeapVar@MkHeapVar(assigned) =>
-      // defer typing to first write
-      ()
-
-    case instantiate@Instantiate(assigned, classOrRecordName, typeArgs) =>
-      resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
-        case Some(typeSig) =>
-          val typesSubst = instantiateTypes(typeSig.typeParams, typeArgs, subtypingCtx, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
-          currScope.saveType(assigned, typeSig.toType(typesSubst))
-        case None =>
-          er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
-      }
-
-    case mkClosure@MkClosure(assigned, params, body) =>
-      val id = NormalFunOrVarId(assigned match {
-        case assigned: NamedIdValue => assigned.irDescr
-        case assigned: IntermediateIdValue => assigned.toString
-      })
-      val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, body.getPosition)
-      val paramTypesB = List.newBuilder[Type]
-      for ((paramVal, paramType) <- params) {
-        body.saveType(paramVal, paramType)
-        paramTypesB.addOne(paramType)
-      }
-      currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar))
-      executionEnvirOpt match {
-        case Some(executionEnvir) =>
-          val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, executionEnvir, typeParamsCtx)
-          instantiatedClosures.put(assigned, closureInfo)
-          closuresCollectorFunc(closureInfo)
-        case None =>
-          er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
-      }
-
-    case tt@TypeTest(assigned, testedValue, testedTypeId) =>
-      checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
-      currScope.saveType(assigned, BoolType)
-
-    case cast@Cast(inValue, target) =>
-      checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
-        currScope.saveSmartcast(inValue, assertedType)
-        proxyStore.getProxy(inValue).foreach { proxy =>
-          currScope.saveSmartcast(proxy, assertedType)
+      case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
+        val ownerType = currScope.currentTypeOf(owner)
+        val fieldType = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
+        val rhsType = currScope.currentTypeOf(rhs)
+        tryToResolveTypeVars(fieldType, rhsType)
+        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", fw.getPosition)
+        if (fieldResolTarget.isResolvedAndStable) {
+          val ow = proxyStore.getProxy(owner).getOrElse(owner)
+          val select = Select(ow, fieldResolTarget)
+          saveEquality(select, rhs)
+          val receiverSig = fieldResolTarget.getReceiverSigUnsafe
+          receiverSig match {
+            case receiverSig: ClassSignature =>
+              val fld = receiverSig.fields.apply(fieldResolTarget.fieldId)
+              if (fld.hasPublicSyntheticAccessor) {
+                val invkTarget = InvocationTarget(fld.id)
+                val funSig = resolutionCtx.resolveFunSig(receiverSig.id, fld.id).asInstanceOf[FuncResolResult.Success].funSig
+                invkTarget.resolve(receiverSig, funSig, fld.tpe)
+                val accessorCall = Call(ow, invkTarget, List.empty, List.empty)
+                saveEquality(select, accessorCall)
+              }
+            case _ => ()
+          }
         }
-      }
 
-    case conv@Conversion(assigned, inValue, targetType) =>
-      val inValType = currScope.currentTypeOf(inValue).principalType
-      if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
-        currScope.saveType(assigned, targetType)
-      } else {
-        er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
-      }
+      case _: (InvokeFunc | FieldRead | FieldWrite) =>
+        throw AssertionError("typing phase run more than once on the same piece of code")
 
-    case ret@Return(retVal) =>
-      executionEnvirOpt match {
-        case Some(executionEnvir) =>
-          val retValType = currScope.currentTypeOf(retVal)
-          subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
-        case None =>
-          er.reportError("unexpected return in this position", ret.getPosition)
-      }
-      currScope.markHasExited()
+      case heapVarRd@HeapVarRead(assigned, heapVar) =>
+        val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
+        currScope.saveType(assigned, tpe)
+        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarRd.getPosition)
 
-    case panic@Panic(msg) =>
-      val msgType = currScope.currentTypeOf(msg)
-      subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
-      currScope.markHasExited()
+      case heapVarWr@HeapVarWrite(heapVar, newValue) =>
+        val newValType = currScope.currentTypeOf(newValue)
+        heapVarsTypeStore.getType(heapVar) match {
+          case Some(expType) =>
+            subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
+          case None =>
+            // TODO maybe try to save refined types also here, instead of falling back to the principal type?
+            heapVarsTypeStore.saveType(heapVar, newValType.principalType)
+        }
+        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
-    case Drop(droppedValue) => ()
+      case invkClosure@InvokeClosure(assigned, callee, args) =>
+        currScope.currentTypeOf(callee) match {
+          case ClosureType(paramTypes, resultType) =>
+            val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg))
+            checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
+            currScope.saveType(assigned, resultType)
+          case calleeType =>
+            er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
+        }
+        if (isPurityRequired) {
+          instantiatedClosures.get(callee) match {
+            case Some(closureInfo) =>
+              closureInfo.raisePurityFlag()
+            case None =>
+              er.reportError("purity error: cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
+          }
+        }
 
-    case scope: Scope =>
-      typeScopeInstructions(scope, BranchingInfo.empty)
+      case mkHeapVar@MkHeapVar(assigned) =>
+        // defer typing to first write
+        ()
+
+      case instantiate@Instantiate(assigned, classOrRecordName, typeArgs) =>
+        resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
+          case Some(typeSig) =>
+            val typesSubst = instantiateTypes(typeSig.typeParams, typeArgs, subtypingCtx, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
+            currScope.saveType(assigned, typeSig.toType(typesSubst))
+          case None =>
+            er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
+        }
+
+      case mkClosure@MkClosure(assigned, params, body) =>
+        val id = NormalFunOrVarId(assigned match {
+          case assigned: NamedIdValue => assigned.irDescr
+          case assigned: IntermediateIdValue => assigned.toString
+        })
+        val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, body.getPosition)
+        val paramTypesB = List.newBuilder[Type]
+        for ((paramVal, paramType) <- params) {
+          body.saveType(paramVal, paramType)
+          paramTypesB.addOne(paramType)
+        }
+        currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar))
+        executionEnvirOpt match {
+          case Some(executionEnvir) =>
+            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, executionEnvir, typeParamsCtx)
+            instantiatedClosures.put(assigned, closureInfo)
+            closuresCollectorFunc(closureInfo)
+          case None =>
+            er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
+        }
+
+      case tt@TypeTest(assigned, testedValue, testedTypeId) =>
+        checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
+        currScope.saveType(assigned, BoolType)
+
+      case cast@Cast(inValue, target) =>
+        checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
+          currScope.saveSmartcast(inValue, assertedType)
+          proxyStore.getProxy(inValue).foreach { proxy =>
+            currScope.saveSmartcast(proxy, assertedType)
+          }
+        }
+
+      case conv@Conversion(assigned, inValue, targetType) =>
+        val inValType = currScope.currentTypeOf(inValue).principalType
+        if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
+          currScope.saveType(assigned, targetType)
+        } else {
+          er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
+        }
+
+      case ret@Return(retVal) =>
+        executionEnvirOpt match {
+          case Some(executionEnvir) =>
+            val retValType = currScope.currentTypeOf(retVal)
+            subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
+          case None =>
+            er.reportError("unexpected return in this position", ret.getPosition)
+        }
+        currScope.markHasExited()
+
+      case panic@Panic(msg) =>
+        val msgType = currScope.currentTypeOf(msg)
+        subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
+        currScope.markHasExited()
+
+      case Drop(droppedValue) => ()
+
+      case scope: Scope =>
+        typeScopeInstructions(scope, BranchingInfo.empty)
+    }
   }
 
   private def tryToApplyHint(srcVal: IdValue, regularType: Type): Type = {
@@ -647,7 +673,7 @@ final class Typer(
 
   def typeStableField(field: StableField, currScope: Scope, posOpt: Option[Position])
                      (using typeParamsCtx: TypeParamsContext): Unit = {
-    val StableField(id, tpe, value) = field
+    val StableField(id, tpe, value, isPublishedAsMethod) = field
     typeTypeApp(tpe, Some(Covariant), currScope, posOpt)
   }
 
@@ -675,7 +701,7 @@ final class Typer(
   }
 
   def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, purity, isMain, declPosOpt) = functionSignature
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = functionSignature
 
     val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
@@ -838,7 +864,7 @@ final class Typer(
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
                                         callArgs: List[Formula], scope: Scope, posOpt: Option[Position])
-                                       (using TypeParamsContext): Type = {
+                                       (using tParamsCtx: TypeParamsContext): Type = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
@@ -852,6 +878,9 @@ final class Typer(
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
+            if (funSig.visibility == Visibility.Private && !receiverIsThisPtr(scope, receiver)) {
+              er.reportError(s"illegal access to ${Visibility.Private} method ${funSig.functionName}", posOpt)
+            }
             val receiverTypeSubst = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, posOpt, None)
             val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
@@ -874,7 +903,7 @@ final class Typer(
   }
 
   private def resolveFieldAccess(owner: Formula, ownerType: Type, fieldResolTarget: FieldResolutionTarget, currScope: Scope,
-                                 needsWriteAccess: Boolean, posOpt: Option[Position]): Type = {
+                                 needsWriteAccess: Boolean, posOpt: Option[Position], isInInitializer: Boolean = false): Type = {
 
     def isInitScopeOfOwner: Boolean = owner match {
       case owner: IdValue => currScope.isInitScopeOf(owner)
@@ -891,6 +920,9 @@ final class Typer(
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
+            if (!isInInitializer && ownerSig.isInstanceOf[EncapsulatedTypeSig] && !receiverIsThisPtr(currScope, owner)) {
+              er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
+            }
             // TODO check that we can indeed ignore errors here (reportErrors = false)
             val typeSubst = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, posOpt, None)
             val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
@@ -905,6 +937,12 @@ final class Typer(
           case _ => errorCase()
         }
       case _ => errorCase()
+    }
+  }
+
+  private def receiverIsThisPtr(currScope: Scope, receiver: Formula): Boolean = {
+    currScope.getLocalValuesContextUnsafe.getThisValue.exists { thisVal =>
+      receiver == thisVal || proxyStore.getProxyIfIdValue(receiver).contains(thisVal)
     }
   }
 

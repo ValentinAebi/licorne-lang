@@ -94,7 +94,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val classDef: P[ClassDef] = {
     kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(funOrClassParam, comma) ::: closeParenth)
+      ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
       ::: supertypesListOpt ::: methodsListOpt map {
       case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
         ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
@@ -158,20 +158,28 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "funDef"
 
-  private lazy val funParamTree = funOrClassParam OR thisParam
+  private lazy val funParamTree = funOrClassParamTree OR thisParam
+  
+  private lazy val classParamTree = funOrClassParamTree OR publicParam
 
-  private lazy val funOrClassParam: P[FunctionParam & ClassParam] = recursive {
+  private lazy val funOrClassParamTree: P[FunctionParam & ClassParam] = recursive {
     opt(kw(Var)) ::: lowName ::: colon ::: typeTree map {
       case Some(_) ^: name ^: tpe => VarParam(name, tpe)
       case None ^: name ^: tpe => SimpleParam(name, tpe)
     }
-  } setName "funOrClassParam"
+  } setName "funOrClassParamTree"
 
   private lazy val thisParam: P[ThisParam] = {
     kw(This).ignored ::: opt(colon ::: typeTree) map {
       case tpeOpt => ThisParam(tpeOpt)
     }
   } setName "thisParam"
+  
+  private lazy val publicParam: P[PublicParam] = {
+    kw(Public).ignored ::: lowName ::: colon ::: typeTree map {
+      case id ^: tpe => PublicParam(id, tpe)
+    }
+  } setName "publicParam"
 
   private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
     lowName ::: colon ::: typeTree map {

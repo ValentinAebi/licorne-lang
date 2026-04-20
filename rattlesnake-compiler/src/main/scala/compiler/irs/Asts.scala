@@ -1,8 +1,9 @@
 package compiler.irs
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
+import compiler.lang.Formulas.IdValue
 import compiler.lang.Types.PrimitiveType
-import compiler.lang.{Operator, Purity, ReassigPermission, Variance, Visibility}
+import compiler.lang.*
 import compiler.reporting.Position
 
 
@@ -166,9 +167,13 @@ object Asts {
     override def children: List[Ast] = typeParams ++ params :+ rhs
   }
   
-  sealed trait Param extends Ast
+  sealed trait Param extends Ast {
+    def paramId: FunOrVarId
+  }
 
-  sealed trait ClassParam extends Param
+  sealed trait ClassParam extends Param {
+    def paramTypeTree: TypeTree
+  }
 
   sealed trait FunctionParam extends Param {
     val paramId: FunOrVarId
@@ -191,6 +196,10 @@ object Asts {
   }
 
   final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, NonThisFunctionParam {
+    override def children: List[Ast] = List(paramTypeTree)
+  }
+  
+  final case class PublicParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 

@@ -116,13 +116,13 @@ final class SubtypingChecker(
       val superTSig = resolutionCtx.resolveTypeSig(superT).get
       (subTSig, superTSig) match {
         case (subTSig: EncapsulatedTypeSig, superTSig: EncapsulatedTypeSig) =>
-          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, _, superFunVisibility, superFunPurity, _, superFunDeclPosOpt)) <- superTSig.functions) {
+          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunRetType, _, superFunVisibility, superFunPurity, _, superFunDeclPosOpt, isSynthetic)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
               // TODO allow method implementation in interfaces?
               case None if subTSig.isInstanceOf[InterfaceSignature] => ()
               case None =>
                 er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
-              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, _, subFunVisibility, subFunPurity, _, subFunDeclPosOpt)) =>
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunRetType, _, subFunVisibility, subFunPurity, _, subFunDeclPosOpt, isSynthetic)) =>
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size
                 if (!typeParamsLenMatch) {

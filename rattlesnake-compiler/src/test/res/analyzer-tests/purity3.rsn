@@ -5,7 +5,7 @@ object Test {
 
    fn m2(animal: Animal, x: [0, animal.hungerLevel2()]) {}
 
-   fn m3(food: Food, x: [0, food.nutrients]) {}
+   fn m3(food: Food, x: [0, food.nutrients()]) {}
 
 }
 
@@ -21,4 +21,4 @@ class Animal {
 
 }
 
-class Food(nutrients: [0,])
+class Food(public nutrients: [0,])

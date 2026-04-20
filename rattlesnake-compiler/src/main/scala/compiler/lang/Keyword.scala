@@ -19,6 +19,7 @@ enum Keyword(val str: String) {
   case Object extends Keyword("object")
   case Panic extends Keyword("panic")
   case Private extends Keyword("private")
+  case Public extends Keyword("public")
   case Pure extends Keyword("pure")
   case Record extends Keyword("record")
   case Return extends Keyword("return")

@@ -25,7 +25,7 @@ final case class ConstNode(cst: Any) extends ENode {
 final case class UnaryOpNode(op: Operator, var operand: EClass) extends ENode {
   override def operands: List[EClass] = List(operand)
 
-  override def toString: String = s"$op($operand)"
+  override def toString: String = s"$op(${operand.shortDescr})"
 }
 
 final case class BinaryOpNode(var lhs: EClass, op: Operator, var rhs: EClass) extends ENode {
@@ -42,23 +42,23 @@ final case class BinaryOpNode(var lhs: EClass, op: Operator, var rhs: EClass) ex
 
   override def hashCode(): Int = Objects.hash(op, Set(lhs, rhs))
 
-  override def toString: String = s"$op($lhs,$rhs)"
+  override def toString: String = s"$op(${lhs.shortDescr},${rhs.shortDescr})"
 }
 
 final case class CallNode(var receiver: EClass, funId: FunOrVarId, var args: List[EClass]) extends ENode {
   override def operands: List[EClass] = receiver :: args
 
-  override def toString: String = s"{$receiver}.$funId" ++ args.mkString("(", ",", ")")
+  override def toString: String = s"${receiver.shortDescr}.$funId" ++ args.map(_.shortDescr).mkString("(", ",", ")")
 }
 
 final case class SelectNode(var receiver: EClass, fieldId: FunOrVarId) extends ENode {
   override def operands: List[EClass] = List(receiver)
 
-  override def toString: String = s"{$receiver}.$fieldId"
+  override def toString: String = s"${receiver.shortDescr}.$fieldId"
 }
 
 final case class TypePredicateNode(var subject: EClass, tpe: TypeIdentifier) extends ENode {
   override def operands: List[EClass] = List(subject)
 
-  override def toString: String = s"{$subject}-is-$tpe"
+  override def toString: String = s"${subject.shortDescr}-is-$tpe"
 }

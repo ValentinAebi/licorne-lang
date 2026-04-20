@@ -13,10 +13,10 @@ class Animal(name: String, var hungerLevel: [0,]) {
 
    fn eat(this, food: Food) {
       val hungerLevelBefore = this.hungerLevel;
-      if hungerLevelBefore < food.nutrients {
+      if hungerLevelBefore < food.nutrients() {
          resetHungerLevel();
       } else {
-         this.hungerLevel = hungerLevelBefore - food.nutrients;
+         this.hungerLevel = hungerLevelBefore - food.nutrients();
       }
    }
 
@@ -43,4 +43,4 @@ class Animal(name: String, var hungerLevel: [0,]) {
 
 }
 
-class Food(nutrients: [0,])
+class Food(public nutrients: [0,])

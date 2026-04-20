@@ -118,6 +118,15 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver) {
     }
   }
 
+  def assertEq(lhs: Formula, rhs: Formula): Unit = {
+    for {
+      l <- convertInt(lhs)
+      r <- convertInt(rhs)
+    } do {
+      kZ3Solver.assert(kCtx.eq(l, r))
+    }
+  }
+
   def assertLeq(lhs: Formula, rhs: Formula): Unit = {
     for {
       l <- convertInt(lhs)

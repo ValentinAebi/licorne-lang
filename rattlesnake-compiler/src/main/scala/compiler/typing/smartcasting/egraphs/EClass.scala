@@ -51,5 +51,7 @@ final class EClass(val uid: Long) {
   }
 
   def explicitFormulasView: Iterable[Formula] = explicitFormulas
+  
+  def shortDescr: String = s"*$uid"
 
 }

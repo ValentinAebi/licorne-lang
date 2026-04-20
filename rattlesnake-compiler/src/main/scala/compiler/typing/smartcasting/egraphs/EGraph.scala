@@ -30,7 +30,7 @@ final class EGraph private[egraphs](startClId: Long) {
   
   private[egraphs] def nodeToClassMap: IterableOnce[(ENode, EClass)] = nodeToClass
 
-  def deepCopy: EGraph = (new EGraphCopier).copyOf(this)
+  def deepCopy: EGraph = EGraphCopier.copyOf(this)
 
   def areEqual(f1: Formula, f2: Formula): Boolean =
     classOf(f1) eq classOf(f2)
@@ -61,7 +61,7 @@ final class EGraph private[egraphs](startClId: Long) {
         case Some(otherCl) =>
           congruences.addOne(cl, otherCl)
         case None =>
-          newNodeToClass.put(n, cl)
+          newNodeToClass.put(n, canonicalize(cl))
       }
     }
     nodeToClass = newNodeToClass
@@ -161,8 +161,8 @@ final class EGraph private[egraphs](startClId: Long) {
 
   override def toString: String =
     "EGraph {\n" +
-      classesUf.map((cl1, cl2) => s"*${cl1.uid} -> *${cl2.uid}").mkString("uf = {\n  ", ",\n  ", "\n}").indent(2) +
-      nodeToClass.map((n, cl) => s"$n -> *${cl.uid}").mkString("nodes = {\n  ", ",\n  ", "\n}").indent(2) + "}"
+      classesUf.map((cl1, cl2) => s"${cl1.shortDescr} -> ${cl2.shortDescr}").mkString("uf = {\n  ", ",\n  ", "\n}").indent(2) +
+      nodeToClass.map((n, cl) => s"$n -> ${cl.shortDescr}").mkString("nodes = {\n  ", ",\n  ", "\n}").indent(2) + "}"
 
 }
 

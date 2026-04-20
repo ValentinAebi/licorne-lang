@@ -22,7 +22,8 @@ final case class FunctionSignature(
                                     visibility: Visibility,
                                     purity: Purity,
                                     isMain: Boolean,
-                                    declPosOpt: Option[Position]
+                                    declPosOpt: Option[Position],
+                                    isSynthetic: Boolean = false
                                   ) extends ExecutionEnvironment {
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
@@ -203,7 +204,7 @@ final case class RecordSignature(
 
 enum Field {
   case ReassignableField(id: FunOrVarId, tpe: Type)
-  case StableField(id: FunOrVarId, tpe: Type, value: IdValue)
+  case StableField(id: FunOrVarId, tpe: Type, value: IdValue, isPublishedAsMethod: Boolean)
 
   def id: FunOrVarId
 
@@ -213,10 +214,17 @@ enum Field {
     case _: ReassignableField => false
     case _: StableField => true
   }
+  
+  def hasPublicSyntheticAccessor: Boolean = this match {
+    case Field.ReassignableField(id, tpe) => false
+    case Field.StableField(id, tpe, value, isPublishedAsMethod) => isPublishedAsMethod
+  }
 
   override def toString: String = this match {
     case Field.ReassignableField(id, tpe) => s"${Keyword.Var} $id: $tpe"
-    case Field.StableField(id, tpe, value) => s"$value: $tpe"
+    case Field.StableField(id, tpe, value, isPublished) =>
+      val maybePublic = if isPublished then s"${Visibility.Public} " else ""
+      s"$maybePublic$value: $tpe"
   }
 }
 

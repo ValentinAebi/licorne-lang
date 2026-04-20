@@ -7,7 +7,7 @@ final class EGraphCopier {
   private val classCopier = new Copier[EClass]()
   private val nodeCopier = new Copier[ENode]()
 
-  def copyOf(original: EGraph): EGraph = {
+  private def copyOf(original: EGraph): EGraph = {
     val copy = EGraph(original.currentClId)
     copy.initializeWith(
       original.uf.iterator.map((cl1, cl2) => (copyOf(cl1), copyOf(cl2))),
@@ -67,4 +67,11 @@ final class EGraphCopier {
     }
   }
 
+}
+
+object EGraphCopier {
+  
+  def copyOf(eg: EGraph): EGraph =
+    (new EGraphCopier).copyOf(eg)
+  
 }

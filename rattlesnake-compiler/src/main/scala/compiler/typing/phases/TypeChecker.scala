@@ -40,7 +40,10 @@ final class TypeChecker(
 
       saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, simplifier)
 
-      for ((funSig, func) <- program.functions) {
+      for {
+        (funSig, func) <- program.functions
+        if !funSig.isSynthetic
+      } {
         checkFunc(funSig, func, dealiasingCtx, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
       }
 

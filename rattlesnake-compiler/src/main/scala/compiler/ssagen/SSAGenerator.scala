@@ -21,6 +21,7 @@ import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
+import scala.collection.mutable.ListBuffer
 import scala.collection.{SeqMap, mutable}
 import scala.util.boundary
 
@@ -65,23 +66,35 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             classSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
             val typeParams = typeParamTrees.convert(classSigScope)
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
+
+            def saveNonReassigParam(param: Asts.SimpleParam | Asts.PublicParam): Unit = {
+              val isPublishedAsMethod = param.isInstanceOf[Asts.PublicParam]
+              val paramId = param.paramId
+              val paramTypeTree = param.paramTypeTree
+              val fieldValue = classSigScope.newParam(paramId, param.getPosition)
+              val paramType = mkType(paramTypeTree, classSigScope)
+              mustNotBeUnit(paramType, param.getPosition)
+              fields(paramId) = StableField(paramId, paramType, fieldValue, isPublishedAsMethod)
+              classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
+            }
+
             params.foreach {
               case param@Asts.VarParam(paramId, paramTypeTree) =>
                 val paramType = mkType(paramTypeTree, classSigScope)
                 mustNotBeUnit(paramType, param.getPosition)
                 fields(paramId) = ReassignableField(paramId, paramType)
-              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
-                val fieldValue = classSigScope.newParam(paramId, param.getPosition)
-                val paramType = mkType(paramTypeTree, classSigScope)
-                mustNotBeUnit(paramType, param.getPosition)
-                fields(paramId) = StableField(paramId, paramType, fieldValue)
-                classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(paramType))
+              case param: (Asts.SimpleParam | Asts.PublicParam) =>
+                saveNonReassigParam(param)
             }
             val noFunctionsSig = ClassSignature(id, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
+            val targetsToResolve = generatePublicFieldsAccessors(df, fields, functionsMap, classSigScope, thisValue, allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
-            val sig = noFunctionsSig.copy(functions = funcs)
-            programBuilder.saveSignature(sig, df.getPosition)
+            val classSig = noFunctionsSig.copy(functions = funcs)
+            for ((target, tpe) <- targetsToResolve) {
+              target.resolve(classSig, tpe)
+            }
+            programBuilder.saveSignature(classSig, df.getPosition)
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(df)
           case df@Asts.RecordDef(id, typeParamTrees, fields, directSupertypes) =>
@@ -95,7 +108,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 val fieldValue = recordSigScope.newParam(paramId, param.getPosition)
                 val fieldType = mkType(paramTypeTree, recordSigScope)
                 mustNotBeUnit(fieldType, param.getPosition)
-                stableFields(paramId) = StableField(paramId, fieldType, fieldValue)
+                stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = false)
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
             val sig = RecordSignature(id, typeParams, SeqMap.from(stableFields), directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
@@ -139,12 +152,45 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     program
   }
 
+  private def generatePublicFieldsAccessors(
+                                             classDef: Asts.ClassDef,
+                                             fields: Iterable[(FunOrVarId, Field)],
+                                             functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
+                                             classSigScope: Scope,
+                                             thisValue: NamedIdValue,
+                                             allFunctionsCollector: SeqMapBuilder[FunctionSignature, SSA.Function]
+                                           ): Iterable[(FieldResolutionTarget, Type)] = {
+    val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, Type)]
+    fields.foreach {
+      case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod)) if isPublishedAsMethod =>
+        functionsMap.get(fieldId) match {
+          case Some(funSig, funScope) =>
+            er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
+          case None =>
+            val funSigScope = Scope.nestedInside(classSigScope, classDef)
+            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> NamedType(classDef.id, List.empty, List.empty)), 
+              fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
+            val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
+            val syntheticFunc = SSA.Function(classDef.id, fld.id, Some(syntheticFuncBody))
+            val retVal = syntheticFuncBody.newIntermediate("ret")
+            val resolTarget = FieldResolutionTarget(fieldId)
+            targetsToResolve.addOne(resolTarget -> fieldType)
+            syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
+            syntheticFuncBody.instructions.addOne(Return(retVal))
+            functionsMap.put(fld.id, (syntheticFunSig, syntheticFunc))
+            allFunctionsCollector.addOne(syntheticFunSig -> syntheticFunc)
+        }
+      case _ => ()
+    }
+    targetsToResolve
+  }
+
   private def collectFunctions(
                                 functionsProvider: Asts.EncapsulatedTypeDefTree,
                                 functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
                                 allFunctionsB: SeqMapBuilder[FunctionSignature, SSA.Function]
-                              )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (funDef <- functionsProvider.functions) {
       if (functions.contains(funDef.id)) {
