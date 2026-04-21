@@ -88,7 +88,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             }
             val noFunctionsSig = ClassSignature(id, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
-            val targetsToResolve = generatePublicFieldsAccessors(df, fields, functionsMap, classSigScope, thisValue, allFunctionsB)
+            val targetsToResolve = generatePublicFieldsAccessors(df, fields, functionsMap, classSigScope, thisValue, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((target, tpe) <- targetsToResolve) {
@@ -158,6 +158,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                              functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
                                              classSigScope: Scope,
                                              thisValue: NamedIdValue,
+                                             thisType: Type,
                                              allFunctionsCollector: SeqMapBuilder[FunctionSignature, SSA.Function]
                                            ): Iterable[(FieldResolutionTarget, Type)] = {
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, Type)]
@@ -168,7 +169,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
             val funSigScope = Scope.nestedInside(classSigScope, classDef)
-            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> NamedType(classDef.id, List.empty, List.empty)), 
+            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> thisType), 
               fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
             val syntheticFunc = SSA.Function(classDef.id, fld.id, Some(syntheticFuncBody))
@@ -205,7 +206,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
         val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
         if (thisParamIsOmitted) {
-          val thisType = NamedType(functionsProvider.id, List.empty, List.empty)
+          val thisType = computeThisType(functionsProviderIncompleteSig)
           paramsInclThis(thisVal) = thisType
           funSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisVal, ReassigPermission.Val, Some(thisType))
         }
@@ -267,6 +268,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
     er.displayAndTerminateIfErrors()
     functions
+  }
+  
+  private def computeThisType(funOwnerSig: TypeSignature) = {
+    val subst = funOwnerSig.typeParams.map(tp => tp.tid -> NamedType(tp.tid, List.empty, List.empty)).toMap
+    funOwnerSig.toType(subst)
   }
 
   private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)],
