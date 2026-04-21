@@ -10,23 +10,23 @@ import compiler.typing.Typer
 import scala.collection.mutable
 
 final class TypeVariablesContext {
-  private val allTypeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
+  private val allTypeVariables = mutable.ListBuffer.empty[TypeVariable]
   
-  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position]): TypeVariable =
-    TypeVariable(id, upperBoundOpt, lowerBoundOpt)(saveTypeVariable(_, posOpt))
+  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], instantiationPosOpt: Option[Position]): TypeVariable =
+    TypeVariable(id, upperBoundOpt, lowerBoundOpt, instantiationPosOpt)(saveTypeVariable)
 
-  def saveTypeVariable(tv: TypeVariable, posOpt: Option[Position]): Unit = {
-    allTypeVariables.addOne((tv, posOpt))
+  def saveTypeVariable(tv: TypeVariable): Unit = {
+    allTypeVariables.addOne(tv)
   }
 
   def checkAllTypeVariablesHaveBeenResolved(typer: Typer, er: ErrorReporter)(using CompilationStep): Unit = {
     val subst = mutable.Map.empty[TypeIdentifier, Type]
-    for ((tv, posOpt) <- allTypeVariables) {
+    for (tv <- allTypeVariables) {
       tv.actualTypeIfResolved match {
         case Some(tpe) =>
           val ub = tv.upperBoundOpt.map(_.substitute(subst, Map.empty))
           val lb = tv.lowerBoundOpt.map(_.substitute(subst, Map.empty))
-          typer.checkTypeIsInBounds(tpe, ub, lb, posOpt, tv.id)
+          typer.checkTypeIsInBounds(tpe, ub, lb, tv.instantiationPosOpt, tv.id)
           tv.id match {
             case tid: TypeIdentifier =>
               subst.put(tid, tpe)
@@ -34,7 +34,7 @@ final class TypeVariablesContext {
           }
           
         case None =>
-          er.reportError(s"type variable $tv could not be resolved", posOpt)
+          er.reportError(s"type variable $tv could not be resolved", tv.instantiationPosOpt)
       }
     }
   }

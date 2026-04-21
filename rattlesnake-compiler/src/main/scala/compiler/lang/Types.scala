@@ -5,6 +5,7 @@ import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
+import compiler.reporting.Position
 import compiler.smt.MeetJoinComputer
 import compiler.typing.TypeHintsStore
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
@@ -177,7 +178,7 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type]) extends PrincipalType {
+  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val instantiationPosOpt: Option[Position]) extends PrincipalType {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
     private var lockedFlag = false
@@ -242,8 +243,8 @@ object Types {
   }
 
   object TypeVariable {
-    def apply(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
-      val tv = new TypeVariable(id, upperBoundOpt, lowerBoundOpt)
+    def apply(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], instantiationPosOpt: Option[Position])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
+      val tv = new TypeVariable(id, upperBoundOpt, lowerBoundOpt, instantiationPosOpt)
       tvRegistrator(tv)
       tv
     }

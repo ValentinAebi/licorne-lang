@@ -14,7 +14,7 @@ import scala.collection.mutable
 final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContext {
   private val idToObjName = mutable.Map.empty[TypeIdentifier, UninterpretedConstIdValue]
   private val objNameToId = mutable.Map.empty[IdValue, TypeIdentifier]
-  private val typeVariables = mutable.ListBuffer.empty[(TypeVariable, Option[Position])]
+  private val typeVariables = mutable.ListBuffer.empty[TypeVariable]
 
   override val globalCtx: GlobalValuesContext = this
   
@@ -41,11 +41,11 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   def getNameOfObject(objectVal: IdValue): Option[TypeIdentifier] =
     objNameToId.get(objectVal)
     
-  def saveTypeVariable(tv: TypeVariable, posOpt: Option[Position]): Unit = {
-    typeVariables.addOne((tv, posOpt))
+  def saveTypeVariable(tv: TypeVariable): Unit = {
+    typeVariables.addOne(tv)
   }
   
-  def getTypeVariables: List[(TypeVariable, Option[Position])] = typeVariables.toList
+  def getTypeVariables: List[TypeVariable] = typeVariables.toList
 
   override def deepCopyWithSameGlobalCtx: ValuesContext = this
 

@@ -145,8 +145,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       }
     }
     val program = programBuilder.build(allFunctionsB.result(), loopsCollector.toSeq)
-    for ((tv, posOpt) <- globalScope.globalValuesCtx.getTypeVariables) {
-      typeVarsCtx.saveTypeVariable(tv, posOpt)
+    for (tv <- globalScope.globalValuesCtx.getTypeVariables) {
+      typeVarsCtx.saveTypeVariable(tv)
     }
     er.displayAndTerminateIfErrors()
     program
@@ -745,9 +745,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val paramVal = currScope.newParam(id, posOpt)
           proxyStore.saveProxy(paramVal, paramVal)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, bodyScope))
-          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None) {
-            bodyScope.valuesCtx.globalCtx.saveTypeVariable(_, closureDefTree.getPosition)
-          })
+          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, closureDefTree.getPosition)(bodyScope.valuesCtx.globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)
           bodyScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, ReassigPermission.Val, givenTypeOpt)
         }
