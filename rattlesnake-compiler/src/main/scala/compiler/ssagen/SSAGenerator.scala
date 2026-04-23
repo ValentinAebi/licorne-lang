@@ -932,7 +932,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def mkType(typeTree: Asts.TypeTree, scope: Scope): Type = typeTree match {
-    case typeTree: Asts.PrincipalTypeTree => mkPrincipalType(typeTree, scope)
+    case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
+    case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
+    case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope))
     case Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
       IntRangeType(
         lowerBoundOpt.flatMap(generateFormula(_, scope)),
@@ -942,12 +944,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       UnionType(SeqSet(types.map(mkType(_, scope))))
     case Asts.IntersectionTypeTree(types) =>
       IntersectionType(SeqSet(types.map(mkType(_, scope))))
-  }
-
-  private def mkPrincipalType(principalTypeTree: Asts.PrincipalTypeTree, scope: Scope): PrincipalType = principalTypeTree match {
-    case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
-    case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
-    case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope))
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope): NamedType = {

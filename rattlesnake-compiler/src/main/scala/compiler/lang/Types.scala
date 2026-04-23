@@ -20,18 +20,10 @@ import scala.collection.SeqMap
 object Types {
 
   sealed trait Type {
-    def principalType: PrincipalType
-
     def formulaDependencies: List[Formula]
   }
 
-  sealed trait PrincipalType extends Type {
-    override final def principalType: PrincipalType = this
-  }
-
-  sealed trait RefinedType extends Type
-
-  sealed trait NominalType extends PrincipalType
+  sealed trait NominalType extends Type
 
   enum PrimitiveType(val str: String) extends NominalType {
     case IntType extends PrimitiveType("Int")
@@ -67,15 +59,13 @@ object Types {
     }
   }
 
-  final case class ClosureType(params: List[Type], result: Type) extends PrincipalType {
+  final case class ClosureType(params: List[Type], result: Type) extends Type {
     override def formulaDependencies: List[Formula] = params.flatMap(_.formulaDependencies) ++ result.formulaDependencies
 
     override def toString: String = s"(${params.mkString(", ")}) -> $result"
   }
 
-  final case class UnionType private(types: SeqSet[Type]) extends RefinedType {
-    override def principalType: PrincipalType = if types.size == 1 then types.head.principalType else AnyType
-
+  final case class UnionType private(types: SeqSet[Type]) extends Type {
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
 
     override def toString: String = types.mkString(" | ")
@@ -102,9 +92,7 @@ object Types {
       apply(SeqSet(types))
   }
 
-  final case class IntersectionType private(types: SeqSet[Type]) extends RefinedType {
-    override def principalType: PrincipalType = AnyType
-
+  final case class IntersectionType private(types: SeqSet[Type]) extends Type {
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
 
     override def toString: String = types.mkString(" & ")
@@ -131,9 +119,7 @@ object Types {
       apply(SeqSet(types))
   }
 
-  final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends RefinedType {
-    override def principalType: PrincipalType = IntType
-
+  final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
     override def toString: String = {
@@ -178,7 +164,7 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val instantiationPosOpt: Option[Position]) extends PrincipalType {
+  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val instantiationPosOpt: Option[Position]) extends Type {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOpt = Option.empty[Type]
     private var lockedFlag = false
@@ -308,6 +294,11 @@ object Types {
         tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
       case None => tpe
     }
+    
+  extension (tpe: Type) def ignoreTopLevelRanges: Type = tpe match {
+    case IntRangeType(_, _) => IntType
+    case tpe => tpe
+  }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None

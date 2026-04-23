@@ -468,22 +468,19 @@ object Asts {
 
   sealed trait TypeTree extends Ast
 
-  sealed trait PrincipalTypeTree extends TypeTree
-  sealed trait RefinedTypeTree extends TypeTree
-
-  final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends RefinedTypeTree {
+  final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends TypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
   }
 
-  final case class UnionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
+  final case class UnionTypeTree(types: List[TypeTree]) extends TypeTree {
     override def children: List[Ast] = types
   }
 
-  final case class IntersectionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
+  final case class IntersectionTypeTree(types: List[TypeTree]) extends TypeTree {
     override def children: List[Ast] = types
   }
 
-  sealed trait NominalTypeTree extends PrincipalTypeTree
+  sealed trait NominalTypeTree extends TypeTree
 
   final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends NominalTypeTree {
     override def children: List[Ast] = Nil
@@ -493,7 +490,7 @@ object Asts {
     override def children: List[Ast] = typeArgs ++ args
   }
 
-  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends PrincipalTypeTree {
+  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends TypeTree {
     override def children: List[Ast] = paramTypes :+ resultType
   }
 

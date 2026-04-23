@@ -51,8 +51,9 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
   }
 
-  def eraseRefinements(tpe: Type): PrincipalType = dealiasType(tpe).principalType match {
+  def eraseRefinements(tpe: Type): Type = dealiasType(tpe) match {
     case primitiveType: PrimitiveType => primitiveType
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntType
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(eraseRefinements), List.empty)
     case ClosureType(params, result) =>

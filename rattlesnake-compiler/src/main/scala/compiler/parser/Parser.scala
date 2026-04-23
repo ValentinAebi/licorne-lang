@@ -231,8 +231,15 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "intRangeType"
 
   private lazy val typeTree: P[TypeTree] = recursive {
-    nominalTypeTree OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
+    nonNullableTypeTree ::: opt(op(QuestionMark)) map {
+      case nonNullableType ^: None => nonNullableType
+      case nonNullableType ^: Some(_) => ??? //NullableTypeTree(nonNullableType)
+    }
   } setName "typeTree"
+
+  private lazy val nonNullableTypeTree: P[TypeTree] = recursive {
+    nominalTypeTree OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
+  } setName "noNullableTypeTree"
 
   private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
 

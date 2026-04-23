@@ -26,8 +26,6 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
 
   case ExclamationMark extends Operator("!", None)
 
-  case Dot extends Operator(".", None)
-
   case OpeningParenthesis extends Operator("(", None)
   case ClosingParenthesis extends Operator(")", None)
   case OpeningBracket extends Operator("[", None)
@@ -35,10 +33,12 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case OpeningBrace extends Operator("{", None)
   case ClosingBrace extends Operator("}", None)
 
+  case Dot extends Operator(".", None)
   case Colon extends Operator(":", None)
   case Semicolon extends Operator(";", None)
   case Comma extends Operator(",", None)
   case VerticalBar extends Operator("|", None)
+  case QuestionMark extends Operator("?", None)
   
   case PlusEq extends Operator("+=", None)
   case MinusEq extends Operator("-=", None)

@@ -44,7 +44,7 @@ final class SubtypingContext(
 
   // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
-    dealiasingCtx.dealiasType(originalType).principalType match {
+    dealiasingCtx.dealiasType(originalType).ignoreTopLevelRanges match {
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>

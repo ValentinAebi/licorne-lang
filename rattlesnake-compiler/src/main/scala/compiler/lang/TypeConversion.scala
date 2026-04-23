@@ -1,15 +1,15 @@
 package compiler.lang
 
-import Types.PrimitiveType.*
-import Types.{PrimitiveType, PrincipalType, Type}
+import compiler.lang.Types.PrimitiveType.*
+import compiler.lang.Types.{PrimitiveType, Type}
 
 enum TypeConversion(val from: PrimitiveType, val to: PrimitiveType) {
-  
+
   case Int2Double extends TypeConversion(IntType, DoubleType)
   case Double2Int extends TypeConversion(DoubleType, IntType)
   case IntToChar extends TypeConversion(IntType, CharType)
   case CharToInt extends TypeConversion(CharType, IntType)
-  
+
   case IntToString extends TypeConversion(IntType, StringType)
   case BoolToString extends TypeConversion(BoolType, StringType)
   case CharToString extends TypeConversion(CharType, StringType)
@@ -17,9 +17,9 @@ enum TypeConversion(val from: PrimitiveType, val to: PrimitiveType) {
 }
 
 object TypeConversion {
-  
-  def conversionFor(from: PrincipalType, to: PrincipalType): Option[TypeConversion] = {
+
+  def conversionFor(from: Type, to: Type): Option[TypeConversion] = {
     TypeConversion.values.find(conv => conv.from == from && conv.to == to)
   }
-  
+
 }

@@ -139,7 +139,7 @@ final class Typer(
                 .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
                   subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
                 })
-                .getOrElse(currScope.currentTypeOf(beforeLoopVal).principalType)
+                .getOrElse(currScope.currentTypeOf(beforeLoopVal).ignoreTopLevelRanges)
             currScope.saveType(inCondVal, tpe)
             Some(())
           }
@@ -318,7 +318,7 @@ final class Typer(
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
           case None =>
             // TODO maybe try to save refined types also here, instead of falling back to the principal type?
-            heapVarsTypeStore.saveType(heapVar, newValType.principalType)
+            heapVarsTypeStore.saveType(heapVar, newValType.ignoreTopLevelRanges)
         }
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
@@ -387,7 +387,7 @@ final class Typer(
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
-        val inValType = currScope.currentTypeOf(inValue).principalType
+        val inValType = currScope.currentTypeOf(inValue).ignoreTopLevelRanges
         if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
           currScope.saveType(assigned, targetType)
         } else {
@@ -555,7 +555,7 @@ final class Typer(
                                  (using TypeParamsContext): Type = {
     // TODO warning if result is known (true or false)?
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt))
-    val expectedOperandType = lhsType.principalType match {
+    val expectedOperandType = lhsType.ignoreTopLevelRanges match {
       case tpe@(IntType | DoubleType) => tpe
       case _ => UnionType(IntType, DoubleType)
     }
@@ -797,7 +797,7 @@ final class Typer(
         originalType <- detectNominalTypeForSmartcast(subject, scope)
         smartcastType <- smartcastData.tryToSmartcast(originalType, resolutionCtx.typesReasoningCache, subtypingCtx)
       } {
-        if (smartcastType.principalType == NothingType) {
+        if (smartcastType == NothingType) {
           scope.markHasExited()
         } else {
           val oldType = scope.currentTypeOf(subject)
@@ -887,7 +887,7 @@ final class Typer(
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-    receiverType.principalType.withTypeVarsExpanded match {
+    receiverType.withTypeVarsExpanded match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
@@ -935,7 +935,7 @@ final class Typer(
       NothingType
     }
 
-    ownerType.principalType match {
+    ownerType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
