@@ -138,9 +138,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
 
     opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
-      ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: closeParenth
+      ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(op(VerticalBar).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
-      case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optRetType ^: bodyOptRaw =>
+      case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(
             ReturnStat(Some(expr)).withDesugaringSource(expr)
@@ -150,7 +150,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         if (bodyOptRaw.exists(_.isInstanceOf[Expr]) && optRetType.forall(isUnitType)) {
           errorReporter.report(Err(Parsing, s"single-expression methods are not allowed to return ${PrimitiveType.UnitType}", bodyOptRaw.get.getPosition))
         }
-        FunDef(funName, typeParams, params, optRetType, bodyOptDesugared,
+        FunDef(funName, typeParams, params, optRetType, optPrecond, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure,
           isMain = optModif.contains(Main)

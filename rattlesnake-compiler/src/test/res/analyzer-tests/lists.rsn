@@ -5,9 +5,11 @@ datatype List[+T]
 record Nil : List[Nothing]
 record Cons[+T](head: T, tail: List[T]) : List[T]
 
+record Pair[L, R](l: L, r: R)
+
 object Lists {
 
-   fn length[A](var ls: List[A]) -> Length {
+   pure fn length[A](var ls: List[A]) -> Length {
       var len = 0;
       while ls is Cons {
          len += 1;
@@ -22,7 +24,7 @@ object Lists {
          len += 1;
          ls = ls.tail;
       };
-      return len;   //> E : return value: expected Length, found len<loop-body-start@21:24> : [-1,]
+      return len;   //> E : return value: expected Length, found len<loop-body-start@23:24> : [-1,]
    }
 
    fn sum(var ls: List[[0,]]) -> [0,] {
@@ -99,5 +101,38 @@ object Lists {
    fn isSingletonList[T](ls: List[T]) -> Bool =
       ls is Cons && ls.tail is Nil
 
+   fn zip[S, T](ls1: List[S], ls2: List[T] | length(ls1) == length(ls2)) -> List[Pair[S, T]] {
+      var rem1 = ls1;
+      var rem2 = ls2;
+      var reversedZip = new Nil();
+      while rem1 is Cons && rem2 is Cons {
+         reversedZip = new Cons(head = new Pair(l = rem1.head, r = rem2.head), tail = reversedZip);
+         rem1 = rem1.tail;
+         rem2 = rem2.tail;
+      };
+      return reverse(reversedZip);
+   }
+
 }
 
+object UseLists {
+
+   fn useZipCorrectly1(integers: List[Int], strings: List[String] | Lists.length(integers) == Lists.length(strings)) -> List[Pair[Int, String]] {
+      return Lists.zip(integers, strings);
+   }
+
+   fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+      when Lists.length(integers) == Lists.length(strings)
+      then Lists.zip(integers, strings)
+      else new Nil()
+
+   fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+      when Lists.length(integers) != Lists.length(strings)
+      then new Nil()
+      else Lists.zip(integers, strings)
+
+   fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
+      return Lists.zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition Lists.length(integers) == Lists.length(strings) holds
+   }
+
+}

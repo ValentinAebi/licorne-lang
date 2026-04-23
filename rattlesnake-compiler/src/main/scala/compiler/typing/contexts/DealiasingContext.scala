@@ -2,6 +2,7 @@ package compiler.typing.contexts
 
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Types.*
+import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.{TypeAliasSignature, Types}
 
 import scala.reflect.ClassTag
@@ -36,17 +37,30 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case intRangeType: IntRangeType => intRangeType
   }
 
-  def isPrimitiveType(tpe: Type): Boolean = dealiasType(tpe) match {
-    case primitiveType: PrimitiveType => true
+  def isNonRefType(tpe: Type): Boolean = dealiasType(tpe) match {
+    case IntType | DoubleType | CharType | BoolType | StringType | UnitType | NothingType => true
+    case NullType | AnyType => false
     case NamedType(typeName, typeArgs, args) => false
     case ClosureType(params, result) => false
     case tv: TypeVariable =>
-      tv.actualTypeIfResolved.exists(isPrimitiveType)
+      tv.actualTypeIfResolved.exists(isNonRefType)
     case UnionType(types) =>
-      types.forall(isPrimitiveType)
+      types.forall(isNonRefType)
     case IntersectionType(types) =>
-      types.exists(isPrimitiveType)
+      types.exists(isNonRefType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
+  }
+
+  def eraseRefinements(tpe: Type): PrincipalType = dealiasType(tpe).principalType match {
+    case primitiveType: PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) =>
+      NamedType(typeName, typeArgs.map(eraseRefinements), List.empty)
+    case ClosureType(params, result) =>
+      ClosureType(params.map(eraseRefinements), eraseRefinements(result))
+    case tv: TypeVariable => tv.actualTypeIfResolved.orElse(tv.upperBoundOpt) match {
+      case Some(tpe) => eraseRefinements(tpe)
+      case None => AnyType
+    }
   }
   
 }

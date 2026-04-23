@@ -3,7 +3,7 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.SSA.Scope
 import compiler.lang.Field.StableField
-import compiler.lang.Formulas.{IdValue, NamedIdValue}
+import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type}
@@ -17,6 +17,7 @@ final case class FunctionSignature(
                                     functionName: FunOrVarId,
                                     typeParams: List[FunctionTypeParamInfo],
                                     paramsInclThis: SeqMap[NamedIdValue, Type],
+                                    precondOpt: Option[Formula],
                                     retType: Type,
                                     sigScope: Scope,
                                     visibility: Visibility,
@@ -46,6 +47,7 @@ final case class FunctionSignature(
     functionName,
     typeParams,
     paramsInclThis.mapVals(_.substitute(typesSubst, Map.empty)),
+    precondOpt,
     retType.substitute(typesSubst, Map.empty),
     sigScope,
     visibility,
@@ -64,7 +66,11 @@ final case class FunctionSignature(
     }
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
     printListIfNonEmpty(typeParams, "[", "]", sb)
-    printListIfNonEmpty(paramsInclThis, "(", ")", sb) { case (param, tpe) => s"$param: $tpe" }
+    printListIfNonEmpty(paramsInclThis, "(", "", sb) { case (param, tpe) => s"$param: $tpe" }
+    precondOpt.foreach { precond =>
+      sb.append("| ").append(precond)
+    }
+    sb.append(")")
     sb.append(" -> ").append(retType)
     sb.toString()
   }

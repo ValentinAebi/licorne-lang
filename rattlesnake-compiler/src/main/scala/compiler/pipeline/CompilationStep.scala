@@ -10,5 +10,6 @@ enum CompilationStep {
   case SubtypingAnalysis
   case DeclarationsAnalysis
   case TypeChecking
+  case OverridesAnalysis
   case StringWriting
 }

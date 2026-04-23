@@ -8,7 +8,7 @@ import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.ssagen.SSAGenerator
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
 import compiler.typing.contexts.TypeVariablesContext
-import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalyzer, SubtypingChecker, TypeAliasesAnalyzer, TypeChecker, TypeHintsInserter}
+import compiler.typing.phases.{DeclarationsChecker, MonotonicityAnalyzer, OverridesChecker, SubtypingChecker, TypeAliasesAnalyzer, TypeChecker, TypeHintsInserter}
 import compiler.valproxies.ProxyStore
 import org.junit.Assert.fail
 import org.junit.Test
@@ -125,6 +125,7 @@ class AnalyzerTests(fileName: String) {
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, continueIfErrors = false))
+      .andThen(OverridesChecker(typeVarsCtx, proxyStore, er))
     try {
       pipeline.apply(srcFiles)
     } catch {

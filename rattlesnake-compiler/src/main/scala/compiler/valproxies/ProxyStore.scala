@@ -67,6 +67,9 @@ final class ProxyStore {
     (ambientBranchingInfo ++ directInfoIfTrue ++ proxyInfoIfTrue,
       ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
   }
+  
+  def rawInfosFor(cond: Formula, outerScope: Scope)(using dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) =
+    infosFor(cond)(using outerScope)
 
   private def infosFor(cond: Formula)(using outerScope: Scope, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
     cond match {
@@ -83,8 +86,8 @@ final class ProxyStore {
         (operandFalseInfos, operandTrueInfos)
       // TODO maybe add a reference equality operator? or force overrides of equal to only work on two objects of exact same type
       case eq@Equality(lhs, rhs)
-        if dealiasingCtx.isPrimitiveType(outerScope.currentTypeOf(lhs)(using this))
-          && dealiasingCtx.isPrimitiveType(outerScope.currentTypeOf(rhs)(using this)) =>
+        if dealiasingCtx.isNonRefType(outerScope.currentTypeOf(lhs)(using this))
+          && dealiasingCtx.isNonRefType(outerScope.currentTypeOf(rhs)(using this)) =>
         (BranchingInfo.ofAssumption(Equality(lhs, rhs)), BranchingInfo.empty)
       case leq@LessOrEq(lhs, rhs) =>
         (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))

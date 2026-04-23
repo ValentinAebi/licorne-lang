@@ -42,10 +42,3 @@ final case class Concurrent[In, Out1, Out2, Out](
 final case class IdentityStep[Data]() extends CompilerStep[Data, Data] {
   override def apply(input: Data): Data = input
 }
-
-/**
- * Compiler step that performs a transformation using `f`
- */
-final case class Mapper[In, Out](f: In => Out) extends CompilerStep[In, Out] {
-  override def apply(input: In): Out = f(input)
-}

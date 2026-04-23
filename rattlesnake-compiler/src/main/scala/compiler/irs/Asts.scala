@@ -87,6 +87,7 @@ object Asts {
 
   sealed abstract class TopLevelDef extends Ast {
     def id: TypeIdentifier
+
     def typeParams: List[TypeParamWithVariance]
   }
 
@@ -158,15 +159,24 @@ object Asts {
     override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
   }
 
-  final case class FunDef(id: FunOrVarId, typeParams: List[TypeParamWithoutVariance], params: List[FunctionParam], optRetType: Option[TypeTree], bodyOpt: Option[Block],
-                          visibility: Visibility, purity: Purity, isMain: Boolean) extends Ast {
+  final case class FunDef(
+                           id: FunOrVarId,
+                           typeParams: List[TypeParamWithoutVariance],
+                           params: List[FunctionParam],
+                           optRetType: Option[TypeTree],
+                           optPrecond: Option[Expr],
+                           bodyOpt: Option[Block],
+                           visibility: Visibility,
+                           purity: Purity,
+                           isMain: Boolean
+                         ) extends Ast {
     override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }
 
   final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParamWithVariance], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
     override def children: List[Ast] = typeParams ++ params :+ rhs
   }
-  
+
   sealed trait Param extends Ast {
     def paramId: FunOrVarId
   }
@@ -198,7 +208,7 @@ object Asts {
   final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, NonThisFunctionParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
-  
+
   final case class PublicParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
@@ -212,7 +222,7 @@ object Asts {
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
   }
-  
+
   final case class TypeParamWithoutVariance(id: TypeIdentifier, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
     override def children: List[Ast] = Nil
   }
@@ -322,7 +332,7 @@ object Asts {
   final case class Select(lhs: Expr, selected: FunOrVarId) extends Expr {
     override def children: List[Ast] = List(lhs)
   }
-  
+
   final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block) extends Expr {
     override def children: List[Ast] = params.flatMap(_._2) :+ body
   }
@@ -460,19 +470,19 @@ object Asts {
 
   sealed trait PrincipalTypeTree extends TypeTree
   sealed trait RefinedTypeTree extends TypeTree
-  
+
   final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends RefinedTypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
   }
-  
+
   final case class UnionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
     override def children: List[Ast] = types
   }
-  
+
   final case class IntersectionTypeTree(types: List[TypeTree]) extends RefinedTypeTree {
     override def children: List[Ast] = types
   }
-  
+
   sealed trait NominalTypeTree extends PrincipalTypeTree
 
   final case class PrimitiveTypeTree(primitiveType: PrimitiveType) extends NominalTypeTree {
@@ -482,7 +492,7 @@ object Asts {
   final case class NamedTypeTree(name: TypeIdentifier, typeArgs: List[TypeTree], args: List[Expr]) extends NominalTypeTree {
     override def children: List[Ast] = typeArgs ++ args
   }
-  
+
   final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends PrincipalTypeTree {
     override def children: List[Ast] = paramTypes :+ resultType
   }

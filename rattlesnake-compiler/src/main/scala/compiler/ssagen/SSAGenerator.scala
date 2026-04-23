@@ -21,9 +21,7 @@ import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
-import scala.collection.mutable.ListBuffer
 import scala.collection.{SeqMap, mutable}
-import scala.util.boundary
 
 
 final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[List[Asts.Source], Program] {
@@ -170,7 +168,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case None =>
             val funSigScope = Scope.nestedInside(classSigScope, classDef)
             val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
+              precondOpt = None, fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
             val syntheticFunc = SSA.Function(classDef.id, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFuncBody.newIntermediate("ret")
@@ -257,7 +255,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val ownerId = functionsProvider.id
         val funId = funDef.id
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
-        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), retType,
+        val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
+        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
           funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig -> function)
@@ -600,7 +599,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.ObjectRef(objectName) =>
         val objIdVal = currScope.valuesCtx.resolveObject(objectName)
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
-        None
+        Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
         val receiverVal = currScope.newIntermediate()
         generateSSAExpr(receiverVal, receiverTree, currScope)
@@ -792,7 +791,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     } yield Call(recProxy, invkTarget, typeArgs, argsProxies)
   }
 
-  private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = boundary {
+  private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
@@ -835,6 +834,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           for {
             opFormula <- generateFormula(operand, currScope)
           } yield Neg(opFormula)
+        case Asts.UnaryOp(Operator.ExclamationMark, operand) =>
+          for {
+            opFormula <- generateFormula(operand, currScope)
+          } yield LogicalNot(opFormula)
         case expr: Asts.UnaryOp => failIllegalConstruct(s"\"${expr.operator}\" operator")
         case Asts.BinaryOp(lhs, Operator.Plus, rhs) =>
           for {
@@ -861,6 +864,50 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
           } yield Modulo(lhsFormula, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.Equality, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield Equality(lhsFormula, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.Inequality, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LogicalNot(Equality(lhsFormula, rhsFormula))
+        case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LessOrEq(lhsFormula, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.GreaterOrEq, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LessOrEq(rhsFormula, lhsFormula)
+        case Asts.BinaryOp(lhs, Operator.LessThan, rhs) =>
+          import FormulasDsl.*
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+            // TODO check if this yield confusing error messages (desugaring producing the +1)
+          } yield LessOrEq(lhsFormula + 1, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) =>
+          import FormulasDsl.*
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+            // TODO check if this yield confusing error messages (desugaring producing the +1)
+          } yield LessOrEq(rhsFormula + 1, lhsFormula)
+        case Asts.BinaryOp(lhs, Operator.And, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LogicalAnd(lhsFormula, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.Or, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LogicalOr(lhsFormula, rhsFormula)
         case expr: Asts.BinaryOp => failIllegalConstruct(s"\"${expr.operator}\" operator")
         case Asts.Select(lhs, field) =>
           for {

@@ -38,6 +38,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case Colon extends Operator(":", None)
   case Semicolon extends Operator(";", None)
   case Comma extends Operator(",", None)
+  case VerticalBar extends Operator("|", None)
   
   case PlusEq extends Operator("+=", None)
   case MinusEq extends Operator("-=", None)

@@ -336,7 +336,7 @@ final class Typer(
             case Some(closureInfo) =>
               closureInfo.raisePurityFlag()
             case None =>
-              er.reportError("purity error: cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
+              er.reportError("purity error: I cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
           }
         }
 
@@ -618,13 +618,13 @@ final class Typer(
         lbOpt.foreach { lb =>
           typeFormula(lb, currScope, posOpt)
           if (!lb.isPure) {
-            er.reportError(s"cannot prove that lower bound of $tpe is pure", posOpt)
+            er.reportError(s"I cannot prove that lower bound of $tpe is pure", posOpt)
           }
         }
         ubOpt.foreach { ub =>
           typeFormula(ub, currScope, posOpt)
           if (!ub.isPure) {
-            er.reportError(s"cannot prove that upper bound of $tpe is pure", posOpt)
+            er.reportError(s"I cannot prove that upper bound of $tpe is pure", posOpt)
           }
         }
     }
@@ -705,7 +705,7 @@ final class Typer(
   }
 
   def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = functionSignature
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = functionSignature
 
     val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
@@ -719,6 +719,15 @@ final class Typer(
       isReceiver = false
     }
     typeTypeApp(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+    precondOpt.foreach { precond =>
+      val precondType = typeFormula(precond, sigScope, declPosOpt)(using fullTypeParamsCtx)
+      if (!subtypingCtx.isSubtype(precondType, BoolType)) {
+        er.reportError(s"precondition must have type $BoolType", declPosOpt)
+      }
+      if (!precond.isPure) {
+        er.reportError("I cannot prove that precondition is pure", declPosOpt)
+      }
+    }
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
@@ -894,6 +903,12 @@ final class Typer(
             val argsSubst = checkArgumentsList(paramTypesInclThis, (Some(receiver), receiverType) :: typedCallArgs,
               s"call to ${invkTarget.funId}", posOpt, argsIncludeReceiver = true)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
+            funSig.precondOpt.foreach { precondRaw =>
+              val precondSubst = precondRaw.substitute(argsSubst)
+              if (!solver.canProve(precondSubst)) {
+                er.reportError(s"illegal call to ${funSig.functionName}: I cannot prove that its precondition $precondSubst holds", posOpt)
+              }
+            }
             val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
             invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
             if (isPurityRequired && !funSig.isPure) {

@@ -145,9 +145,9 @@ final class SSAPrinter(
 
   private def printFunction(funSig: FunctionSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, retType, funSigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = funSig
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = funSig
     pps.add(if isMain then "MAIN " else "")
-      .add(s"METHOD ($visibility, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis)} -> $retType${mkPosDescr(declPosOpt)}")
+      .add(s"METHOD ($visibility, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
     program.functions.get(funSig)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>
@@ -267,7 +267,7 @@ final class SSAPrinter(
         pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
         printTypeArgsList(typeArgs)
       case MkClosure(assigned, params, body) =>
-        pps.add(s"MK-CLOSURE ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params)).add(" ->").indent {
+        pps.add(s"MK-CLOSURE ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params, precondOpt = None)).add(" ->").indent {
           pps.add("body: ")
           printScope(body)
         }
@@ -364,10 +364,10 @@ final class SSAPrinter(
         s"$paramVal: $paramType"
     }.mkString("(", ", ", ")")
 
-  private def mkFunctionParamsDescr(params: Iterable[(NamedIdValue, Type)]): String =
-    if params.isEmpty then "()" else params.map { (idVal, tpe) =>
+  private def mkFunctionParamsDescr(params: Iterable[(NamedIdValue, Type)], precondOpt: Option[Formula]): String =
+    params.map { (idVal, tpe) =>
       s"$idVal: $tpe"
-    }.mkString("(", ", ", ")")
+    }.mkString("(", ", ", "") ++ precondOpt.map(" | " + _).getOrElse("") + ")"
 
   private def mkSuperTypesDescr(supertypes: List[NamedType]): String =
     if supertypes.isEmpty then "" else s" extends ${supertypes.mkString(", ")}"

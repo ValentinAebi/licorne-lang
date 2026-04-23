@@ -24,11 +24,11 @@ final class TypeChecker(
                          heapVarsTypeStore: HeapVarsTypeStore,
                          er: ErrorReporter,
                          continueIfErrors: Boolean = false
-                       ) extends CompilerStep[(Program, SubtypingInfo), Program] {
+                       ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeChecking
 
-  override def apply(input: (Program, SubtypingInfo)): Program = {
+  override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
@@ -58,7 +58,7 @@ final class TypeChecker(
     } else {
       er.displayAndTerminateIfErrors()
     }
-    program
+    input
   }
 
   // TODO check that user-provided assignments of type parameters match bounds
@@ -95,13 +95,19 @@ final class TypeChecker(
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
         proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
+      val precondInfos = funSig.precondOpt match {
+        case Some(precond) =>
+          val (infosIfPrecondTrue, _) = proxyStore.rawInfosFor(precond, funSig.sigScope)(using dealiasingCtx)
+          infosIfPrecondTrue
+        case None => BranchingInfo.empty
+      }
       solver.onNewFrame {
         funSig.paramsInclThis.foreach {
           case (paramVal, range: IntRangeType) =>
             solver.assertInRange(paramVal, range)
           case _ => ()
         }
-        funcTyper.typeScopeInstructions(funcBody, BranchingInfo.empty)(using TypeParamsContext(ownerSig.typeParams))
+        funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams))
       }
       checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
 

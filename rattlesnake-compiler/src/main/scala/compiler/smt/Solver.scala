@@ -39,6 +39,12 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     assert(LogicalNot(formula))
     checkUnsat()
   }
+  
+  def canProveImplication(premise: Formula, conseq: Formula): Boolean = onNewFrame {
+    assert(premise)
+    assert(LogicalNot(conseq))
+    checkUnsat()
+  }
 
   def canProveLeq(lhs: Formula, rhs: Formula): Boolean = onNewFrame {
     assertLt(rhs, lhs)

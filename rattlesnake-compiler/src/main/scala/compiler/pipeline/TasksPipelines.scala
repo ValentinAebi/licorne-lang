@@ -68,6 +68,8 @@ object TasksPipelines {
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, continueIfErrors = true))
+      .andThen(OverridesChecker(typeVarsCtx, proxyStore, er))
+      .andThen((program, subtypingInfo) => program)
       .andThen(Concurrent(
         SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
