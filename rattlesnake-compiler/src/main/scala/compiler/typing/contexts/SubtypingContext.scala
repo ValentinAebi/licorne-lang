@@ -13,7 +13,6 @@ import compiler.reporting.Position
 import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst}
-import compiler.util.zipCommons
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -149,7 +148,7 @@ final class SubtypingContext(
       case Some(subToSuperParamsSubst) =>
         (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subTId), resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId)) match {
           case (Some(subTSig), Some(superTSig)) =>
-            val subTSubst = subTSig.typeParams.zipCommons(subTTypeArgs).toMap
+            val subTSubst = subTSig.typeParams.zip(subTTypeArgs).toMap
             val subst = Map.from(
               for ((paramInSuper, argInSuper) <- subToSuperParamsSubst) yield
                 paramInSuper -> (argInSuper match {

@@ -13,7 +13,6 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.Reasoning
 import compiler.typing.{SubtypingInfo, TypeHintsStore}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
-import compiler.util.zipCommons
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -106,12 +105,12 @@ final class TypeHintsInserter(
         receiverTypeId <- resolveReceiver(receiver, currFunSig)
         funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
       } {
-        val typesSubst = mutable.Map.from(funSig.typeParams.map(_.tid).zipCommons(typeArgs))
+        val typesSubst = mutable.Map.from(funSig.typeParams.map(_.tid).zip(typeArgs))
         val valsSubst = mutable.Map.empty[IdValue, Formula]
         typeHintsStore.getHints(assigned).headOption.foreach { hint =>
           unifyTypes(hint, funSig.retType)(using typesSubst)
         }
-        for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zipCommons(args)) {
+        for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zip(args)) {
           val paramTypeSubst = paramTypeRaw.substitute(typesSubst, valsSubst)
           typeHintsStore.addHint(argVal, paramTypeSubst)
           valsSubst.put(paramVal, argVal)
@@ -166,12 +165,12 @@ final class TypeHintsInserter(
         for {
           subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, hintTypeId)
           upcastShapeType <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](hintTypeId).map(_.toType(subtypingSubst))
-          (hintTypeArg, shapeTypeArg) <- hintTypeArgs.zipCommons(upcastShapeType.typeArgs)
+          (hintTypeArg, shapeTypeArg) <- hintTypeArgs.zip(upcastShapeType.typeArgs)
         } {
           unifyTypes(hintTypeArg, shapeTypeArg)
         }
       case (ClosureType(hintParams, hintResult), ClosureType(shapeParams, shapeResult)) =>
-        for ((ht, st) <- hintParams.zipCommons(shapeParams)) {
+        for ((ht, st) <- hintParams.zip(shapeParams)) {
           unifyTypes(ht, st)
         }
         unifyTypes(hintResult, shapeResult)

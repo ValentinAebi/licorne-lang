@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.identifiers.{Identifier, NormalFunOrVarId, ThisId, TypeIdentifier}
+import compiler.identifiers.{Identifier, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.SSA
 import compiler.irs.SSA.*
 import compiler.lang
@@ -14,11 +14,11 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{AbstractInterpreter, MeetJoinComputer, SimplifiedType, Simplifier, Solver}
+import compiler.smt.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
-import compiler.util.{SeqSet, zipCommons}
+import compiler.util.SeqSet
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
@@ -1043,7 +1043,7 @@ final class Typer(
 
     // first pass: try to resolve type variables
     val subst = mutable.Map.empty[IdValue, Formula]
-    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
       tryToResolveTypeVars(paramType, argType)
       paramValOpt.foreach { paramVal =>
@@ -1054,7 +1054,7 @@ final class Typer(
     // second pass: actually check types
     subst.clear()
     var argIdx = if argsIncludeReceiver then 0 else 1
-    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zipCommons(args)) {
+    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
       subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", posOpt)
       paramValOpt.foreach { paramVal =>
@@ -1079,11 +1079,11 @@ final class Typer(
   private def tryToResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {
     case (NamedType(_, paramTypeArgs, _), NamedType(_, argsTypeArgs, _)) =>
       // FIXME account for variance?
-      for ((tParam, tArg) <- paramTypeArgs.zipCommons(argsTypeArgs)) {
+      for ((tParam, tArg) <- paramTypeArgs.zip(argsTypeArgs)) {
         tryToResolveTypeVars(tParam, tArg)
       }
     case (ClosureType(paramParams, paramRes), ClosureType(argParams, argRes)) =>
-      for ((tParam, tArg) <- paramParams.zipCommons(argParams)) {
+      for ((tParam, tArg) <- paramParams.zip(argParams)) {
         tryToResolveTypeVars(tParam, tArg)
       }
       tryToResolveTypeVars(paramRes, argRes)

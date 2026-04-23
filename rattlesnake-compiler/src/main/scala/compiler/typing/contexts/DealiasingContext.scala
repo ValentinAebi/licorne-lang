@@ -3,7 +3,6 @@ package compiler.typing.contexts
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Types.*
 import compiler.lang.{TypeAliasSignature, Types}
-import compiler.util.zipCommons
 
 import scala.reflect.ClassTag
 
@@ -19,11 +18,11 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
         case Some(TypeAliasSignature(id, typeParams, thisValue, params, rhs, sigScope, declPosOpt)) =>
           val typesSubst =
             typeParams.map(_.tid)
-              .zipCommons(typeArgsSubst)
+              .zip(typeArgsSubst)
               .toMap
           val valsSubst = params.map {
             case (paramId, (paramType, paramVal)) => paramVal
-          }.zipCommons(args).toMap
+          }.zip(args).toMap
           dealiasType(rhs.substitute(typesSubst, valsSubst))
         case None => NamedType(typeName, typeArgsSubst, args)
       }

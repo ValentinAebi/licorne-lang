@@ -8,7 +8,7 @@ import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo, Types}
 import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
-import compiler.util.{SeqSet, asIterableOfType, zipCommons}
+import compiler.util.{SeqSet, asIterableOfType}
 
 import scala.collection.mutable
 import scala.util.boundary
@@ -115,7 +115,7 @@ final class MeetJoinComputer(
     } yield {
       tpe -> (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](tid) match {
         case Some(tSig) =>
-          tSig.typeParams.map(_.tid).zipCommons(typeArgs).toMap
+          tSig.typeParams.map(_.tid).zip(typeArgs).toMap
         case None =>
           Map.empty[TypeIdentifier, Type]
       })
