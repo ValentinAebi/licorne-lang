@@ -34,7 +34,7 @@ final class TypeChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, typeVarsCtx, er)
 
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 

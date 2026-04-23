@@ -4,7 +4,6 @@ import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
 import compiler.lang.Formulas.{Call, Formula, Select, ValIdValue}
-import compiler.valproxies.ProxyStore
 import compiler.lang.FormulasDsl.{autoConvertIntToIConst, *}
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
@@ -12,6 +11,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{Reasoning, Simplifier}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 import org.junit.Assert.{assertFalse, assertTrue}
 import org.junit.Test
@@ -20,6 +20,8 @@ import scala.collection.immutable.SeqMap
 import scala.collection.mutable
 
 class EGraphTests {
+  
+  private given ProxyStore = ProxyStore()
 
   @Test
   def commutativityTest(): Unit = {
@@ -108,7 +110,7 @@ class EGraphTests {
   }
 
   private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(using simplifier)

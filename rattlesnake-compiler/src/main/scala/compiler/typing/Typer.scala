@@ -14,7 +14,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Simplifier, Solver}
+import compiler.smt.{AbstractInterpreter, MeetJoinComputer, SimplifiedType, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -60,7 +60,6 @@ final class Typer(
     solver.onNewFrame {
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
-        scope.applyProxies()
         applyBranchInfo(scope, branchInfo)
         if (solver.checkUnsat()) {
           scope.markHasExited()
@@ -74,16 +73,21 @@ final class Typer(
         }
       }
     }
+    for ((f1, f2) <- scope.persistingEqualities) {
+      solver.assertEq(f1, f2, SimplifiedType.from(scope.currentTypeOf(f1)))
+    }
   }
 
   def typeInstr(instr: RealInstr, currScope: Scope, branchInfo: BranchingInfo)
                (using typeParamsCtx: TypeParamsContext): Unit = {
-    
-    def saveEquality(f1: Formula, f2: Formula): Unit = {
-      currScope.eMerge(f1, f2)
-      solver.assertEq(f1, f2)
+
+    def saveEquality(f1: Formula, f2: Formula, persist: Boolean = false): Unit = {
+      if (f1.isPure && f2.isPure) {
+        currScope.eMerge(f1, f2, persist)
+        solver.assertEq(f1, f2, SimplifiedType.from(currScope.currentTypeOf(f1)))
+      }
     }
-    
+
     instr match {
 
       case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
@@ -280,12 +284,12 @@ final class Typer(
         val rhsType = currScope.currentTypeOf(rhs)
         tryToResolveTypeVars(fieldType, rhsType)
         subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", fw.getPosition)
-        if (fieldResolTarget.isResolvedAndStable) {
+        val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
+        if (isInitializationOfStableField) {
           val ow = proxyStore.getProxy(owner).getOrElse(owner)
           val select = Select(ow, fieldResolTarget)
-          saveEquality(select, rhs)
-          val receiverSig = fieldResolTarget.getReceiverSigUnsafe
-          receiverSig match {
+          saveEquality(select, rhs, persist = true)
+          fieldResolTarget.getReceiverSigUnsafe match {
             case receiverSig: ClassSignature =>
               val fld = receiverSig.fields.apply(fieldResolTarget.fieldId)
               if (fld.hasPublicSyntheticAccessor) {
@@ -293,7 +297,7 @@ final class Typer(
                 val funSig = resolutionCtx.resolveFunSig(receiverSig.id, fld.id).asInstanceOf[FuncResolResult.Success].funSig
                 invkTarget.resolve(receiverSig, funSig, fld.tpe)
                 val accessorCall = Call(ow, invkTarget, List.empty, List.empty)
-                saveEquality(select, accessorCall)
+                saveEquality(select, accessorCall, persist = true)
               }
             case _ => ()
           }

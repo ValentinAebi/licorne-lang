@@ -169,7 +169,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
             val funSigScope = Scope.nestedInside(classSigScope, classDef)
-            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> thisType), 
+            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> thisType),
               fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
             val syntheticFunc = SSA.Function(classDef.id, fld.id, Some(syntheticFuncBody))
@@ -269,7 +269,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     er.displayAndTerminateIfErrors()
     functions
   }
-  
+
   private def computeThisType(funOwnerSig: TypeSignature) = {
     val subst = funOwnerSig.typeParams.map(tp => tp.tid -> NamedType(tp.tid, List.empty, List.empty)).toMap
     funOwnerSig.toType(subst)

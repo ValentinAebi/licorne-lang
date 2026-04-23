@@ -68,8 +68,6 @@ final class ProxyStore {
       ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
   }
 
-  def entriesView: Iterable[(IdValue, Formula)] = proxies
-
   private def infosFor(cond: Formula)(using outerScope: Scope, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
     cond match {
       case LogicalAnd(lhs, rhs) =>

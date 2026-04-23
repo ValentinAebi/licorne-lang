@@ -32,7 +32,7 @@ final class TypeAliasesAnalyzer(
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       

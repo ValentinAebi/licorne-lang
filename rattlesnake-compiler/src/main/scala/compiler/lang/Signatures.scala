@@ -33,7 +33,7 @@ final case class FunctionSignature(
   def isPure: Boolean = purity == Purity.Pure
 
   def smtFunctionCode: String =
-    functionName.toString ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("(", "$", ")")
+    functionName.toString ++ "$" ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("$")
 
   override def expectedResultType: Type = retType
 

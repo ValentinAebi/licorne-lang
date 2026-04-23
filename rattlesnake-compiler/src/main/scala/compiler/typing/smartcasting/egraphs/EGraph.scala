@@ -4,6 +4,7 @@ import compiler.lang.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
 import compiler.smt.Simplifier
+import compiler.valproxies.ProxyStore
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
@@ -25,9 +26,9 @@ final class EGraph private[egraphs](startClId: Long) {
     this.classesUf.addAll(classesUf)
     this.nodeToClass.addAll(nodeToClass)
   }
-  
+
   private[egraphs] def uf: IterableOnce[(EClass, EClass)] = classesUf
-  
+
   private[egraphs] def nodeToClassMap: IterableOnce[(ENode, EClass)] = nodeToClass
 
   def deepCopy: EGraph = EGraphCopier.copyOf(this)
@@ -35,10 +36,26 @@ final class EGraph private[egraphs](startClId: Long) {
   def areEqual(f1: Formula, f2: Formula): Boolean =
     classOf(f1) eq classOf(f2)
 
-  def merge(f1: Formula, f2: Formula)(using Simplifier): Unit = {
+  def merge(f1: Formula, f2: Formula)(using ProxyStore, Simplifier): Unit = {
+    doMerge(f1, f2, recurseOnProxies = true)
+  }
+
+  private def doMerge(f1: Formula, f2: Formula, recurseOnProxies: Boolean)(using proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
     val cl1 = classOf(f1)
     val cl2 = classOf(f2)
     merge(cl1, cl2)
+    if (recurseOnProxies) {
+      mergeWithProxy(f1)
+      mergeWithProxy(f2)
+    }
+  }
+
+  private def mergeWithProxy(f: Formula)(using proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+    proxyStore.getProxyIfIdValue(f) match {
+      case Some(proxy) if proxy != f && proxy.isPure =>
+        doMerge(f, proxy, recurseOnProxies = false)
+      case _ => ()
+    }
   }
 
   private def merge(cl1: EClass, cl2: EClass)(using Simplifier): Unit = {
@@ -70,7 +87,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type)(using Simplifier): Option[Type] =
+  def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Option[Type] =
     classOf(formula).saveSmartcast(tpe)
 
   def smartcastFor(formula: Formula): Option[Type] =
@@ -155,7 +172,7 @@ final class EGraph private[egraphs](startClId: Long) {
         val endClass = canonicalize(dstClass)
         classesUf.put(clazz, endClass)
         endClass
-      case None => clazz
+      case _ => clazz
     }
   }
 

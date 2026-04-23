@@ -39,7 +39,7 @@ final class SubtypingChecker(
     val flattenedSubtypingMaps = buildAndCheckFlattenedSubtypingMaps(subtypingGraph, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    Reasoning.usingFreshSolver { solver =>
+    Reasoning.usingFreshSolver(dealiasingCtx, proxyStore) { solver =>
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx)
     }

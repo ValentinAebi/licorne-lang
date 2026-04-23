@@ -6,7 +6,7 @@ import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.lang.Variance.*
 import compiler.reporting.Position
-import compiler.smt.MeetJoinComputer
+import compiler.smt.{MeetJoinComputer, Simplifier}
 import compiler.typing.TypeHintsStore
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.SeqSet
@@ -283,7 +283,7 @@ object Types {
   }
 
   extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Type = tpe match {
+                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
       val newTypeArgs = typeArgs.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
@@ -302,14 +302,14 @@ object Types {
   }
 
   extension (tpe: Type) def filtered(assignmentTargetOpt: Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): Type =
+                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type =
     assignmentTargetOpt match {
       case Some(assignmentTarget) =>
         tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
       case None => tpe
     }
 
-  private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)]): Option[Formula] = boundOpt match {
+  private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None
     case sb@Some(bound) if bound.idValsDependencies.forall(assignmentTarget.typeCanMention) => sb
     case Some(bound) =>

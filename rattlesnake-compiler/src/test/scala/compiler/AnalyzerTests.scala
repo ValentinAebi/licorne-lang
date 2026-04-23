@@ -119,7 +119,7 @@ class AnalyzerTests(fileName: String) {
     val er = ErrorReporter(errorsConsumer, exitCalled)
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
-      .andThen(MonotonicityAnalyzer())
+      .andThen(MonotonicityAnalyzer(proxyStore))
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))

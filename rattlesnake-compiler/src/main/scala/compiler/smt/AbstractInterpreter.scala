@@ -11,6 +11,8 @@ import AbstractInterpreter.someZero
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 
 final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
+  
+  private given Simplifier = simplifier
 
   /**
    * {{{

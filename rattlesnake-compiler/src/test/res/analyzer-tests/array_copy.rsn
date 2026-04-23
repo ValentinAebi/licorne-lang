@@ -1,0 +1,71 @@
+
+// IMPORTANT: in case this test fails for no apparent reason, remember to check if the fact that array.length() in the
+// typealias definition refers to Seq.length rather than Array.length might be the cause of the issue
+
+typealias Length = [0,]
+typealias Idx[T](array: Seq[T]) = [ 0, array.length()-1 ]
+
+interface Seq[T] {
+   pure fn length(this) -> Length
+}
+
+class Array[T](public length: Length) : Seq[T] {
+
+   fn at(this, i: Idx(this)) -> T {
+      panic "not implemented"
+   }
+
+   fn set(this, i: Idx(this), value: T) {
+      panic "not implemented"
+   }
+}
+
+object ArrayCopy {
+
+   fn copy1[T](xs: Array[T]) -> Array[T] {
+      val length = xs.length();
+      val copy = new Array(length);
+      for var i = 0; i < length; i += 1 {
+         val t = xs.at(i);
+         copy.set(i, t);
+      };
+      return copy;
+   }
+
+   fn copy2[T](xs: Array[T]) -> Array[T] {
+      val copy = new Array(length = xs.length());
+      for var i = 0; i < xs.length(); i += 1 {
+         val t = xs.at(i);
+         copy.set(i, t);
+      };
+      return copy;
+   }
+
+   fn copy3[T](xs: Array[T]) -> Array[T] {
+      val copy = new Array(length = xs.length());
+      for var i = 0; i < copy.length(); i += 1 {
+         val t = xs.at(i);
+         copy.set(i, t);
+      };
+      return copy;
+   }
+
+   fn copyWrong[T](xs: Array[T]) -> Array[T] {
+      val copy = new Array(length = xs.length() / 2);
+      for var i = 0; i < xs.length(); i += 1 {
+         val t = xs.at(i);
+         copy.set(i, t);    //> E : first argument of call to set: expected Idx(copy), found i<loop-body-start@55:7> : [0,xs.length() - 1]
+      };
+      return copy;
+   }
+
+   fn copyOversized[T](xs: Array[T]) -> Array[T] {
+      val copy = new Array(length = xs.length() + 100);
+      for var i = 0; i < xs.length(); i += 1 {
+         val t = xs.at(i);
+         copy.set(i, t);
+      };
+      return copy;
+   }
+
+}

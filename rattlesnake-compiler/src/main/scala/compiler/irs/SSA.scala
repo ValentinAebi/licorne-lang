@@ -11,7 +11,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.Simplifier
+import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.{EClass, EGraph}
 import compiler.valproxies.ProxyStore
@@ -38,7 +38,19 @@ object SSA {
     def getPosition: Option[Position] = getAstNodeOpt.flatMap(_.getPosition)
   }
 
-  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope])
+  final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope]) {
+    private val scopes = mutable.ListBuffer.empty[Scope]
+
+    bodyOpt.foreach { body =>
+      body.setEnclosingFunction(this)
+    }
+
+    def scopesView: Iterable[Scope] = scopes
+
+    private[SSA] def addScope(scope: Scope): Unit = {
+      scopes.addOne(scope)
+    }
+  }
 
   trait VarData
 
@@ -212,6 +224,8 @@ object SSA {
                              objectInitializedInThisScopeOpt: Option[IdValue],
                              private val proxyStore: ProxyStore
                            ) extends RealInstr {
+    private var enclosingFunctionOpt = Option.empty[Function]
+
     private val types = mutable.Map.empty[IdValue, Type]
 
     /**
@@ -234,7 +248,17 @@ object SSA {
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 
+    private val _persistingEqualities = mutable.ListBuffer.empty[(Formula, Formula)]
+
     private var realInstrIterOpt = Option.empty[Scope.RealInstrIter]
+
+    def setEnclosingFunction(func: Function): Unit = {
+      if (enclosingFunctionOpt.isDefined){
+        throw IllegalStateException("enclosing function set more than once for the same scope")
+      }
+      enclosingFunctionOpt = Some(func)
+      func.addScope(this)
+    }
 
     def forTraversal[T](action: Scope.RealInstrIter => T): T = {
       if (realInstrIterOpt.isDefined) {
@@ -257,16 +281,15 @@ object SSA {
       }
     }
 
-    def eMerge(f1: Formula, f2: Formula)(using Simplifier): Unit = {
-      smartcastsEGraph.merge(f1, f2)
-    }
+    def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
-    def applyProxies()(using Simplifier): Unit = {
-      for {
-        value <- valuesDefinedHere
-        proxy <- proxyStore.getProxy(value)
-      } {
-        eMerge(value, proxy)
+    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using Simplifier): Unit = {
+      smartcastsEGraph.merge(f1, f2)(using proxyStore)
+      if (persist) {
+        outScopeOpt.foreach { outScope =>
+          outScope.eMerge(f1, f2)
+        }
+        _persistingEqualities.addOne((f1, f2))
       }
     }
 
@@ -289,7 +312,7 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type)(using Simplifier): Unit = {
+    def saveSmartcast(f: Formula, smartcastType: Type)(using simplifier: Simplifier): Unit = {
       smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastTypes =>
         val eGraphSnapshot = smartcastsEGraph.deepCopy
         val eClass = eGraphSnapshot.classOf(f)
@@ -421,11 +444,14 @@ object SSA {
       astNodeOpt.foreach { astNode =>
         newScope.setAstNode(astNode)
       }
+      outScope.enclosingFunctionOpt.foreach { enclosingFunc =>
+        newScope.setEnclosingFunction(enclosingFunc)
+      }
       newScope
     }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx, None, globalValuesCtx.proxyStore)
+      new Scope(None, globalValuesCtx, objectInitializedInThisScopeOpt = None, globalValuesCtx.proxyStore)
 
     private val scopeUidGen = new AtomicLong(-1)
 

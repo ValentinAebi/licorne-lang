@@ -77,7 +77,7 @@ final class SimplificationTests {
     val typeVarsCtx = TypeVariablesContext()
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(simplifier, solver)
