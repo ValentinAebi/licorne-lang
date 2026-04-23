@@ -139,7 +139,7 @@ final class Typer(
                 .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
                   subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
                 })
-                .getOrElse(currScope.currentTypeOf(beforeLoopVal).ignoreTopLevelRanges)
+                .getOrElse(currScope.currentTypeOf(beforeLoopVal).ignoreRangesShallow)
             currScope.saveType(inCondVal, tpe)
             Some(())
           }
@@ -318,7 +318,7 @@ final class Typer(
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
           case None =>
             // TODO maybe try to save refined types also here, instead of falling back to the principal type?
-            heapVarsTypeStore.saveType(heapVar, newValType.ignoreTopLevelRanges)
+            heapVarsTypeStore.saveType(heapVar, newValType.ignoreRangesShallow)
         }
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
@@ -387,7 +387,7 @@ final class Typer(
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
-        val inValType = currScope.currentTypeOf(inValue).ignoreTopLevelRanges
+        val inValType = requireNonNullable(currScope.currentTypeOf(inValue).ignoreRangesShallow, "converted value", conv.getPosition)
         if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
           currScope.saveType(assigned, targetType)
         } else {
@@ -555,7 +555,7 @@ final class Typer(
                                  (using TypeParamsContext): Type = {
     // TODO warning if result is known (true or false)?
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt))
-    val expectedOperandType = lhsType.ignoreTopLevelRanges match {
+    val expectedOperandType = lhsType.ignoreRangesShallow match {
       case tpe@(IntType | DoubleType) => tpe
       case _ => UnionType(IntType, DoubleType)
     }
@@ -587,7 +587,7 @@ final class Typer(
   private def checkDowncast(subject: Formula, tid: TypeIdentifier, currScope: Scope, posOpt: Option[Position])
                            (using TypeParamsContext): Option[Type] = {
     val subjectType = typeFormula(subject, currScope, posOpt)
-    subtypingCtx.checkDowncastTarget(subjectType, tid) match {
+    subtypingCtx.checkDowncastTarget(requireNonNullable(subjectType, "cast value", posOpt), tid) match {
       case DowncastTargetCheckResult.CanDowncast(tpe) => Some(tpe)
       case DowncastTargetCheckResult.CannotDowncast(reason) =>
         er.reportError(s"$tid is not a valid downcast target for type $subjectType", posOpt)
@@ -627,6 +627,13 @@ final class Typer(
             er.reportError(s"I cannot prove that upper bound of $tpe is pure", posOpt)
           }
         }
+      case tpe@NullableType(nullatedType) =>
+        nullatedType match {
+          case nullatedType@(NothingType | AnyType | NullType) =>
+            er.warn(s"useless '${Operator.QuestionMark}': $tpe is equivalent to $nullatedType", posOpt)
+          case _ => ()
+        }
+        typeTypeApp(nullatedType, ambientVarianceOpt, currScope, posOpt)
     }
   }
 
@@ -827,6 +834,16 @@ final class Typer(
       smartcasts.foreach { (subject, smartcastType) =>
         scope.saveSmartcast(subject, smartcastType)
       }
+      val nullVal = scope.valuesCtx.globalCtx.nullVal
+      developedAssumption match {
+        case LogicalNot(Equality(lhs, rhs)) =>
+          if (lhs == nullVal) {
+            scope.saveNonNull(rhs)
+          } else if (rhs == nullVal) {
+            scope.saveNonNull(lhs)
+          }
+        case _ => ()
+      }
     }
   }
 
@@ -887,7 +904,7 @@ final class Typer(
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-    receiverType.withTypeVarsExpanded match {
+    receiverType.withTypeVarsExpanded.ignoreNullabilityShallow match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
@@ -956,6 +973,15 @@ final class Typer(
           case _ => errorCase()
         }
       case _ => errorCase()
+    }
+  }
+
+  private def requireNonNullable(nullableReceiverType: Type, descr: String, posOpt: Option[Position]) = {
+    nullableReceiverType match {
+      case NullableType(nullatedType) =>
+        er.reportError(s"$descr should not be nullable", posOpt)
+        nullatedType
+      case nullableReceiverType => nullableReceiverType
     }
   }
 

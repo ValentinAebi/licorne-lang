@@ -35,6 +35,8 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case IntersectionType(types) =>
       IntersectionType(types.map(dealiasType))
     case intRangeType: IntRangeType => intRangeType
+    case NullableType(nullatedType) =>
+      NullableType(dealiasType(nullatedType))
   }
 
   def isNonRefType(tpe: Type): Boolean = dealiasType(tpe) match {
@@ -49,11 +51,14 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case IntersectionType(types) =>
       types.exists(isNonRefType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
+    case NullableType(nullatedType) =>
+      isNonRefType(nullatedType)
   }
 
   def eraseRefinements(tpe: Type): Type = dealiasType(tpe) match {
     case primitiveType: PrimitiveType => primitiveType
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntType
+    case NullableType(nullatedType) => nullatedType
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(eraseRefinements), List.empty)
     case ClosureType(params, result) =>
@@ -62,6 +67,14 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       case Some(tpe) => eraseRefinements(tpe)
       case None => AnyType
     }
+    case UnionType(types) =>
+      if types.size == 1
+      then eraseRefinements(types.head)
+      else AnyType
+    case IntersectionType(types) =>
+      if types.isEmpty
+      then AnyType
+      else eraseRefinements(types.head)
   }
   
 }

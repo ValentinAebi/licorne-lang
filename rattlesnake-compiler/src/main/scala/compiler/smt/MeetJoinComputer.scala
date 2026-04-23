@@ -3,9 +3,9 @@ package compiler.smt
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Formulas.Formula
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
-import compiler.lang.{RuntimeTypeSignature, TypeTypeParamInfo, Types}
+import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.util.{SeqSet, asIterableOfType}
@@ -14,6 +14,7 @@ import scala.collection.mutable
 import scala.util.boundary
 
 // TODO caching
+// TODO check edge cases in join and meet computation (e.g. all types are Null/Nothing/Any)
 final class MeetJoinComputer(
                               dealiasingCtx: DealiasingContext,
                               resolutionCtx: ResolutionContext,
@@ -28,7 +29,7 @@ final class MeetJoinComputer(
 
   def computeJoin(inputTypes: Iterable[Type]): Type = {
 
-    // first pass: flatten UnionTypes and remove duplicates
+    // first pass: flatten UnionTypes and NullableTypes and remove duplicates
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
       tpe.withTypeVarsExpanded match {
         case UnionType(unitedTypes) => unitedTypes
@@ -36,14 +37,26 @@ final class MeetJoinComputer(
       }
     })
 
-    expandedTypes.size match {
+    var nullableFlag = false
+
+    val nonNullType = expandedTypes.size match {
       case 0 => NothingType
       case 1 => expandedTypes.head
       case _ =>
-        val dealiasedTypes = expandedTypes.map(dealiasingCtx.dealiasType)
-        dealiasedTypes.size match {
-          case 0 => NothingType
-          case 1 => dealiasedTypes.head
+        val nonNullDealiasedTypes = expandedTypes.flatMap { rawType =>
+          dealiasingCtx.dealiasType(rawType) match {
+            case NullableType(nullatedType) =>
+              nullableFlag = true
+              Some(nullatedType)
+            case NullType =>
+              nullableFlag = true
+              None
+            case tpe => Some(tpe)
+          }
+        }
+        nonNullDealiasedTypes.size match {
+          case 0 => NullType
+          case 1 => nonNullDealiasedTypes.head
           case _ =>
 
             // second pass: remove Nothing, shortcut if Any
@@ -64,6 +77,8 @@ final class MeetJoinComputer(
                 closureTypes.addOne(closureType)
               case tv: TypeVariable =>
                 throw AssertionError(s"unexpected type variable: $tv")
+              case nullableType: NullableType =>
+                throw AssertionError(s"unexpected nullable type: $nullableType")
               case unionType: UnionType =>
                 throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
               case IntersectionType(types) =>
@@ -76,7 +91,7 @@ final class MeetJoinComputer(
 
             // third pass: categorize types
             var retainedTypesCnt = 0
-            val typesIter = dealiasedTypes.iterator
+            val typesIter = nonNullDealiasedTypes.iterator
             while (typesIter.hasNext) {
               typesIter.next() match {
                 case (_: TypeVariable) | AnyType =>
@@ -97,6 +112,9 @@ final class MeetJoinComputer(
             simplifier.simplify(rawJoin)
         }
     }
+    if nullableFlag
+    then NullableType(nonNullType)
+    else nonNullType
   }
 
   def computeJoinOfPrimitives(types: Iterable[PrimitiveType]): PrimitiveType = {
@@ -247,18 +265,35 @@ final class MeetJoinComputer(
     val expandedTypes = SeqSet(types).map(_.withTypeVarsExpanded)
     if expandedTypes.size == 1 then expandedTypes.head
     else {
-      val dealiasedTypes = expandedTypes.map(dealiasingCtx.dealiasType)
+
+      var nullableFlag = true
+
+      val dealiasedNonNullTypes = expandedTypes.flatMap { rawType =>
+        dealiasingCtx.dealiasType(rawType) match {
+          case NullableType(nullatedType) =>
+            Some(nullatedType)
+          case NullType =>
+            None
+          case tpe =>
+            nullableFlag = false
+            Some(tpe)
+        }
+      }
       val rawMeet =
-        if dealiasedTypes.size == 1 then dealiasedTypes.head
-        else dealiasedTypes.find(subT => dealiasedTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
+        if dealiasedNonNullTypes.size == 1 then dealiasedNonNullTypes.head
+        else dealiasedNonNullTypes.find(subT => dealiasedNonNullTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
           case Some(meet) => meet
           case None =>
-            dealiasedTypes.asIterableOfType[IntRangeType] match {
+            dealiasedNonNullTypes.asIterableOfType[IntRangeType] match {
               case Some(ranges) => computeMeetOfRanges(ranges)
-              case None => dealiasedTypes.lastOption.getOrElse(AnyType)
+              case None => dealiasedNonNullTypes.lastOption.getOrElse(AnyType)
             }
         }
-      simplifier.simplify(rawMeet)
+      simplifier.simplify {
+        if nullableFlag
+        then NullableType(rawMeet)
+        else rawMeet
+      }
     }
   }
 

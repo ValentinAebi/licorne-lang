@@ -44,7 +44,7 @@ final class SubtypingContext(
 
   // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
-    dealiasingCtx.dealiasType(originalType).ignoreTopLevelRanges match {
+    dealiasingCtx.dealiasType(originalType).ignoreRangesShallow match {
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>
@@ -74,7 +74,7 @@ final class SubtypingContext(
                 if (uncoveredTypeParams.isEmpty) {
                   CanDowncast(targetSig.toType(newTargetSubst))
                 } else {
-                  CannotDowncast(s"cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")} of tested type $targetId")
+                  CannotDowncast(s"I cannot infer type argument(s) for type parameter(s) ${uncoveredTypeParams.mkString(", ")} of tested type $targetId")
                 }
             }
         }
@@ -84,7 +84,7 @@ final class SubtypingContext(
   }
 
   // TODO memoize? But we need to take smartcasts into account
-  def isSubtype(subT: Type, superT: Type): Boolean = (dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT)) match {
+  def isSubtype(subT: Type, superT: Type): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (_, AnyType) => true
@@ -123,6 +123,11 @@ final class SubtypingContext(
     case (subT, UnionType(supertypes)) =>
       supertypes.exists(isSubtype(subT, _))
     case _ => false
+  }
+
+  private def dealiaseAndExpandNullables(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
+    case NullableType(nullatedType) => UnionType(nullatedType, NullType)
+    case tpe => tpe
   }
 
   def isSubtype(subject: Formula, subT: Type, superT: Type): Boolean =

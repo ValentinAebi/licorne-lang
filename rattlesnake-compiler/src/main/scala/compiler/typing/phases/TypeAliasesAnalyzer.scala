@@ -77,6 +77,8 @@ final class TypeAliasesAnalyzer(
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       Set.empty
+    case NullableType(nullatedType) =>
+      findMentionedTypes(nullatedType)
   }
 
 }

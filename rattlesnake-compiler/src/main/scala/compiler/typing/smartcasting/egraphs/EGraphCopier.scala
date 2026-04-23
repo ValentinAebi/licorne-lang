@@ -24,6 +24,7 @@ final class EGraphCopier {
       copy.initializeWith(
         original.nodesView.iterator.map(copyOf),
         original.getSmartcastType,
+        original.isKnownNonNull,
         original.explicitFormulasView
       )
       copy

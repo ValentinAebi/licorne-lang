@@ -23,11 +23,13 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   val unitVal: IdValue = globalScope.newUninterpretedConst("unit")
   val trueVal: IdValue = globalScope.newUninterpretedConst("true")
   val falseVal: IdValue = globalScope.newUninterpretedConst("false")
+  val nullVal: IdValue = globalScope.newUninterpretedConst("null")
 
   {
     proxyStore.saveProxy(unitVal, unitVal)
     proxyStore.saveProxy(trueVal, trueVal)
     proxyStore.saveProxy(falseVal, falseVal)
+    proxyStore.saveProxy(nullVal, nullVal)
   }
 
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =

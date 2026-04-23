@@ -67,7 +67,7 @@ final class ProxyStore {
     (ambientBranchingInfo ++ directInfoIfTrue ++ proxyInfoIfTrue,
       ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
   }
-  
+
   def rawInfosFor(cond: Formula, outerScope: Scope)(using dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) =
     infosFor(cond)(using outerScope)
 
@@ -85,10 +85,8 @@ final class ProxyStore {
         val (operandTrueInfos, operandFalseInfos) = infosFor(operand)
         (operandFalseInfos, operandTrueInfos)
       // TODO maybe add a reference equality operator? or force overrides of equal to only work on two objects of exact same type
-      case eq@Equality(lhs, rhs)
-        if dealiasingCtx.isNonRefType(outerScope.currentTypeOf(lhs)(using this))
-          && dealiasingCtx.isNonRefType(outerScope.currentTypeOf(rhs)(using this)) =>
-        (BranchingInfo.ofAssumption(Equality(lhs, rhs)), BranchingInfo.empty)
+      case eq@Equality(lhs, rhs) =>
+        (BranchingInfo.ofAssumption(eq), BranchingInfo.ofAssumption(LogicalNot(eq)))
       case leq@LessOrEq(lhs, rhs) =>
         (BranchingInfo.ofAssumption(leq), BranchingInfo.ofAssumption(LessThan(rhs, lhs)))
       case lt@LessThan(lhs, rhs) =>
@@ -97,6 +95,11 @@ final class ProxyStore {
         (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
       case _ => (BranchingInfo.empty, BranchingInfo.empty)
     }
+  }
+  
+  def isNullOrItsProxy(value: IdValue, scope: Scope): Boolean = {
+    val nullVal = scope.valuesCtx.globalCtx.nullVal
+    value == nullVal || getProxy(value).contains(nullVal)
   }
 
   override def toString: String = "ProxyStore {\n" ++ proxies.mkString("\n").indent(2) ++ "}"

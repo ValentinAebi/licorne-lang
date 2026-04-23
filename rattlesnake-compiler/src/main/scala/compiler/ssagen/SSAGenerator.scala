@@ -575,6 +575,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.StringLit(value) =>
         currScope.saveInstr(AssignStringConst(resultVal, value), expr)
         Some(StringConst(value))
+      case Asts.NullRef() =>
+        val nullVal = currScope.valuesCtx.globalCtx.nullVal
+        currScope.saveInstr(AssignVal(resultVal, nullVal), expr)
+        Some(nullVal)
       case varRefTree@Asts.VariableRef(name) =>
         currScope.getLocalValuesContextUnsafe.valueOf(name) match {
           case LocalValuesContext.Unknown(id) =>
@@ -655,6 +659,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterOrEq, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _), swapOperands = true)
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree) =>
+        // FIXME desugar to invocation of equals method when needed
         generateBinaryWithProxy(lhsTree, rhsTree, Equal(resultVal, _, _), Equality(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Inequality, rhsTree) =>
         recurseOnDesugared(Asts.UnaryOp(Operator.ExclamationMark,
@@ -807,6 +812,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.CharLit(value) => ???
         case Asts.BoolLit(value) => Some(BoolConst(value))
         case Asts.StringLit(value) => Some(StringConst(value))
+        case Asts.NullRef() => Some(currScope.valuesCtx.globalCtx.nullVal)
         case Asts.VariableRef(name) => currScope.getLocalValuesContextOpt.flatMap(_.valueOf(name).toOption)
         case Asts.ThisRef() => currScope.getLocalValuesContextOpt.flatMap(_.getThisValue)
         case Asts.ItRef() => ???
@@ -940,6 +946,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         lowerBoundOpt.flatMap(generateFormula(_, scope)),
         upperBoundOpt.flatMap(generateFormula(_, scope))
       )
+    case Asts.NullableTypeTree(wrappedType) =>
+      NullableType(mkType(wrappedType, scope))
     case Asts.UnionTypeTree(types) =>
       UnionType(SeqSet(types.map(mkType(_, scope))))
     case Asts.IntersectionTypeTree(types) =>

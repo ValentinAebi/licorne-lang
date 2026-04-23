@@ -55,6 +55,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val literalValue: FinalTreeParser[Literal] = {
     numericLiteralValue OR nonNumericLiteralValue
   } setName "literalValue"
+  
+  private val nullRef = kw(Null) map {
+    _ => NullRef()
+  } setName "nullRef"
 
   private val endOfFile = treeParser("end of file") {
     case EndOfFileToken => ()
@@ -218,10 +222,6 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "possiblyNegativeNumericLiteralValue"
 
-  private lazy val constExprLiteralValue = {
-    possiblyNegativeNumericLiteralValue OR nonNumericLiteralValue
-  } setName "constExprLiteralValue"
-
   private lazy val closureType = kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
     case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
   } setName "closureType"
@@ -233,7 +233,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val typeTree: P[TypeTree] = recursive {
     nonNullableTypeTree ::: opt(op(QuestionMark)) map {
       case nonNullableType ^: None => nonNullableType
-      case nonNullableType ^: Some(_) => ??? //NullableTypeTree(nonNullableType)
+      case nonNullableType ^: Some(_) => NullableTypeTree(nonNullableType)
     }
   } setName "typeTree"
 
@@ -339,7 +339,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val varRef = lowName map (name => VariableRef(name)) setName "varRef"
 
   private lazy val atomicExpr: P[Expr] = recursive {
-    varRef OR thisRef OR itRef OR objectRef OR literalValue OR parenthesizedExpr
+    varRef OR thisRef OR itRef OR objectRef OR literalValue OR nullRef OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {

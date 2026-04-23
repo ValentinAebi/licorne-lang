@@ -6,7 +6,7 @@ import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
-import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.lang.Types.{PrimitiveType, Type, NullableType}
 import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
@@ -319,11 +319,19 @@ object SSA {
         insertPseudoInstr(Smartcast(eClass, newSmartcastTypes, eGraphSnapshot))
       }
     }
+    
+    def saveNonNull(f: Formula): Unit = {
+      smartcastsEGraph.saveNonNull(f)
+    }
 
     def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
-      smartcastFor(formula)
+      val maybeNullableType = smartcastFor(formula)
         .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)
+      maybeNullableType match {
+        case NullableType(nullatedType) if smartcastsEGraph.isKnownNonNull(formula) => nullatedType
+        case nonNullableType => nonNullableType
+      }
     }
 
     def smartcastFor(f: Formula): Option[Type] = {

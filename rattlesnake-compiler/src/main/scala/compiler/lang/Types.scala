@@ -4,17 +4,14 @@ import compiler.identifiers.{Identifier, TypeIdentifier}
 import compiler.irs.SSA.Scope
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
-import compiler.lang.Variance.*
 import compiler.reporting.Position
-import compiler.smt.{MeetJoinComputer, Simplifier}
-import compiler.typing.TypeHintsStore
-import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
+import compiler.smt.Simplifier
+import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection
-import scala.collection.SeqMap
 
 
 object Types {
@@ -32,7 +29,7 @@ object Types {
     case BoolType extends PrimitiveType("Bool")
     case StringType extends PrimitiveType("String")
 
-    case NullType extends PrimitiveType("Null") // FIXME handle this one (and implement nullable types)
+    case NullType extends PrimitiveType("Null")
     case AnyType extends PrimitiveType("Any")
     case UnitType extends PrimitiveType("Unit")
     case NothingType extends PrimitiveType("Nothing")
@@ -162,6 +159,23 @@ object Types {
 
   }
 
+  /**
+   * @param nullatedType the type wrapped by this NullableType
+   *                     (name is intentionally confusing to discourage premature assumptions on its meaning)
+   */
+  final case class NullableType private(nullatedType: Type) extends Type {
+    override def formulaDependencies: List[Formula] = nullatedType.formulaDependencies
+
+    override def toString: String = s"$nullatedType?"
+  }
+
+  object NullableType {
+    def apply(nullatedType: Type): NullableType = nullatedType match {
+      case nullableType: NullableType => nullableType
+      case nonNullType => new NullableType(nonNullType)
+    }
+  }
+
   private val typeVarUidGen = new AtomicLong(-1)
 
   final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val instantiationPosOpt: Option[Position]) extends Type {
@@ -254,6 +268,8 @@ object Types {
         lowerBoundOpt.map(_.substitute(valsSubst)),
         upperBoundOpt.map(_.substitute(valsSubst))
       )
+    case NullableType(nullatedType) =>
+      NullableType(nullatedType.substitute(typesSubst, valsSubst))
   }
 
   extension (tpe: Type) def withTypeVarsExpanded: Type = tpe match {
@@ -266,6 +282,8 @@ object Types {
     case IntersectionType(types) =>
       IntersectionType(types.map(_.withTypeVarsExpanded))
     case range: IntRangeType => range
+    case NullableType(nullatedType) =>
+      NullableType(nullatedType.withTypeVarsExpanded)
   }
 
   extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
@@ -284,6 +302,8 @@ object Types {
       val newLb = expandBound(lowerBoundOpt, assignmentTarget, _.lowerBoundOpt, currScopeAndProxyStoreOpt)
       val newUb = expandBound(upperBoundOpt, assignmentTarget, _.upperBoundOpt, currScopeAndProxyStoreOpt)
       IntRangeType(newLb, newUb)
+    case NullableType(nullatedType) =>
+      NullableType(nullatedType.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
     case tv: TypeVariable => tv
   }
 
@@ -294,9 +314,14 @@ object Types {
         tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
       case None => tpe
     }
-    
-  extension (tpe: Type) def ignoreTopLevelRanges: Type = tpe match {
+
+  extension (tpe: Type) def ignoreRangesShallow: Type = tpe match {
     case IntRangeType(_, _) => IntType
+    case tpe => tpe
+  }
+  
+  extension (tpe: Type) def ignoreNullabilityShallow: Type = tpe match {
+    case NullableType(nullatedType) => nullatedType
     case tpe => tpe
   }
 

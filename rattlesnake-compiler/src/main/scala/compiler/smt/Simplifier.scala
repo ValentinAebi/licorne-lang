@@ -3,7 +3,7 @@ package compiler.smt
 import compiler.lang.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.smt.Solver
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
 import compiler.util.asIterableOfType
@@ -11,6 +11,8 @@ import compiler.util.asIterableOfType
 import scala.reflect.ClassTag
 
 // TODO caching?
+// TODO check edge cases in simplification of unions and intersections (e.g. all types are Null/Nothing/Any)
+// TODO some code in simplification of unions and intersections seems very similar to the code of the join and meet computations, maybe this can be improved
 final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer) {
 
   def simplify(tpe: Type): Type = tpe match {
@@ -21,12 +23,28 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       val simplifiedTypes = types.map(simplify).filter(_ != NothingType)
       if simplifiedTypes.size == 1 then simplifiedTypes.head
       else {
-        val filteredTypes =
-          simplifiedTypes.map(dealiasingCtx.dealiasType)
-            .filter(tpe => !simplifiedTypes.exists(otherType => subtypingCtx.isSubtype(tpe, otherType)))
+
+        var nullableFlag = false
+
+        val dealiasedNonNullTypes = simplifiedTypes.flatMap { rawType =>
+          dealiasingCtx.dealiasType(rawType) match {
+            case NullableType(nullatedType) =>
+              nullableFlag = true
+              Some(nullatedType)
+            case NullType =>
+              nullableFlag = true
+              None
+            case tpe => Some(tpe)
+          }
+        }
+        val filteredTypes = dealiasedNonNullTypes.filter { tpe =>
+          !dealiasedNonNullTypes.exists { otherType =>
+            subtypingCtx.isSubtype(tpe, otherType) && !subtypingCtx.isSubtype(otherType, tpe)
+          }
+        }
         // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
-        filteredTypes.size match {
-          case 0 => NothingType
+        val nonNullType = filteredTypes.size match {
+          case 0 => NullType
           case 1 => simplifiedTypes.head
           case _ => filteredTypes.asIterableOfType[IntRangeType] match {
             case Some(filteredTypes) =>
@@ -34,14 +52,34 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
             case None => UnionType(simplifiedTypes)
           }
         }
+        if nullableFlag
+        then NullableType(nonNullType)
+        else nonNullType
       }
     case IntersectionType(originalTypes) =>
       val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
+
+      var nullableFlag = true
+
+      val nonNullableDealiasedTypes = simplifiedTypes.flatMap { rawType =>
+        dealiasingCtx.dealiasType(rawType) match {
+          case NullableType(nullatedType) => Some(nullatedType)
+          case NullType => None
+          case tpe =>
+            nullableFlag = false
+            Some(tpe)
+        }
+      }
+      
       val filteredTypes =
-        simplifiedTypes.map(dealiasingCtx.dealiasType)
-          .filter(tpe => !simplifiedTypes.exists(otherType => otherType != tpe && subtypingCtx.isSubtype(otherType, tpe)))
+        nonNullableDealiasedTypes.filter { tpe =>
+          !nonNullableDealiasedTypes.exists { otherType =>
+            subtypingCtx.isSubtype(otherType, tpe) && !subtypingCtx.isSubtype(tpe, otherType)
+          }
+        }
       // TODO if datatypes/structs, maybe compute intersection (?)
-      filteredTypes.size match {
+      // TODO might fallback to AnyType in cases where Null could be better, maybe look into a fix for this
+      val nonNullType = filteredTypes.size match {
         case 0 => AnyType
         case 1 => filteredTypes.head
         case _ => filteredTypes.asIterableOfType[IntRangeType] match {
@@ -50,12 +88,19 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
           case None => IntersectionType(filteredTypes)
         }
       }
+      if nullableFlag
+      then NullableType(nonNullType)
+      else nonNullType
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {
         case (None, None) => IntType
         case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
       }
+    case NullableType(nullatedType@(AnyType | NothingType | NullType)) =>
+      simplify(nullatedType)
+    case NullableType(nullatedType) =>
+      NullableType(simplify(nullatedType))
   }
 
   def simplify(formula: Formula): Formula = eval(formula).getOrElse {

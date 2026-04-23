@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.irs.SSA
 import compiler.lang.FunctionSignature
-import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
+import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.{IntRangeType, Type}
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
@@ -76,6 +76,7 @@ final class TypeChecker(
     globalValsCtx.globalScope.saveType(globalValsCtx.unitVal, UnitType)
     globalValsCtx.globalScope.saveType(globalValsCtx.trueVal, BoolType)
     globalValsCtx.globalScope.saveType(globalValsCtx.falseVal, BoolType)
+    globalValsCtx.globalScope.saveType(globalValsCtx.nullVal, NullType)
   }
 
   private def checkFunc(

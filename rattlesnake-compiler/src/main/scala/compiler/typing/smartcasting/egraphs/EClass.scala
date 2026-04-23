@@ -9,14 +9,16 @@ import scala.collection.mutable
 final class EClass(val uid: Long) {
   private val nodes = mutable.LinkedHashSet.empty[ENode]
   private var smartcastTypeOpt = Option.empty[Type]
+  private var nonNullFlag = false
   private val explicitFormulas = mutable.LinkedHashSet.empty[Formula]
 
-  private[egraphs] def initializeWith(nodes: IterableOnce[ENode], smartcastOpt: Option[Type], formulas: IterableOnce[Formula]): Unit = {
+  private[egraphs] def initializeWith(nodes: IterableOnce[ENode], smartcastOpt: Option[Type], nonNull: Boolean, formulas: IterableOnce[Formula]): Unit = {
     if (this.nodes.nonEmpty || this.smartcastTypeOpt.nonEmpty || this.explicitFormulas.nonEmpty) {
       throw new AssertionError("e-class is not empty")
     }
     this.nodes.addAll(nodes)
     this.smartcastTypeOpt = smartcastOpt
+    this.nonNullFlag = nonNull
     this.explicitFormulas.addAll(formulas)
   }
 
@@ -39,8 +41,14 @@ final class EClass(val uid: Long) {
       smartcastTypeOpt
     }
   }
+  
+  def markNonNull(): Unit = {
+    nonNullFlag = true
+  }
 
   def getSmartcastType: Option[Type] = smartcastTypeOpt
+  
+  def isKnownNonNull: Boolean = nonNullFlag
 
   def addExplicitFormula(formula: Formula): Unit = {
     explicitFormulas.add(formula)

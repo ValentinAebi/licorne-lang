@@ -274,6 +274,10 @@ object Asts {
    * String literal
    */
   final case class StringLit(value: String) extends NonNumericLiteral
+  
+  final case class NullRef() extends Expr {
+    override def children: List[Ast] = List.empty
+  }
 
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)
@@ -470,6 +474,10 @@ object Asts {
 
   final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends TypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
+  }
+  
+  final case class NullableTypeTree(wrappedType: TypeTree) extends TypeTree {
+    override def children: List[Ast] = List(wrappedType)
   }
 
   final case class UnionTypeTree(types: List[TypeTree]) extends TypeTree {

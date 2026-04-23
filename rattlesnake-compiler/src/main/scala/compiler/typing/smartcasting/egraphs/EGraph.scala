@@ -89,9 +89,16 @@ final class EGraph private[egraphs](startClId: Long) {
 
   def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Option[Type] =
     classOf(formula).saveSmartcast(tpe)
+    
+  def saveNonNull(formula: Formula): Unit = {
+    classOf(formula).markNonNull()
+  }
 
   def smartcastFor(formula: Formula): Option[Type] =
     classOf(formula).getSmartcastType
+  
+  def isKnownNonNull(formula: Formula): Boolean =
+    classOf(formula).isKnownNonNull
 
   def classOf(formula: Formula): EClass = {
     val node = encode(formula)
