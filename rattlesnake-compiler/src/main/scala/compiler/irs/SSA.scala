@@ -6,14 +6,14 @@ import compiler.irs.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
-import compiler.lang.Types.{PrimitiveType, Type, NullableType}
+import compiler.lang.Types.{NullableType, PrimitiveType, Type}
 import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{Simplifier, Solver}
+import compiler.smt.Simplifier
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
-import compiler.typing.smartcasting.egraphs.{EClass, EGraph}
+import compiler.typing.smartcasting.egraphs.EGraph
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -82,7 +82,24 @@ object SSA {
     }
   }
 
-  sealed trait RealInstr extends Instr
+  sealed abstract class RealInstr extends Instr {
+    private val smartcasts = mutable.LinkedHashMap.empty[Formula, Type]
+    private val nonNullSmartcasts = mutable.LinkedHashSet.empty[Formula]
+
+    def addSmartcast(subject: Formula, tpe: Type): Unit = {
+      smartcasts.put(subject, tpe)
+    }
+
+    def getSmartcasts: Iterable[(Formula, Type)] =
+      smartcasts.toList
+
+    def addNonNullSmartcast(subject: Formula): Unit = {
+      nonNullSmartcasts.add(subject)
+    }
+
+    def getNonNullSmartcasts: Iterable[Formula] =
+      nonNullSmartcasts.toList
+  }
 
   sealed trait ControlFlowInstr extends RealInstr
 
@@ -253,7 +270,7 @@ object SSA {
     private var realInstrIterOpt = Option.empty[Scope.RealInstrIter]
 
     def setEnclosingFunction(func: Function): Unit = {
-      if (enclosingFunctionOpt.isDefined){
+      if (enclosingFunctionOpt.isDefined) {
         throw IllegalStateException("enclosing function set more than once for the same scope")
       }
       enclosingFunctionOpt = Some(func)
@@ -271,15 +288,8 @@ object SSA {
       result
     }
 
-    def insertPseudoInstr(pseudoInstr: PseudoInstr): Unit = {
-      realInstrIterOpt match {
-        case None =>
-          val idx = instructions.indexWhere(_.isInstanceOf[RealInstr])
-          instructions.insert(idx, pseudoInstr)
-        case Some(iter) =>
-          iter.insertPseudoInstr(pseudoInstr)
-      }
-    }
+    def currentInstrInTraversal: Option[RealInstr] =
+      realInstrIterOpt.flatMap(_.getLastReturnedInstr)
 
     def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
@@ -313,33 +323,44 @@ object SSA {
     }
 
     def saveSmartcast(f: Formula, smartcastType: Type)(using simplifier: Simplifier): Unit = {
-      smartcastsEGraph.saveSmartcast(f, smartcastType).foreach { newSmartcastTypes =>
-        val eGraphSnapshot = smartcastsEGraph.deepCopy
-        val eClass = eGraphSnapshot.classOf(f)
-        insertPseudoInstr(Smartcast(eClass, newSmartcastTypes, eGraphSnapshot))
-      }
+      smartcastsEGraph.saveSmartcast(f, smartcastType)
     }
-    
+
     def saveNonNull(f: Formula): Unit = {
       smartcastsEGraph.saveNonNull(f)
     }
 
-    def currentTypeOf(formula: Formula)(using ProxyStore): Type = {
-      val maybeNullableType = smartcastFor(formula)
+    def currentTypeOf(formula: Formula, saveSmartcasts: Boolean)(using ProxyStore): Type = {
+      val maybeNullableType = smartcastFor(formula, saveSmartcasts)
         .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)
       maybeNullableType match {
-        case NullableType(nullatedType) if smartcastsEGraph.isKnownNonNull(formula) => nullatedType
+        case NullableType(nullatedType) if smartcastsEGraph.isKnownNonNull(formula) =>
+          if (saveSmartcasts) {
+            currentInstrInTraversal.foreach { currentInstrInTraversal =>
+              currentInstrInTraversal.addNonNullSmartcast(formula)
+            }
+          }
+          nullatedType
         case nonNullableType => nonNullableType
       }
     }
 
-    def smartcastFor(f: Formula): Option[Type] = {
-      smartcastsEGraph.smartcastFor(f)
-    }
-
     def absorbSmartcastsEGraphFrom(src: Scope): Unit = {
       smartcastsEGraphOpt = src.smartcastsEGraphOpt
+    }
+
+    def smartcastFor(f: Formula, saveSmartcasts: Boolean): Option[Type] = {
+      smartcastsEGraph.smartcastFor(f) match {
+        case someType@Some(tpe) =>
+          if (saveSmartcasts && !typeOfNoSmartcastIfIdVal(f).contains(tpe)) {
+            currentInstrInTraversal.foreach { currentInstrInTraversal =>
+              currentInstrInTraversal.addSmartcast(f, tpe)
+            }
+          }
+          someType
+        case None => None
+      }
     }
 
     private def smartcastsEGraph: EGraph = smartcastsEGraphOpt match {
@@ -465,6 +486,7 @@ object SSA {
 
     final class RealInstrIter(scope: Scope) extends Iterator[RealInstr] {
       private var nextIdx = 0
+      private var lastReturnedInstrOpt = Option.empty[RealInstr]
 
       override def hasNext: Boolean = {
         skipPseudoInstr()
@@ -473,14 +495,13 @@ object SSA {
 
       override def next(): RealInstr = {
         skipPseudoInstr()
-        val result = scope.instructions(nextIdx)
+        val result = scope.instructions(nextIdx).asInstanceOf[RealInstr]
         nextIdx += 1
-        result.asInstanceOf[RealInstr]
+        lastReturnedInstrOpt = Some(result)
+        result
       }
 
-      def insertPseudoInstr(pseudoInstr: PseudoInstr): Unit = {
-        scope.instructions.insert(nextIdx, pseudoInstr)
-      }
+      def getLastReturnedInstr: Option[RealInstr] = lastReturnedInstrOpt
 
       private def skipPseudoInstr(): Unit = {
         while (nextIdx < scope.instructions.size && scope.instructions(nextIdx).isInstanceOf[PseudoInstr]) {
@@ -492,7 +513,7 @@ object SSA {
   }
 
   sealed trait PseudoInstr extends Instr
+
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends PseudoInstr
-  final case class Smartcast(subject: EClass, tpe: Type, eGraphSnapshot: EGraph) extends PseudoInstr
 
 }

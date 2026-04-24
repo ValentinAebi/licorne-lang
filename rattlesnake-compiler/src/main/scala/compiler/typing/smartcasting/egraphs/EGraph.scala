@@ -87,7 +87,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Option[Type] =
+  def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Unit =
     classOf(formula).saveSmartcast(tpe)
     
   def saveNonNull(formula: Formula): Unit = {

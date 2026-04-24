@@ -28,18 +28,13 @@ final class EClass(val uid: Long) {
 
   def nodesView: Iterable[ENode] = nodes
 
-  def saveSmartcast(tpe: Type)(using simplifier: Simplifier): Option[Type] = {
+  def saveSmartcast(tpe: Type)(using simplifier: Simplifier): Unit = {
     val newSmartcast = smartcastTypeOpt match {
       case Some(oldSmartcastType) =>
         simplifier.simplify(IntersectionType(oldSmartcastType, tpe))
       case None => tpe
     }
-    if (smartcastTypeOpt.contains(newSmartcast)) {
-      None
-    } else {
-      smartcastTypeOpt = Some(newSmartcast)
-      smartcastTypeOpt
-    }
+    smartcastTypeOpt = Some(newSmartcast)
   }
   
   def markNonNull(): Unit = {

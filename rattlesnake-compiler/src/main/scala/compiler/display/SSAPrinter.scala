@@ -191,6 +191,16 @@ final class SSAPrinter(
 
   private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
     instr match {
+      case instr: RealInstr =>
+        for ((subject, tpe) <- instr.getSmartcasts) {
+          pps.add(s"smartcast $subject : $tpe").newLine()
+        }
+        for (subject <- instr.getNonNullSmartcasts) {
+          pps.add(s"smartcast-non-null $subject").newLine()
+        }
+      case _ => ()
+    }
+    instr match {
       case SSA.Loop(cond, condVal, body, variables) =>
         pps.add("LOOP").indentln {
           pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")
@@ -292,9 +302,6 @@ final class SSAPrinter(
       case scope: Scope => printScope(scope)
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
-      case Smartcast(subject, tpe, eGraph) =>
-        val classDescr = subject.explicitFormulasView.mkString("{", ",", "}")
-        pps.add(s"SMARTCAST $classDescr : $tpe")
     }
     instr match {
       case assignInstr: AssigningInstr =>
@@ -304,7 +311,7 @@ final class SSAPrinter(
   }
 
   private def maybeTyped(formula: Formula, scope: Scope): String =
-    if printTypes then s"$formula : ${scope.currentTypeOf(formula)}" else formula.toString
+    if printTypes then s"$formula : ${scope.currentTypeOf(formula, saveSmartcasts = false)}" else formula.toString
 
   private def maybePrintHintsFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
     val hints = typeHintsStore.getHints(idValue)

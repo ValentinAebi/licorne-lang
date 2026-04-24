@@ -74,7 +74,7 @@ final class Typer(
       }
     }
     for ((f1, f2) <- scope.persistingEqualities) {
-      solver.assertEq(f1, f2, SimplifiedType.from(scope.currentTypeOf(f1)))
+      solver.assertEq(f1, f2, SimplifiedType.from(scope.currentTypeOf(f1, saveSmartcasts = false)))
     }
   }
 
@@ -84,7 +84,7 @@ final class Typer(
     def saveEquality(f1: Formula, f2: Formula, persist: Boolean = false): Unit = {
       if (f1.isPure && f2.isPure) {
         currScope.eMerge(f1, f2, persist)
-        solver.assertEq(f1, f2, SimplifiedType.from(currScope.currentTypeOf(f1)))
+        solver.assertEq(f1, f2, SimplifiedType.from(currScope.currentTypeOf(f1, saveSmartcasts = false)))
       }
     }
 
@@ -137,23 +137,23 @@ final class Typer(
                 .asInstanceOf[KnownAndInitialized]
                 .declarationTypeAnnotOpt
                 .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
-                  subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal), hint)
+                  subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal, saveSmartcasts = false), hint)
                 })
-                .getOrElse(currScope.currentTypeOf(beforeLoopVal).ignoreRangesShallow)
+                .getOrElse(currScope.currentTypeOf(beforeLoopVal, saveSmartcasts = true).ignoreRangesShallow)
             currScope.saveType(inCondVal, tpe)
             Some(())
           }
         }
         typeScopeInstructions(condScope, BranchingInfo.empty)
-        subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+        subtypingCtx.enforceIsSubtype(condScope.currentTypeOf(condVal, saveSmartcasts = true), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(bodyScope, infoIfCondTrue)
         for {
           varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
           if !varData.handledThroughRecurrenceFlag
         } {
-          val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal)
-          val typeInCond = condScope.currentTypeOf(condVal)
+          val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal, saveSmartcasts = false)
+          val typeInCond = condScope.currentTypeOf(condVal, saveSmartcasts = false)
           lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, reassigStatus, Some(declTypeAnnot)) =>
               s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
@@ -165,14 +165,14 @@ final class Typer(
         applyBranchInfo(currScope, infoIfCondFalse)
 
       case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
-        val condType = currScope.currentTypeOf(condVal)
+        val condType = currScope.currentTypeOf(condVal, saveSmartcasts = true)
         subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(thenBr, infoIfCondTrue)
         typeScopeInstructions(elseBr, infoIfCondFalse)
         for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-          val thenType = thenBr.currentTypeOf(afterThenVal)
-          val elseType = elseBr.currentTypeOf(afterElseVal)
+          val thenType = thenBr.currentTypeOf(afterThenVal, saveSmartcasts = false)
+          val elseType = elseBr.currentTypeOf(afterElseVal, saveSmartcasts = false)
           val joinType = {
             if elseBr.hasExited then thenType
             else if thenBr.hasExited then elseType
@@ -194,13 +194,13 @@ final class Typer(
         }
 
       case staticTypeAssert@StaticTypeAssert(value, tpe) =>
-        val valueType = currScope.currentTypeOf(value)
+        val valueType = currScope.currentTypeOf(value, saveSmartcasts = true)
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", staticTypeAssert.getPosition)
 
       case StaticAssert(value) => ???
 
       case AssignVal(assigned, src) =>
-        val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src))
+        val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src, saveSmartcasts = true))
         currScope.saveType(assigned, assignedType)
         saveEquality(assigned, src)
 
@@ -269,9 +269,9 @@ final class Typer(
         currScope.markHasExitedIfNothing(returnType)
 
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
-        val ownerType = currScope.currentTypeOf(owner)
+        val ownerType = currScope.currentTypeOf(owner, saveSmartcasts = true)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor) match {
+        proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = false)) match {
           case Some(smartcastType) =>
             currScope.saveType(assigned, smartcastType)
           case None =>
@@ -279,9 +279,9 @@ final class Typer(
         }
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
-        val ownerType = currScope.currentTypeOf(owner)
+        val ownerType = currScope.currentTypeOf(owner, saveSmartcasts = true)
         val fieldType = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
-        val rhsType = currScope.currentTypeOf(rhs)
+        val rhsType = currScope.currentTypeOf(rhs, saveSmartcasts = true)
         tryToResolveTypeVars(fieldType, rhsType)
         subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", fw.getPosition)
         val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
@@ -312,7 +312,7 @@ final class Typer(
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarRd.getPosition)
 
       case heapVarWr@HeapVarWrite(heapVar, newValue) =>
-        val newValType = currScope.currentTypeOf(newValue)
+        val newValType = currScope.currentTypeOf(newValue, saveSmartcasts = true)
         heapVarsTypeStore.getType(heapVar) match {
           case Some(expType) =>
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
@@ -323,9 +323,9 @@ final class Typer(
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
 
       case invkClosure@InvokeClosure(assigned, callee, args) =>
-        currScope.currentTypeOf(callee) match {
+        currScope.currentTypeOf(callee, saveSmartcasts = true) match {
           case ClosureType(paramTypes, resultType) =>
-            val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg))
+            val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg, saveSmartcasts = true))
             checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
             currScope.saveType(assigned, resultType)
           case calleeType =>
@@ -387,7 +387,7 @@ final class Typer(
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
-        val inValType = requireNonNullable(currScope.currentTypeOf(inValue).ignoreRangesShallow, "converted value", conv.getPosition)
+        val inValType = requireNonNullable(currScope.currentTypeOf(inValue, saveSmartcasts = true).ignoreRangesShallow, "converted value", conv.getPosition)
         if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
           currScope.saveType(assigned, targetType)
         } else {
@@ -397,7 +397,7 @@ final class Typer(
       case ret@Return(retVal) =>
         executionEnvirOpt match {
           case Some(executionEnvir) =>
-            val retValType = currScope.currentTypeOf(retVal)
+            val retValType = currScope.currentTypeOf(retVal, saveSmartcasts = true)
             subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
           case None =>
             er.reportError("unexpected return in this position", ret.getPosition)
@@ -405,7 +405,7 @@ final class Typer(
         currScope.markHasExited()
 
       case panic@Panic(msg) =>
-        val msgType = currScope.currentTypeOf(msg)
+        val msgType = currScope.currentTypeOf(msg, saveSmartcasts = true)
         subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
         currScope.markHasExited()
 
@@ -431,17 +431,17 @@ final class Typer(
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
                  (using typeParamsCtx: TypeParamsContext): Type =
-    scope.smartcastFor(formula).getOrElse(formula match {
-      case value: IdValue => scope.currentTypeOf(value)
+    scope.smartcastFor(formula, saveSmartcasts = true).getOrElse(formula match {
+      case value: IdValue => scope.currentTypeOf(value, saveSmartcasts = false)
       case IntConst(value) => IntType
       case BoolConst(value) => BoolType
       case StringConst(value) => StringType
       case sel@Select(owner, field) if field.isResolved =>
-        scope.smartcastFor(sel).getOrElse(field.getInstantiatedFieldTypeUnsafe)
+        field.getInstantiatedFieldTypeUnsafe
       case sel@Select(owner, field) if field.isNotResolvedYet =>
         val ownerType = typeFormula(owner, scope, posOpt)
         val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
-        scope.smartcastFor(sel).getOrElse(tpe)
+        scope.smartcastFor(sel, saveSmartcasts = false).getOrElse(tpe)
       case Select(owner, field) =>
         assert(field.isUnresolvable)
         NothingType
@@ -489,7 +489,7 @@ final class Typer(
 
     formula match {
       case value: IdValue =>
-        namedOrNone(scope.currentTypeOf(value))
+        namedOrNone(scope.currentTypeOf(value, saveSmartcasts = false))
       case Select(owner, field) =>
         if (field.isNotResolvedYet) {
           detectNominalTypeForSmartcast(owner, scope) match {
@@ -807,7 +807,7 @@ final class Typer(
         if (smartcastType == NothingType) {
           scope.markHasExited()
         } else {
-          val oldType = scope.currentTypeOf(subject)
+          val oldType = scope.currentTypeOf(subject, saveSmartcasts = false)
           val newType = meetJoin.computeMeet(oldType, smartcastType)
           scope.saveSmartcast(subject, smartcastType)
         }
