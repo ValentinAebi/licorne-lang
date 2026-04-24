@@ -94,7 +94,7 @@ final class SubtypingContext(
         isSubtype(tv.substitutedIfResolved, superT)
       } else {
         tv.resolve(superT)
-        // do NOT lock: it's OK if the type gets widened later
+        tv.lock()
         true
       }
     case (subT, tv: TypeVariable) =>
@@ -103,7 +103,7 @@ final class SubtypingContext(
         isSubtype(subT, tv.substitutedIfResolved)
       } else {
         tv.resolve(subT)
-        tv.lock()
+        // do NOT lock: it's OK if the type gets widened later
         true
       }
     case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
@@ -203,8 +203,8 @@ final class SubtypingContext(
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.getProxy(subject) match {
-          case Some(proxy) => toStringAlongSubT(proxy)
-          case None => subT.toString
+          case Some(proxy) if proxy.isPure => toStringAlongSubT(proxy)
+          case _ => subT.toString
         }
       case subject => toStringAlongSubT(subject)
     }

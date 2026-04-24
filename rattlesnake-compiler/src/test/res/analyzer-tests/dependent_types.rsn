@@ -3,7 +3,7 @@ typealias AtLeast(i: Int) = [i,]
 
 object Main {
 
-   fn clamp(x: Int, min: Int, max: [min,]) -> [min, max] {
+   pure fn clamp(x: Int, min: Int, max: [min,]) -> [min, max] {
       return
         when x < min then min
         else when x < max then x
@@ -29,5 +29,5 @@ typealias Idx[T](ls: List[T]) = [ 0, ls.size()-1 ]
 
 interface List[T] {
    pure fn size(this) -> Length
-   fn indexOf(this, elem: T) -> Idx(this)
+   pure fn indexOf(this, elem: T) -> Idx(this)
 }
