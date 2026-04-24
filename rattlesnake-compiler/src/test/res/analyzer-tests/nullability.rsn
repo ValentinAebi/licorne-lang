@@ -27,8 +27,22 @@ object Main {
       return res;           //> E : return value: expected I, found res : I?
    }
 
+   fn bar[T](b1: Box[T?], b2: Box[T]?) {
+      consume(b1.value);            //> E : first argument of call to consume: expected Any, found b1.value : T?
+      consumeNullable(b1.value);    // OK
+      consume(b2.value);            //> E : owner of field value should not be nullable
+      if b2 != null {
+         consume(b2.value);         // OK
+      };
+   }
+
+   fn consume(o: Any){}
+   fn consumeNullable(o: Any?){}
+
 }
 
 interface I {
    fn m(this, i: Int) -> I?
 }
+
+record Box[T](value: T)

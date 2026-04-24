@@ -39,78 +39,80 @@ final class MeetJoinComputer(
 
     var nullableFlag = false
 
-    val nonNullType = expandedTypes.size match {
-      case 0 => NothingType
-      case 1 => expandedTypes.head
-      case _ =>
-        val nonNullDealiasedTypes = expandedTypes.flatMap { rawType =>
-          dealiasingCtx.dealiasType(rawType) match {
-            case NullableType(nullatedType) =>
-              nullableFlag = true
-              Some(nullatedType)
-            case NullType =>
-              nullableFlag = true
-              None
-            case tpe => Some(tpe)
+    val nonNullType = boundary {
+      expandedTypes.size match {
+        case 0 => NothingType
+        case 1 => expandedTypes.head
+        case _ =>
+          val nonNullDealiasedTypes = expandedTypes.flatMap { rawType =>
+            dealiasingCtx.dealiasType(rawType) match {
+              case NullableType(nullatedType) =>
+                nullableFlag = true
+                Some(nullatedType)
+              case NullType =>
+                nullableFlag = true
+                None
+              case tpe => Some(tpe)
+            }
           }
-        }
-        nonNullDealiasedTypes.size match {
-          case 0 => NullType
-          case 1 => nonNullDealiasedTypes.head
-          case _ =>
+          nonNullDealiasedTypes.size match {
+            case 0 => NullType
+            case 1 => nonNullDealiasedTypes.head
+            case _ =>
 
-            // second pass: remove Nothing, shortcut if Any
-            val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
-            val namedTypes = mutable.ListBuffer.empty[NamedType]
-            val closureTypes = mutable.ListBuffer.empty[ClosureType]
-            val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
+              // second pass: remove Nothing, shortcut if Any
+              val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
+              val namedTypes = mutable.ListBuffer.empty[NamedType]
+              val closureTypes = mutable.ListBuffer.empty[ClosureType]
+              val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
 
-            def categorizeType(tpe: Type): Unit = tpe match {
-              case IntType =>
-                primitiveTypes.addOne(IntType)
-                rangeTypes.addOne(IntRangeType(None, None))
-              case primitiveType: PrimitiveType =>
-                primitiveTypes.addOne(primitiveType)
-              case namedType: NamedType =>
-                namedTypes.addOne(namedType)
-              case closureType: ClosureType =>
-                closureTypes.addOne(closureType)
-              case tv: TypeVariable =>
-                throw AssertionError(s"unexpected type variable: $tv")
-              case nullableType: NullableType =>
-                throw AssertionError(s"unexpected nullable type: $nullableType")
-              case unionType: UnionType =>
-                throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
-              case IntersectionType(types) =>
-                for (tpe <- types) {
-                  categorizeType(tpe)
-                }
-              case intRangeType: IntRangeType =>
-                rangeTypes.addOne(intRangeType)
-            }
-
-            // third pass: categorize types
-            var retainedTypesCnt = 0
-            val typesIter = nonNullDealiasedTypes.iterator
-            while (typesIter.hasNext) {
-              typesIter.next() match {
-                case (_: TypeVariable) | AnyType =>
-                  return AnyType
-                case NothingType => ()
-                case tpe =>
-                  categorizeType(tpe)
-                  retainedTypesCnt += 1
+              def categorizeType(tpe: Type): Unit = tpe match {
+                case IntType =>
+                  primitiveTypes.addOne(IntType)
+                  rangeTypes.addOne(IntRangeType(None, None))
+                case primitiveType: PrimitiveType =>
+                  primitiveTypes.addOne(primitiveType)
+                case namedType: NamedType =>
+                  namedTypes.addOne(namedType)
+                case closureType: ClosureType =>
+                  closureTypes.addOne(closureType)
+                case tv: TypeVariable =>
+                  throw AssertionError(s"unexpected type variable: $tv")
+                case nullableType: NullableType =>
+                  throw AssertionError(s"unexpected nullable type: $nullableType")
+                case unionType: UnionType =>
+                  throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
+                case IntersectionType(types) =>
+                  for (tpe <- types) {
+                    categorizeType(tpe)
+                  }
+                case intRangeType: IntRangeType =>
+                  rangeTypes.addOne(intRangeType)
               }
-            }
 
-            val rawJoin =
-              if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-              else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
-              else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
-              else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
-              else AnyType
-            simplifier.simplify(rawJoin)
-        }
+              // third pass: categorize types
+              var retainedTypesCnt = 0
+              val typesIter = nonNullDealiasedTypes.iterator
+              while (typesIter.hasNext) {
+                typesIter.next() match {
+                  case (_: TypeVariable) | AnyType =>
+                    boundary.break(AnyType)
+                  case NothingType => ()
+                  case tpe =>
+                    categorizeType(tpe)
+                    retainedTypesCnt += 1
+                }
+              }
+
+              val rawJoin =
+                if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+                else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
+                else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
+                else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+                else AnyType
+              simplifier.simplify(rawJoin)
+          }
+      }
     }
     if nullableFlag
     then NullableType(nonNullType)

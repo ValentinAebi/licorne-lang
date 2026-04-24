@@ -2,7 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.{ConstFormula, Formula, IdValue, IntConst, IntermediateIdValue}
+import compiler.lang.Formulas.{Formula, IntConst, IntermediateIdValue}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -87,7 +87,6 @@ final class SubtypingContext(
   def isSubtype(subT: Type, superT: Type): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
-    case (_, AnyType) => true
     case (_, UnitType) => true
     case (tv: TypeVariable, superT) =>
       if (tv.isResolved) {
@@ -122,6 +121,7 @@ final class SubtypingContext(
       subtypes.forall(isSubtype(_, superT))
     case (subT, UnionType(supertypes)) =>
       supertypes.exists(isSubtype(subT, _))
+    case (subT, AnyType) => subT != NullType
     case _ => false
   }
 

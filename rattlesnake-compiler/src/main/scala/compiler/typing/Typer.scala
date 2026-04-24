@@ -629,7 +629,7 @@ final class Typer(
         }
       case tpe@NullableType(nullatedType) =>
         nullatedType match {
-          case nullatedType@(NothingType | AnyType | NullType) =>
+          case nullatedType@(NothingType | NullType) =>
             er.warn(s"useless '${Operator.QuestionMark}': $tpe is equivalent to $nullatedType", posOpt)
           case _ => ()
         }
@@ -952,7 +952,7 @@ final class Typer(
       NothingType
     }
 
-    ownerType match {
+    requireNonNullable(ownerType, s"owner of field ${fieldResolTarget.fieldId}", posOpt) match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
@@ -976,12 +976,12 @@ final class Typer(
     }
   }
 
-  private def requireNonNullable(nullableReceiverType: Type, descr: String, posOpt: Option[Position]) = {
-    nullableReceiverType match {
+  private def requireNonNullable(possiblyNullable: Type, descr: String, posOpt: Option[Position]) = {
+    possiblyNullable match {
       case NullableType(nullatedType) =>
         er.reportError(s"$descr should not be nullable", posOpt)
         nullatedType
-      case nullableReceiverType => nullableReceiverType
+      case nonNullable => nonNullable
     }
   }
 

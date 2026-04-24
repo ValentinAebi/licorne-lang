@@ -97,7 +97,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
       }
-    case NullableType(nullatedType@(AnyType | NothingType | NullType)) =>
+    case NullableType(nullatedType@(NothingType | NullType)) =>
       simplify(nullatedType)
     case NullableType(nullatedType) =>
       NullableType(simplify(nullatedType))
