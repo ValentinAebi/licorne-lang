@@ -269,20 +269,23 @@ final class MeetJoinComputer(
     else {
 
       var nullableFlag = true
+      var knownNullFlag = false
 
       val dealiasedNonNullTypes = expandedTypes.flatMap { rawType =>
         dealiasingCtx.dealiasType(rawType) match {
           case NullableType(nullatedType) =>
             Some(nullatedType)
           case NullType =>
+            knownNullFlag = true
             None
           case tpe =>
             nullableFlag = false
             Some(tpe)
         }
       }
-      val rawMeet =
+      val rawMeet = {
         if dealiasedNonNullTypes.size == 1 then dealiasedNonNullTypes.head
+        else if knownNullFlag && !nullableFlag then NothingType
         else dealiasedNonNullTypes.find(subT => dealiasedNonNullTypes.forall(superT => subtypingCtx.isSubtype(subT, superT))) match {
           case Some(meet) => meet
           case None =>
@@ -291,6 +294,7 @@ final class MeetJoinComputer(
               case None => dealiasedNonNullTypes.lastOption.getOrElse(AnyType)
             }
         }
+      }
       simplifier.simplify {
         if nullableFlag
         then NullableType(rawMeet)

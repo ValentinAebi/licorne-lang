@@ -19,6 +19,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case nominalType: NominalType => nominalType
     case ClosureType(params, result) => ClosureType(params.map(simplify), simplify(result))
     case variable: TypeVariable => variable
+
     case UnionType(types) =>
       val simplifiedTypes = types.map(simplify).filter(_ != NothingType)
       if simplifiedTypes.size == 1 then simplifiedTypes.head
@@ -56,21 +57,29 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         then NullableType(nonNullType)
         else nonNullType
       }
+
     case IntersectionType(originalTypes) =>
       val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
 
       var nullableFlag = true
+      var knownNullFlag = false
 
       val nonNullableDealiasedTypes = simplifiedTypes.flatMap { rawType =>
         dealiasingCtx.dealiasType(rawType) match {
           case NullableType(nullatedType) => Some(nullatedType)
-          case NullType => None
+          case NullType =>
+            knownNullFlag = true
+            None
           case tpe =>
             nullableFlag = false
             Some(tpe)
         }
       }
-      
+
+      if (knownNullFlag && !nullableFlag) {
+        return NothingType
+      }
+
       val filteredTypes =
         nonNullableDealiasedTypes.filter { tpe =>
           !nonNullableDealiasedTypes.exists { otherType =>
@@ -91,6 +100,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       if nullableFlag
       then NullableType(nonNullType)
       else nonNullType
+
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {
         case (None, None) => IntType
