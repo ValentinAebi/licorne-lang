@@ -1,15 +1,16 @@
 ## The Rattlesnake programming language
 
-This is a work-in-progress implementation of refinement types in the Rattlesnake experimental programming language.
+The version of Rattlesnake on this branch is a work-in-progress experimental implementation of refinement types and language-based support for lightweight verification. For my master's thesis work (about gradual capabilities tracking), see the [v0.2 branch](https://github.com/ValentinAebi/Rattlesnake/tree/rattlesnake-v0.2-gradient), or its [mirror](https://github.com/epfl-systemf/grattlesnake-lang).
 
-See the other branches for more "stable" versions of the language.
+The compiler supports parsing (although the parser is very basic), IR generation, type inference, and type-checking. It currently has no backend.
 
+Some features that are already supported:
+ - Dependent range types
+ - Bidirectional type inference
+ - Kotlin-style smartcasts (including range types inference from branching conditions)
+ - Explicit method preconditions
+ - Kotlin-style nullable types
 
-## Library references
+Code examples can be found in the [test resources directory](rattlesnake-compiler/src/test/res/analyzer-tests).
 
-The lexer and the parser are inspired from https://github.com/epfl-lara/silex and https://github.com/epfl-lara/scallion, respectively (but they do not use these libraries).
-
-The backend and the agent use the ASM bytecode manipulation library for code generation: https://asm.ow2.io/
-
-The runtime uses the fastutil type-specific collection framework: https://fastutil.di.unimi.it/
-
+The runtime and agent are legacies from a previous version of the language. They currently have no function.
