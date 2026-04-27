@@ -1,11 +1,11 @@
 name := "Rattlesnake"
 
-version := "0.2.0-SNAPSHOT"
+version := "0.3.0-SNAPSHOT"
 
-scalaVersion := "3.7.3"
-javacOptions ++= Seq("-source", "21", "-target", "21")
+scalaVersion := "3.8.0"
+javacOptions ++= Seq("-source", "25", "-target", "25")
 
-libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test"
+libraryDependencies += "com.github.sbt" % "junit-interface" % "0.13.3" % Test
 
 libraryDependencies += "io.ksmt" % "ksmt-core" % "0.6.4"
 libraryDependencies += "io.ksmt" % "ksmt-z3" % "0.6.4"
