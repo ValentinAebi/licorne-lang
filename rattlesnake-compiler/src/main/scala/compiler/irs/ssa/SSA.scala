@@ -203,8 +203,11 @@ object SSA {
       }
       val iter = Scope.RealInstrIter(this)
       realInstrIterOpt = Some(iter)
-      val result = action(iter)
-      realInstrIterOpt = None
+      val result = try {
+        action(iter)
+      } finally {
+        realInstrIterOpt = None
+      }
       result
     }
 

@@ -37,7 +37,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     assert(LogicalNot(formula))
     checkUnsat()
   }
-  
+
   def canProveImplication(premise: Formula, conseq: Formula): Boolean = onNewFrame {
     assert(premise)
     assert(LogicalNot(conseq))
@@ -77,9 +77,12 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
   def onNewFrame[T](action: => T): T = {
     assertionsStack.push(ListBuffer.empty)
     kZ3Solver.push()
-    val res = action
-    kZ3Solver.pop()
-    assertionsStack.pop()
+    val res = try {
+      action
+    } finally {
+      kZ3Solver.pop()
+      assertionsStack.pop()
+    }
     res
   }
 
@@ -172,7 +175,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
       assertLeq(formula, ub)
     }
   }
-  
+
   def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean = onNewFrame {
     range.lowerBoundOpt.exists { lb =>
       canProveLt(formula, lb)
@@ -324,7 +327,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
           case SimplifiedType.Boolean => kCtx.mkBoolSort() -> convertBool(arg)
           case SimplifiedType.Object => anySort -> convertObj(arg)
         }
-        if (kArgs.isEmpty){
+        if (kArgs.isEmpty) {
           boundary.break(Seq.empty)
         }
         for (kArg <- kArgs) {
