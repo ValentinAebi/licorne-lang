@@ -102,6 +102,10 @@ object SSA {
       nonNullSmartcasts.toList
   }
 
+  sealed trait ScopeEndingInstr {
+    this: Instr =>
+  }
+
   sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
@@ -150,8 +154,8 @@ object SSA {
 
   final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends RealInstr
   final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends RealInstr
-  final case class Return(retVal: IdValue) extends RealInstr
-  final case class Panic(msg: IdValue) extends RealInstr
+  final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr
+  final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr
   final case class Drop(droppedValue: IdValue) extends RealInstr
 
@@ -213,6 +217,15 @@ object SSA {
 
     def currentInstrInTraversal: Option[RealInstr] =
       realInstrIterOpt.flatMap(_.getLastReturnedInstr)
+
+    def insertInstrDuringTraversal(instr: Instr): Unit = {
+      realInstrIterOpt match {
+        case None =>
+          throw IllegalStateException(s"no traversal is currently underway for scope $scopeUid")
+        case Some(iter) =>
+          iter.insertInstr(instr)
+      }
+    }
 
     def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
@@ -424,6 +437,11 @@ object SSA {
         result
       }
 
+      def insertInstr(instr: Instr): Unit = {
+        scope.instructions.insert(nextIdx, instr)
+        nextIdx += 1
+      }
+
       def getLastReturnedInstr: Option[RealInstr] = lastReturnedInstrOpt
 
       private def skipPseudoInstr(): Unit = {
@@ -438,5 +456,6 @@ object SSA {
   sealed trait PseudoInstr extends Instr
 
   final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends PseudoInstr
+  final case class Unreachable() extends PseudoInstr, ScopeEndingInstr
 
 }

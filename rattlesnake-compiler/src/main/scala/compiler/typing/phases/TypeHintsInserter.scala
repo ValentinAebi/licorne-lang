@@ -139,6 +139,7 @@ final class TypeHintsInserter(
     case Cast(inValue, target) => ()
     case Drop(droppedValue) => ()
     case LocalDecl(localId, tpe) => ()
+    case Unreachable() => ()
     case scope: Scope =>
       traverseScope(scope, currFunSig)
   }

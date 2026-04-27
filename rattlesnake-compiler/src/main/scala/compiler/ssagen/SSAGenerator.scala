@@ -487,7 +487,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case Some(returnedTree) =>
             generateSSAExpr(retVal, returnedTree, currScope)
           case None =>
-            currScope.saveInstr(AssignVal(retVal, currScope.valuesCtx.globalCtx.unitVal), returnStat)
+            val unitVal = currScope.valuesCtx.globalCtx.unitVal
+            currScope.saveInstr(AssignVal(retVal, unitVal), returnStat)
+            proxyStore.saveProxy(retVal, unitVal)
         }
         currScope.saveInstr(Return(retVal), stat)
         currScope.getLocalValuesContextUnsafe.markHasExited()

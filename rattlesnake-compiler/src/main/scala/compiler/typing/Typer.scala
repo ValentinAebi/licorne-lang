@@ -61,9 +61,6 @@ final class Typer(
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
         applyBranchInfo(scope, branchInfo)
-        if (solver.checkUnsat()) {
-          scope.markHasExited()
-        }
         while (instrIter.hasNext) {
           val instr = instrIter.next()
           if (!instr.isInstanceOf[Drop]) {
@@ -397,6 +394,10 @@ final class Typer(
       case ret@Return(retVal) =>
         executionEnvirOpt match {
           case Some(executionEnvir) =>
+            val unitVal = currScope.getLocalValuesContextUnsafe.globalCtx.unitVal
+            if (executionEnvir.expectedResultType == UnitType && retVal != unitVal && !proxyStore.getProxy(retVal).contains(unitVal)) {
+              er.warn(s"returned value has no effect, since return type is $UnitType", ret.getPosition)
+            }
             val retValType = currScope.currentTypeOf(retVal, saveSmartcasts = true)
             subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
           case None =>
@@ -819,6 +820,7 @@ final class Typer(
       } {
         if (smartcastType == NothingType) {
           scope.markHasExited()
+          scope.insertInstrDuringTraversal(Unreachable())
         } else {
           val oldType = scope.currentTypeOf(subject, saveSmartcasts = false)
           val newType = meetJoin.computeMeet(oldType, smartcastType)
@@ -857,6 +859,10 @@ final class Typer(
           }
         case _ => ()
       }
+    }
+    if (solver.checkUnsat()) {
+      scope.markHasExited()
+      scope.insertInstrDuringTraversal(Unreachable())
     }
   }
 

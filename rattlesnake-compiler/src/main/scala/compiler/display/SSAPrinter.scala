@@ -302,6 +302,8 @@ final class SSAPrinter(
       case scope: Scope => printScope(scope)
       case SSA.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
+      case SSA.Unreachable() =>
+        pps.add("UNREACHABLE")
     }
     instr match {
       case assignInstr: AssigningInstr =>
