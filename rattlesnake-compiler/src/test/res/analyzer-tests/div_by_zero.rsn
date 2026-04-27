@@ -21,6 +21,9 @@ object DivByZero {
       then x / y
       else y / (x + 1)
 
+   fn ok5(x: Int, y: Int | y != 0) -> Int =
+      x % y
+
    fn wrong1(x: Int, y: Int) -> Int =
       x % y                         //> E : I cannot prove that right-hand side y of operator '%' cannot be zero
 
