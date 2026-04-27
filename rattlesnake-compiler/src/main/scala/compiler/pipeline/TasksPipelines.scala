@@ -3,7 +3,7 @@ package compiler.pipeline
 import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
 import compiler.io.{SourceCodeProvider, StringWriter}
-import compiler.irs.Asts
+import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}

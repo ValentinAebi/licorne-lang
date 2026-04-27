@@ -1,6 +1,6 @@
 package compiler.recurrences
 
-import compiler.lang.Formulas.{Formula, IdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue}
 import compiler.recurrences.Recurrence.Monotonicity
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.smt.Solver

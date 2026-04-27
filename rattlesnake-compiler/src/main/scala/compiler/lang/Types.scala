@@ -1,8 +1,8 @@
 package compiler.lang
 
 import compiler.identifiers.{Identifier, TypeIdentifier}
-import compiler.irs.SSA.Scope
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.reporting.Position
 import compiler.smt.Simplifier

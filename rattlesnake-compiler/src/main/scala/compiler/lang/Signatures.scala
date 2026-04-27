@@ -1,9 +1,9 @@
 package compiler.lang
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.SSA.Scope
+import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Field.StableField
-import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type}

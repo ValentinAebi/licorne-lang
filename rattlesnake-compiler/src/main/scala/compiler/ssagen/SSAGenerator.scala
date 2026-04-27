@@ -1,12 +1,13 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
-import compiler.irs.Asts.{Expr, ObjectDef}
-import compiler.irs.SSA.*
-import compiler.irs.{Asts, SSA}
+import compiler.irs.asts.Asts
+import compiler.irs.asts.Asts.{Expr, ObjectDef}
+import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -891,14 +892,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             rhsFormula <- generateFormula(rhs, currScope)
           } yield LessOrEq(rhsFormula, lhsFormula)
         case Asts.BinaryOp(lhs, Operator.LessThan, rhs) =>
-          import FormulasDsl.*
+          import compiler.irs.ssa.FormulasDsl.*
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
             // TODO check if this yield confusing error messages (desugaring producing the +1)
           } yield LessOrEq(lhsFormula + 1, rhsFormula)
         case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) =>
-          import FormulasDsl.*
+          import compiler.irs.ssa.FormulasDsl.*
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)

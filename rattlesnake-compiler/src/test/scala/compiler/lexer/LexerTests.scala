@@ -1,7 +1,7 @@
 package compiler.lexer
 
 import compiler.io.SourceCodeProvider
-import compiler.irs.Tokens.*
+import compiler.irs.tokens.Tokens.*
 import compiler.lang.Keyword.*
 import compiler.lang.Operator.*
 import compiler.reporting.Errors.{CompilationError, ErrorReporter, ExitCode}

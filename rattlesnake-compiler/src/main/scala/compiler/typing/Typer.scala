@@ -1,12 +1,12 @@
 package compiler.typing
 
 import compiler.identifiers.{Identifier, NormalFunOrVarId, TypeIdentifier}
-import compiler.irs.SSA
-import compiler.irs.SSA.*
+import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -895,7 +895,7 @@ final class Typer(
   }
 
   private def ltToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
-    import FormulasDsl.*
+    import compiler.irs.ssa.FormulasDsl.*
     leqToSmartcasts(lhs + 1, rhs)
   }
 

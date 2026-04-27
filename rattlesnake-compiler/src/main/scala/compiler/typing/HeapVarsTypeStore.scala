@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.lang.Formulas.HeapVarIdValue
+import compiler.irs.ssa.Formulas.HeapVarIdValue
 import compiler.lang.Types.Type
 
 import scala.collection.mutable

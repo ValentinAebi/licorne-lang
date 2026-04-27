@@ -1,9 +1,9 @@
-package compiler.irs
+package compiler.irs.asts
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.lang.Formulas.IdValue
-import compiler.lang.Types.PrimitiveType
 import compiler.lang.*
+import compiler.irs.ssa.Formulas.IdValue
+import compiler.lang.Types.PrimitiveType
 import compiler.reporting.Position
 
 
@@ -508,22 +508,6 @@ object Asts {
     def thenBr: Statement
 
     def elseBrOpt: Option[Statement]
-  }
-
-  private[Asts] class OptionalAttribute[A] {
-    private var valueOpt: Option[A] = None
-
-    def setOpt(valueOpt: Option[A]): Unit = {
-      this.valueOpt = valueOpt
-    }
-
-    def set(value: A): Unit = {
-      setOpt(Some(value))
-    }
-
-    def getOpt: Option[A] = valueOpt
-
-    override def toString: String = valueOpt.getOrElse("<empty>").toString
   }
 
 }

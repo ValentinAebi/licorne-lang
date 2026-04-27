@@ -1,9 +1,9 @@
 package compiler.display
 
 import compiler.identifiers.FunOrVarId
-import compiler.irs.SSA
-import compiler.irs.SSA.*
-import compiler.lang.Formulas.{Formula, IdValue, NamedIdValue}
+import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.{Formulas, SSA}
+import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.*
 import compiler.pipeline.CompilerStep

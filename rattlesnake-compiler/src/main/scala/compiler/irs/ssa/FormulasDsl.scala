@@ -1,6 +1,6 @@
-package compiler.lang
+package compiler.irs.ssa
 
-import compiler.lang.Formulas.*
+import Formulas.*
 
 object FormulasDsl {
 

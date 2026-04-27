@@ -1,13 +1,14 @@
 package compiler.smt
 
-import compiler.irs.SSA.Scope
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, Type, primTypeFor}
 import compiler.lang.Variance.Invariant
-import compiler.lang.{Formulas, Types}
+import compiler.lang.{Types}
 import compiler.smt.{Simplifier, Solver}
 import AbstractInterpreter.someZero
+import compiler.irs.ssa.Formulas
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 
 final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
@@ -114,7 +115,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
    */
   def typeModuloType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
-      import compiler.lang.FormulasDsl.*
+      import compiler.irs.ssa.FormulasDsl.*
 
       lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
       lazy val `[c,d] > 0` = solver.canProveGtZero(c)

@@ -1,10 +1,10 @@
 package compiler.parser
 
 import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
-import compiler.irs.Asts.*
-import compiler.irs.Tokens.*
+import compiler.irs.asts.Asts.*
+import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
-import compiler.parser.TreeParsers.{opt, opt as :::, *}
+import compiler.parser.TreeParsers.*
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}

@@ -1,6 +1,6 @@
 package compiler.typing.smartcasting.egraphs
 
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
 import compiler.smt.Simplifier

@@ -1,9 +1,7 @@
 package compiler.smt
 
-import compiler.irs.SSA
-import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget}
-import compiler.lang.Formulas
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget, SSA}
+import Formulas.*
 import compiler.lang.Types.IntRangeType
 import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, IntType}
 import compiler.smt.Solver.{javaList, selectFuncPrefix}

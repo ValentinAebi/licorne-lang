@@ -1,7 +1,7 @@
 package compiler.program
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.SSA
+import compiler.irs.ssa.SSA
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType
 import compiler.pipeline.CompilationStep.SSAGeneration

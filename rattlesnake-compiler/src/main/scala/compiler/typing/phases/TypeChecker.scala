@@ -1,6 +1,6 @@
 package compiler.typing.phases
 
-import compiler.irs.SSA
+import compiler.irs.ssa.SSA
 import compiler.lang.FunctionSignature
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.{IntRangeType, Type}

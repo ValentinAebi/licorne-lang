@@ -2,8 +2,9 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.Formula
-import compiler.lang.{Formulas, Types}
+import compiler.irs.ssa.Formulas
+import compiler.irs.ssa.Formulas.Formula
+import compiler.lang.{Types}
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}

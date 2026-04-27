@@ -2,7 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.{Formula, IntConst, IntermediateIdValue}
+import compiler.irs.ssa.Formulas.{Formula, IntConst, IntermediateIdValue}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*

@@ -1,9 +1,9 @@
 package compiler.typing.phases
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.SSA
-import compiler.irs.SSA.*
-import compiler.lang.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.SSA
+import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
 import compiler.lang.{FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
 import compiler.lang.Types.{ClosureType, NamedType, Type}
 import compiler.pipeline.CompilationStep.TypeHintsInsertion

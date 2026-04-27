@@ -1,8 +1,8 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.SSA.Scope
-import compiler.lang.Formulas.{IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.lang.Keyword
 import compiler.lang.Types.TypeVariable
 import compiler.reporting.Position

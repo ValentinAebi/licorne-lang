@@ -1,6 +1,6 @@
 package compiler.smt
 
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}

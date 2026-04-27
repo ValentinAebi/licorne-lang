@@ -1,7 +1,7 @@
 package compiler.lang
 
 import compiler.identifiers.{ItId, TypeIdentifier}
-import compiler.irs.SSA.Equal
+import compiler.irs.ssa.SSA.Equal
 import compiler.lang.Operator.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Types.Type

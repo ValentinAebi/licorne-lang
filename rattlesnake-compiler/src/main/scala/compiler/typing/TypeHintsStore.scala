@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.lang.Formulas.{Formula, IdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue}
 import compiler.lang.Types.Type
 
 import scala.collection.mutable

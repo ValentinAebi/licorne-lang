@@ -1,6 +1,6 @@
 package compiler.typing.phases
 
-import compiler.irs.SSA.*
+import compiler.irs.ssa.SSA.*
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.smt.{Reasoning, Solver}

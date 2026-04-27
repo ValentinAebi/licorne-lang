@@ -1,8 +1,8 @@
 package compiler.valproxies
 
-import compiler.irs.SSA.Scope
-import compiler.lang.Formulas
-import compiler.lang.Formulas.*
+import compiler.irs.ssa.Formulas
+import compiler.irs.ssa.SSA.Scope
+import Formulas.*
 import compiler.typing.Typer
 import compiler.typing.contexts.DealiasingContext
 

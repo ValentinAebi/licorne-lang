@@ -1,7 +1,7 @@
 package compiler.lexer
 
 import compiler.io.SourceCodeProvider
-import compiler.irs.Tokens.*
+import compiler.irs.tokens.Tokens.*
 import compiler.lang.{Keyword, Operator}
 import compiler.lexer.Matchers.*
 import compiler.pipeline.{CompilationStep, CompilerStep}

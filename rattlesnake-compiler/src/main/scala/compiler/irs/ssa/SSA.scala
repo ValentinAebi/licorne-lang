@@ -1,10 +1,11 @@
-package compiler.irs
+package compiler.irs.ssa
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.Asts.Ast
-import compiler.irs.SSA.Scope.scopeUidGen
+import compiler.irs.asts.Asts.Ast
+import compiler.irs.asts.Asts
+import compiler.irs.ssa.SSA.Scope.scopeUidGen
 import compiler.lang.*
-import compiler.lang.Formulas.*
+import Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.{NullableType, PrimitiveType, Type}
 import compiler.pipeline.CompilationStep
@@ -153,87 +154,6 @@ object SSA {
   final case class Panic(msg: IdValue) extends RealInstr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr
   final case class Drop(droppedValue: IdValue) extends RealInstr
-
-  final class FieldResolutionTarget(val fieldId: FunOrVarId) {
-    private var receiverSigOpt = Option.empty[UserInstantiableTypeSig]
-    private var instantiatedFieldTypeOpt = Option.empty[Type]
-    private var cannotResolveFlag = false
-
-    def isResolved: Boolean = receiverSigOpt.isDefined
-
-    def isResolvedAndStable: Boolean =
-      receiverSigOpt.exists(_.fields.get(fieldId).exists(_.isStable))
-
-    def isUnresolvable: Boolean = cannotResolveFlag
-
-    def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
-
-    def resolve(receiverSig: UserInstantiableTypeSig, instantiatedFieldType: Type): Unit = {
-      if (isResolved) {
-        throw AssertionError("trying to resolve an already resolved field resolution target")
-      } else if (isUnresolvable) {
-        throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
-      }
-      receiverSigOpt = Some(receiverSig)
-      instantiatedFieldTypeOpt = Some(instantiatedFieldType)
-    }
-
-    def getReceiverSigUnsafe: UserInstantiableTypeSig = receiverSigOpt.get
-
-    def getInstantiatedFieldTypeUnsafe: Type = instantiatedFieldTypeOpt.get
-
-    def markUnresolvable(): Unit = {
-      cannotResolveFlag = true
-    }
-
-    override def toString: String = {
-      if isResolved then s"$fieldId<rec:${getReceiverSigUnsafe.id};ret:$getInstantiatedFieldTypeUnsafe>"
-      else if isUnresolvable then s"$fieldId<unresolved>"
-      else s"$fieldId<resol:?>"
-    }
-  }
-
-  final class InvocationTarget(val funId: FunOrVarId) {
-    private var receiverSigOpt = Option.empty[EncapsulatedTypeSig]
-    private var funSigOpt = Option.empty[FunctionSignature]
-    private var instantiatedReturnTypeOpt = Option.empty[Type]
-    private var cannotResolveFlag = false
-
-    def isResolved: Boolean = receiverSigOpt.isDefined
-
-    def isResolvedAndPure: Boolean = funSigOpt.exists(_.isPure)
-
-    def isUnresolvable: Boolean = cannotResolveFlag
-
-    def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
-
-    def resolve(receiverSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
-      if (isResolved) {
-        throw AssertionError("trying to resolve an already resolved field resolution target")
-      } else if (isUnresolvable) {
-        throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
-      }
-      receiverSigOpt = Some(receiverSig)
-      funSigOpt = Some(funSig)
-      instantiatedReturnTypeOpt = Some(instantiatedReturnType)
-    }
-
-    def getReceiverSigUnsafe: EncapsulatedTypeSig = receiverSigOpt.get
-
-    def getFunSigUnsafe: FunctionSignature = funSigOpt.get
-
-    def getInstantiatedReturnTypeUnsafe: Type = instantiatedReturnTypeOpt.get
-
-    def markUnresolvable(): Unit = {
-      cannotResolveFlag = true
-    }
-
-    override def toString: String = {
-      if isResolved then s"$funId<rec:${getFunSigUnsafe.ownerName};ret:$getInstantiatedReturnTypeUnsafe>"
-      else if isUnresolvable then s"$funId<unresolved>"
-      else s"$funId<resol:?>"
-    }
-  }
 
   final class Scope private(
                              val outScopeOpt: Option[Scope],

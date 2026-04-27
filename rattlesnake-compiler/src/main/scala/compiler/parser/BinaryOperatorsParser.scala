@@ -1,7 +1,7 @@
 package compiler.parser
 
-import compiler.irs.Asts.{BinaryOp, Expr}
-import compiler.irs.Tokens.OperatorToken
+import compiler.irs.asts.Asts.{BinaryOp, Expr}
+import compiler.irs.tokens.Tokens.OperatorToken
 import compiler.lang.Operator
 import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.*

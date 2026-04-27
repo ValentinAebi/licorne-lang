@@ -1,8 +1,8 @@
 package compiler.parser
 
 import compiler.ExprToStringMacro.exprToString
-import compiler.irs.Asts.Ast
-import compiler.irs.Tokens.*
+import compiler.irs.asts.Asts.Ast
+import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}

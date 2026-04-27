@@ -1,7 +1,7 @@
 package compiler.smt
 
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.Formula
+import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*

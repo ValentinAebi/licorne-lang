@@ -1,7 +1,8 @@
-package compiler.lang
+package compiler.irs.ssa
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.SSA.{FieldResolutionTarget, InvocationTarget, Scope}
+import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
 import compiler.reporting.Position
 

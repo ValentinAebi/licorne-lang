@@ -1,7 +1,7 @@
 package compiler.typing
 
-import compiler.irs.SSA.Scope
-import compiler.lang.Formulas.ParamIdValue
+import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.Formulas.ParamIdValue
 import compiler.lang.{ExecutionEnvironment, FunctionSignature}
 import compiler.lang.Types.{Type, TypeVariable}
 import compiler.typing.contexts.TypeParamsContext

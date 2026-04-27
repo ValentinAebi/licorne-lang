@@ -1,6 +1,6 @@
 package compiler.typing.smartcasting.egraphs
 
-import compiler.lang.Formulas.Formula
+import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.{IntersectionType, Type}
 import compiler.smt.Simplifier
 

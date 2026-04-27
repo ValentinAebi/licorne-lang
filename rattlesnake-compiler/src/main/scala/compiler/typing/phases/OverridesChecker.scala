@@ -1,7 +1,7 @@
 package compiler.typing.phases
 
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.Formulas.IdValue
+import compiler.irs.ssa.Formulas.IdValue
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.{EncapsulatedTypeSig, FunctionSignature, InterfaceSignature}
 import compiler.pipeline.CompilationStep.OverridesAnalysis
