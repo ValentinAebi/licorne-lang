@@ -18,7 +18,7 @@ import compiler.smt.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
-import compiler.util.SeqSet
+import compiler.util.{SeqSet, whenInstanceOf}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
@@ -534,6 +534,19 @@ final class Typer(
                               (using TypeParamsContext): Type = {
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt))
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt))
+    // TODO if set types get implemented, this should be updated to make use of them (op / : (Int, Int\{0}) -> Int)
+    val isDivOperator = op == Operator.Div || op == Operator.Modulo
+    val mayBeDivByZero = isDivOperator && !(
+      rhsType.whenInstanceOf[IntRangeType](solver.canProveIsOutsideRange(IntConst(0), _)).getOrElse(false)
+        || solver.canProveNotZero(rhs))
+    if (mayBeDivByZero) {
+      val rhsDescr =
+        proxyStore.getProxyIfIdValue(rhs).orElse(Some(rhs)) match {
+          case Some(f) => s" $f"
+          case None => ""
+        }
+      er.reportError(s"I cannot prove that right-hand side$rhsDescr of operator '$op' cannot be zero", posOpt)
+    }
     absIntFunc(lhsType.withTypeVarsExpanded, rhsType.withTypeVarsExpanded) match {
       case Some(tpe) => tpe
       case None =>

@@ -72,7 +72,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     canProveLeq(f, IntConst(-1))
   }
 
-  def canProveNotZero(f: Option[Formula]): Boolean = f.exists { f =>
+  def canProveNotZero(f: Formula): Boolean = {
     canProve(LogicalNot(Equality(f, IntConst(0))))
   }
 
@@ -172,6 +172,14 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     }
     range.upperBoundOpt.foreach { ub =>
       assertLeq(formula, ub)
+    }
+  }
+  
+  def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean = onNewFrame {
+    range.lowerBoundOpt.exists { lb =>
+      canProveLt(formula, lb)
+    } || range.upperBoundOpt.exists { ub =>
+      canProveLt(ub, formula)
     }
   }
 
