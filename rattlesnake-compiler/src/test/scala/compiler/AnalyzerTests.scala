@@ -1,8 +1,11 @@
 package compiler
 
 import compiler.AnalyzerTests.*
+import compiler.imports.ImportsChecker
 import compiler.io.SourceFile
-import compiler.pipeline.TasksPipelines
+import compiler.irs.asts.Asts.ImportStat
+import compiler.pipeline.{Concurrent, IdentityStep, Mapper, TasksPipelines}
+import compiler.program.Program
 import compiler.reporting.Errors.*
 import compiler.smt.{AbstractInterpreter, Simplifier, Solver}
 import compiler.ssagen.SSAGenerator
@@ -119,9 +122,15 @@ class AnalyzerTests(fileName: String) {
     val er = ErrorReporter(errorsConsumer, exitCalled)
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
-      .andThen(MonotonicityAnalyzer(proxyStore))
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
+      .andThen(Concurrent(
+        Mapper[(Program, List[ImportStat]), Program]((program, imports) => program)
+          .andThen(MonotonicityAnalyzer(proxyStore))
+          .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+          .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er)),
+        IdentityStep(),
+        { case ((program, subtypingInfos), (_, imports)) => (program, subtypingInfos, imports) }
+      ))
+      .andThen(ImportsChecker(proxyStore, typeVarsCtx, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))

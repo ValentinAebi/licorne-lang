@@ -3,7 +3,7 @@ package compiler.ssagen
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.imports.ImportsContext
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source}
+import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang.*
@@ -40,15 +40,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     val importStatsCollector = mutable.ListBuffer.empty[ImportStat]
     for (src <- input) {
       val currentPackagePrefix = src.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
-
-      given ImportsContext = createImportsCtx(src, importStatsCollector)
-
       val datatypeDefs = mutable.ListBuffer.empty[(List[String], Asts.DataTypeDef)]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
       for (df <- src.defs) {
         val typeId = TypeIdentifier(currentPackagePrefix, df.name)
         df match {
           case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes) =>
+
+            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+
             val interfaceSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = interfaceSigScope.newParam(ThisId, df.getPosition)
             interfaceSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -57,7 +57,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
+
           case df@Asts.ObjectDef(_, functions, directSupertypes) =>
+
+            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -66,7 +70,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
+
           case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes) =>
+
+            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+
             val classSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = classSigScope.newParam(ThisId, df.getPosition)
             classSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -101,9 +109,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               target.resolve(classSig, tpe)
             }
             programBuilder.saveSignature(classSig, df.getPosition)
+
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(currentPackagePrefix, df)
+
           case df@Asts.RecordDef(_, typeParamTrees, fields, directSupertypes) =>
+
+            given importsCtx: ImportsContext = createImportsCtx(src, None, importStatsCollector)
+
             val recordSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = recordSigScope.newParam(ThisId, df.getPosition)
             recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -120,9 +133,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val sig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
-              datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(typeId)
+              val superTId = importsCtx.applyImports(superT.name)
+              datatypeSubtypes.getOrElseUpdate(superTId, mutable.LinkedHashSet.empty).addOne(typeId)
             }
           case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs) =>
+
+            given ImportsContext = createImportsCtx(src, None, importStatsCollector)
+
             val typeAliasSigScope = Scope.nestedInside(globalScope, df)
             val itValue = typeAliasSigScope.newParam(ItId, df.getPosition)
             typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(ItId, itValue, ReassigPermission.Val, None)
@@ -140,6 +157,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
       }
       for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, directSupertypes)) <- datatypeDefs) {
+
+        given ImportsContext = createImportsCtx(src, None, importStatsCollector)
+
         val id = TypeIdentifier(pkgPrefix, datatypeName)
         val datatypeSigScope = Scope.nestedInside(globalScope, df)
         val thisValue = datatypeSigScope.newParam(ThisId, df.getPosition)
@@ -159,7 +179,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     (program, importStatsCollector.toList)
   }
 
-  private def createImportsCtx(source: Source, importStatsCollector: mutable.ListBuffer[ImportStat]): ImportsContext = {
+  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree], importStatsCollector: mutable.ListBuffer[ImportStat]): ImportsContext = {
+    val localFunctions = currEncapsulatedTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
     val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
     for (importStat <- source.imports) {
@@ -175,17 +196,21 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val key = aliasOpt.getOrElse(funId)
           if (funcImports.contains(key)) {
             er.reportError(s"$key conflicts with a previous import", importStat.getPosition)
-          } else {
+          } else if (!localFunctions.contains(key)) {
             funcImports.put(key, (receiverObj, funId))
           }
       }
     }
+
+    // import types from this file
     val currPkgPrefix = source.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
     for (df <- source.defs) {
+      // prioritize explicit imports
       if (!typeImports.contains(df.name)) {
         typeImports.put(df.name, TypeIdentifier(currPkgPrefix, df.name))
       }
     }
+
     ImportsContext(SeqMap.from(typeImports), SeqMap.from(funcImports))
   }
 
@@ -657,23 +682,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
       case callTree@Asts.Call(callee@Asts.VariableRef(rawFunId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(rawFunId) =>
-        val (receiverVal, targetFunId) = currScope.getLocalValuesContextUnsafe.getThisValue match {
-          case Some(recv) => (recv, rawFunId)
+        findImplicitReceiverInImports(rawFunId, currScope) match {
+          case Some(receiverVal, targetFunId) =>
+            val typeArgs = typeArgTrees.map(mkType(_, currScope))
+            val argVals = generateArgsList(argTrees)
+            val invkTarget = InvocationTarget(targetFunId)
+            currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
+            mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
           case None =>
-            importsCtx.importedFuncFor(rawFunId) match {
-              case Some(receiverObjId, actualFunId) =>
-                val receiverObj = currScope.getLocalValuesContextUnsafe.resolveObject(receiverObjId)
-                (receiverObj, actualFunId)
-              case None =>
-                reportError(s"no receiver found for call to $rawFunId", callTree.getPosition)
-                (currScope.newIntermediate(), rawFunId)
-            }
+            reportError(s"no receiver found for call to $rawFunId", callTree.getPosition)
+            None
         }
-        val typeArgs = typeArgTrees.map(mkType(_, currScope))
-        val argVals = generateArgsList(argTrees)
-        val invkTarget = InvocationTarget(targetFunId)
-        currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
-        mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
@@ -836,7 +855,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     proxyOpt
   }
 
-  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]) = {
+  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]): Option[Call] = {
     for {
       recProxy <- proxyStore.getProxy(receiverVal)
       argsProxies <- argVals.foldRight[Option[List[Formula]]](Some(Nil)) {
@@ -848,7 +867,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     } yield Call(recProxy, invkTarget, typeArgs, argsProxies)
   }
 
-  private def generateFormula(expr: Expr, currScope: Scope)(using ImportsContext): Option[Formula] = {
+  private def generateFormula(expr: Expr, currScope: Scope)(using importsCtx: ImportsContext): Option[Formula] = {
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
@@ -874,7 +893,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
             case Asts.VariableRef(funId) =>
-              currScope.getLocalValuesContextOpt.flatMap(_.getThisValue).map(_ -> funId)
+              findImplicitReceiverInImports(funId, currScope)
             case Asts.Select(lhs, funId) =>
               generateFormula(lhs, currScope).map(_ -> funId)
             case _ => failIllegalConstruct("closure invocation")
@@ -986,6 +1005,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   private def mustNotBeUnit(tpe: Type, posOpt: Option[Position]): Unit = {
     if (tpe == UnitType) {
       reportError(s"$UnitType is not allowed in this position", posOpt)
+    }
+  }
+
+  private def findImplicitReceiverInImports(rawFunId: FunOrVarId, currScope: Scope)(using importsCtx: ImportsContext): Option[(IdValue, FunOrVarId)] = {
+    currScope.getLocalValuesContextOpt.flatMap { localValsCtx =>
+      importsCtx.importedFuncFor(rawFunId).map { (objId, funId) =>
+        val objVal = localValsCtx.resolveObject(objId)
+        objVal -> funId
+      } orElse {
+        localValsCtx.getThisValue.map(_ -> rawFunId)
+      }
     }
   }
 

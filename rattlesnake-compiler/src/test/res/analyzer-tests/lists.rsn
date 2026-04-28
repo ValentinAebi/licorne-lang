@@ -1,3 +1,7 @@
+package lists;
+
+import lists.Lists.length;
+import lists.Lists.zip;
 
 typealias Length = [0,]
 
@@ -24,7 +28,7 @@ object Lists {
          len += 1;
          ls = ls.tail;
       };
-      return len;   //> E : return value: expected Length, found len<loop-body-start@23:24> : [-1,]
+      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@27:24> : [-1,]
    }
 
    fn sum(var ls: List[[0,]]) -> [0,] {
@@ -78,7 +82,7 @@ object Lists {
 
    fn filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[,a-1]] {
       var filteredReversed = new Nil();
-      while ls is Cons {        //> E : inferred incorrect type List[[,a - 1]] for variable filteredReversed at loop body start, please provide a type annotation at variable declaration site
+      while ls is Cons {        //> E : inferred incorrect type lists.List[[,a - 1]] for variable filteredReversed at loop body start, please provide a type annotation at variable declaration site
          if ls.head <= a {
             filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
          };
@@ -89,7 +93,7 @@ object Lists {
 
    fn filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[,a-1]] {
       var filteredReversed: List[[,a-1]] = new Nil();
-      while ls is Cons {    //> E : update of variable filteredReversed in loop violate its type annotation List[[,a - 1]]
+      while ls is Cons {    //> E : update of variable filteredReversed in loop violate its type annotation lists.List[[,a - 1]]
          if ls.head <= a {
             filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
          };
@@ -117,22 +121,22 @@ object Lists {
 
 object UseLists {
 
-   fn useZipCorrectly1(integers: List[Int], strings: List[String] | Lists.length(integers) == Lists.length(strings)) -> List[Pair[Int, String]] {
-      return Lists.zip(integers, strings);
+   fn useZipCorrectly1(integers: List[Int], strings: List[String] | length(integers) == length(strings)) -> List[Pair[Int, String]] {
+      return zip(integers, strings);
    }
 
    fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when Lists.length(integers) == Lists.length(strings)
-      then Lists.zip(integers, strings)
+      when length(integers) == length(strings)
+      then zip(integers, strings)
       else new Nil()
 
    fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when Lists.length(integers) != Lists.length(strings)
+      when length(integers) != length(strings)
       then new Nil()
-      else Lists.zip(integers, strings)
+      else zip(integers, strings)
 
    fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
-      return Lists.zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition Lists.length(integers) == Lists.length(strings) holds
+      return zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length(integers) == lists.Lists.length(strings) holds
    }
 
 }
