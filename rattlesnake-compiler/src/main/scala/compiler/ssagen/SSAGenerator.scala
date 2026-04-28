@@ -1,8 +1,9 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
+import compiler.imports.ImportsContext
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{Expr, ObjectDef}
+import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang.*
@@ -25,41 +26,47 @@ import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import scala.collection.{SeqMap, mutable}
 
 
-final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[List[Asts.Source], Program] {
+final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[List[Asts.Source], (Program, List[ImportStat])] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
   private given CompilationStep = CompilationStep.SSAGeneration
 
-  override def apply(input: List[Asts.Source]): Program = {
+  override def apply(input: List[Asts.Source]): (Program, List[ImportStat]) = {
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
     val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
+    val importStatsCollector = mutable.ListBuffer.empty[ImportStat]
     for (src <- input) {
-      val datatypeDefs = mutable.ListBuffer.empty[Asts.DataTypeDef]
+      val currentPackagePrefix = src.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
+
+      given ImportsContext = createImportsCtx(src, importStatsCollector)
+
+      val datatypeDefs = mutable.ListBuffer.empty[(List[String], Asts.DataTypeDef)]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
       for (df <- src.defs) {
+        val typeId = TypeIdentifier(currentPackagePrefix, df.name)
         df match {
-          case df@Asts.InterfaceDef(id, typeParamTrees, functions, directSupertypes) =>
+          case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes) =>
             val interfaceSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = interfaceSigScope.newParam(ThisId, df.getPosition)
             interfaceSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val noFunctionsSig = InterfaceSignature(id, typeParamTrees.convert(interfaceSigScope), Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
+            val noFunctionsSig = InterfaceSignature(typeId, typeParamTrees.convert(interfaceSigScope), Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
-          case df@Asts.ObjectDef(id, functions, directSupertypes) =>
+          case df@Asts.ObjectDef(_, functions, directSupertypes) =>
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
-            val noFunctionsSig = ObjectSignature(id, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
+            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
-          case df@Asts.ClassDef(id, typeParamTrees, params, functions, directSupertypes) =>
+          case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes) =>
             val classSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = classSigScope.newParam(ThisId, df.getPosition)
             classSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -85,9 +92,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               case param: (Asts.SimpleParam | Asts.PublicParam) =>
                 saveNonReassigParam(param)
             }
-            val noFunctionsSig = ClassSignature(id, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
+            val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
-            val targetsToResolve = generatePublicFieldsAccessors(df, fields, functionsMap, classSigScope, thisValue, computeThisType(noFunctionsSig), allFunctionsB)
+            val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, classSigScope, thisValue, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((target, tpe) <- targetsToResolve) {
@@ -95,8 +102,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             }
             programBuilder.saveSignature(classSig, df.getPosition)
           case df: Asts.DataTypeDef =>
-            datatypeDefs.addOne(df)
-          case df@Asts.RecordDef(id, typeParamTrees, fields, directSupertypes) =>
+            datatypeDefs.addOne(currentPackagePrefix, df)
+          case df@Asts.RecordDef(_, typeParamTrees, fields, directSupertypes) =>
             val recordSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = recordSigScope.newParam(ThisId, df.getPosition)
             recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -110,12 +117,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = false)
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, ReassigPermission.Val, Some(fieldType))
             }
-            val sig = RecordSignature(id, typeParams, SeqMap.from(stableFields), directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
+            val sig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), directSupertypes.map(mkNamedType(_, recordSigScope)), recordSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
             for (superT <- directSupertypes) {
-              datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(id)
+              datatypeSubtypes.getOrElseUpdate(superT.name, mutable.LinkedHashSet.empty).addOne(typeId)
             }
-          case df@Asts.TypeAliasDef(typeName, typeParamTrees, params, rhs) =>
+          case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs) =>
             val typeAliasSigScope = Scope.nestedInside(globalScope, df)
             val itValue = typeAliasSigScope.newParam(ItId, df.getPosition)
             typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(ItId, itValue, ReassigPermission.Val, None)
@@ -128,11 +135,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 typeAliasParams(paramId) = (paramType, paramValue)
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeName, typeParams, itValue, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
+            val sig = TypeAliasSignature(typeId, typeParams, itValue, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
-      for (df@Asts.DataTypeDef(id, typeParamTrees, directSupertypes) <- datatypeDefs) {
+      for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, directSupertypes)) <- datatypeDefs) {
+        val id = TypeIdentifier(pkgPrefix, datatypeName)
         val datatypeSigScope = Scope.nestedInside(globalScope, df)
         val thisValue = datatypeSigScope.newParam(ThisId, df.getPosition)
         datatypeSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, ReassigPermission.Val, None)
@@ -148,10 +156,41 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       typeVarsCtx.saveTypeVariable(tv)
     }
     er.displayAndTerminateIfErrors()
-    program
+    (program, importStatsCollector.toList)
+  }
+
+  private def createImportsCtx(source: Source, importStatsCollector: mutable.ListBuffer[ImportStat]): ImportsContext = {
+    val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
+    val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
+    for (importStat <- source.imports) {
+      importStat match {
+        case Asts.TypeImportStat(imported, aliasOpt) =>
+          val key = aliasOpt.getOrElse(imported.nonPrefixedId)
+          if (typeImports.contains(key)) {
+            er.reportError(s"$key conflicts with a previous import", importStat.getPosition)
+          } else {
+            typeImports.put(key, imported)
+          }
+        case Asts.FunctionImportStat(receiverObj, funId, aliasOpt) =>
+          val key = aliasOpt.getOrElse(funId)
+          if (funcImports.contains(key)) {
+            er.reportError(s"$key conflicts with a previous import", importStat.getPosition)
+          } else {
+            funcImports.put(key, (receiverObj, funId))
+          }
+      }
+    }
+    val currPkgPrefix = source.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
+    for (df <- source.defs) {
+      if (!typeImports.contains(df.name)) {
+        typeImports.put(df.name, TypeIdentifier(currPkgPrefix, df.name))
+      }
+    }
+    ImportsContext(SeqMap.from(typeImports), SeqMap.from(funcImports))
   }
 
   private def generatePublicFieldsAccessors(
+                                             classId: TypeIdentifier,
                                              classDef: Asts.ClassDef,
                                              fields: Iterable[(FunOrVarId, Field)],
                                              functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
@@ -168,10 +207,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
             val funSigScope = Scope.nestedInside(classSigScope, classDef)
-            val syntheticFunSig = FunctionSignature(classDef.id, fieldId, List.empty, SeqMap(thisValue -> thisType),
+            val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
               precondOpt = None, fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
-            val syntheticFunc = SSA.Function(classDef.id, fld.id, Some(syntheticFuncBody))
+            val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFuncBody.newIntermediate("ret")
             val resolTarget = FieldResolutionTarget(fieldId)
             targetsToResolve.addOne(resolTarget -> fieldType)
@@ -190,7 +229,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                 functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
                                 allFunctionsB: SeqMapBuilder[FunctionSignature, SSA.Function]
-                              )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              )(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (funDef <- functionsProvider.functions) {
       if (functions.contains(funDef.id)) {
@@ -199,7 +238,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val funSigScope = Scope.nestedInside(globalScope, funDef)
         val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
         val thisVal = functionsProvider match {
-          case Asts.ObjectDef(id, functions, directSupertypes) => funSigScope.valuesCtx.resolveObject(id)
+          case Asts.ObjectDef(_, functions, directSupertypes) => funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id)
           case _ => funSigScope.newParam(ThisId, functionsProvider.getPosition)
         }
         val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
@@ -250,10 +289,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case None => PrimitiveType.UnitType
         }
         val convertedTypeParams = funDef.typeParams.map {
-          case Asts.TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt) =>
-            FunctionTypeParamInfo(id, upperBoundOpt.map(mkType(_, funSigScope)), lowerBoundOpt.map(mkType(_, funSigScope)))
+          case Asts.TypeParamWithoutVariance(tParamName, upperBoundOpt, lowerBoundOpt) =>
+            FunctionTypeParamInfo(TypeIdentifier(List.empty, tParamName), upperBoundOpt.map(mkType(_, funSigScope)), lowerBoundOpt.map(mkType(_, funSigScope)))
         }
-        val ownerId = functionsProvider.id
+        val ownerId = functionsProviderIncompleteSig.id
         val funId = funDef.id
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
         val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
@@ -289,9 +328,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     resultB.result()
   }
 
-  extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(scope: Scope): List[TypeTypeParamInfo] = typeParams.map {
-    case Asts.TypeParamWithVariance(id, variance, upperBounds, lowerBounds) =>
-      TypeTypeParamInfo(id, variance, upperBounds.map(mkType(_, scope)), lowerBounds.map(mkType(_, scope)))
+  extension (typeParams: List[Asts.TypeParamWithVariance]) private def convert(scope: Scope)(using ImportsContext): List[TypeTypeParamInfo] = typeParams.map {
+    case Asts.TypeParamWithVariance(tParamName, variance, upperBounds, lowerBounds) =>
+      TypeTypeParamInfo(TypeIdentifier(List.empty, tParamName), variance, upperBounds.map(mkType(_, scope)), lowerBounds.map(mkType(_, scope)))
   }
 
   private def generateSSAFunc(
@@ -300,7 +339,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                bodyOpt: Option[Asts.Block],
                                funSigScope: Scope,
                                posOpt: Option[Position]
-                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): SSA.Function = bodyOpt match {
+                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): SSA.Function = bodyOpt match {
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
@@ -311,7 +350,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Unit = {
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     stat match {
 
@@ -511,7 +550,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                resultVal: IdValue,
                                expr: Asts.Expr,
                                currScope: Scope
-                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop]): Option[Formula] = {
+                             )(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateSSAExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
@@ -603,7 +642,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.ItRef() =>
         recurseOnDesugared(Asts.VariableRef(ItId))
         None // TODO update if it gets reintroduced
-      case Asts.ObjectRef(objectName) =>
+      case Asts.ObjectRef(objectNameRaw) =>
+        val objectName = importsCtx.applyImports(objectNameRaw)
         val objIdVal = currScope.valuesCtx.resolveObject(objectName)
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
         Some(objIdVal)
@@ -615,17 +655,23 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val invkTarget = InvocationTarget(funId)
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
         mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
-      case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
-        if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
-        val receiverVal = currScope.getLocalValuesContextUnsafe.getThisValue match {
-          case Some(recv) => recv
+      case callTree@Asts.Call(callee@Asts.VariableRef(rawFunId), typeArgTrees, argTrees)
+        if !currScope.getLocalValuesContextUnsafe.knows(rawFunId) =>
+        val (receiverVal, targetFunId) = currScope.getLocalValuesContextUnsafe.getThisValue match {
+          case Some(recv) => (recv, rawFunId)
           case None =>
-            reportError(s"no receiver found for call to $funId", callTree.getPosition)
-            currScope.newIntermediate()
+            importsCtx.importedFuncFor(rawFunId) match {
+              case Some(receiverObjId, actualFunId) =>
+                val receiverObj = currScope.getLocalValuesContextUnsafe.resolveObject(receiverObjId)
+                (receiverObj, actualFunId)
+              case None =>
+                reportError(s"no receiver found for call to $rawFunId", callTree.getPosition)
+                (currScope.newIntermediate(), rawFunId)
+            }
         }
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
-        val invkTarget = InvocationTarget(funId)
+        val invkTarget = InvocationTarget(targetFunId)
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
         mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
       case callTree@Asts.Call(calleeTree, typeArgTrees, argTrees) =>
@@ -688,12 +734,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         for {
           lhsProxy <- proxyStore.getProxy(lhsVal)
         } yield Select(lhsProxy, unresolvedField)
-      case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
+      case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
+        val typeName = importsCtx.applyImports(typeNameRaw)
         generateUnaryWithProxy(testedExprTree, TypeTest(resultVal, _, typeName), TypePredicate(_, typeName))
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
-      case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeId, typeArgTrees, initializers) =>
+      case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeIdRaw, typeArgTrees, initializers) =>
         val initializationScope = Scope.nestedInside(currScope, recordOrClassInstTree, objInitializedHereOpt = Some(resultVal))
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
@@ -701,6 +748,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           generateSSAExpr(rhsVal, initializerRhs, currScope)
           initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget(initializer.fieldName), rhsVal), initializer)
         }
+        val typeId = importsCtx.applyImports(typeIdRaw)
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs), recordOrClassInstTree)
         currScope.saveInstr(initializationScope, recordOrClassInstTree)
@@ -733,7 +781,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             case _ => None
           }
         }
-      case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeName, Nil, Nil)) =>
+      case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
+        val typeName = importsCtx.applyImports(typeNameRaw)
         generateSSAExpr(resultVal, castExprTree, currScope)
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
@@ -799,7 +848,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     } yield Call(recProxy, invkTarget, typeArgs, argsProxies)
   }
 
-  private def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
+  private def generateFormula(expr: Expr, currScope: Scope)(using ImportsContext): Option[Formula] = {
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
@@ -940,7 +989,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
   }
 
-  private def mkType(typeTree: Asts.TypeTree, scope: Scope): Type = typeTree match {
+  private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using ImportsContext): Type = typeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
     case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope))
@@ -957,9 +1006,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       IntersectionType(SeqSet(types.map(mkType(_, scope))))
   }
 
-  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope): NamedType = {
-    val Asts.NamedTypeTree(name, typeParams, params) = namedTypeTree
-    NamedType(name, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope)))
+  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using importsCtx: ImportsContext): NamedType = namedTypeTree match {
+    case Asts.NamedTypeTree(rawTId@TypeIdentifier(Nil, typeName), typeParams, params) =>
+      val tid = importsCtx.importedTypeFor(typeName).getOrElse(rawTId)
+      NamedType(tid, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope)))
+    case Asts.NamedTypeTree(name, typeParams, params) =>
+      NamedType(name, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope)))
   }
 
   private def externalVarsAssignedIn(ast: Asts.Ast): Set[FunOrVarId] = {

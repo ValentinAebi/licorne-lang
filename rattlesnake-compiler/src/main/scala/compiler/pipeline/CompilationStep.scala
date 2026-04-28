@@ -4,6 +4,7 @@ enum CompilationStep {
   case Lexing
   case Parsing
   case SSAGeneration
+  case ImportsAnalysis
   case MonotonicityAnalysis
   case TypeHintsInsertion
   case TypeAliasesAnalysis

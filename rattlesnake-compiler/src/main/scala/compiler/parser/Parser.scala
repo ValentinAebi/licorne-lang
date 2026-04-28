@@ -1,6 +1,6 @@
 package compiler.parser
 
-import compiler.identifiers.{NormalFunOrVarId, NormalTypeId}
+import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts.*
 import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
@@ -9,9 +9,8 @@ import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.lang.{Keyword, Operator, Operators, Purity, ReassigPermission, Types, Variance, Visibility}
-import compiler.lang.Types.PrimitiveType.IntType
 import compiler.lang.Operator.*
-import compiler.lang.Keyword.*
+import compiler.lang.Keyword.{Import, *}
 import compiler.lang.Types.PrimitiveType
 
 import scala.compiletime.uninitialized
@@ -33,11 +32,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   }
 
   private val lowName = treeParser("a..z") {
-    case FirstLowercaseIdentifierToken(strValue) => NormalFunOrVarId(strValue)
+    case FirstLowercaseIdentifierToken(strValue) => strValue
   }
 
   private val highName = treeParser("A..Z") {
-    case FirstUppercaseIdentifierToken(strValue) => NormalTypeId(strValue)
+    case FirstUppercaseIdentifierToken(strValue) => strValue
   }
 
   private val numericLiteralValue: FinalTreeParser[NumericLiteral] = treeParser("int or double") {
@@ -73,6 +72,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val closeBracket = op(ClosingBracket).ignored
   private val comma = op(Comma).ignored
   private val dot = op(Dot).ignored
+  private val sharp = op(Sharp).ignored
   private val colon = op(Colon).ignored
   private val semicolon = op(Semicolon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
@@ -83,9 +83,35 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   // ---------- Syntax description -----------------------------------------------------------------------
 
+  private lazy val funOrVarId = lowName map (NormalFunOrVarId(_))
+
+  private lazy val possiblyPrefixedTypeNameWithSharp = highName OR (sharp ::: dot ::: repeatWithSepNonZero(lowName, dot) ::: dot ::: highName) map {
+    case prefixes ^: actualId =>
+      TypeIdentifier(prefixes, actualId)
+    case actualId: String =>
+      TypeIdentifier(Nil, actualId)
+  }
+
   private lazy val source: FinalTreeParser[Source] = {
-    repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map (defs => Source(defs))
+    opt(pkgDecl) ::: repeat(importStat) ::: repeat(topLevelDef ::: opt(op(Semicolon)).ignored) ::: endOfFile.ignored map {
+      case pkgDeclOpt ^: imports ^: defs => Source(pkgDeclOpt, imports, defs)
+    }
   } setName "source"
+  
+  private lazy val pkgDecl = kw(Package).ignored ::: repeatWithSep(lowName, dot) ::: semicolon map {
+    case nameParts => PackageDecl(nameParts)
+  } setName "pkgDecl"
+  
+  private lazy val importStat = kw(Import).ignored ::: repeat(lowName ::: dot) ::: highName ::: (
+    op(Semicolon) OR kw(As).ignored ::: highName ::: semicolon OR dot ::: funOrVarId ::: opt(kw(As) ::: funOrVarId) ::: semicolon
+  ) map {
+    case prefix ^: importedName ^: (_: Operator) =>
+      TypeImportStat(TypeIdentifier(prefix, importedName), None)
+    case prefix ^: importedName ^: (alias: String) =>
+      TypeImportStat(TypeIdentifier(prefix, importedName), Some(alias))
+    case prefix ^: importedName ^: (importedFunId: NormalFunOrVarId) ^: (aliasIdOpt: Option[NormalFunOrVarId]) =>
+      FunctionImportStat(TypeIdentifier(prefix, importedName), importedFunId, aliasIdOpt)
+  } setName "importStat"
 
   private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef
 
@@ -141,7 +167,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case _ => false
     }
 
-    opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: lowName ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(op(VerticalBar).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
       case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
@@ -167,7 +193,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val classParamTree = funOrClassParamTree OR publicParam
 
   private lazy val funOrClassParamTree: P[FunctionParam & ClassParam] = recursive {
-    opt(kw(Var)) ::: lowName ::: colon ::: typeTree map {
+    opt(kw(Var)) ::: funOrVarId ::: colon ::: typeTree map {
       case Some(_) ^: name ^: tpe => VarParam(name, tpe)
       case None ^: name ^: tpe => SimpleParam(name, tpe)
     }
@@ -180,13 +206,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "thisParam"
   
   private lazy val publicParam: P[PublicParam] = {
-    kw(Public).ignored ::: lowName ::: colon ::: typeTree map {
+    kw(Public).ignored ::: funOrVarId ::: colon ::: typeTree map {
       case id ^: tpe => PublicParam(id, tpe)
     }
   } setName "publicParam"
 
   private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
-    lowName ::: colon ::: typeTree map {
+    funOrVarId ::: colon ::: typeTree map {
       case name ^: tpe => SimpleParam(name, tpe)
     }
   } setName "recordOrTypeAliasParam"
@@ -244,7 +270,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)
 
   private lazy val nominalTypeTree: P[NominalTypeTree] = recursive {
-    highName ::: typeArgsListOpt ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
+    possiblyPrefixedTypeNameWithSharp ::: typeArgsListOpt ::: opt(openParenth ::: repeatWithSepNonZero(expr, comma) ::: closeParenth) map {
       case baseTypeName ^: typeArgsOpt ^: paramsOpt =>
         val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
         if (primTypeOpt.isDefined && typeArgsOpt.exists(_.nonEmpty)) {
@@ -334,16 +360,16 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val itRef = kw(It) map (_ => ItRef())
 
-  private lazy val objectRef = highName map (ObjectRef(_))
+  private lazy val objectRef = possiblyPrefixedTypeNameWithSharp map (ObjectRef(_))
 
-  private lazy val varRef = lowName map (name => VariableRef(name)) setName "varRef"
+  private lazy val varRef = funOrVarId map (name => VariableRef(name)) setName "varRef"
 
   private lazy val atomicExpr: P[Expr] = recursive {
     varRef OR thisRef OR itRef OR objectRef OR literalValue OR nullRef OR parenthesizedExpr
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat(dot ::: lowName) ::: opt(typeArgsListOpt ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
+    atomicExpr ::: repeat(dot ::: funOrVarId) ::: opt(typeArgsListOpt ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
       case atExpr ^: selects ^: argsListOpt ^: typeAnnotOpt =>
         val afterSelectsFolding = selects.foldLeft(atExpr)(Select(_, _))
         val afterArgsAddition = argsListOpt match {
@@ -359,7 +385,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "selectOrIndexingChain"
 
   private lazy val closure = recursive {
-    kw(Fn).ignored ::: openParenth ::: repeatWithSep(lowName ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
+    kw(Fn).ignored ::: openParenth ::: repeatWithSep(funOrVarId ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
       case params ^: (body: Block) =>
         ClosureDef(params.toPairs, body)
       case params ^: (expr: Expr) =>
@@ -372,13 +398,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "parenthesizedExpr"
 
   private lazy val recordOrModuleInstantiation = recursive {
-    kw(New).ignored ::: highName ::: typeArgsListOpt ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
+    kw(New).ignored ::: possiblyPrefixedTypeNameWithSharp ::: typeArgsListOpt ::: openParenth ::: repeatWithSep(fieldInitializer, comma) ::: closeParenth map {
       case tid ^: tArgs ^: initializers => RecordOrClassInstantiation(tid, tArgs.getOrElse(List.empty), initializers)
     }
   } setName "recordOrModuleInstantiation"
 
   private lazy val fieldInitializer = recursive {
-    lowName ::: opt(assig ::: expr) map {
+    funOrVarId ::: opt(assig ::: expr) map {
       case fieldName ^: Some(rhs) => FullFieldInitializer(fieldName, rhs)
       case fieldName ^: None => ShorthandFieldInitializer(fieldName)
     }
@@ -389,13 +415,13 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "stat"
 
   private lazy val valDef = {
-    kw(Val).ignored ::: lowName ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
+    kw(Val).ignored ::: funOrVarId ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
       case valName ^: optType ^: rhsOpt => LocalDef(valName, optType, rhsOpt, ReassigPermission.Val)
     }
   } setName "valDef"
 
   private lazy val varDef = {
-    kw(Var).ignored ::: lowName ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
+    kw(Var).ignored ::: funOrVarId ::: opt(colon ::: typeTree) ::: opt(assig ::: expr) map {
       case varName ^: optType ^: rhsOpt => LocalDef(varName, optType, rhsOpt, ReassigPermission.Var)
     }
   } setName "varDef"
@@ -441,7 +467,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input
     if (positionedTokens.isEmpty) {
-      Source(List.empty)
+      Source(None, List.empty, List.empty)
     } else {
       ll1Iterator = LL1Iterator.from(positionedTokens)
       source.extract(ll1Iterator) match {

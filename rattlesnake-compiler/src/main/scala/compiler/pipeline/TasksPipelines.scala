@@ -2,10 +2,13 @@ package compiler.pipeline
 
 import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
+import compiler.imports.ImportsChecker
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.asts.Asts
+import compiler.irs.asts.Asts.ImportStat
 import compiler.lexer.Lexer
 import compiler.parser.Parser
+import compiler.program.Program
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.SSAGenerator
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
@@ -57,14 +60,20 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
-          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+        Mapper[(Program, List[ImportStat]), Program]((program, imports) => program)
+          .andThen(Concurrent(
+            SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
+              .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
+            IdentityStep(),
+            (_, program) => program
+          ))
+          .andThen(MonotonicityAnalyzer(proxyStore))
+          .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+          .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er)),
         IdentityStep(),
-        (_, program) => program
+        { case ((program, subtypingInfos), (_, imports)) => (program, subtypingInfos, imports) }
       ))
-      .andThen(MonotonicityAnalyzer(proxyStore))
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
+      .andThen(ImportsChecker(proxyStore, typeVarsCtx, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, /*FIXME*/ continueIfErrors = true))

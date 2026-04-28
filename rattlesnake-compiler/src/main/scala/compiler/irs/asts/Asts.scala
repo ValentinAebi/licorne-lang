@@ -60,10 +60,10 @@ object Asts {
   /**
    * Code source (most of the time a file)
    */
-  final case class Source(defs: List[TopLevelDef]) extends Ast {
+  final case class Source(pkgDeclOpt: Option[PackageDecl], imports: List[ImportStat], defs: List[TopLevelDef]) extends Ast {
     private var name: String = "<missing name>"
 
-    override def children: List[Ast] = defs
+    override def children: List[Ast] = imports ++ defs
 
     def setName(name: String): Source = {
       this.name = name
@@ -84,9 +84,23 @@ object Asts {
   final case class Block(stats: List[Statement]) extends Statement {
     override def children: List[Ast] = stats
   }
+  
+  final case class PackageDecl(nameParts: List[String]) extends Ast {
+    override def children: List[Ast] = Nil
+  }
+
+  sealed trait ImportStat extends Ast
+
+  final case class FunctionImportStat(receiverObj: TypeIdentifier, funId: FunOrVarId, aliasOpt: Option[FunOrVarId]) extends ImportStat {
+    override def children: List[Ast] = Nil
+  }
+
+  final case class TypeImportStat(imported: TypeIdentifier, aliasOpt: Option[String]) extends ImportStat {
+    override def children: List[Ast] = Nil
+  }
 
   sealed abstract class TopLevelDef extends Ast {
-    def id: TypeIdentifier
+    def name: String
 
     def typeParams: List[TypeParamWithVariance]
   }
@@ -104,22 +118,22 @@ object Asts {
   sealed trait UnencapsulatedTypeDefTree extends TypeDefTree
 
   final case class InterfaceDef(
-                                 id: TypeIdentifier,
+                                 name: String,
                                  typeParams: List[TypeParamWithVariance],
                                  functions: List[FunDef],
                                  directSupertypes: List[NamedTypeTree]
                                ) extends EncapsulatedTypeDefTree {
-    override def description: String = s"interface $id"
+    override def description: String = s"interface $name"
 
     override def children: List[Ast] = typeParams ++ functions
   }
 
   final case class ObjectDef(
-                              id: TypeIdentifier,
+                              name: String,
                               functions: List[FunDef],
                               directSupertypes: List[NamedTypeTree]
                             ) extends EncapsulatedTypeDefTree {
-    override def description: String = s"object $id"
+    override def description: String = s"object $name"
 
     override def typeParams: List[TypeParamWithVariance] = Nil
 
@@ -127,34 +141,34 @@ object Asts {
   }
 
   final case class ClassDef(
-                             id: TypeIdentifier,
+                             name: String,
                              typeParams: List[TypeParamWithVariance],
                              params: List[ClassParam],
                              functions: List[FunDef],
                              directSupertypes: List[NamedTypeTree]
                            ) extends EncapsulatedTypeDefTree {
-    override def description: String = s"class $id"
+    override def description: String = s"class $name"
 
     override def children: List[Ast] = typeParams ++ params ++ functions
   }
 
   final case class DataTypeDef(
-                                id: TypeIdentifier,
+                                name: String,
                                 typeParams: List[TypeParamWithVariance],
                                 directSupertypes: List[NamedTypeTree]
                               ) extends UnencapsulatedTypeDefTree {
-    override def description: String = s"datatype $id"
+    override def description: String = s"datatype $name"
 
     override def children: List[Ast] = typeParams
   }
 
   final case class RecordDef(
-                              id: TypeIdentifier,
+                              name: String,
                               typeParams: List[TypeParamWithVariance],
                               fields: List[RecordParam],
                               directSupertypes: List[NamedTypeTree]
                             ) extends UnencapsulatedTypeDefTree {
-    override def description: String = s"record $id"
+    override def description: String = s"record $name"
 
     override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
   }
@@ -173,7 +187,7 @@ object Asts {
     override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }
 
-  final case class TypeAliasDef(id: TypeIdentifier, typeParams: List[TypeParamWithVariance], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+  final case class TypeAliasDef(name: String, typeParams: List[TypeParamWithVariance], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
     override def children: List[Ast] = typeParams ++ params :+ rhs
   }
 
@@ -223,11 +237,11 @@ object Asts {
     override def children: List[Ast] = paramTypeTreeOpt.toList
   }
 
-  final case class TypeParamWithoutVariance(id: TypeIdentifier, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
+  final case class TypeParamWithoutVariance(name: String, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
     override def children: List[Ast] = Nil
   }
 
-  final case class TypeParamWithVariance(id: TypeIdentifier, variance: Variance, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
+  final case class TypeParamWithVariance(name: String, variance: Variance, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
     override def children: List[Ast] = Nil
   }
 

@@ -142,7 +142,7 @@ object LocalValuesContext {
 
     def reportHasExitedIfNeeded(er: ErrorReporter, posOpt: Option[Position])
                                (using compilationStep: CompilationStep): Unit = {
-      if (exitedStatus == ExitedStatus.HasExited) {
+      if (exitedStatus == ExitedStatus.HasExited && er.errorsCnt == 0) {
         er.report(Err(compilationStep, "dead code", posOpt))
         exitedStatus = ExitedStatus.ReportedHasExited
       }

@@ -9,12 +9,13 @@ sealed trait Identifier {
   override def toString: String = stringId
 }
 
+final case class TypeIdentifier(prefixes: List[String], nonPrefixedId: String) extends Identifier {
+  override def stringId: String = (prefixes :+ nonPrefixedId).mkString(".")
+}
+
 sealed trait FunOrVarId extends Identifier
 
-sealed trait TypeIdentifier extends Identifier
-
 final case class NormalFunOrVarId(stringId: String) extends FunOrVarId
-final case class NormalTypeId(stringId: String) extends TypeIdentifier
 
 case object ConstructorFunId extends FunOrVarId {
   override def stringId: String = "<init>"
