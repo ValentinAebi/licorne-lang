@@ -24,6 +24,9 @@ extension [A, B](map: Map[A, B]) def mapVals[C](f: B => C): Map[A, C] =
 
 extension [A, B](map: immutable.SeqMap[A, B]) def mapVals[C](f: B => C): immutable.SeqMap[A, C] =
   map.map((a, b) => (a, f(b)))
+  
+extension[A, B](map: mutable.Map[A, B]) def mapVals[C](f: B => C): mutable.Map[A, C] =
+  map.map((a, b) => (a, f(b)))
 
 extension [A, B1](left: Map[A, B1]) def combine[B2, B3](right: Map[A, B2])(f: (Option[B1], Option[B2]) => Option[B3]): Map[A, B3] =
   doCombine(left, right, Map.newBuilder[A, B3], f)
@@ -52,4 +55,12 @@ private def mergeOnlyOnConflict[B1, B2, B3 >: B1 | B2](f: (B1, B2) => B3)(left: 
   case (sb1@Some(_), None) => sb1
   case (None, sb2@Some(_)) => sb2
   case (None, None) => None
+}
+
+def javaIterToList[T](iter: java.util.Iterator[T]): List[T] = {
+  val b = List.newBuilder[T]
+  while (iter.hasNext){
+    b.addOne(iter.next())
+  }
+  b.result()
 }

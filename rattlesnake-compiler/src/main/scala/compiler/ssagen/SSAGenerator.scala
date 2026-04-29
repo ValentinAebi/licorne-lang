@@ -1,14 +1,13 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
-import compiler.imports.ImportsContext
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source}
+import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
-import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.SSAGeneration
@@ -17,28 +16,37 @@ import compiler.program.Program
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.typing.contexts.TypeVariablesContext
-import compiler.util.SeqSet
+import compiler.ssagen.ImportsScanner.PackagesInfo
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.util.{SeqSet, javaIterToList}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
+import java.io.File
+import java.nio.file.{Path, Paths}
 import scala.collection.{SeqMap, mutable}
 
 
-final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter) extends CompilerStep[List[Asts.Source], (Program, List[ImportStat])] {
+final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootsForPkgMismatchCheckOpt: Option[List[Path]]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
   private given CompilationStep = CompilationStep.SSAGeneration
 
-  override def apply(input: List[Asts.Source]): (Program, List[ImportStat]) = {
+  override def apply(input: (List[Asts.Source], PackagesInfo)): Program = {
+    val (sources, packagesInfo) = input
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
     val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
-    val importStatsCollector = mutable.ListBuffer.empty[ImportStat]
-    for (src <- input) {
+    for (src <- sources) {
+      src.pkgDeclOpt.foreach { pkgDecl =>
+        checkPackageAndPosition(pkgDecl)
+      }
+      for (importStat <- src.imports) {
+        checkImport(importStat, packagesInfo)
+      }
       val currentPackagePrefix = src.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
       val datatypeDefs = mutable.ListBuffer.empty[(List[String], Asts.DataTypeDef)]
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
@@ -47,7 +55,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         df match {
           case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes) =>
 
-            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+            given ImportsContext = createImportsCtx(src, Some(df))
 
             val interfaceSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = interfaceSigScope.newParam(ThisId, df.getPosition)
@@ -60,7 +68,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
           case df@Asts.ObjectDef(_, functions, directSupertypes) =>
 
-            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+            given ImportsContext = createImportsCtx(src, Some(df))
 
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
@@ -73,7 +81,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
           case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes) =>
 
-            given ImportsContext = createImportsCtx(src, Some(df), importStatsCollector)
+            given ImportsContext = createImportsCtx(src, Some(df))
 
             val classSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = classSigScope.newParam(ThisId, df.getPosition)
@@ -115,7 +123,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
           case df@Asts.RecordDef(_, typeParamTrees, fields, directSupertypes) =>
 
-            given importsCtx: ImportsContext = createImportsCtx(src, None, importStatsCollector)
+            given importsCtx: ImportsContext = createImportsCtx(src, None)
 
             val recordSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = recordSigScope.newParam(ThisId, df.getPosition)
@@ -138,7 +146,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             }
           case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs) =>
 
-            given ImportsContext = createImportsCtx(src, None, importStatsCollector)
+            given ImportsContext = createImportsCtx(src, None)
 
             val typeAliasSigScope = Scope.nestedInside(globalScope, df)
             val itValue = typeAliasSigScope.newParam(ItId, df.getPosition)
@@ -158,7 +166,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       }
       for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, directSupertypes)) <- datatypeDefs) {
 
-        given ImportsContext = createImportsCtx(src, None, importStatsCollector)
+        given ImportsContext = createImportsCtx(src, None)
 
         val id = TypeIdentifier(pkgPrefix, datatypeName)
         val datatypeSigScope = Scope.nestedInside(globalScope, df)
@@ -176,10 +184,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       typeVarsCtx.saveTypeVariable(tv)
     }
     er.displayAndTerminateIfErrors()
-    (program, importStatsCollector.toList)
+    program
   }
 
-  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree], importStatsCollector: mutable.ListBuffer[ImportStat]): ImportsContext = {
+  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree]): ImportsContext = {
     val localFunctions = currEncapsulatedTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
     val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
@@ -188,14 +196,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.TypeImportStat(imported, aliasOpt) =>
           val key = aliasOpt.getOrElse(imported.nonPrefixedId)
           if (typeImports.contains(key)) {
-            er.reportError(s"$key conflicts with a previous import", importStat.getPosition)
+            reportError(s"$key conflicts with a previous import", importStat.getPosition)
           } else {
             typeImports.put(key, imported)
           }
         case Asts.FunctionImportStat(receiverObj, funId, aliasOpt) =>
           val key = aliasOpt.getOrElse(funId)
           if (funcImports.contains(key)) {
-            er.reportError(s"$key conflicts with a previous import", importStat.getPosition)
+            reportError(s"$key conflicts with a previous import", importStat.getPosition)
           } else if (!localFunctions.contains(key)) {
             funcImports.put(key, (receiverObj, funId))
           }
@@ -212,6 +220,63 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
 
     ImportsContext(SeqMap.from(typeImports), SeqMap.from(funcImports))
+  }
+
+  private def checkImport(importStat: ImportStat, packagesInfo: PackagesInfo): Unit = {
+
+    def locateObject(tid: TypeIdentifier, posOpt: Option[Position]): Option[Asts.TopLevelDef] = {
+      val TypeIdentifier(prefixes, nonPrefixedId) = tid
+      packagesInfo.get(prefixes) match {
+        case Some(pkgDefs) =>
+          pkgDefs.get(nonPrefixedId) match {
+            case someDef@Some(_) => someDef
+            case None =>
+              reportError(s"type not found: $tid", posOpt)
+              None
+          }
+        case None =>
+          reportError(s"package not found: ${prefixes.mkString(".")}", posOpt)
+          None
+      }
+    }
+
+    importStat match {
+      case Asts.FunctionImportStat(tid, funId, aliasOpt) =>
+        locateObject(tid, importStat.getPosition) match {
+          case Some(df: ObjectDef) =>
+            if (!df.functions.exists(_.id == funId)) {
+              reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
+            }
+          case Some(df) =>
+            reportError(s"${df.name} is not an object", importStat.getPosition)
+          case None =>
+            // already reported
+            ()
+        }
+      case Asts.TypeImportStat(tid, aliasOpt) =>
+        locateObject(tid, importStat.getPosition)
+    }
+  }
+
+  private def checkPackageAndPosition(pkgStat: Asts.PackageDecl): Unit = srcRootsForPkgMismatchCheckOpt.foreach { srcRoots =>
+    val pkgPrefix = pkgStat.nameParts.mkString(".")
+    pkgStat.getPosition match {
+      case Some(pos) =>
+        val filePath = new File(pos.srcCodeProviderName).toPath
+        srcRoots.find(filePath.startsWith) match {
+          case Some(srcRootPath) =>
+            val srcRoot = javaIterToList(srcRootPath.iterator())
+            val fileLocation = javaIterToList(filePath.iterator())
+            val diff = fileLocation.drop(srcRoot.size)
+            if (diff != pkgStat.nameParts) {
+              warn("file location does not match its declared package", pkgStat.getPosition)
+            }
+          case None =>
+            warn("file is not located in a source directory", pkgStat.getPosition)
+        }
+      case None =>
+        warn(s"missing source file information for file in package $pkgPrefix", None)
+    }
   }
 
   private def generatePublicFieldsAccessors(

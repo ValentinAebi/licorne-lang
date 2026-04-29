@@ -2,7 +2,6 @@ package compiler.pipeline
 
 import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
-import compiler.imports.ImportsChecker
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.ImportStat
@@ -10,7 +9,7 @@ import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.program.Program
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.ssagen.SSAGenerator
+import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
@@ -58,22 +57,16 @@ object TasksPipelines {
     val typeHintsStore = TypeHintsStore()
     val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er)
-      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er))
+      .andThen(ImportsScanner())
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, /* FIXME check that this check works */ srcRootsForPkgMismatchCheckOpt = None))
       .andThen(Concurrent(
-        Mapper[(Program, List[ImportStat]), Program]((program, imports) => program)
-          .andThen(Concurrent(
-            SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
-              .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
-            IdentityStep(),
-            (_, program) => program
-          ))
-          .andThen(MonotonicityAnalyzer(proxyStore))
-          .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-          .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er)),
+        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
+          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
-        { case ((program, subtypingInfos), (_, imports)) => (program, subtypingInfos, imports) }
-      ))
-      .andThen(ImportsChecker(proxyStore, typeVarsCtx, er))
+        (_, program) => program
+      )).andThen(MonotonicityAnalyzer(proxyStore))
+      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, /*FIXME*/ continueIfErrors = true))

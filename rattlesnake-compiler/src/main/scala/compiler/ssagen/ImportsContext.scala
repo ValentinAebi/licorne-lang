@@ -1,4 +1,4 @@
-package compiler.imports
+package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts.NamedTypeTree
