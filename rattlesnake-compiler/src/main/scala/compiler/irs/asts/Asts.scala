@@ -90,8 +90,10 @@ object Asts {
   }
 
   sealed trait ImportStat extends Ast
-
-  final case class FunctionImportStat(receiverObj: TypeIdentifier, funId: FunOrVarId, aliasOpt: Option[FunOrVarId]) extends ImportStat {
+  
+  final case class FunctionsImportStat(receiverObj: TypeIdentifier, funIdsWithAliasOpt: Option[List[(FunOrVarId, Option[FunOrVarId])]]) extends ImportStat {
+    def isWildcardImport: Boolean = funIdsWithAliasOpt.isEmpty
+    
     override def children: List[Ast] = Nil
   }
 

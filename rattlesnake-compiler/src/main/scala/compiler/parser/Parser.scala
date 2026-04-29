@@ -2,6 +2,7 @@ package compiler.parser
 
 import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts.*
+import compiler.irs.ssa.Formulas.IdValue
 import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.*
@@ -101,16 +102,24 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val pkgDecl = kw(Package).ignored ::: repeatWithSep(lowName, dot) ::: semicolon map {
     case nameParts => PackageDecl(nameParts)
   } setName "pkgDecl"
+
+  private lazy val funIdImport = funOrVarId ::: opt(kw(As).ignored ::: funOrVarId) map {
+    case funId ^: aliasOpt => (funId, aliasOpt)
+  } setName "funIdImport"
   
   private lazy val importStat = kw(Import).ignored ::: repeat(lowName ::: dot) ::: highName ::: (
-    op(Semicolon) OR kw(As).ignored ::: highName ::: semicolon OR dot ::: funOrVarId ::: opt(kw(As) ::: funOrVarId) ::: semicolon
+    op(Semicolon) OR kw(As).ignored ::: highName ::: semicolon OR dot ::: (funIdImport OR openBrace ::: repeatWithSep(funIdImport, comma) ::: closeBrace OR op(Times)) ::: semicolon
   ) map {
-    case prefix ^: importedName ^: (_: Operator) =>
+    case prefix ^: importedName ^: Operator.Semicolon =>
       TypeImportStat(TypeIdentifier(prefix, importedName), None)
     case prefix ^: importedName ^: (alias: String) =>
       TypeImportStat(TypeIdentifier(prefix, importedName), Some(alias))
-    case prefix ^: importedName ^: (importedFunId: NormalFunOrVarId) ^: (aliasIdOpt: Option[NormalFunOrVarId]) =>
-      FunctionImportStat(TypeIdentifier(prefix, importedName), importedFunId, aliasIdOpt)
+    case prefix ^: importedName ^: (singleImportedFun: (NormalFunOrVarId, Option[NormalFunOrVarId])) =>
+      FunctionsImportStat(TypeIdentifier(prefix, importedName), Some(List(singleImportedFun)))
+    case prefix ^: importedName ^: (importedFunctions: List[(NormalFunOrVarId, Option[NormalFunOrVarId])]) =>
+      FunctionsImportStat(TypeIdentifier(prefix, importedName), Some(importedFunctions))
+    case prefix ^: importedName ^: (_: Operator /* this has to be Times (wildcard import) */) =>
+      FunctionsImportStat(TypeIdentifier(prefix, importedName), None)
   } setName "importStat"
 
   private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef

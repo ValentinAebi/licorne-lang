@@ -1,7 +1,6 @@
 package lists;
 
-import lists.Lists.length;
-import lists.Lists.zip;
+import lists.Lists.{zip, length};
 
 typealias Length = [0,]
 
@@ -28,7 +27,7 @@ object Lists {
          len += 1;
          ls = ls.tail;
       };
-      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@27:24> : [-1,]
+      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@26:24> : [-1,]
    }
 
    fn sum(var ls: List[[0,]]) -> [0,] {

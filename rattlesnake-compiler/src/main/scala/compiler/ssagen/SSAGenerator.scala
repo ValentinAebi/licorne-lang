@@ -17,14 +17,14 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.ssagen.ImportsScanner.PackagesInfo
-import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.typing.contexts.TypeVariablesContext
 import compiler.util.{SeqSet, javaIterToList}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import java.io.File
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
 
@@ -36,6 +36,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
   override def apply(input: (List[Asts.Source], PackagesInfo)): Program = {
     val (sources, packagesInfo) = input
+
+    given PackagesInfo = packagesInfo
+
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
@@ -187,7 +190,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     program
   }
 
-  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree]): ImportsContext = {
+  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree])
+                              (using packagesInfo: PackagesInfo): ImportsContext = {
     val localFunctions = currEncapsulatedTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
     val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
@@ -200,12 +204,22 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           } else {
             typeImports.put(key, imported)
           }
-        case Asts.FunctionImportStat(receiverObj, funId, aliasOpt) =>
-          val key = aliasOpt.getOrElse(funId)
-          if (funcImports.contains(key)) {
-            reportError(s"$key conflicts with a previous import", importStat.getPosition)
-          } else if (!localFunctions.contains(key)) {
-            funcImports.put(key, (receiverObj, funId))
+        case Asts.FunctionsImportStat(receiverObj, importedFunctionsOrWildcard) =>
+          val importedFunctions = importedFunctionsOrWildcard.getOrElse {
+            for {
+              pkgMap <- packagesInfo.get(receiverObj.prefixes).toList
+              (_, df) <- pkgMap
+              if df.isInstanceOf[Asts.EncapsulatedTypeDefTree]
+              funDef <- df.asInstanceOf[Asts.EncapsulatedTypeDefTree].functions
+            } yield funDef.id -> None
+          }
+          for ((funId, aliasOpt) <- importedFunctions) {
+            val key = aliasOpt.getOrElse(funId)
+            if (funcImports.contains(key)) {
+              reportError(s"$key conflicts with a previous import", importStat.getPosition)
+            } else if (!localFunctions.contains(key)) {
+              funcImports.put(key, (receiverObj, funId))
+            }
           }
       }
     }
@@ -241,17 +255,22 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
 
     importStat match {
-      case Asts.FunctionImportStat(tid, funId, aliasOpt) =>
-        locateObject(tid, importStat.getPosition) match {
-          case Some(df: ObjectDef) =>
-            if (!df.functions.exists(_.id == funId)) {
-              reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
-            }
-          case Some(df) =>
-            reportError(s"${df.name} is not an object", importStat.getPosition)
-          case None =>
-            // already reported
-            ()
+      case Asts.FunctionsImportStat(tid, funIdsWithAliasOpt) =>
+        for {
+          funIdsWithAlias <- funIdsWithAliasOpt
+          (funId, aliasOpt) <- funIdsWithAlias
+        } {
+          locateObject(tid, importStat.getPosition) match {
+            case Some(df: ObjectDef) =>
+              if (!df.functions.exists(_.id == funId)) {
+                reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
+              }
+            case Some(df) =>
+              reportError(s"${df.name} is not an object", importStat.getPosition)
+            case None =>
+              // already reported
+              ()
+          }
         }
       case Asts.TypeImportStat(tid, aliasOpt) =>
         locateObject(tid, importStat.getPosition)
