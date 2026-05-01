@@ -182,6 +182,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case formula: ConstFormula => Map(formula -> 1)
     case Select(owner, field) => Map(formula -> 1)
     case FunCall(receiver, func, typeArgs, args) => Map(formula -> 1)
+    case ClosureCall(callee, closureTypingTarget, args) => Map(formula -> 1)
     case Plus(lhs, rhs) =>
       val lLin = linearize(lhs)
       val rLin = linearize(rhs)
