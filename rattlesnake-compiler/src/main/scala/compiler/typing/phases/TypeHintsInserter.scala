@@ -118,7 +118,7 @@ final class TypeHintsInserter(
       }
     case InvokeClosure(assigned, callee, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs) => ()
-    case MkClosure(assigned, params, body) => ()
+    case MkClosure(assigned, params, body, declaredPure) => ()
     case MkHeapVar(assigned) => ()
     case TypeTest(assigned, testedValue, testedTypeId) => ()
     case Conversion(assigned, inValue, targetType) => ()
@@ -168,7 +168,7 @@ final class TypeHintsInserter(
         } {
           unifyTypes(hintTypeArg, shapeTypeArg)
         }
-      case (ClosureType(hintParams, hintResult), ClosureType(shapeParams, shapeResult)) =>
+      case (ClosureType(hintParams, hintResult, _), ClosureType(shapeParams, shapeResult, _)) =>
         for ((ht, st) <- hintParams.zip(shapeParams)) {
           unifyTypes(ht, st)
         }

@@ -113,7 +113,7 @@ final class TypeChecker(
       checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
 
       while (closuresCollector.nonEmpty) {
-        val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
+        val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
         val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
           proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
         solver.onNewFrame {

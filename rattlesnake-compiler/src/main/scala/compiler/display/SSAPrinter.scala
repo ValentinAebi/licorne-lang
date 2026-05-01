@@ -276,8 +276,9 @@ final class SSAPrinter(
       case Instantiate(assigned, classOrRecordName, typeArgs) =>
         pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
         printTypeArgsList(typeArgs)
-      case MkClosure(assigned, params, body) =>
-        pps.add(s"MK-CLOSURE ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params, precondOpt = None)).add(" ->").indent {
+      case MkClosure(assigned, params, body, declaredPure) =>
+        val purityDescr = if declaredPure then " (pure)" else ""
+        pps.add(s"MK-CLOSURE$purityDescr ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params, precondOpt = None)).add(" ->").indent {
           pps.add("body: ")
           printScope(body)
         }

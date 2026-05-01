@@ -27,8 +27,8 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
           dealiasType(rhs.substitute(typesSubst, valsSubst))
         case None => NamedType(typeName, typeArgsSubst, args)
       }
-    case ClosureType(params, result) =>
-      ClosureType(params.map(dealiasType), dealiasType(result))
+    case ClosureType(params, result, enforcedPure) =>
+      ClosureType(params.map(dealiasType), dealiasType(result), enforcedPure)
     case typeVar: Types.TypeVariable => typeVar
     case UnionType(types) =>
       UnionType(types.map(dealiasType))
@@ -43,7 +43,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case IntType | DoubleType | CharType | BoolType | StringType | UnitType | NothingType => true
     case NullType | AnyType => false
     case NamedType(typeName, typeArgs, args) => false
-    case ClosureType(params, result) => false
+    case ClosureType(params, result, enforcedPure) => false
     case tv: TypeVariable =>
       tv.actualTypeIfResolved.exists(isNonRefType)
     case UnionType(types) =>
@@ -61,8 +61,8 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case NullableType(nullatedType) => nullatedType
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(eraseRefinements), List.empty)
-    case ClosureType(params, result) =>
-      ClosureType(params.map(eraseRefinements), eraseRefinements(result))
+    case ClosureType(params, result, enforcedPure) =>
+      ClosureType(params.map(eraseRefinements), eraseRefinements(result), enforcedPure)
     case tv: TypeVariable => tv.actualTypeIfResolved.orElse(tv.upperBoundOpt) match {
       case Some(tpe) => eraseRefinements(tpe)
       case None => AnyType

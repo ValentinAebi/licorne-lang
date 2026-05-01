@@ -353,7 +353,7 @@ object Asts {
     override def children: List[Ast] = List(lhs)
   }
 
-  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block) extends Expr {
+  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block, declaredPure: Boolean) extends Expr {
     override def children: List[Ast] = params.flatMap(_._2) :+ body
   }
 
@@ -514,7 +514,7 @@ object Asts {
     override def children: List[Ast] = typeArgs ++ args
   }
 
-  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree) extends TypeTree {
+  final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree, enforcedPure: Boolean) extends TypeTree {
     override def children: List[Ast] = paramTypes :+ resultType
   }
 

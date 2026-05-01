@@ -56,10 +56,11 @@ object Types {
     }
   }
 
-  final case class ClosureType(params: List[Type], result: Type) extends Type {
+  final case class ClosureType(params: List[Type], result: Type, enforcedPure: Boolean) extends Type {
     override def formulaDependencies: List[Formula] = params.flatMap(_.formulaDependencies) ++ result.formulaDependencies
 
-    override def toString: String = s"(${params.mkString(", ")}) -> $result"
+    override def toString: String =
+      (if enforcedPure then s"${Keyword.Pure} " else "") ++ s"${Keyword.Fn} (${params.mkString(",")}) -> $result"
   }
 
   final case class UnionType private(types: SeqSet[Type]) extends Type {
@@ -215,9 +216,6 @@ object Types {
     }
 
     def lock(): Unit = {
-      if (!isResolved) {
-        throw IllegalStateException("cannot lock an unresolved type variable")
-      }
       lockedFlag = true
     }
 
@@ -257,8 +255,8 @@ object Types {
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(valsSubst)))
     case tVar: TypeVariable => tVar
-    case ClosureType(params, result) =>
-      ClosureType(params.map(_.substitute(typesSubst, valsSubst)), result.substitute(typesSubst, valsSubst))
+    case ClosureType(params, result, enforcedPure) =>
+      ClosureType(params.map(_.substitute(typesSubst, valsSubst)), result.substitute(typesSubst, valsSubst), enforcedPure)
     case UnionType(types) =>
       UnionType(types.map(_.substitute(typesSubst, valsSubst)))
     case IntersectionType(types) =>
@@ -275,7 +273,8 @@ object Types {
   extension (tpe: Type) def withTypeVarsExpanded: Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withTypeVarsExpanded), args)
-    case ClosureType(params, result) => ClosureType(params.map(_.withTypeVarsExpanded), result.withTypeVarsExpanded)
+    case ClosureType(params, result, enforcedPure) =>
+      ClosureType(params.map(_.withTypeVarsExpanded), result.withTypeVarsExpanded, enforcedPure)
     case variable: TypeVariable => variable.substitutedIfResolved
     case UnionType(types) =>
       UnionType(types.map(_.withTypeVarsExpanded))
@@ -292,8 +291,8 @@ object Types {
     case NamedType(typeName, typeArgs, args) =>
       val newTypeArgs = typeArgs.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
       NamedType(typeName, newTypeArgs, args)
-    case ClosureType(params, result) =>
-      ClosureType(params.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)), result.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
+    case ClosureType(params, result, enforcedPure) =>
+      ClosureType(params.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)), result.filtered(assignmentTarget, currScopeAndProxyStoreOpt), enforcedPure)
     case UnionType(types) =>
       UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntersectionType(types) =>

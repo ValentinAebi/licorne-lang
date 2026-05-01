@@ -42,7 +42,6 @@ final class Typer(
                    er: ErrorReporter,
                    closuresCollectorFunc: ClosureInfo => Unit = _ => ()
                  )(using CompilationStep) {
-  private val instantiatedClosures = mutable.Map.empty[IdValue, ClosureInfo]
 
   // @formatter:off
   private given DealiasingContext = dealiasingCtx
@@ -306,7 +305,7 @@ final class Typer(
       case heapVarRd@HeapVarRead(assigned, heapVar) =>
         val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
         currScope.saveType(assigned, tpe)
-        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarRd.getPosition)
+        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar in a pure method or closure", heapVarRd.getPosition)
 
       case heapVarWr@HeapVarWrite(heapVar, newValue) =>
         val newValType = currScope.currentTypeOf(newValue, saveSmartcasts = true)
@@ -314,27 +313,22 @@ final class Typer(
           case Some(expType) =>
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
           case None =>
-            // TODO maybe try to save refined types also here, instead of falling back to the principal type?
+            // TODO maybe try to save refined types also here, instead of falling back to the range-erased type?
             heapVarsTypeStore.saveType(heapVar, newValType.ignoreRangesShallow)
         }
-        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar", heapVarWr.getPosition)
+        forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
 
       case invkClosure@InvokeClosure(assigned, callee, args) =>
         currScope.currentTypeOf(callee, saveSmartcasts = true) match {
-          case ClosureType(paramTypes, resultType) =>
+          case ClosureType(paramTypes, resultType, enforcedPure) =>
             val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg, saveSmartcasts = true))
             checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
             currScope.saveType(assigned, resultType)
+            if (!enforcedPure) {
+              forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", invkClosure.getPosition)
+            }
           case calleeType =>
             er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
-        }
-        if (isPurityRequired) {
-          instantiatedClosures.get(callee) match {
-            case Some(closureInfo) =>
-              closureInfo.raisePurityFlag()
-            case None =>
-              er.reportError("purity error: I cannot prove that closure invocation may not result in side-effects", invkClosure.getPosition)
-          }
         }
 
       case mkHeapVar@MkHeapVar(assigned) =>
@@ -350,7 +344,7 @@ final class Typer(
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
         }
 
-      case mkClosure@MkClosure(assigned, params, body) =>
+      case mkClosure@MkClosure(assigned, params, body, declaredPure) =>
         val id = NormalFunOrVarId(assigned match {
           case assigned: NamedIdValue => assigned.irDescr
           case assigned: IntermediateIdValue => assigned.toString
@@ -361,11 +355,10 @@ final class Typer(
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
         }
-        currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar))
+        currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, declaredPure))
         executionEnvirOpt match {
           case Some(executionEnvir) =>
-            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, executionEnvir, typeParamsCtx)
-            instantiatedClosures.put(assigned, closureInfo)
+            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, declaredPure, executionEnvir, typeParamsCtx)
             closuresCollectorFunc(closureInfo)
           case None =>
             er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
@@ -614,7 +607,7 @@ final class Typer(
     tpe match {
       case primitiveType: PrimitiveType => ()
       case namedType: NamedType => typeNamedTypeApp(namedType, ambientVarianceOpt, currScope, posOpt, subTIfInSuperTPos = None)
-      case ClosureType(paramTypes, resultType) =>
+      case ClosureType(paramTypes, resultType, enforcedPure) =>
         for paramType <- paramTypes do {
           typeTypeApp(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
         }
@@ -1142,7 +1135,7 @@ final class Typer(
       for ((tParam, tArg) <- paramTypeArgs.zip(argsTypeArgs)) {
         tryToResolveTypeVars(tParam, tArg)
       }
-    case (ClosureType(paramParams, paramRes), ClosureType(argParams, argRes)) =>
+    case (ClosureType(paramParams, paramRes, _), ClosureType(argParams, argRes, _)) =>
       for ((tParam, tArg) <- paramParams.zip(argParams)) {
         tryToResolveTypeVars(tParam, tArg)
       }

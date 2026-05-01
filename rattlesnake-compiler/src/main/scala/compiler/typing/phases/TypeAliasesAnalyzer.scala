@@ -3,16 +3,15 @@ package compiler.typing.phases
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas
-import compiler.irs.ssa.Formulas.Formula
-import compiler.lang.{Types}
+import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Reasoning, Solver}
+import compiler.smt.Reasoning
+import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -74,7 +73,7 @@ final class TypeAliasesAnalyzer(
       types.flatMap(findMentionedTypes)
     case IntersectionType(types) =>
       types.flatMap(findMentionedTypes)
-    case ClosureType(params, resultType) =>
+    case ClosureType(params, resultType, enforcedPure) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       Set.empty

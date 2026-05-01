@@ -257,8 +257,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "possiblyNegativeNumericLiteralValue"
 
-  private lazy val closureType = kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
-    case paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType)
+  private lazy val closureType = opt(kw(Pure)) ::: kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
+    case optPure ^: paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType, optPure.isDefined)
   } setName "closureType"
 
   private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: op(ClosingBracket).ignored map {
@@ -394,11 +394,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "selectOrIndexingChain"
 
   private lazy val closure = recursive {
-    kw(Fn).ignored ::: openParenth ::: repeatWithSep(funOrVarId ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
-      case params ^: (body: Block) =>
-        ClosureDef(params.toPairs, body)
-      case params ^: (expr: Expr) =>
-        ClosureDef(params.toPairs, Block(List(ReturnStat(Some(expr)))))
+    opt(kw(Pure)) ::: kw(Fn).ignored ::: openParenth ::: repeatWithSep(funOrVarId ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
+      case optPure ^: params ^: (body: Block) =>
+        ClosureDef(params.toPairs, body, optPure.isDefined)
+      case optPure ^: params ^: (expr: Expr) =>
+        ClosureDef(params.toPairs, Block(List(ReturnStat(Some(expr)))), optPure.isDefined)
     }
   } setName "closure"
 

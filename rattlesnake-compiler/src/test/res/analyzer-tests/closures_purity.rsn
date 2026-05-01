@@ -1,0 +1,48 @@
+
+interface Collection[T] {
+   fn map[U](this, f: pure fn (T) -> U) -> Collection[U]
+   fn foreach(this, f: fn (T) -> Unit)
+}
+
+object Test {
+
+   fn useCollection(coll: Collection[Int], maybePureClosure: fn (Int) -> Int) {
+      var sum = 0;
+
+      val pureClosure = pure fn (x) -> x*x;
+      val impureClosure = fn (x) -> { sum += 1 };
+
+      coll.foreach(pureClosure);        // OK
+      coll.foreach(maybePureClosure);  // OK
+      coll.foreach(impureClosure);      // OK
+
+      coll.map(pureClosure);            // OK
+      coll.map(maybePureClosure);      //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
+      coll.map(impureClosure);          //> E : first argument of call to map: expected pure fn (Int) -> ?impureClosure#3@151s, found impureClosure : fn (Int) -> ?impureClosure#3@151s
+   }
+
+   pure fn useClosure(cl: fn (String) -> String) -> String {
+      val s = "Hello world!";
+      return cl(s);     //> E : illegal invocation of an impure closure in a pure method or closure
+   }
+
+   pure fn dontUseClosure(cl: fn (String) -> String) -> String {
+      return "Hello!";  // OK
+   }
+
+   fn useClosureInPureClosure(cl: fn (String) -> String) -> pure fn () -> String {
+      return pure fn () ->
+        cl("Hello")     //> E : illegal invocation of an impure closure in a pure method or closure
+   }
+
+   pure fn produceImpureClosure() -> fn (Container[Int]) -> Unit {
+      return fn (container) -> { container.set(42) }     // OK
+   }
+
+}
+
+class Container[T](var value: T) {
+   fn set(this, newVal: T) {
+      this.value = newVal;
+   }
+}

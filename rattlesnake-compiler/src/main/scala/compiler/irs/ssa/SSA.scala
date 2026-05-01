@@ -146,7 +146,7 @@ object SSA {
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, args: List[IdValue]) extends AssigningInstr
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
-  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope) extends AssigningInstr
+  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope, declaredPure: Boolean) extends AssigningInstr
   final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr
 
   final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr

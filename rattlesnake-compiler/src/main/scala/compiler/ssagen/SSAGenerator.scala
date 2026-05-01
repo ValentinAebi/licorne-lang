@@ -901,7 +901,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
         None
-      case closureDefTree@Asts.ClosureDef(params, bodyTree) =>
+      case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
         val bodyScope = Scope.nestedInside(currScope, bodyTree)
         val paramValsAndTypesB = List.newBuilder[(ParamIdValue, Type)]
         for ((id, typeTreeOpt) <- params) {
@@ -923,7 +923,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           currScope.getLocalValuesContextUnsafe.remap(varId, heapAddr)
         }
         generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope), closureDefTree)
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope, declaredPure), closureDefTree)
         None
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg")
@@ -1074,7 +1074,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           for {
             ownerFormula <- generateFormula(lhs, currScope)
           } yield Select(ownerFormula, FieldResolutionTarget(field))
-        case Asts.ClosureDef(params, body) => failIllegalConstruct("closure definition")
+        case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
         // TODO ideally should be allowed
@@ -1106,7 +1106,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using ImportsContext): Type = typeTree match {
     case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
     case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
-    case Asts.ClosureTypeTree(paramTypes, resultType) => ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope))
+    case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
+      ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
     case Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
       IntRangeType(
         lowerBoundOpt.flatMap(generateFormula(_, scope)),

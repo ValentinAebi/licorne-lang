@@ -12,18 +12,12 @@ final case class ClosureInfo(
                               body: Scope,
                               retTypeVar: TypeVariable,
                               branchingInfo: BranchingInfo,
+                              requiresPurityInBody: Boolean,
                               containingEnvir: ExecutionEnvironment,
                               typeParamsCtx: TypeParamsContext
                             ) extends ExecutionEnvironment {
-  private var purityFlag = false
-  
-  def raisePurityFlag(): Unit = {
-    purityFlag = true
-  }
 
   override def expectedResultType: Type = retTypeVar
-
-  override def requiresPurityInBody: Boolean = purityFlag
 
   override def root: FunctionSignature = containingEnvir.root
 }

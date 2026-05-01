@@ -12,7 +12,7 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
-import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst}
+import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -111,8 +111,8 @@ final class SubtypingContext(
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
       superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
-    case (ClosureType(subParams, subResult), ClosureType(superParams, superResult)) =>
-      subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
+    case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
+      logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
     case (IntersectionType(subtypes), superT) =>
       subtypes.exists(isSubtype(_, superT))
     case (subT, IntersectionType(supertypes)) =>
@@ -242,5 +242,7 @@ object SubtypingContext {
     }
 
   }
+  
+  private def logicalImplies(p: Boolean, q: Boolean) = !p || q
 
 }

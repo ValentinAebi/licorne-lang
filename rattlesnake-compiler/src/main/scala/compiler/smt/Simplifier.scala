@@ -17,7 +17,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
 
   def simplify(tpe: Type): Type = tpe match {
     case nominalType: NominalType => nominalType
-    case ClosureType(params, result) => ClosureType(params.map(simplify), simplify(result))
+    case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplify), simplify(result), enforcedPure)
     case variable: TypeVariable => variable
 
     case UnionType(types) =>

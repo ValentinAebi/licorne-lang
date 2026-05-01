@@ -189,7 +189,8 @@ final class MeetJoinComputer(
       paramTypesMeetsB.addOne(computeMeet(paramTypesIterators.map(_.next())))
     }
     val resultTypeJoin = computeJoin(types.map(_.result))
-    Some(ClosureType(paramTypesMeetsB.result(), resultTypeJoin))
+    val enforcedPure = types.forall(_.enforcedPure)
+    Some(ClosureType(paramTypesMeetsB.result(), resultTypeJoin, enforcedPure))
   }
 
   def computeJoinOfTypeIds(types: Iterable[TypeIdentifier]): Iterator[RuntimeTypeSignature] = {
