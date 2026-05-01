@@ -9,7 +9,7 @@ object Test {
    fn useCollection(coll: Collection[Int], maybePureClosure: fn (Int) -> Int) {
       var sum = 0;
 
-      val pureClosure = pure fn (x) -> x*x;
+      val pureClosure = fn (x) -> x*x;  // inferred as pure
       val impureClosure: fn (Int) -> Unit = fn (x) -> { sum += x };
 
       coll.foreach(pureClosure);        // OK
@@ -17,7 +17,7 @@ object Test {
       coll.foreach(impureClosure);      // OK
 
       coll.map(pureClosure);            // OK
-      coll.map(maybePureClosure);      //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
+      coll.map(maybePureClosure);       //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
       coll.map(impureClosure);          //> E : first argument of call to map: expected pure fn (Int) -> Unit, found impureClosure : fn (Int) -> Unit
    }
 
@@ -39,6 +39,11 @@ object Test {
       return fn (container) -> { container.set(42) }     // OK
    }
 
+   fn createPureClosures() {
+      (fn (x) -> x) : pure fn (Int) -> Int;                                 // OK, purity detected
+      (pure fn (p) -> p.right) : pure fn (Pair[Int, String]) -> String;     // OK, explicit "pure" keyword
+   }
+
 }
 
 class Container[T](var value: T) {
@@ -46,3 +51,5 @@ class Container[T](var value: T) {
       this.value = newVal;
    }
 }
+
+record Pair[A,B](left: A, right: B)

@@ -106,6 +106,10 @@ object SSA {
     this: Instr =>
   }
 
+  sealed trait PureInstr {
+    this: Instr =>
+  }
+
   sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
@@ -119,26 +123,26 @@ object SSA {
     val assigned: IdValue
   }
 
-  final case class AssignVal(assigned: IdValue, src: IdValue) extends AssigningInstr
+  final case class AssignVal(assigned: IdValue, src: IdValue) extends AssigningInstr, PureInstr
 
-  final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr
-  final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr
-  final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr
+  final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr, PureInstr
+  final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr, PureInstr
+  final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr, PureInstr
 
-  final case class NumNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr
-  final case class Add(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Sub(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Mul(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Div(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Rem(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class NumNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr
+  final case class Add(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Sub(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Mul(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Div(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Rem(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
 
-  final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr
-  final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr
+  final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
 
-  final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
-  final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr
+  final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
+  final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
 
   final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr
   final case class HeapVarRead(assigned: IdValue, heapVar: HeapVarIdValue) extends AssigningInstr
@@ -149,15 +153,15 @@ object SSA {
   final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope, declaredPure: Boolean) extends AssigningInstr
   final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr
 
-  final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr
-  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr
+  final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr, PureInstr
+  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr, PureInstr
 
   final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends RealInstr
   final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends RealInstr
-  final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr
-  final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr
-  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr
-  final case class Drop(droppedValue: IdValue) extends RealInstr
+  final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
+  final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
+  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr
+  final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr
 
   final class Scope private(
                              val outScopeOpt: Option[Scope],

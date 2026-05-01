@@ -348,10 +348,11 @@ final class Typer(
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
         }
-        currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, declaredPure))
+        val isPure = declaredPure || isObviouslyEffectFree(body)
+        currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
         executionEnvirOpt match {
           case Some(executionEnvir) =>
-            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, declaredPure, executionEnvir, typeParamsCtx)
+            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, isPure, executionEnvir, typeParamsCtx)
             closuresCollectorFunc(closureInfo)
           case None =>
             er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
@@ -953,7 +954,7 @@ final class Typer(
   }
 
   private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], posOpt: Option[Position]) = {
-    calleeType match {
+    requireNonNullable(calleeType.withTypeVarsExpanded, "closure", posOpt) match {
       case calleeType@ClosureType(paramTypes, resultType, enforcedPure) =>
         closureTypingTarget.resolve(calleeType)
         checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", posOpt)
@@ -981,7 +982,7 @@ final class Typer(
       NothingType
     }
 
-    requireNonNullable(ownerType, s"owner of field ${fieldResolTarget.fieldId}", posOpt) match {
+    requireNonNullable(ownerType.withTypeVarsExpanded, s"owner of field ${fieldResolTarget.fieldId}", posOpt) match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
@@ -1135,6 +1136,19 @@ final class Typer(
     subst
   }
 
+  private def isObviouslyEffectFree(instr: Instr): Boolean = instr match {
+    case _: PureInstr => true
+    case Loop(cond, condVal, body, variables) =>
+      isObviouslyEffectFree(cond) && isObviouslyEffectFree(body)
+    case Disjunction(condVal, thenBr, elseBr, variables) =>
+      isObviouslyEffectFree(thenBr) && isObviouslyEffectFree(elseBr)
+    case scope: Scope =>
+      scope.instructions.forall(isObviouslyEffectFree)
+    case LocalDecl(localId, tpe) => true
+    case Unreachable() => true
+    case _ => false
+  }
+
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {
     argOpt.foreach { rawArg =>
       proxyStore.getProxyIfIdValue(rawArg)
@@ -1148,7 +1162,7 @@ final class Typer(
 
   private def tryToResolveTypeVars(paramType: Type, argType: Type): Unit = (paramType, argType) match {
     case (NamedType(_, paramTypeArgs, _), NamedType(_, argsTypeArgs, _)) =>
-      // FIXME account for variance?
+      // TODO account for variance?
       for ((tParam, tArg) <- paramTypeArgs.zip(argsTypeArgs)) {
         tryToResolveTypeVars(tParam, tArg)
       }
