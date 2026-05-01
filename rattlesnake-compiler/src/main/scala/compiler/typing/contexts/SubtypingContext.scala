@@ -87,7 +87,6 @@ final class SubtypingContext(
   def isSubtype(subT: Type, superT: Type): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
-    case (_, UnitType) => true
     case (tv: TypeVariable, superT) =>
       if (tv.isResolved) {
         tv.lock()
@@ -106,6 +105,7 @@ final class SubtypingContext(
         // do NOT lock: it's OK if the type gets widened later
         true
       }
+    case (_, UnitType) => true
     case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
     case (IntRangeType(_, _), IntType) => true
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
@@ -242,7 +242,7 @@ object SubtypingContext {
     }
 
   }
-  
+
   private def logicalImplies(p: Boolean, q: Boolean) = !p || q
 
 }

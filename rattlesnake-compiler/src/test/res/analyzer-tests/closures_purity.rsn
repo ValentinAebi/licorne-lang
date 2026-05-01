@@ -10,15 +10,15 @@ object Test {
       var sum = 0;
 
       val pureClosure = pure fn (x) -> x*x;
-      val impureClosure = fn (x) -> { sum += 1 };
+      val impureClosure: fn (Int) -> Unit = fn (x) -> { sum += x };
 
       coll.foreach(pureClosure);        // OK
-      coll.foreach(maybePureClosure);  // OK
+      coll.foreach(maybePureClosure);   // OK
       coll.foreach(impureClosure);      // OK
 
       coll.map(pureClosure);            // OK
       coll.map(maybePureClosure);      //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
-      coll.map(impureClosure);          //> E : first argument of call to map: expected pure fn (Int) -> ?impureClosure#3@151s, found impureClosure : fn (Int) -> ?impureClosure#3@151s
+      coll.map(impureClosure);          //> E : first argument of call to map: expected pure fn (Int) -> Unit, found impureClosure : fn (Int) -> Unit
    }
 
    pure fn useClosure(cl: fn (String) -> String) -> String {
