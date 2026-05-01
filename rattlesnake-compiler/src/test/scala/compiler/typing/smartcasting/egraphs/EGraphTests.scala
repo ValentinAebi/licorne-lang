@@ -2,7 +2,7 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
-import compiler.irs.ssa.Formulas.{Call, Formula, Select, ValIdValue}
+import compiler.irs.ssa.Formulas.{FunCall, Formula, Select, ValIdValue}
 import compiler.irs.ssa.FormulasDsl.{autoConvertIntToIConst, *}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.irs.ssa.SSA.Scope
@@ -107,7 +107,7 @@ class EGraphTests {
 
   extension (rec: Formula) private def call(funName: String, args: Formula*): Formula = {
     val invkTarget = InvocationTarget(NormalFunOrVarId(funName))
-    Call(rec, invkTarget, List.empty, args.toList)
+    FunCall(rec, invkTarget, List.empty, args.toList)
   }
 
   private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {

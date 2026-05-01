@@ -37,8 +37,10 @@ final class ProxyStore {
       case value: IdValue => getProxy(value).getOrElse(value)
       case formula: ConstFormula => formula
       case Select(owner, field) => Select(develop(owner), field)
-      case Call(receiver, func, typeArgs, args) =>
-        Call(develop(receiver), func, typeArgs, args.map(develop))
+      case FunCall(receiver, func, typeArgs, args) =>
+        FunCall(develop(receiver), func, typeArgs, args.map(develop))
+      case ClosureCall(callee, closureTypingTarget, args) =>
+        ClosureCall(develop(callee), closureTypingTarget, args.map(develop))
       case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
       case Neg(operand) => Neg(develop(operand))
       case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))

@@ -116,7 +116,7 @@ final class TypeHintsInserter(
           valsSubst.put(paramVal, argVal)
         }
       }
-    case InvokeClosure(assigned, callee, args) => ()
+    case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs) => ()
     case MkClosure(assigned, params, body, declaredPure) => ()
     case MkHeapVar(assigned) => ()

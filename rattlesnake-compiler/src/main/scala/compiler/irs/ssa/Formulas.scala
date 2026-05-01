@@ -97,10 +97,10 @@ object Formulas {
     override def toString: String = s"$owner.${field.fieldId}"
   }
 
-  final case class Call(receiver: Formula, func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
+  final case class FunCall(receiver: Formula, func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
 
     override def equals(that: Any): Boolean = that match {
-      case Call(thatReceiver, thatFunc, _, thatArgs) =>
+      case FunCall(thatReceiver, thatFunc, _, thatArgs) =>
         this.receiver == thatReceiver && this.func.funId == thatFunc.funId && this.args == thatArgs
       case _ => false
     }
@@ -111,6 +111,10 @@ object Formulas {
       val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       s"$receiver.${func.funId}" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
     }
+  }
+  
+  final case class ClosureCall(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
+    override def toString: String = s"$callee(" ++ args.mkString(",") ++ ")"
   }
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula {
@@ -205,7 +209,8 @@ object Formulas {
     case c: BoolConst => c
     case c: StringConst => c
     case Select(owner, field) => Select(owner.substitute(subst), field)
-    case Call(receiver, funId, typeArgs, args) => Call(receiver.substitute(subst), funId, typeArgs.map(_.substitute(Map.empty, subst)), args.map(_.substitute(subst)))
+    case FunCall(receiver, funId, typeArgs, args) => FunCall(receiver.substitute(subst), funId, typeArgs.map(_.substitute(Map.empty, subst)), args.map(_.substitute(subst)))
+    case ClosureCall(callee, target, args) => ClosureCall(callee.substitute(subst), target, args.map(_.substitute(subst)))
     case Plus(lhs, rhs) => Plus(lhs.substitute(subst), rhs.substitute(subst))
     case Neg(operand) => Neg(operand.substitute(subst))
     case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
@@ -228,8 +233,10 @@ object Formulas {
     case Select(owner, field) if field.isResolved =>
       field.getReceiverSigUnsafe.fields(field.fieldId).isStable && typeCanMention(owner)
     case Select(owner, field) => false
-    case Call(receiver, func, typeArgs, args) =>
+    case FunCall(receiver, func, typeArgs, args) =>
       typeCanMention(receiver) && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(typeCanMention)
+    case ClosureCall(callee, target, args) =>
+      typeCanMention(callee) && target.isResolvedAndPure && args.forall(typeCanMention)
     case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Neg(operand) => typeCanMention(operand)
     case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
@@ -250,8 +257,10 @@ object Formulas {
       field.getReceiverSigUnsafe.fields(field.fieldId).isStable
     case _: Select => false
     case formula: ConstFormula => true
-    case Call(receiver, func, typeArgs, args) =>
+    case FunCall(receiver, func, typeArgs, args) =>
       receiver.isPure && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(_.isPure)
+    case ClosureCall(callee, target, args) =>
+      callee.isPure && target.isResolvedAndPure && args.forall(_.isPure)
     case Plus(lhs, rhs) => lhs.isPure && rhs.isPure
     case Neg(operand) => operand.isPure
     case Times(lhs, rhs) => lhs.isPure && rhs.isPure
@@ -270,8 +279,10 @@ object Formulas {
     case value: IdValue => Set(value)
     case formula: ConstFormula => Set.empty
     case Select(owner, field) => owner.idValsDependencies
-    case Call(receiver, func, typeArgs, args) =>
+    case FunCall(receiver, func, typeArgs, args) =>
       receiver.idValsDependencies ++ args.flatMap(_.idValsDependencies)
+    case ClosureCall(callee, closureTypingTarget, args) =>
+      callee.idValsDependencies ++ args.flatMap(_.idValsDependencies)
     case Plus(lhs, rhs) =>
       lhs.idValsDependencies ++ rhs.idValsDependencies
     case Neg(operand) => operand.idValsDependencies

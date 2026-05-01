@@ -2,7 +2,7 @@ package compiler.typing
 
 import compiler.identifiers.{Identifier, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -264,6 +264,12 @@ final class Typer(
         currScope.saveType(assigned, returnType)
         currScope.markHasExitedIfNothing(returnType)
 
+      case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
+        val calleeType = currScope.currentTypeOf(callee, saveSmartcasts = true)
+        val argsValsAndTypes = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg, saveSmartcasts = true))
+        val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, invkClosure.getPosition)
+        currScope.saveType(assigned, tpe)
+
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
         val ownerType = currScope.currentTypeOf(owner, saveSmartcasts = true)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
@@ -292,15 +298,15 @@ final class Typer(
                 val invkTarget = InvocationTarget(fld.id)
                 val funSig = resolutionCtx.resolveFunSig(receiverSig.id, fld.id).asInstanceOf[FuncResolResult.Success].funSig
                 invkTarget.resolve(receiverSig, funSig, fld.tpe)
-                val accessorCall = Call(ow, invkTarget, List.empty, List.empty)
+                val accessorCall = FunCall(ow, invkTarget, List.empty, List.empty)
                 saveEquality(select, accessorCall, persist = true)
               }
             case _ => ()
           }
         }
 
-      case _: (InvokeFunc | FieldRead | FieldWrite) =>
-        throw AssertionError("typing phase run more than once on the same piece of code")
+      case instr: (InvokeFunc | InvokeClosure | FieldRead | FieldWrite) =>
+        throw AssertionError("typing phase run more than once on the same piece of code: " + instr.getClass.getSimpleName)
 
       case heapVarRd@HeapVarRead(assigned, heapVar) =>
         val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
@@ -317,19 +323,6 @@ final class Typer(
             heapVarsTypeStore.saveType(heapVar, newValType.ignoreRangesShallow)
         }
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
-
-      case invkClosure@InvokeClosure(assigned, callee, args) =>
-        currScope.currentTypeOf(callee, saveSmartcasts = true) match {
-          case ClosureType(paramTypes, resultType, enforcedPure) =>
-            val argsWithVals = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg, saveSmartcasts = true))
-            checkArgumentsList(paramTypes.map(None -> _), argsWithVals, "closure invocation", invkClosure.getPosition)
-            currScope.saveType(assigned, resultType)
-            if (!enforcedPure) {
-              forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", invkClosure.getPosition)
-            }
-          case calleeType =>
-            er.reportError(s"$calleeType is not callable", invkClosure.getPosition)
-        }
 
       case mkHeapVar@MkHeapVar(assigned) =>
         // defer typing to first write
@@ -439,11 +432,19 @@ final class Typer(
       case Select(owner, field) =>
         assert(field.isUnresolvable)
         NothingType
-      case Call(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
-      case call@Call(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+      case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
+      case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
         resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
-      case Call(receiver, func, typeArgs, args) =>
+      case FunCall(receiver, func, typeArgs, args) =>
         assert(func.isUnresolvable)
+        NothingType
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolved => closureTypingTarget.getTypeUnsafe
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
+        val calleeType = typeFormula(callee, scope, posOpt)
+        val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
+        typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, posOpt)
+      case ClosureCall(callee, closureTypingTarget, args) =>
+        assert(closureTypingTarget.isUnresolvable)
         NothingType
       case Plus(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
@@ -498,7 +499,7 @@ final class Typer(
             case _ => None
           }
         } else None
-      case Call(receiver, func, typeArgs, args) =>
+      case FunCall(receiver, func, typeArgs, args) =>
         if (func.isNotResolvedYet) {
           detectNominalTypeForSmartcast(receiver, scope) match {
             case Some(receiverType) =>
@@ -512,6 +513,7 @@ final class Typer(
             case _ => None
           }
         } else None
+      // TODO add a case for ClosureCall?
       case _ => None
     }
   }
@@ -947,6 +949,21 @@ final class Typer(
           case _ => errorCase()
         }
       case _ => errorCase()
+    }
+  }
+
+  private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], posOpt: Option[Position]) = {
+    calleeType match {
+      case calleeType@ClosureType(paramTypes, resultType, enforcedPure) =>
+        closureTypingTarget.resolve(calleeType)
+        checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", posOpt)
+        if (!enforcedPure) {
+          forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
+        }
+        resultType
+      case calleeType =>
+        er.reportError(s"$calleeType is not callable", posOpt)
+        NothingType
     }
   }
 

@@ -5,7 +5,7 @@ import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget, SSA}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
@@ -783,9 +783,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val calleeVal = currScope.newIntermediate()
         generateSSAExpr(calleeVal, calleeTree, currScope)
+        val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
-        currScope.saveInstr(InvokeClosure(resultVal, calleeVal, args), expr)
-        None
+        currScope.saveInstr(InvokeClosure(resultVal, calleeVal, target, args), expr)
+        for {
+          calleeProxy <- proxyStore.getProxy(calleeVal)
+          argProxies <- proxiesOfArgsList(args)
+        } yield ClosureCall(calleeProxy, target, argProxies)
       case Asts.UnaryOp(Operator.Minus, operandTree) =>
         generateUnaryWithProxy(operandTree, NumNeg(resultVal, _), Neg(_))
       case Asts.UnaryOp(Operator.ExclamationMark, operandTree) =>
@@ -939,16 +943,20 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     proxyOpt
   }
 
-  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]): Option[Call] = {
+  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]): Option[FunCall] = {
     for {
       recProxy <- proxyStore.getProxy(receiverVal)
-      argsProxies <- argVals.foldRight[Option[List[Formula]]](Some(Nil)) {
-        case (arg, Some(acc)) => proxyStore.getProxy(arg) map { argProxy =>
-          argProxy :: acc
-        }
-        case (_, None) => None
+      argsProxies <- proxiesOfArgsList(argVals)
+    } yield FunCall(recProxy, invkTarget, typeArgs, argsProxies)
+  }
+
+  private def proxiesOfArgsList(argVals: List[IdValue]): Option[List[Formula]] = {
+    argVals.foldRight[Option[List[Formula]]](Some(Nil)) {
+      case (arg, Some(acc)) => proxyStore.getProxy(arg) map { argProxy =>
+        argProxy :: acc
       }
-    } yield Call(recProxy, invkTarget, typeArgs, argsProxies)
+      case (_, None) => None
+    }
   }
 
   private def generateFormula(expr: Expr, currScope: Scope)(using importsCtx: ImportsContext): Option[Formula] = {
@@ -986,7 +994,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             case Some((receiverFormula, funId)) =>
               val typeArgs = typeArgTrees.map(mkType(_, currScope))
               val argFormulas = args.flatMap(generateFormula(_, currScope))
-              if argFormulas.size == args.size then Some(Call(receiverFormula, InvocationTarget(funId), typeArgs, argFormulas))
+              if argFormulas.size == args.size then Some(FunCall(receiverFormula, InvocationTarget(funId), typeArgs, argFormulas))
               else None
             case _ => None
           }

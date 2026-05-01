@@ -1,9 +1,11 @@
 package compiler.typing.smartcasting.egraphs
 
+import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
 import compiler.smt.Simplifier
+import compiler.typing.smartcasting.egraphs.EGraph.closureInvkFunId
 import compiler.valproxies.ProxyStore
 
 import java.util.concurrent.atomic.AtomicLong
@@ -128,8 +130,10 @@ final class EGraph private[egraphs](startClId: Long) {
       ConstNode(formula.value)
     case Select(owner, field) =>
       SelectNode(classOf(owner), field.fieldId)
-    case Call(receiver, func, typeArgs, args) =>
+    case FunCall(receiver, func, typeArgs, args) =>
       CallNode(classOf(receiver), func.funId, args.map(classOf))
+    case ClosureCall(callee, closureTypingTarget, args) =>
+      CallNode(classOf(callee), closureInvkFunId, args.map(classOf))
     case Plus(lhs, rhs) =>
       BinaryOpNode(classOf(lhs), OpPlus, classOf(rhs))
     case Neg(operand) =>
@@ -193,5 +197,7 @@ final class EGraph private[egraphs](startClId: Long) {
 object EGraph {
 
   def newEmpty: EGraph = EGraph(-1)
+  
+  private val closureInvkFunId = NormalFunOrVarId("closure$invk")
 
 }

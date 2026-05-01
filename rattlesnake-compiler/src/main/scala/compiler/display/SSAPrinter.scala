@@ -271,7 +271,7 @@ final class SSAPrinter(
         pps.add(s"INVK-MTH ${maybeTyped(assigned, scope)} := $receiver.$func")
         printTypeArgsList(typeArgs)
         printArgsList(args)
-      case InvokeClosure(assigned, callee, args) =>
+      case InvokeClosure(assigned, callee, _, args) =>
         pps.add(s"INVK-CLOSURE ${maybeTyped(assigned, scope)} := $callee" ++ args.mkString("(", ",", ")"))
       case Instantiate(assigned, classOrRecordName, typeArgs) =>
         pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")

@@ -1,10 +1,11 @@
 package compiler.smt
 
-import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget, SSA}
+import compiler.irs.ssa.{CallableTarget, ClosureTypingTarget, FieldResolutionTarget, Formulas, InvocationTarget, SSA}
 import Formulas.*
+import compiler.lang.Types
 import compiler.lang.Types.IntRangeType
 import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, IntType}
-import compiler.smt.Solver.{javaList, selectFuncPrefix}
+import compiler.smt.Solver.{closureInvkFunId, javaList, selectFuncPrefix}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valproxies.ProxyStore
 import io.ksmt.KContext
@@ -13,9 +14,11 @@ import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
 import io.ksmt.sort.{KBoolSort, KIntSort, KSort, KUninterpretedSort}
 
+import java.util
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.boundary
+import scala.util.boundary.Label
 
 
 // TODO cache formula conversion
@@ -198,9 +201,12 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     case Select(owner, field) if field.isResolvedAndStable =>
       mkSelect(owner, field, kCtx.mkIntSort())
     case Select(owner, field) => None
-    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+    case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
       mkFunApp(receiver, func, args, kCtx.mkIntSort())
-    case Call(receiver, func, typeArgs, args) => None
+    case FunCall(receiver, func, typeArgs, args) => None
+    case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      mkClosureApp(callee, closureTypingTarget, args, kCtx.mkIntSort())
+    case ClosureCall(callee, closureTypingTarget, args) => None
     case Plus(lhs, rhs) =>
       for {
         l <- convertInt(lhs)
@@ -245,9 +251,12 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     case Select(owner, field) if field.isResolvedAndStable =>
       mkSelect(owner, field, kCtx.mkBoolSort())
     case Select(owner, field) => None
-    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+    case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
       mkFunApp(receiver, func, args, kCtx.mkBoolSort())
-    case Call(receiver, func, typeArgs, args) => None
+    case FunCall(receiver, func, typeArgs, args) => None
+    case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      mkClosureApp(callee, closureTypingTarget, args, kCtx.mkBoolSort())
+    case ClosureCall(callee, closureTypingTarget, args) => None
     case Plus(lhs, rhs) => None
     case Neg(operand) => None
     case Times(lhs, rhs) => None
@@ -296,8 +305,10 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     case formula: ConstFormula => None
     case Select(owner, field) if field.isResolvedAndStable =>
       mkSelect(owner, field, anySort)
-    case Call(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+    case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
       mkFunApp(receiver, func, args, anySort)
+    case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      mkClosureApp(callee, closureTypingTarget, args, anySort)
     case _ => None
   }
 
@@ -317,26 +328,47 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
       rec <- convertObj(receiver)
       if func.isResolvedAndPure && funSig.paramsWithoutThis.size == args.size
     } yield {
-      val paramsList = new java.util.ArrayList[KSort]()
-      val argsList = new java.util.ArrayList[KExpr[?]]()
+      val paramsList = new util.ArrayList[KSort]()
+      val argsList = new util.ArrayList[KExpr[?]]()
       paramsList.add(anySort)
       argsList.add(rec)
-      for (((paramIdVal, paramType), arg) <- funSig.paramsWithoutThis zip args) {
-        val (paramSort, kArgs) = SimplifiedType.from(paramType) match {
-          case SimplifiedType.Integer => kCtx.mkIntSort() -> convertInt(arg)
-          case SimplifiedType.Boolean => kCtx.mkBoolSort() -> convertBool(arg)
-          case SimplifiedType.Object => anySort -> convertObj(arg)
-        }
-        if (kArgs.isEmpty) {
-          boundary.break(Seq.empty)
-        }
-        for (kArg <- kArgs) {
-          paramsList.add(paramSort)
-          argsList.add(kArg)
-        }
-      }
+      processArguments(funSig.paramsWithoutThis.map(_._2), args, paramsList, argsList)
       val decl = kCtx.mkFuncDecl(funSig.smtFunctionCode, sort, paramsList)
       kCtx.mkApp(decl, argsList)
+    }
+  }
+
+  private def mkClosureApp[S <: KSort](callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula], sort: S): Iterable[KExpr[S]] = boundary {
+    for {
+      cal <- convertObj(callee)
+      if closureTypingTarget.isResolvedAndPure
+    } yield {
+      val paramsList = new util.ArrayList[KSort]()
+      val argsList = new util.ArrayList[KExpr[?]]()
+      paramsList.add(anySort)
+      argsList.add(cal)
+      processArguments(closureTypingTarget.getTypeUnsafe.params, args, paramsList, argsList)
+      val decl = kCtx.mkFuncDecl(closureInvkFunId, sort, paramsList)
+      kCtx.mkApp(decl, argsList)
+    }
+  }
+
+  private def processArguments[S <: KSort](params: Iterable[Types.Type], args: List[Formula],
+                                           paramsList: util.ArrayList[KSort], argsList: util.ArrayList[KExpr[?]])
+                                          (using Label[Iterable[KExpr[S]]]): Unit = {
+    for ((paramType, arg) <- params zip args) {
+      val (paramSort, kArgs) = SimplifiedType.from(paramType) match {
+        case SimplifiedType.Integer => kCtx.mkIntSort() -> convertInt(arg)
+        case SimplifiedType.Boolean => kCtx.mkBoolSort() -> convertBool(arg)
+        case SimplifiedType.Object => anySort -> convertObj(arg)
+      }
+      if (kArgs.isEmpty) {
+        boundary.break(Seq.empty)
+      }
+      for (kArg <- kArgs) {
+        paramsList.add(paramSort)
+        argsList.add(kArg)
+      }
     }
   }
 
@@ -350,6 +382,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
 object Solver {
 
   private val selectFuncPrefix: String = "select$fld$"
+  private val closureInvkFunId = "closure$invk"
 
   private def javaList[T](elems: T*): java.util.List[T] = {
     val ls = new java.util.ArrayList[T](elems.size)

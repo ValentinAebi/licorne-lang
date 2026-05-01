@@ -4,19 +4,17 @@ import compiler.identifiers.FunOrVarId
 import compiler.lang.{EncapsulatedTypeSig, FunctionSignature}
 import compiler.lang.Types.Type
 
-final class InvocationTarget(val funId: FunOrVarId) {
+final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   private var receiverSigOpt = Option.empty[EncapsulatedTypeSig]
   private var funSigOpt = Option.empty[FunctionSignature]
   private var instantiatedReturnTypeOpt = Option.empty[Type]
   private var cannotResolveFlag = false
 
-  def isResolved: Boolean = receiverSigOpt.isDefined
+  override def isResolved: Boolean = receiverSigOpt.isDefined
 
-  def isResolvedAndPure: Boolean = funSigOpt.exists(_.isPure)
+  override def isResolvedAndPure: Boolean = funSigOpt.exists(_.isPure)
 
-  def isUnresolvable: Boolean = cannotResolveFlag
-
-  def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
+  override def isUnresolvable: Boolean = cannotResolveFlag
 
   def resolve(receiverSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
     if (isResolved) {
@@ -35,7 +33,7 @@ final class InvocationTarget(val funId: FunOrVarId) {
 
   def getInstantiatedReturnTypeUnsafe: Type = instantiatedReturnTypeOpt.get
 
-  def markUnresolvable(): Unit = {
+  override def markUnresolvable(): Unit = {
     cannotResolveFlag = true
   }
 

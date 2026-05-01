@@ -151,7 +151,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case value: IdValue => None
     case formula: ConstFormula => Some(formula)
     case Select(owner, field) => None
-    case Call(receiver, func, typeArgs, args) => None
+    case FunCall(receiver, func, typeArgs, args) => None
+    case ClosureCall(callee, target, args) => None
     case Plus(lhs, rhs) => evalNumericBinop(lhs, rhs, _ + _, _ + _, rhsCanBeZero = true)
     case Neg(operand) =>
       eval(operand) match {
@@ -180,7 +181,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case IntConst(cst) => Map(IntConst(1) -> cst)
     case formula: ConstFormula => Map(formula -> 1)
     case Select(owner, field) => Map(formula -> 1)
-    case Call(receiver, func, typeArgs, args) => Map(formula -> 1)
+    case FunCall(receiver, func, typeArgs, args) => Map(formula -> 1)
     case Plus(lhs, rhs) =>
       val lLin = linearize(lhs)
       val rLin = linearize(rhs)
