@@ -7,16 +7,19 @@ import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullTyp
 import compiler.smt.Solver
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
 import compiler.util.asIterableOfType
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.reflect.ClassTag
 
 // TODO caching?
 // TODO check edge cases in simplification of unions and intersections (e.g. all types are Null/Nothing/Any)
 // TODO some code in simplification of unions and intersections seems very similar to the code of the join and meet computations, maybe this can be improved
-final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer) {
+final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, globalValuesContext: GlobalValuesContext) {
 
   def simplify(tpe: Type): Type = tpe match {
-    case nominalType: NominalType => nominalType
+    case primitiveType: PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) =>
+      NamedType(typeName, typeArgs.map(simplify), args)
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplify), simplify(result), enforcedPure)
     case variable: TypeVariable => variable
 
@@ -101,8 +104,41 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       then NullableType(nonNullType)
       else nonNullType
 
+    case RefinedType(base1, itVal, scope, pred1) =>
+
+      // Step 1: T with it is S  --->  S  (if S <: T)
+      val (targetTypes, pred2Parts) = searchTypeTests(pred1, itVal, base1)
+      val base2 = if targetTypes.isEmpty then base1 else meetJoinComputer.computeMeet(targetTypes)
+      val pred2 = mkSimplifiedConjunct(pred2Parts)
+
+      // Step 2: T? with it != null  --->  T
+      val (containsNonNullCheck, pred3Parts) = searchNonNullCheck(pred2, itVal)
+      val base3 = if containsNonNullCheck then base2.ignoreNullabilityShallow else base2
+      val pred3 = mkSimplifiedConjunct(pred3Parts)
+
+      // Step 3: Int with it >= 0  --->  [0,]
+      val RefinedType(b, newIt, _, p) = base3.asRefinedType(itVal, scope)
+      assert(newIt == itVal)
+      val (base4, pred4) = b match {
+        case IntType =>
+          val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3, itVal)
+          val lbOpt = solver.intMax(lowerBounds)
+          val ubOpt = solver.intMin(upperBounds)
+          val pred4PartsAfterReadd =
+            (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, itVal)) else List.empty) ++
+              (if ubOpt.isEmpty then upperBounds.map(LessOrEq(itVal, _)) else List.empty) ++
+              pred4PartsBeforeReadd
+          (if lbOpt.isEmpty && ubOpt.isEmpty then IntType else IntRangeType(lbOpt, ubOpt),
+            mkSimplifiedConjunct(pred4PartsAfterReadd))
+        case _ => (base3, pred3)
+      }
+      
+      // Finally: remove useless predicate
+      if pred4 == BoolConst(true) then base4 else RefinedType(base4, itVal, scope, pred4)
+
+
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      (lowerBoundOpt.map(simplify), upperBoundOpt.map(simplify)) match {
+      (lowerBoundOpt.map(simplifyInt), upperBoundOpt.map(simplifyInt)) match {
         case (None, None) => IntType
         case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
@@ -113,7 +149,41 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       NullableType(simplify(nullatedType))
   }
 
-  def simplify(formula: Formula): Formula = eval(formula).getOrElse {
+  def simplifyBool(formula: Formula): Formula = formula match {
+    case LogicalAnd(lhs, rhs) =>
+      (simplifyBool(lhs), simplifyBool(rhs)) match {
+        case (lhs, BoolConst(true)) => lhs
+        case (BoolConst(true), rhs) => rhs
+        case (lhs, rhs) => LogicalAnd(lhs, rhs)
+      }
+    case LogicalNot(operand) =>
+      simplifyBool(operand) match {
+        case BoolConst(cst) => BoolConst(!cst)
+        case operand => LogicalNot(operand)
+      }
+    case LogicalOr(lhs, rhs) =>
+      (simplifyBool(lhs), simplifyBool(rhs)) match {
+        case (lhs, BoolConst(false)) => lhs
+        case (BoolConst(false), rhs) => rhs
+        case (lhs, rhs) => LogicalOr(lhs, rhs)
+      }
+    case Equality(lhs, rhs) if lhs == rhs =>
+      // TODO recurse?
+      BoolConst(true)
+    case LessOrEq(lhs, rhs) =>
+      (simplifyInt(lhs), simplifyInt(rhs)) match {
+        case (IntConst(l), IntConst(r)) => BoolConst(l <= r)
+        case (lhs, rhs) => LessOrEq(lhs, rhs)
+      }
+    case LessThan(lhs, rhs) =>
+      (simplifyInt(lhs), simplifyInt(rhs)) match {
+        case (IntConst(l), IntConst(r)) => BoolConst(l < r)
+        case (lhs, rhs) => LessThan(lhs, rhs)
+      }
+    case formula => formula
+  }
+
+  def simplifyInt(formula: Formula): Formula = eval(formula).getOrElse {
     var summaryOpt = Option.empty[Formula]
 
     def addToSummary(f: Formula): Unit = {
@@ -147,12 +217,63 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     summaryOpt.getOrElse(IntConst(0))
   }
 
+  /**
+   * @return (lowerBounds, upperBounds, otherConditions)
+   */
+  private def searchBounds(formula: Formula, itVal: IdValue): (List[Formula], List[Formula], List[Formula]) = {
+    import compiler.irs.ssa.FormulasDsl.*
+    formula match {
+      case LogicalAnd(lhs, rhs) =>
+        val (llb, lrb, lo) = searchBounds(lhs, itVal)
+        val (rlb, rrb, ro) = searchBounds(rhs, itVal)
+        (llb ++ rlb, lrb ++ rrb, lo ++ ro)
+      case LessOrEq(lb, `itVal`) => (List(lb), List.empty, List.empty)
+      case LessThan(lb, `itVal`) => (List(lb + 1), List.empty, List.empty)
+      case LessOrEq(`itVal`, ub) => (List.empty, List(ub), List.empty)
+      case LessThan(`itVal`, ub) => (List.empty, List(ub - 1), List.empty)
+      case formula => (List.empty, List.empty, List(formula))
+    }
+  }
+
+  /**
+   * @return (containsNonNullCheck, formulaWithoutNonNullCheck)
+   */
+  private def searchNonNullCheck(formula: Formula, itVal: IdValue): (Boolean, List[Formula]) = {
+    val nullVal = globalValuesContext.nullVal
+    formula match {
+      case LogicalAnd(lhs, rhs) =>
+        val (leftContainsNonNullCheck, leftWithoutNonNullCheck) = searchNonNullCheck(lhs, itVal)
+        val (rightContainsNonNullCheck, rightWithoutNonNullCheck) = searchNonNullCheck(rhs, itVal)
+        (leftContainsNonNullCheck || rightContainsNonNullCheck, leftWithoutNonNullCheck ++ rightWithoutNonNullCheck)
+      case LogicalNot(Equality(`itVal`, `nullVal`) | Equality(`nullVal`, `itVal`)) =>
+        (true, List.empty)
+      case formula => (false, List(formula))
+    }
+  }
+
+  private def searchTypeTests(formula: Formula, itVal: IdValue, baseType: Type): (List[Type], List[Formula]) = formula match {
+    case LogicalAnd(lhs, rhs) =>
+      val (lTids, lRem) = searchTypeTests(lhs, itVal, baseType)
+      val (rTids, rRem) = searchTypeTests(rhs, itVal, baseType)
+      (lTids ++ rTids, lRem ++ rRem)
+    case TypePredicate(`itVal`, tpe) =>
+      subtypingCtx.checkDowncastTarget(baseType, tpe).asOption match {
+        case Some(targetType) => (List(targetType), List.empty)
+        case None => (List.empty, List(formula))
+      }
+    case formula => (List.empty, List(formula))
+  }
+
+  private def mkSimplifiedConjunct(terms: List[Formula]): Formula =
+    simplifyBool(terms.foldLeft[Formula](BoolConst(true))(LogicalAnd(_, _)))
+
   def eval(formula: Formula): Option[ConstFormula] = formula match {
     case value: IdValue => None
     case formula: ConstFormula => Some(formula)
     case Select(owner, field) => None
     case FunCall(receiver, func, typeArgs, args) => None
     case ClosureCall(callee, target, args) => None
+    case PureClosureValue(params, body, closureVal) => None
     case Plus(lhs, rhs) => evalNumericBinop(lhs, rhs, _ + _, _ + _, rhsCanBeZero = true)
     case Neg(operand) =>
       eval(operand) match {
@@ -183,6 +304,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case Select(owner, field) => Map(formula -> 1)
     case FunCall(receiver, func, typeArgs, args) => Map(formula -> 1)
     case ClosureCall(callee, closureTypingTarget, args) => Map(formula -> 1)
+    case PureClosureValue(params, body, closureVal) => Map(formula -> 1)
     case Plus(lhs, rhs) =>
       val lLin = linearize(lhs)
       val rLin = linearize(rhs)
@@ -193,8 +315,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case Neg(operand) =>
       for ((f, coef) <- linearize(operand)) yield (f, -coef)
     case Times(lhs, rhs) =>
-      val sLhs = simplify(lhs)
-      val sRhs = simplify(rhs)
+      val sLhs = simplifyInt(lhs)
+      val sRhs = simplifyInt(rhs)
       (sLhs, sRhs) match {
         case (IntConst(lc), IntConst(rc)) =>
           Map(IntConst(lc * rc) -> 1)

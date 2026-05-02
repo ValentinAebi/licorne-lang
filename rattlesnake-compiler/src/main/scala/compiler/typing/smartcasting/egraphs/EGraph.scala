@@ -158,6 +158,8 @@ final class EGraph private[egraphs](startClId: Long) {
       BinaryOpNode(classOf(lhs), OpLt, classOf(rhs))
     case TypePredicate(subject, tpe) =>
       TypePredicateNode(classOf(subject), tpe)
+    case PureClosureValue(params, body, closureVal) =>
+      encode(closureVal)
   }
 
   private[egraphs] def canonicalize(n: ENode): Unit = n match {

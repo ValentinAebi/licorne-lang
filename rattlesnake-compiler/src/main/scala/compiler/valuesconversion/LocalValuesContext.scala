@@ -1,6 +1,6 @@
 package compiler.valuesconversion
 
-import compiler.identifiers.{FunOrVarId, ThisId}
+import compiler.identifiers.{FunOrVarId, ItId, ThisId}
 import compiler.irs.asts.Asts
 import compiler.irs.ssa.Formulas.{Formula, IdValue}
 import compiler.lang.ReassigPermission
@@ -76,10 +76,9 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     case None => Unknown(id)
   }
 
-  def getThisValue: Option[IdValue] = valueOf(ThisId) match {
-    case result: ErrorValueQueryResult => None
-    case KnownAndInitialized(value, _, _) => Some(value)
-  }
+  def getThisValue: Option[IdValue] = valueOf(ThisId).toOption
+  
+  def getItValue: Option[IdValue] = valueOf(ItId).toOption
 
   def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnot)
 

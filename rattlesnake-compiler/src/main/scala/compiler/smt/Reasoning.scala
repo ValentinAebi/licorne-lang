@@ -2,6 +2,7 @@ package compiler.smt
 
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
 import io.ksmt.solver.z3.KZ3Solver
 
@@ -9,12 +10,12 @@ import scala.util.Using
 
 object Reasoning {
 
-  def usingFreshReasoningToolkit[T](dealiasingCtx: DealiasingContext, resolutionCtx: ResolutionContext, proxyStore: ProxyStore)
+  def usingFreshReasoningToolkit[T](dealiasingCtx: DealiasingContext, resolutionCtx: ResolutionContext, proxyStore: ProxyStore, globalValuesContext: GlobalValuesContext)
                                    (mkSubtypingCtx: Solver => SubtypingContext)
                                    (f: (Solver, SubtypingContext, Simplifier, MeetJoinComputer, AbstractInterpreter) => T): T =
     usingFreshSolver(dealiasingCtx, proxyStore) { solver =>
       val subtypingCtx = mkSubtypingCtx(solver)
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver)
+      val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver, globalValuesContext)
       val simplifier = meetJoin.simplifier
       val absInt = AbstractInterpreter(solver, simplifier)
       f(solver, subtypingCtx, simplifier, meetJoin, absInt)

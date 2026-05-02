@@ -207,6 +207,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
       mkClosureApp(callee, closureTypingTarget, args, kCtx.mkIntSort())
     case ClosureCall(callee, closureTypingTarget, args) => None
+    case PureClosureValue(params, body, closureVal) => convertInt(closureVal)
     case Plus(lhs, rhs) =>
       for {
         l <- convertInt(lhs)
@@ -257,6 +258,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
     case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
       mkClosureApp(callee, closureTypingTarget, args, kCtx.mkBoolSort())
     case ClosureCall(callee, closureTypingTarget, args) => None
+    case PureClosureValue(params, body, closureVal) => convertBool(closureVal)
     case Plus(lhs, rhs) => None
     case Neg(operand) => None
     case Times(lhs, rhs) => None
@@ -309,6 +311,7 @@ final class Solver private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, dealiasing
       mkFunApp(receiver, func, args, anySort)
     case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
       mkClosureApp(callee, closureTypingTarget, args, anySort)
+    case PureClosureValue(params, body, closureVal) => None
     case _ => None
   }
 

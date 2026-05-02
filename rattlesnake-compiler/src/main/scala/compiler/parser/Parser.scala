@@ -257,23 +257,24 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "possiblyNegativeNumericLiteralValue"
 
-  private lazy val closureType = opt(kw(Pure)) ::: kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
+  private lazy val closureTypeTree = opt(kw(Pure)) ::: kw(Fn).ignored ::: openParenth ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: -> ::: typeTree map {
     case optPure ^: paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType, optPure.isDefined)
-  } setName "closureType"
+  } setName "closureTypeTree"
 
-  private lazy val intRangeType = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: op(ClosingBracket).ignored map {
+  private lazy val intRangeTypeTree = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: op(ClosingBracket).ignored map {
     case lowOpt ^: highOpt => IntRangeTypeTree(lowOpt, highOpt)
-  } setName "intRangeType"
+  } setName "intRangeTypeTree"
 
   private lazy val typeTree: P[TypeTree] = recursive {
-    nonNullableTypeTree ::: opt(op(QuestionMark)) map {
-      case nonNullableType ^: None => nonNullableType
-      case nonNullableType ^: Some(_) => NullableTypeTree(nonNullableType)
+    typeTreeWithoutPredOrQMark ::: opt(op(QuestionMark) OR kw(With).ignored ::: expr) map {
+      case baseType ^: None => baseType
+      case baseType ^: Some(_: Operator) => NullableTypeTree(baseType)
+      case baseType ^: Some(predicate: Expr) => RefinedTypeTree(baseType, predicate)
     }
   } setName "typeTree"
 
-  private lazy val nonNullableTypeTree: P[TypeTree] = recursive {
-    nominalTypeTree OR closureType OR intRangeType OR (openParenth ::: typeTree ::: closeParenth)
+  private lazy val typeTreeWithoutPredOrQMark: P[TypeTree] = recursive {
+    nominalTypeTree OR closureTypeTree OR intRangeTypeTree OR (openParenth ::: typeTree ::: closeParenth)
   } setName "noNullableTypeTree"
 
   private lazy val typeArgsListOpt = opt(openBracket ::: repeatWithSep(typeTree, comma) ::: closeBracket)

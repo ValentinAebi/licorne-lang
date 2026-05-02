@@ -337,7 +337,7 @@ final class Typer(
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
         }
 
-      case mkClosure@MkClosure(assigned, params, body, declaredPure) =>
+      case mkClosure@MkClosure(assigned, params, body, isPure) =>
         val id = NormalFunOrVarId(assigned match {
           case assigned: NamedIdValue => assigned.irDescr
           case assigned: IntermediateIdValue => assigned.toString
@@ -348,7 +348,6 @@ final class Typer(
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
         }
-        val isPure = declaredPure || isObviouslyEffectFree(body)
         currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
         executionEnvirOpt match {
           case Some(executionEnvir) =>
@@ -447,6 +446,9 @@ final class Typer(
       case ClosureCall(callee, closureTypingTarget, args) =>
         assert(closureTypingTarget.isUnresolvable)
         NothingType
+      case PureClosureValue(params, body, closureVal) =>
+        // TODO check that this is safe
+        scope.currentTypeOf(closureVal, saveSmartcasts = false)
       case Plus(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
       case Neg(operand) =>
@@ -624,15 +626,31 @@ final class Typer(
         for tpe <- types do {
           typeTypeApp(tpe, ambientVarianceOpt, currScope, posOpt)
         }
+      case tpe@RefinedType(baseType, itVal, predScope, predicate) =>
+        typeTypeApp(baseType, ambientVarianceOpt, predScope, posOpt)
+        predScope.saveType(itVal, baseType)
+        val predicateType = typeFormula(predicate, predScope, posOpt)
+        if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
+          er.reportError(s"predicate should have type $BoolType", posOpt)
+        }
+        if (!predicate.isPure) {
+          er.reportError(s"I cannot prove that predicate $predicate is pure", posOpt)
+        }
       case tpe@IntRangeType(lbOpt, ubOpt) =>
         lbOpt.foreach { lb =>
-          typeFormula(lb, currScope, posOpt)
+          val lbType = typeFormula(lb, currScope, posOpt)
+          if (!subtypingCtx.isSubtype(lbType, IntType)) {
+            er.reportError(s"lower bound of $tpe should be an integer", posOpt)
+          }
           if (!lb.isPure) {
             er.reportError(s"I cannot prove that lower bound of $tpe is pure", posOpt)
           }
         }
         ubOpt.foreach { ub =>
-          typeFormula(ub, currScope, posOpt)
+          val rbType = typeFormula(ub, currScope, posOpt)
+          if (!subtypingCtx.isSubtype(rbType, IntType)) {
+            er.reportError(s"upper bound of $tpe should be an integer", posOpt)
+          }
           if (!ub.isPure) {
             er.reportError(s"I cannot prove that upper bound of $tpe is pure", posOpt)
           }
@@ -941,7 +959,7 @@ final class Typer(
                 er.reportError(s"illegal call to ${funSig.functionName}: I cannot prove that its precondition $precondSubst holds", posOpt)
               }
             }
-            val instantiatedRetType = funSig.retType.substitute(composedTypeSubst, argsSubst)
+            val instantiatedRetType = simplifier.simplify(funSig.retType.substitute(composedTypeSubst, argsSubst))
             invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
             if (isPurityRequired && !funSig.isPure) {
               er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
@@ -1134,19 +1152,6 @@ final class Typer(
       argIdx += 1
     }
     subst
-  }
-
-  private def isObviouslyEffectFree(instr: Instr): Boolean = instr match {
-    case _: PureInstr => true
-    case Loop(cond, condVal, body, variables) =>
-      isObviouslyEffectFree(cond) && isObviouslyEffectFree(body)
-    case Disjunction(condVal, thenBr, elseBr, variables) =>
-      isObviouslyEffectFree(thenBr) && isObviouslyEffectFree(elseBr)
-    case scope: Scope =>
-      scope.instructions.forall(isObviouslyEffectFree)
-    case LocalDecl(localId, tpe) => true
-    case Unreachable() => true
-    case _ => false
   }
 
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {

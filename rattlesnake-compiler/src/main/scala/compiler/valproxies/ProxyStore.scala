@@ -41,6 +41,7 @@ final class ProxyStore {
         FunCall(develop(receiver), func, typeArgs, args.map(develop))
       case ClosureCall(callee, closureTypingTarget, args) =>
         ClosureCall(develop(callee), closureTypingTarget, args.map(develop))
+      case pureClosureValue: PureClosureValue => pureClosureValue
       case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
       case Neg(operand) => Neg(develop(operand))
       case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))

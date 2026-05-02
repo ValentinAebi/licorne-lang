@@ -3,6 +3,7 @@ package compiler.irs.ssa
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
+import compiler.lang.Keyword
 import compiler.lang.Types.Type
 import compiler.reporting.Position
 
@@ -113,8 +114,21 @@ object Formulas {
     }
   }
   
-  final case class ClosureCall(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
+  final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
     override def toString: String = s"$callee(" ++ args.mkString(",") ++ ")"
+  }
+
+  object ClosureCall {
+    def apply(callee: Formula, target: ClosureTypingTarget, args: List[Formula]): Formula = callee match {
+      case PureClosureValue(params, body, closureVal) =>
+        val subst = params.zip(args).toMap
+        body.substitute(subst)
+      case callee => new ClosureCall(callee, target, args)
+    }
+  }
+  
+  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
+    override def toString: String = Keyword.Fn.str + " " + params.mkString("(", ", ", ")") + " -> " + body
   }
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula {
@@ -211,6 +225,7 @@ object Formulas {
     case Select(owner, field) => Select(owner.substitute(subst), field)
     case FunCall(receiver, funId, typeArgs, args) => FunCall(receiver.substitute(subst), funId, typeArgs.map(_.substitute(Map.empty, subst)), args.map(_.substitute(subst)))
     case ClosureCall(callee, target, args) => ClosureCall(callee.substitute(subst), target, args.map(_.substitute(subst)))
+    case PureClosureValue(params, body, closureVal) => PureClosureValue(params, body.substitute(subst.filterNot(params.contains)), closureVal)
     case Plus(lhs, rhs) => Plus(lhs.substitute(subst), rhs.substitute(subst))
     case Neg(operand) => Neg(operand.substitute(subst))
     case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
@@ -237,6 +252,7 @@ object Formulas {
       typeCanMention(receiver) && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(typeCanMention)
     case ClosureCall(callee, target, args) =>
       typeCanMention(callee) && target.isResolvedAndPure && args.forall(typeCanMention)
+    case PureClosureValue(params, body, closureVal) => typeCanMention(body)
     case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Neg(operand) => typeCanMention(operand)
     case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
@@ -261,6 +277,7 @@ object Formulas {
       receiver.isPure && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(_.isPure)
     case ClosureCall(callee, target, args) =>
       callee.isPure && target.isResolvedAndPure && args.forall(_.isPure)
+    case PureClosureValue(params, body, closureVal) => true
     case Plus(lhs, rhs) => lhs.isPure && rhs.isPure
     case Neg(operand) => operand.isPure
     case Times(lhs, rhs) => lhs.isPure && rhs.isPure
@@ -283,6 +300,8 @@ object Formulas {
       receiver.idValsDependencies ++ args.flatMap(_.idValsDependencies)
     case ClosureCall(callee, closureTypingTarget, args) =>
       callee.idValsDependencies ++ args.flatMap(_.idValsDependencies)
+    case PureClosureValue(params, body, closureVal) =>
+      body.idValsDependencies -- params
     case Plus(lhs, rhs) =>
       lhs.idValsDependencies ++ rhs.idValsDependencies
     case Neg(operand) => operand.idValsDependencies

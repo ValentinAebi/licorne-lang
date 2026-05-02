@@ -1,0 +1,30 @@
+
+interface Seq[+T] {
+   fn filter(this, pred: pure fn (T) -> Bool) -> Seq[T with pred(it)]
+}
+
+object Test {
+
+   fn filterInRange(seq: Seq[Int], u: Int) -> Seq[[0,u]] =
+      seq.filter(fn (x) -> 0 <= x && x <= u)                // OK
+
+   fn filterInRange_bad(seq: Seq[Int], u: Int) -> Nothing =
+      seq.filter(fn (x) -> 0 <= x && x <= u)                //> E : return value: expected Nothing, found Seq[[0,u]]
+
+   fn keepAs(seq: Seq[I]) -> Seq[A] =
+      seq.filter(fn (i) -> i is A)                          // OK
+
+   fn keepAs_bad(seq: Seq[I]) -> Nothing =
+      seq.filter(fn (i) -> i is A)                          //> E : return value: expected Nothing, found Seq[A]
+
+   fn filterNonNull[T](seq: Seq[T?]) -> Seq[T] =
+      seq.filter(fn (e) -> e != null)                       // OK
+
+   fn filterNonNull_bad[T](seq: Seq[T?]) -> Nothing =
+      seq.filter(fn (e) -> null != e)                       //> E : return value: expected Nothing, found Seq[T]
+
+}
+
+interface I
+class A : I
+class B : I

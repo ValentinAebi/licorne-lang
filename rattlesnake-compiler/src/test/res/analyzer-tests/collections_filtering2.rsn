@@ -1,0 +1,4 @@
+
+interface Seq[+T] {
+   fn filter(this, pred: fn (T) -> Bool) -> Seq[T with pred(it)]     //> E : I cannot prove that predicate pred(it) is pure
+}

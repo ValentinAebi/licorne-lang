@@ -452,14 +452,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
-        generateSSA(stat, funScope, newScopeIfBlock = false)
+        generateSSA(stat, funScope, newScopeIfBlock = false)(using ReturnCollector.doNothingCollector)
       }
       SSA.Function(owner, funId, Some(funScope))
     case None =>
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Unit = {
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using returnCollector: ReturnCollector, loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     stat match {
 
@@ -633,7 +633,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val retVal = currScope.newIntermediate("ret")
         returnedTreeOpt match {
           case Some(returnedTree) =>
-            generateSSAExpr(retVal, returnedTree, currScope)
+            val retValProxyOpt = generateSSAExpr(retVal, returnedTree, currScope)
+            retValProxyOpt match {
+              case Some(retValProxy) =>
+                returnCollector.offerReturn(retValProxy)
+              case None =>
+                returnCollector.giveUp()
+            }
           case None =>
             val unitVal = currScope.valuesCtx.globalCtx.unitVal
             currScope.saveInstr(AssignVal(retVal, unitVal), returnStat)
@@ -926,9 +932,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
           currScope.getLocalValuesContextUnsafe.remap(varId, heapAddr)
         }
-        generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypesB.result(), bodyScope, declaredPure), closureDefTree)
-        None
+        val retValCollector = ReturnCollector.freshUniqueCollector
+        generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)(using retValCollector)
+        val isPure = declaredPure || isObviouslyPure(bodyScope)
+        val paramValsAndTypes = paramValsAndTypesB.result()
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, bodyScope, isPure), closureDefTree)
+        for {
+          closureRetVal <- retValCollector.getUniqueRet
+          if isPure
+        } yield PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg")
         generateSSAExpr(msgVal, msgTree, currScope)
@@ -978,17 +990,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.NullRef() => Some(currScope.valuesCtx.globalCtx.nullVal)
         case Asts.VariableRef(name) => currScope.getLocalValuesContextOpt.flatMap(_.valueOf(name).toOption)
         case Asts.ThisRef() => currScope.getLocalValuesContextOpt.flatMap(_.getThisValue)
-        case Asts.ItRef() => ???
+        case Asts.ItRef() => currScope.getLocalValuesContextOpt.flatMap(_.getItValue)
         case Asts.ObjectRef(objectName) => Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         // TODO non-prefixed calls (implicit this)?
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
-            case Asts.VariableRef(funId) =>
+            case Asts.VariableRef(funId) if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
               findImplicitReceiverInImports(funId, currScope)
             case Asts.Select(lhs, funId) =>
               generateFormula(lhs, currScope).map(_ -> funId)
-            case _ => failIllegalConstruct("closure invocation")
+            case _ => None
           }
           receiverAndFunIdOpt match {
             case Some((receiverFormula, funId)) =>
@@ -996,7 +1008,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               val argFormulas = args.flatMap(generateFormula(_, currScope))
               if argFormulas.size == args.size then Some(FunCall(receiverFormula, InvocationTarget(funId), typeArgs, argFormulas))
               else None
-            case _ => None
+            case None => for {
+              calleeFormula <- generateFormula(callee, currScope)
+              argFormulas <- args.foldRight(Option(List.empty[Formula])) { (arg, following) =>
+                for {
+                  following <- following
+                  argFormula <- generateFormula(arg, currScope)
+                } yield argFormula :: following
+              }
+            } yield ClosureCall(calleeFormula, ClosureTypingTarget(), argFormulas)
           }
         case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
         case Asts.UnaryOp(Operator.Minus, operand) =>
@@ -1094,6 +1114,19 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     generateFormula(expr, currScope)
   }
 
+  private def isObviouslyPure(instr: Instr): Boolean = instr match {
+    case _: PureInstr => true
+    case Loop(cond, condVal, body, variables) =>
+      isObviouslyPure(cond) && isObviouslyPure(body)
+    case Disjunction(condVal, thenBr, elseBr, variables) =>
+      isObviouslyPure(thenBr) && isObviouslyPure(elseBr)
+    case scope: Scope =>
+      scope.instructions.forall(isObviouslyPure)
+    case LocalDecl(localId, tpe) => true
+    case Unreachable() => true
+    case _ => false
+  }
+
   private def mustNotBeUnit(tpe: Type, posOpt: Option[Position]): Unit = {
     if (tpe == UnitType) {
       reportError(s"$UnitType is not allowed in this position", posOpt)
@@ -1111,22 +1144,43 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
   }
 
-  private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using ImportsContext): Type = typeTree match {
-    case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
-    case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
-    case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
-      ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
-    case Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
-      IntRangeType(
-        lowerBoundOpt.flatMap(generateFormula(_, scope)),
-        upperBoundOpt.flatMap(generateFormula(_, scope))
-      )
-    case Asts.NullableTypeTree(wrappedType) =>
-      NullableType(mkType(wrappedType, scope))
-    case Asts.UnionTypeTree(types) =>
-      UnionType(SeqSet(types.map(mkType(_, scope))))
-    case Asts.IntersectionTypeTree(types) =>
-      IntersectionType(SeqSet(types.map(mkType(_, scope))))
+  private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using ImportsContext): Type = {
+
+    extension (optFormula: Option[Formula]) def required(errorMsg: String, posOpt: Option[Position]): Option[Formula] = optFormula match {
+      case s@Some(_) => s
+      case None =>
+        er.reportError(errorMsg, posOpt)
+        None
+    }
+
+    typeTree match {
+      case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
+      case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
+      case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
+        ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
+      case Asts.RefinedTypeTree(baseTypeTree, predicateTree) =>
+        val predicateScope = Scope.nestedInside(scope, typeTree)
+        val itVal = predicateScope.newParam(ItId, typeTree.getPosition)
+        val baseType = mkType(baseTypeTree, predicateScope)
+        predicateScope.getLocalValuesContextUnsafe.saveNewLocal(ItId, itVal, ReassigPermission.Val, Some(baseType))
+        generateFormula(predicateTree, predicateScope) match {
+          case Some(predicate) => RefinedType(baseType, itVal, predicateScope, predicate)
+          case None =>
+            er.reportError("invalid predicate", predicateTree.getPosition)
+            baseType
+        }
+      case rangeTypeTree@Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
+        IntRangeType(
+          lowerBoundOpt.flatMap(lb => generateFormula(lb, scope).required("invalid lower bound", lb.getPosition)),
+          upperBoundOpt.flatMap(ub => generateFormula(ub, scope).required("invalid upper bound", ub.getPosition))
+        )
+      case Asts.NullableTypeTree(wrappedType) =>
+        NullableType(mkType(wrappedType, scope))
+      case Asts.UnionTypeTree(types) =>
+        UnionType(SeqSet(types.map(mkType(_, scope))))
+      case Asts.IntersectionTypeTree(types) =>
+        IntersectionType(SeqSet(types.map(mkType(_, scope))))
+    }
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using importsCtx: ImportsContext): NamedType = namedTypeTree match {

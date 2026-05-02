@@ -111,7 +111,7 @@ class EGraphTests {
   }
 
   private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, globalValuesContext) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(using simplifier)

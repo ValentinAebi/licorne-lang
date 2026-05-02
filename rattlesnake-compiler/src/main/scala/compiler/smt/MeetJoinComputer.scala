@@ -9,6 +9,7 @@ import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.util.{SeqSet, asIterableOfType}
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
 import scala.util.boundary
@@ -19,10 +20,11 @@ final class MeetJoinComputer(
                               dealiasingCtx: DealiasingContext,
                               resolutionCtx: ResolutionContext,
                               subtypingCtx: SubtypingContext,
-                              solver: Solver
+                              solver: Solver,
+                              globalValuesContext: GlobalValuesContext
                             ) {
 
-  private[smt] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this)
+  private[smt] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
 
   def computeJoin(types: Type*): Type =
     computeJoin(Iterable.from(types))
@@ -86,6 +88,9 @@ final class MeetJoinComputer(
                   for (tpe <- types) {
                     categorizeType(tpe)
                   }
+                case RefinedType(baseType, itVal, scope, predicate) =>
+                  // TODO try to also handle the predicate
+                  categorizeType(baseType)
                 case intRangeType: IntRangeType =>
                   rangeTypes.addOne(intRangeType)
               }

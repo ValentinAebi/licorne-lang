@@ -32,7 +32,7 @@ final class TypeAliasesAnalyzer(
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       
@@ -75,6 +75,8 @@ final class TypeAliasesAnalyzer(
       types.flatMap(findMentionedTypes)
     case ClosureType(params, resultType, enforcedPure) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
+    case RefinedType(baseType, itVal, scope, predicate) =>
+      findMentionedTypes(baseType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       Set.empty
     case NullableType(nullatedType) =>

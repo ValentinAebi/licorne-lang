@@ -5,7 +5,6 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.{TypeAliasSignature, Types}
 
-import scala.reflect.ClassTag
 
 final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSignature]) {
 
@@ -34,25 +33,32 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       UnionType(types.map(dealiasType))
     case IntersectionType(types) =>
       IntersectionType(types.map(dealiasType))
+    case RefinedType(baseType, itVal, predicateScope, predicate) =>
+      RefinedType(dealiasType(baseType), itVal, predicateScope, predicate)
     case intRangeType: IntRangeType => intRangeType
     case NullableType(nullatedType) =>
       NullableType(dealiasType(nullatedType))
   }
 
-  def isNonRefType(tpe: Type): Boolean = dealiasType(tpe) match {
+  /**
+   * "value type" means "a type that is not a reference"
+   */
+  def isValueType(tpe: Type): Boolean = dealiasType(tpe) match {
     case IntType | DoubleType | CharType | BoolType | StringType | UnitType | NothingType => true
     case NullType | AnyType => false
     case NamedType(typeName, typeArgs, args) => false
     case ClosureType(params, result, enforcedPure) => false
     case tv: TypeVariable =>
-      tv.actualTypeIfResolved.exists(isNonRefType)
+      tv.actualTypeIfResolved.exists(isValueType)
     case UnionType(types) =>
-      types.forall(isNonRefType)
+      types.forall(isValueType)
     case IntersectionType(types) =>
-      types.exists(isNonRefType)
+      types.exists(isValueType)
+    case RefinedType(baseType, itVal, predicateScope, predicate) =>
+      isValueType(baseType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
     case NullableType(nullatedType) =>
-      isNonRefType(nullatedType)
+      isValueType(nullatedType)
   }
 
   def eraseRefinements(tpe: Type): Type = dealiasType(tpe) match {
@@ -67,6 +73,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       case Some(tpe) => eraseRefinements(tpe)
       case None => AnyType
     }
+    case RefinedType(baseType, itVal, predicateScope, predicate) => eraseRefinements(baseType)
     case UnionType(types) =>
       if types.size == 1
       then eraseRefinements(types.head)

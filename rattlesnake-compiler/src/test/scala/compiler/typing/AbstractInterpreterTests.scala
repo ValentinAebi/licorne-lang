@@ -159,7 +159,7 @@ class AbstractInterpreterTests {
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
 
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore) { solver =>
+    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(absInt, simplifier, solver)

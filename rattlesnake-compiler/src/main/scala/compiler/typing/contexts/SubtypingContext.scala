@@ -44,7 +44,7 @@ final class SubtypingContext(
 
   // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
-    dealiasingCtx.dealiasType(originalType).ignoreRangesShallow match {
+    dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>
@@ -111,6 +111,12 @@ final class SubtypingContext(
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
       superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
+    case (subT: RefinedType, superT: RefinedType) =>
+      val RefinedType(subBaseType, subItVal, subPredicateScope, subPredicate) = subT.flattenedRefinement
+      val RefinedType(superBaseType, superItVal, superPredicateScope, superPredicate) = superT.flattenedRefinement
+      isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate.substitute(Map(subItVal -> superItVal)), superPredicate)
+    case (subT@RefinedType(_, itVal, scope, _), superT) => isSubtype(subT, superT.asRefinedType(itVal, scope))
+    case (subT, superT@RefinedType(_, itVal, scope, _)) => isSubtype(subT.asRefinedType(itVal, scope), superT)
     case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
       logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
     case (IntersectionType(subtypes), superT) =>

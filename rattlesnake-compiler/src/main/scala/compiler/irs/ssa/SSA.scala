@@ -116,8 +116,9 @@ object SSA {
     val invariants: mutable.Seq[Formula] = mutable.ListBuffer.empty[Formula]
   }
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
-  final case class StaticTypeAssert(value: IdValue, tpe: Type) extends RealInstr
-  final case class StaticAssert(value: IdValue) extends RealInstr
+  
+  final case class StaticTypeAssert(value: IdValue, tpe: Type) extends RealInstr, PureInstr
+  final case class StaticAssert(value: IdValue) extends RealInstr, PureInstr
 
   sealed trait AssigningInstr extends RealInstr {
     val assigned: IdValue

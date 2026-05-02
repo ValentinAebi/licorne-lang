@@ -487,6 +487,10 @@ object Asts {
   }
 
   sealed trait TypeTree extends Ast
+  
+  final case class RefinedTypeTree(baseTypeTree: TypeTree, predicateTree: Expr) extends TypeTree {
+    override def children: List[Ast] = List(baseTypeTree, predicateTree)
+  }
 
   final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends TypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
