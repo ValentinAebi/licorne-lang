@@ -5,7 +5,7 @@ import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.SSA
 import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
 import compiler.lang.{FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
-import compiler.lang.Types.{ClosureType, NamedType, Type}
+import compiler.lang.Types.{ClosureType, NamedType, NullableType, RefinedType, Type}
 import compiler.pipeline.CompilationStep.TypeHintsInsertion
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -173,6 +173,14 @@ final class TypeHintsInserter(
           unifyTypes(ht, st)
         }
         unifyTypes(hintResult, shapeResult)
+      case (NullableType(nullatedHint), shape) =>
+        unifyTypes(nullatedHint, shape)
+      case (hint, NullableType(nullatedShape)) =>
+        unifyTypes(hint, nullatedShape)
+      case (RefinedType(hintBase, _, _, _), shape) =>
+        unifyTypes(hintBase, shape)
+      case (hint, RefinedType(shapeBase, _, _, _)) =>
+        unifyTypes(hint, shapeBase)
       case _ => ()
       // TODO also handle IntersectionTypes and UnionTypes?
     }
