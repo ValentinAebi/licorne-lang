@@ -104,29 +104,28 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       then NullableType(nonNullType)
       else nonNullType
 
-    case RefinedType(base1, itVal, scope, pred1) =>
+    case RefinedType(base1, it12, scope, pred1) =>
 
       // Step 1: T with it is S  --->  S  (if S <: T)
-      val (targetTypes, pred2Parts) = searchTypeTests(pred1, itVal, base1)
+      val (targetTypes, pred2Parts) = searchTypeTests(pred1, it12, base1)
       val base2 = if targetTypes.isEmpty then base1 else meetJoinComputer.computeMeet(targetTypes)
       val pred2 = mkSimplifiedConjunct(pred2Parts)
 
       // Step 2: T? with it != null  --->  T
-      val (containsNonNullCheck, pred3Parts) = searchNonNullCheck(pred2, itVal)
+      val (containsNonNullCheck, pred3Parts) = searchNonNullCheck(pred2, it12)
       val base3 = if containsNonNullCheck then base2.ignoreNullabilityShallow else base2
       val pred3 = mkSimplifiedConjunct(pred3Parts)
 
       // Step 3: Int with it >= 0  --->  [0,]
-      val RefinedType(b, newIt, _, p) = base3.asRefinedType(itVal, scope)
-      assert(newIt == itVal)
+      val RefinedType(b, it3, _, p) = base3.asRefinedType(it12, scope)
       val (base4, pred4) = b match {
         case IntType =>
-          val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3, itVal)
+          val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3, it3)
           val lbOpt = solver.intMax(lowerBounds)
           val ubOpt = solver.intMin(upperBounds)
           val pred4PartsAfterReadd =
-            (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, itVal)) else List.empty) ++
-              (if ubOpt.isEmpty then upperBounds.map(LessOrEq(itVal, _)) else List.empty) ++
+            (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, it3)) else List.empty) ++
+              (if ubOpt.isEmpty then upperBounds.map(LessOrEq(it3, _)) else List.empty) ++
               pred4PartsBeforeReadd
           (if lbOpt.isEmpty && ubOpt.isEmpty then IntType else IntRangeType(lbOpt, ubOpt),
             mkSimplifiedConjunct(pred4PartsAfterReadd))
@@ -134,7 +133,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       }
       
       // Finally: remove useless predicate
-      if pred4 == BoolConst(true) then base4 else RefinedType(base4, itVal, scope, pred4)
+      if pred4 == BoolConst(true) then base4 else RefinedType(base4, it3, scope, pred4)
 
 
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
@@ -159,6 +158,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case LogicalNot(operand) =>
       simplifyBool(operand) match {
         case BoolConst(cst) => BoolConst(!cst)
+        case LogicalNot(subOperand) => subOperand
         case operand => LogicalNot(operand)
       }
     case LogicalOr(lhs, rhs) =>

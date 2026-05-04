@@ -9,6 +9,7 @@ import compiler.reporting.Position
 
 import java.util.Objects
 import scala.collection
+import scala.reflect.ClassTag
 
 
 // TODO cleaner pretty-printing system
@@ -238,6 +239,30 @@ object Formulas {
     case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(subst), rhs.substitute(subst))
     case LessThan(lhs, rhs) => LessThan(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
+  }
+
+  // TODO may be optimized: when operand(s) do not change, return input as is
+  extension (formula: Formula) def substitute(target: Formula, repl: Formula): Formula = formula match {
+    case formula if formula == target => repl
+    case value: IdValue => value
+    case formula: ConstFormula => formula
+    case Select(owner, field) => Select(owner.substitute(target, repl), field)
+    case FunCall(receiver, func, typeArgs, args) => FunCall(receiver.substitute(target, repl), func, typeArgs, args.map(_.substitute(target, repl)))
+    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.substitute(target, repl), closureTypingTarget, args.map(_.substitute(target, repl)))
+    case formula@PureClosureValue(params, body, closureVal) if params.contains(target) => formula
+    case PureClosureValue(params, body, closureVal) => PureClosureValue(params, body.substitute(target, repl), closureVal)
+    case Plus(lhs, rhs) => Plus(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case Neg(operand) => Neg(operand.substitute(target, repl))
+    case Times(lhs, rhs) => Times(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case DivBy(lhs, rhs) => DivBy(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case Modulo(lhs, rhs) => Modulo(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case LogicalNot(operand) => LogicalNot(operand.substitute(target, repl))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case Equality(lhs, rhs) => Equality(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case LessThan(lhs, rhs) => LessThan(lhs.substitute(target, repl), rhs.substitute(target, repl))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(target, repl), tpe)
   }
 
   extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {

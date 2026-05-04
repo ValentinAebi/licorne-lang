@@ -59,7 +59,8 @@ final class ProxyStore {
     else develop(oneStepRes)
   }
 
-  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)(using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
+  def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
+                              (using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
     val (directInfoIfTrue, directInfoIfFalse) = infosFor(cond)(using outerScope)
     val (proxyInfoIfTrue, proxyInfoIfFalse) = getProxy(cond) match {
       case Some(proxy) if proxy.isPure =>
@@ -96,7 +97,7 @@ final class ProxyStore {
         (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lhs)))
       case TypePredicate(subject, tpe) =>
         (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
-      case _ => (BranchingInfo.empty, BranchingInfo.empty)
+      case cond => (BranchingInfo.ofAssumption(cond), BranchingInfo.empty)
     }
   }
   

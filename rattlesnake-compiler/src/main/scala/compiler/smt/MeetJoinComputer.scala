@@ -60,7 +60,7 @@ final class MeetJoinComputer(
           nonNullDealiasedTypes.size match {
             case 0 => NullType
             case 1 => nonNullDealiasedTypes.head
-            case _ =>
+            case _ => nonNullDealiasedTypes.find(superT => nonNullDealiasedTypes.forall(subtypingCtx.isSubtype(_, superT))).getOrElse {
 
               // second pass: remove Nothing, shortcut if Any
               val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
@@ -116,6 +116,7 @@ final class MeetJoinComputer(
                 else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
                 else AnyType
               simplifier.simplify(rawJoin)
+            }
           }
       }
     }

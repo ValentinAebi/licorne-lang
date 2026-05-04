@@ -25,9 +25,10 @@ import scala.collection.immutable.SeqMap
 
 class AbstractInterpreterTests {
 
+  private given globalValuesCtx: GlobalValuesContext = GlobalValuesContext(proxyStore)
+
   private val proxyStore = ProxyStore()
-  private val globalValuesContext = GlobalValuesContext(proxyStore)
-  private val abScope = Scope.root(globalValuesContext)
+  private val abScope = Scope.root(globalValuesCtx)
 
   private val a: IdValue = abScope.newVal(NormalFunOrVarId("a"), None)
   private val b: IdValue = abScope.newVal(NormalFunOrVarId("b"), None)
@@ -131,7 +132,7 @@ class AbstractInterpreterTests {
 
     given CompilationStep = TypeChecking
 
-    val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
     val typeVarsCtx = TypeVariablesContext()
     val er = ErrorReporter(_ => fail(), _ => fail())
 
@@ -153,7 +154,6 @@ class AbstractInterpreterTests {
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())
-    val globalValuesCtx = GlobalValuesContext(proxyStore)
     val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
     val typeVarsCtx = TypeVariablesContext()
     val dealiasingCtx = DealiasingContext(Map.empty)

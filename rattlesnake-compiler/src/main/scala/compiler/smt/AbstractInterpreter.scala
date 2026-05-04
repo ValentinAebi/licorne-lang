@@ -5,11 +5,12 @@ import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, Type, primTypeFor}
 import compiler.lang.Variance.Invariant
-import compiler.lang.{Types}
+import compiler.lang.Types
 import compiler.smt.{Simplifier, Solver}
 import AbstractInterpreter.someZero
 import compiler.irs.ssa.Formulas
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.valuesconversion.GlobalValuesContext
 
 final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
   
@@ -139,7 +140,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
   }
 
   def interpretUnderAssumptions(formula: Formula, typeAssumptions: Map[IdValue, Type], assignmentTargetOpt: Option[IdValue])
-                               (using ResolutionContext, TypeParamsContext): Option[Type] = {
+                               (using GlobalValuesContext, ResolutionContext, TypeParamsContext): Option[Type] = {
 
     def interpretBinop(lhs: Formula, rhs: Formula, interpretationFunc: (Type, Type) => Option[Type]) = for {
       l <- interpretUnderAssumptions(lhs)

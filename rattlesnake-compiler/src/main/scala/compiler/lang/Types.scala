@@ -117,7 +117,7 @@ object Types {
     def apply(types: Type*): Type =
       apply(SeqSet(types))
   }
-  
+
   final case class RefinedType(baseType: Type, itVal: IdValue, predicateScope: Scope, predicate: Formula) extends Type {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
 
@@ -317,7 +317,7 @@ object Types {
   }
 
   extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type = tpe match {
+                                    (using globalValsCtx: GlobalValuesContext, resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
       val newTypeArgs = typeArgs.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
@@ -328,20 +328,27 @@ object Types {
       UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
-    case RefinedType(baseType, itVal, scope, predicate) =>
-      
+    case RefinedType(baseType, oldItVal, oldScope, predicate) =>
+
       def filterPred(predicate: Formula): List[Formula] = predicate match {
         case LogicalAnd(lhs, rhs) =>
           filterPred(lhs) ++ filterPred(rhs)
         case predicate if assignmentTarget.typeCanMention(predicate) => List(predicate)
         case _ => List.empty
       }
-      
+
       filterPred(predicate) match {
         case Nil => baseType
         case conjuncts =>
-          val newPredicate = conjuncts.reduce(LogicalAnd(_, _))
-          RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), itVal, scope, newPredicate)
+          val newScopeRoot = assignmentTarget.idValsDependencies.map(_.definingScope).maxByOption(_.depth).getOrElse(globalValsCtx.globalScope)
+          val newScope = Scope.nestedInsideNodeOpt(newScopeRoot, None)
+          val newItVal = newScope.newParam(ItId, currScopeAndProxyStoreOpt.flatMap(_._1.getPosition))
+          conjuncts.reduce(LogicalAnd(_, _))
+            .substitute(Map(oldItVal -> newItVal))
+            .filteredAsCondition(assignmentTarget) match {
+            case Some(newPredicate) => RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), oldItVal, newScope, newPredicate)
+            case None => baseType
+          }
       }
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val newLb = expandBound(lowerBoundOpt, assignmentTarget, _.lowerBoundOpt, currScopeAndProxyStoreOpt)
@@ -353,18 +360,29 @@ object Types {
   }
 
   extension (tpe: Type) def filtered(assignmentTargetOpt: Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type =
+                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext, globalValsCtx: GlobalValuesContext): Type =
     assignmentTargetOpt match {
       case Some(assignmentTarget) =>
         tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
       case None => tpe
     }
 
+  extension (formula: Formula) def filteredAsCondition(assignmentTarget: Formula): Option[Formula] = formula match {
+    case LogicalAnd(lhs, rhs) =>
+      (lhs.filteredAsCondition(assignmentTarget), rhs.filteredAsCondition(assignmentTarget)) match {
+        case (Some(l), Some(r)) => Some(LogicalAnd(l, r))
+        case (someL@Some(_), None) => someL
+        case (None, someR@Some(_)) => someR
+        case (None, None) => None
+      }
+    case formula => Option.when(assignmentTarget.typeCanMention(formula))(formula)
+  }
+
   extension (tpe: Type) def ignoreRangesShallow: Type = tpe match {
     case IntRangeType(_, _) => IntType
     case tpe => tpe
   }
-  
+
   extension (tpe: Type) def ignoreNullabilityShallow: Type = tpe match {
     case NullableType(nullatedType) => nullatedType
     case tpe => tpe
@@ -385,7 +403,7 @@ object Types {
     case Some(bound) =>
       currScopeAndProxyStoreOpt match {
         case Some(currScope, proxyStore) =>
-          currScope.currentTypeOf(bound, saveSmartcasts = false)(using proxyStore) match {
+          currScope.currentTypeOf(bound, saveSmartcastsInIR = false)(using proxyStore) match {
             case range: IntRangeType =>
               expandBound(expansionFunc(range), assignmentTarget, expansionFunc, currScopeAndProxyStoreOpt)
             case _ => None

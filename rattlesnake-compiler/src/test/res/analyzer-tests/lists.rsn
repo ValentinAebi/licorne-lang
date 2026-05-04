@@ -81,9 +81,9 @@ object Lists {
 
    fn filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[,a-1]] {
       var filteredReversed = new Nil();
-      while ls is Cons {        //> E : inferred incorrect type lists.List[[,a - 1]] for variable filteredReversed at loop body start, please provide a type annotation at variable declaration site
+      while ls is Cons {
          if ls.head <= a {
-            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : assignment to field head: expected [,a - 1], found ls<loop-body-start@84:24>.head : [,a]
          };
          ls = ls.tail;
       };
@@ -92,9 +92,31 @@ object Lists {
 
    fn filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[,a-1]] {
       var filteredReversed: List[[,a-1]] = new Nil();
-      while ls is Cons {    //> E : update of variable filteredReversed in loop violate its type annotation lists.List[[,a - 1]]
+      while ls is Cons {
          if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : assignment to field head: expected [,a - 1], found ls<loop-body-start@95:24>.head : [,a]
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn filter[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = new Nil();
+      while ls is Cons {
+         if p(ls.head) {
             filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
+         };
+         ls = ls.tail;
+      };
+      return reverse(filteredReversed);
+   }
+
+   fn filter_bad[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = new Nil();
+      while ls is Cons {
+         if !p(ls.head) {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : assignment to field head: expected T with p(it), found ls<loop-body-start@117:24>.head : T with !p(it)
          };
          ls = ls.tail;
       };

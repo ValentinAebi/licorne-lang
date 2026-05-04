@@ -27,6 +27,14 @@ extension [A, B](map: immutable.SeqMap[A, B]) def mapVals[C](f: B => C): immutab
   
 extension[A, B](map: mutable.Map[A, B]) def mapVals[C](f: B => C): mutable.Map[A, C] =
   map.map((a, b) => (a, f(b)))
+  
+extension[A, B](ls: List[(A, B)]) def mapVals[C](f: B => C): List[(A, C)] =
+  ls.map((a, b) => (a, f(b)))
+  
+extension[T](iterable: Iterable[T]) def findUnique(cond: T => Boolean): Option[T] = {
+  val filtered = iterable.filter(cond)
+  Option.when(filtered.size == 1)(filtered.head)
+}
 
 extension [A, B1](left: Map[A, B1]) def combine[B2, B3](right: Map[A, B2])(f: (Option[B1], Option[B2]) => Option[B3]): Map[A, B3] =
   doCombine(left, right, Map.newBuilder[A, B3], f)

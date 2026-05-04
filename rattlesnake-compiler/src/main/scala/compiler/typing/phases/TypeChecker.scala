@@ -1,9 +1,10 @@
 package compiler.typing.phases
 
+import compiler.irs.ssa.Formulas.Formula
 import compiler.irs.ssa.SSA
 import compiler.lang.FunctionSignature
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
-import compiler.lang.Types.{IntRangeType, Type}
+import compiler.lang.Types.{IntRangeType, RefinedType, Type}
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -30,6 +31,8 @@ final class TypeChecker(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
+
+    given GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, typeVarsCtx, er)
@@ -92,6 +95,7 @@ final class TypeChecker(
                          absInt: AbstractInterpreter
                        ): Unit =
     func.bodyOpt.foreach { funcBody =>
+      
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
         proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
@@ -103,10 +107,8 @@ final class TypeChecker(
         case None => BranchingInfo.empty
       }
       solver.onNewFrame {
-        funSig.paramsInclThis.foreach {
-          case (paramVal, range: IntRangeType) =>
-            solver.assertInRange(paramVal, range)
-          case _ => ()
+        for ((paramVal, paramType) <- funSig.paramsInclThis) {
+          sendRefinementsToSolver(paramVal, paramType, solver)
         }
         funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams))
       }
@@ -118,11 +120,7 @@ final class TypeChecker(
           proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {
-            paramType.withTypeVarsExpanded match {
-              case range: IntRangeType =>
-                solver.assertInRange(paramVal, range)
-              case _ => ()
-            }
+            sendRefinementsToSolver(paramVal, paramType.withTypeVarsExpanded, solver)
           }
           closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
           if (!closureRetType.isResolved) {
@@ -132,6 +130,16 @@ final class TypeChecker(
         checkReturns(closureRetType.withTypeVarsExpanded, closureBody.hasExited, closureBody.getPosition, "closure")
       }
     }
+
+  private def sendRefinementsToSolver(subject: Formula, tpe: Type, solver: Solver): Unit = {
+    tpe match {
+      case range: IntRangeType =>
+        solver.assertInRange(subject, range)
+      case RefinedType(baseType, itVal, predicateScope, predicate) =>
+        solver.assert(predicate.substitute(itVal, subject))
+      case _ => ()
+    }
+  }
 
   private def checkReturns(retType: Type, bodyHasExited: Boolean, posOpt: Option[Position], methodOrClosure: String): Unit = {
     if (retType != UnitType && !bodyHasExited) {

@@ -97,7 +97,7 @@ final class SubtypingContext(
         true
       }
     case (subT, tv: TypeVariable) =>
-      if (tv.isResolved){
+      if (tv.isResolved) {
         tv.lock()
         isSubtype(subT, tv.substitutedIfResolved)
       } else {
@@ -144,6 +144,10 @@ final class SubtypingContext(
       val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
       lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
         && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
+    case RefinedType(baseType, itVal, predicateScope, predicate) =>
+      solver.canProve(predicate.substitute(itVal, subject)) || proxyStore.getProxyIfIdValue(subject).exists { proxy =>
+        solver.canProve(predicate.substitute(itVal, proxy))
+      }
     case UnionType(types) =>
       types.exists(canProveHasType(subject, _))
     case IntersectionType(types) =>

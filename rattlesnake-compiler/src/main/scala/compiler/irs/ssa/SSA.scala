@@ -257,7 +257,7 @@ object SSA {
         }
         types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
-        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore)))
+        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore))(using getLocalValuesContextUnsafe.globalCtx))
       } else {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
@@ -271,13 +271,13 @@ object SSA {
       smartcastsEGraph.saveNonNull(f)
     }
 
-    def currentTypeOf(formula: Formula, saveSmartcasts: Boolean)(using ProxyStore): Type = {
-      val maybeNullableType = smartcastFor(formula, saveSmartcasts)
+    def currentTypeOf(formula: Formula, saveSmartcastsInIR: Boolean)(using ProxyStore): Type = {
+      val maybeNullableType = smartcastFor(formula, saveSmartcastsInIR)
         .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)
       maybeNullableType match {
         case NullableType(nullatedType) if smartcastsEGraph.isKnownNonNull(formula) =>
-          if (saveSmartcasts) {
+          if (saveSmartcastsInIR) {
             currentInstrInTraversal.foreach { currentInstrInTraversal =>
               currentInstrInTraversal.addNonNullSmartcast(formula)
             }
