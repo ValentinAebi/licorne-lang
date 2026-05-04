@@ -106,17 +106,17 @@ final class SubtypingContext(
         true
       }
     case (_, UnitType) => true
-    case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
-    case (IntRangeType(_, _), IntType) => true
-    case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
-      superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
-        && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
     case (subT: RefinedType, superT: RefinedType) =>
       val RefinedType(subBaseType, subItVal, subPredicateScope, subPredicate) = subT.flattenedRefinement
       val RefinedType(superBaseType, superItVal, superPredicateScope, superPredicate) = superT.flattenedRefinement
       isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate.substitute(Map(subItVal -> superItVal)), superPredicate)
+    case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
     case (subT@RefinedType(_, itVal, scope, _), superT) => isSubtype(subT, superT.asRefinedType(itVal, scope))
     case (subT, superT@RefinedType(_, itVal, scope, _)) => isSubtype(subT.asRefinedType(itVal, scope), superT)
+    case (IntRangeType(_, _), IntType) => true
+    case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
+      superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
+        && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
     case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
       logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
     case (IntersectionType(subtypes), superT) =>

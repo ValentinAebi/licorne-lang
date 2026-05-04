@@ -123,6 +123,12 @@ object Lists {
       return reverse(filteredReversed);
    }
 
+   fn filterLessThanSimpler(a: Int, ls: List[Int]) -> List[[,a-1]] =
+      filter(ls, fn (x) -> x < a)
+
+   fn filterLessThanSimpler_bad(a: Int, ls: List[Int]) -> List[[,a-1]] =
+      filter(ls, fn (x) -> x <= a)  //> E : return value: expected lists.List[[,a - 1]], found lists.List[[,a]]
+
    fn isSingletonList[T](ls: List[T]) -> Bool =
       ls is Cons && ls.tail is Nil
 

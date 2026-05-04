@@ -118,7 +118,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
 
       // Step 3: Int with it >= 0  --->  [0,]
       val RefinedType(b, it3, _, p) = base3.asRefinedType(it12, scope)
-      val (base4, pred4) = b match {
+      val (base4, pred4) = b.withTypeVarsExpanded match {
         case IntType =>
           val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3, it3)
           val lbOpt = solver.intMax(lowerBounds)
