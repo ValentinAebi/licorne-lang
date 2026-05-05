@@ -1,0 +1,39 @@
+
+object Test {
+
+   fn foo(a: Int, b: [0,9]){}
+   fn bar(i: I with it.m(), a: A){}
+
+   fn test1_wrong(x: Int, y: Int) {
+      foo(x, y);        //> E : second argument of call to foo: expected [0,9], found y : Int
+   }
+
+   fn test1_ok(x: Int, y: Int) {
+      foo(x, y!!);      // OK
+   }
+
+   fn test2_wrong(x: Int?) {
+      foo(x, 0);        //> E : first argument of call to foo: expected Int, found x : Int?
+   }
+
+   fn test2_ok(x: Int?) {
+      foo(x!!, 0);      // OK
+   }
+
+   fn test3_wrong(i: I) {
+      bar(i, new A());           //> E : first argument of call to bar: expected I with it.m(), found i : I
+   }
+
+   fn test3_ok(i: I) {
+      bar(i!!, new A());         // OK
+   }
+
+}
+
+interface I {
+   pure fn m(this) -> Bool
+}
+
+class A : I {
+   pure fn m(this) -> Bool = false
+}

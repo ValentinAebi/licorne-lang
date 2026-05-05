@@ -137,6 +137,7 @@ final class TypeHintsInserter(
       typeHintsStore.addHint(retVal, currFunSig.retType)
     case Panic(msg) => ()
     case Cast(inValue, target) => ()
+    case WeakCast(inValue) => ()
     case Drop(droppedValue) => ()
     case LocalDecl(localId, tpe) => ()
     case Unreachable() => ()

@@ -2,7 +2,6 @@ package compiler.parser
 
 import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts.*
-import compiler.irs.ssa.Formulas.IdValue
 import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
 import compiler.parser.TreeParsers.*
@@ -78,6 +77,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val semicolon = op(Semicolon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = (op(Minus) ::: op(GreaterThan)).ignored
+  private val doubleExclMark = op(ExclamationMark) ::: op(ExclamationMark)
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
@@ -329,10 +329,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "noBinopExpr"
 
   private lazy val binopArg = recursive {
-    ((noBinopExpr OR recordOrModuleInstantiation OR panicExpr) ::: opt((kw(As) OR kw(Is)) ::: typeTree)) map {
+    ((noBinopExpr OR recordOrModuleInstantiation OR panicExpr) ::: opt(((kw(As) OR kw(Is)) ::: typeTree) OR doubleExclMark)) map {
       case expression ^: None => expression
-      case expression ^: Some(As ^: tp) => Cast(expression, tp)
-      case expression ^: Some(Is ^: tp) => TypeTest(expression, tp)
+      case expression ^: Some(As ^: (tp: TypeTree)) => Cast(expression, tp)
+      case expression ^: Some(Is ^: (tp: TypeTree)) => TypeTest(expression, tp)
+      case expression ^: Some((_: Operator) ^: (_: Operator)) => Weakcast(expression)
       case _ => assert(false)
     }
   } setName "binopArg"

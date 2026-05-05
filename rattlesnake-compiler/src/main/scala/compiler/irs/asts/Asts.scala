@@ -474,6 +474,10 @@ object Asts {
   final case class Cast(expr: Expr, tpe: TypeTree) extends Expr {
     override def children: List[Ast] = List(expr, tpe)
   }
+  
+  final case class Weakcast(expr: Expr) extends Expr {
+    override def children: List[Ast] = List(expr)
+  }
 
   /**
    * Type test, e.g. `x is Foo`

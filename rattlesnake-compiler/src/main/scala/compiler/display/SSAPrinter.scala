@@ -298,6 +298,8 @@ final class SSAPrinter(
         pps.add(s"PANIC ${maybeTyped(msg, scope)}")
       case SSA.Cast(inValue, target) =>
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
+      case weakcast@SSA.WeakCast(inValue) =>
+        pps.add(s"WEAKCAST ${maybeTyped(inValue, scope)} as ${weakcast.targetType.getOrElse("??")}")
       case SSA.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)

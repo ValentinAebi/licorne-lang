@@ -907,6 +907,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case castTree@Asts.Cast(castExpr, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
+      case weakcast@Asts.Weakcast(castExpr) =>
+        val inVal = currScope.newIntermediate()
+        generateSSAExpr(inVal, castExpr, currScope)
+        currScope.saveInstr(WeakCast(inVal), weakcast)
+        None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
         generateSSAExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
@@ -1105,8 +1110,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
-        // TODO ideally should be allowed
-        case Asts.TypeTest(expr, tpe) => failIllegalConstruct("type test")
+        case Asts.Weakcast(expr) => failIllegalConstruct("dynamic weak cast")
+        case Asts.TypeTest(expr, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
+          val typeName = importsCtx.applyImports(typeNameRaw)
+          for {
+            subj <- generateFormula(expr, currScope)
+          } yield TypePredicate(subj, typeName)
+        case Asts.TypeTest(expr, tpe) => failIllegalConstruct(s"cast to $tpe")
         case Asts.PanicExpr(msg) => failIllegalConstruct("panic expression")
       }
     }

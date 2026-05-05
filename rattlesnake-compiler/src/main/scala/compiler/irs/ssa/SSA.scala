@@ -162,6 +162,15 @@ object SSA {
   final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
   final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr
+  final case class WeakCast(inValue: IdValue) extends RealInstr, PureInstr {
+    private var targetTypeOpt: Option[Type] = None
+    
+    def targetType: Option[Type] = targetTypeOpt
+    
+    def targetType_=(tpe: Type): Unit = {
+      targetTypeOpt = Some(tpe)
+    }
+  }
   final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr
 
   final class Scope private(

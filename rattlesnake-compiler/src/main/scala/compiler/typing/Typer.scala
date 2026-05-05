@@ -374,6 +374,29 @@ final class Typer(
           }
         }
 
+      case weakCast@WeakCast(inValue) =>
+        // TODO maybe resolve only when we know the right target, and be more precise
+
+        val refTypeScope = Scope.nestedInsideNodeOpt(currScope, weakCast.getAstNodeOpt)
+        val itVal = refTypeScope.newParam(ItId, weakCast.getPosition)
+        val RefinedType(baseType, _, _, predicate) = currScope.currentTypeOf(inValue, saveSmartcastsInIR = true).asRefinedType(itVal, refTypeScope)
+
+        def setWeakCastTarget(tpe: Type): Unit = {
+          currScope.saveSmartcast(inValue, tpe)
+          weakCast.targetType = tpe
+        }
+
+        if (predicate == BoolConst(false)) {
+          baseType match {
+            case NullableType(nullatedType) =>
+              setWeakCastTarget(nullatedType)
+            case _ =>
+              er.warn("redundant weak cast", weakCast.getPosition)
+          }
+        } else {
+          setWeakCastTarget(RefinedType(baseType, itVal, refTypeScope, BoolConst(false)))
+        }
+
       case conv@Conversion(assigned, inValue, targetType) =>
         val inValType = requireNonNullable(currScope.currentTypeOf(inValue, saveSmartcastsInIR = true).ignoreRangesShallow, "converted value", conv.getPosition)
         if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
@@ -490,33 +513,33 @@ final class Typer(
     })
 
   private def detectTypeForSmartcast(formula: Formula, scope: Scope)(using TypeParamsContext): Option[Type] = formula match {
-      case value: IdValue =>
-        Some(scope.currentTypeOf(value, saveSmartcastsInIR = false))
-      case Select(owner, field) =>
-        if (field.isNotResolvedYet) {
-          detectTypeForSmartcast(owner, scope) match {
-            case Some(ownerType) =>
-              val selectType = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, None)
-              Some(selectType)
-            case None => None
-          }
-        } else if (field.isResolved) {
-          Some(field.getInstantiatedFieldTypeUnsafe)
-        } else None
-      case FunCall(receiver, func, typeArgs, args) =>
-        if (func.isNotResolvedYet) {
-          val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None)
-          Option.when(retType != NothingType)(retType)
-        } else if (func.isResolved) {
-          Some(func.getInstantiatedReturnTypeUnsafe)
-        } else None
-      case ClosureCall(callee, closureTypingTarget, args) =>
-        detectTypeForSmartcast(callee, scope) match {
-          case Some(ClosureType(params, result, enforcedPure)) => Some(result)
-          case _ => None
+    case value: IdValue =>
+      Some(scope.currentTypeOf(value, saveSmartcastsInIR = false))
+    case Select(owner, field) =>
+      if (field.isNotResolvedYet) {
+        detectTypeForSmartcast(owner, scope) match {
+          case Some(ownerType) =>
+            val selectType = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, None)
+            Some(selectType)
+          case None => None
         }
-      case _ => None
-    }
+      } else if (field.isResolved) {
+        Some(field.getInstantiatedFieldTypeUnsafe)
+      } else None
+    case FunCall(receiver, func, typeArgs, args) =>
+      if (func.isNotResolvedYet) {
+        val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None)
+        Option.when(retType != NothingType)(retType)
+      } else if (func.isResolved) {
+        Some(func.getInstantiatedReturnTypeUnsafe)
+      } else None
+    case ClosureCall(callee, closureTypingTarget, args) =>
+      detectTypeForSmartcast(callee, scope) match {
+        case Some(ClosureType(params, result, enforcedPure)) => Some(result)
+        case _ => None
+      }
+    case _ => None
+  }
 
   private def assignTarget(assignmentTarget: IdValue, currScope: Scope)
                           (tpe: Type)

@@ -5,7 +5,7 @@ import scala.collection.immutable
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-extension [T](iterable: Iterable[T]) def asIterableOfType[U: ClassTag]: Option[Iterable[U]] = {
+extension [T](iterable: Iterable[T]) def asIterableOfType[U <: T: ClassTag]: Option[Iterable[U]] = {
   val resultB = Iterable.newBuilder[U]
   val iter = iterable.iterator
   while (iter.hasNext) {
