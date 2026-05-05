@@ -13,6 +13,7 @@ import compiler.valuesconversion.GlobalValuesContext
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection
+import scala.util.boundary
 
 
 object Types {
@@ -395,6 +396,53 @@ object Types {
       val predicate = if predicateParts.isEmpty then BoolConst(true) else predicateParts.reduce[Formula](LogicalAnd(_, _))
       RefinedType(IntType, itVal, scope, predicate)
     case tpe => RefinedType(tpe, itVal, scope, BoolConst(true))
+  }
+  
+  extension (tpe: Type) def withTypeVarsSubstituted: Option[Type] = {
+    
+    def substAll(ls: Iterable[Type]): Option[List[Type]] = boundary {
+      val resB = List.newBuilder[Type]
+      for (t <- ls) {
+        t.withTypeVarsSubstituted match {
+          case Some(t) =>
+            resB.addOne(t)
+          case None =>
+            boundary.break(None)
+        }
+      }
+      Some(resB.result())
+    }
+    
+    tpe match {
+      case primitiveType: PrimitiveType => Some(primitiveType)
+      case NamedType(typeName, typeArgs, args) =>
+        for {
+          typeArgs <- substAll(typeArgs)
+        } yield NamedType(typeName, typeArgs, args)
+      case ClosureType(params, result, enforcedPure) =>
+        for {
+          params <- substAll(params)
+          result <- result.withTypeVarsSubstituted
+        } yield ClosureType(params, result, enforcedPure)
+      case UnionType(types) =>
+        for {
+          types <- substAll(types)
+        } yield UnionType(types)
+      case IntersectionType(types) =>
+        for {
+          types <- substAll(types)
+        } yield IntersectionType(types)
+      case RefinedType(baseType, itVal, predicateScope, predicate) =>
+        for {
+          baseType <- baseType.withTypeVarsSubstituted
+        } yield RefinedType(baseType, itVal, predicateScope, predicate)
+      case rangeType: IntRangeType => Some(rangeType)
+      case NullableType(nullatedType) =>
+        for {
+          nullatedType <- nullatedType.withTypeVarsSubstituted
+        } yield NullableType(nullatedType)
+      case tv: TypeVariable => tv.actualTypeIfResolved
+    }
   }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {

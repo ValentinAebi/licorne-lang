@@ -35,7 +35,7 @@ final class TypeChecker(
     given GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolCtx = ResolutionContext(program, er)
 
     Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
@@ -108,7 +108,7 @@ final class TypeChecker(
       }
       solver.onNewFrame {
         for ((paramVal, paramType) <- funSig.paramsInclThis) {
-          sendRefinementsToSolver(paramVal, paramType, solver)
+          sendRefinementsToSolver(paramVal, paramType, solver, dealiasingCtx)
         }
         funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams))
       }
@@ -120,7 +120,7 @@ final class TypeChecker(
           proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {
-            sendRefinementsToSolver(paramVal, paramType.withTypeVarsExpanded, solver)
+            sendRefinementsToSolver(paramVal, paramType.withTypeVarsExpanded, solver, dealiasingCtx)
           }
           closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
           if (!closureRetType.isResolved) {
@@ -131,8 +131,8 @@ final class TypeChecker(
       }
     }
 
-  private def sendRefinementsToSolver(subject: Formula, tpe: Type, solver: Solver): Unit = {
-    tpe match {
+  private def sendRefinementsToSolver(subject: Formula, tpe: Type, solver: Solver, dealiasingCtx: DealiasingContext): Unit = {
+    dealiasingCtx.dealiasType(tpe) match {
       case range: IntRangeType =>
         solver.assertInRange(subject, range)
       case RefinedType(baseType, itVal, predicateScope, predicate) =>

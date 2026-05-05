@@ -20,7 +20,6 @@ import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolRe
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.util.{SeqSet, findUnique, mapVals, whenInstanceOf}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
-import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
@@ -89,7 +88,7 @@ final class Typer(
 
       case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
         val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-        for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal) <- loopUpdatedVars) {
+        for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
           (for {
             recurrence <- varData.recurrenceOpt
             monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
@@ -122,7 +121,7 @@ final class Typer(
               }
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
             // TODO maybe detect more precise after-loop-type in the presence of a recurrence
-            currScope.saveType(inCondVal, inCondType) // after loop
+            varDefScope.saveType(inCondVal, inCondType) // after loop
             condScope.saveSmartcast(inCondVal, inCondType) // inside condition
             bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
             varData.handledThroughRecurrenceFlag = true
@@ -137,7 +136,7 @@ final class Typer(
                   subtypingCtx.isSubtype(currScope.currentTypeOf(beforeLoopVal, saveSmartcastsInIR = false), hint)
                 })
                 .getOrElse(currScope.currentTypeOf(beforeLoopVal, saveSmartcastsInIR = true).ignoreRangesShallow)
-            currScope.saveType(inCondVal, tpe)
+            varDefScope.saveType(inCondVal, tpe)
             Some(())
           }
         }
@@ -146,13 +145,13 @@ final class Typer(
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(bodyScope, infoIfCondTrue)
         for {
-          varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- loopUpdatedVars
+          varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars
           if !varData.handledThroughRecurrenceFlag
         } {
           val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal, saveSmartcastsInIR = false)
           val typeInCond = condScope.currentTypeOf(condVal, saveSmartcastsInIR = false)
           lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
-            case KnownAndInitialized(value, reassigStatus, Some(declTypeAnnot)) =>
+            case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
               s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
             case _ =>
               s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
@@ -234,7 +233,7 @@ final class Typer(
       }
 
       case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType, Operator.Modulo, rem.getPosition)
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(proxyStore.getProxy(rhs)), Operator.Modulo, rem.getPosition)
       }
 
       case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
@@ -492,7 +491,7 @@ final class Typer(
       case DivBy(lhs, rhs) =>
         typeNumericBinop(lhs, rhs, scope, absInt.typeDivType, Operator.Div, posOpt)
       case Modulo(lhs, rhs) =>
-        typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType, Operator.Modulo, posOpt)
+        typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType(Some(rhs)), Operator.Modulo, posOpt)
       case LogicalAnd(lhs, rhs) =>
         typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
       case LogicalOr(lhs, rhs) =>

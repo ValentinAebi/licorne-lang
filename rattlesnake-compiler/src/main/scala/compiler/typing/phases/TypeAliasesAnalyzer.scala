@@ -27,7 +27,7 @@ final class TypeAliasesAnalyzer(
   private given CompilationStep = TypeAliasesAnalysis
 
   override def apply(program: Program): Program = {
-    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolutionCtx = ResolutionContext(program, er)
     checkTypeAliasesCyclicity(program, resolutionCtx)
     er.displayAndTerminateIfErrors()
 

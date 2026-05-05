@@ -9,7 +9,7 @@ import scala.collection.mutable
 final class TypeHintsStore {
   private val hints = mutable.Map.empty[IdValue, mutable.LinkedHashSet[Type]]
 
-  def addHint(idVal: IdValue, tpe: Type): Unit = {
+  def offerHint(idVal: IdValue, tpe: Type): Unit = tpe.withTypeVarsSubstituted.foreach { tpe =>
     hints.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty).add(tpe)
   }
 

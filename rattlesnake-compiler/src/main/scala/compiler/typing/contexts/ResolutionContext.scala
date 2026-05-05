@@ -13,7 +13,6 @@ import scala.reflect.ClassTag
 
 final case class ResolutionContext(
                                     program: Program,
-                                    typeVarsCtx: TypeVariablesContext,
                                     er: ErrorReporter
                                   )(using CompilationStep) {
   import program.*

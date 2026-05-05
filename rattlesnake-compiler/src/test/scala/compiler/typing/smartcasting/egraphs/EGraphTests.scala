@@ -89,13 +89,12 @@ class EGraphTests {
   private given CompilationStep = TypeChecking
 
   private val er = ErrorReporter(_ => fail(), _ => fail())
-  private val typeVarsCtx = TypeVariablesContext()
   private val proxyStore = ProxyStore()
   private val globalValuesContext = GlobalValuesContext(proxyStore)
   private val dummyScope = Scope.root(globalValuesContext)
   private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
   private val dealiasingCtx = DealiasingContext(Map.empty)
-  private val resolCtx = ResolutionContext(program, typeVarsCtx, er)
+  private val resolCtx = ResolutionContext(program, er)
 
 
   private def newValue(name: String) = ValIdValue(NormalFunOrVarId(name), dummyScope, 0, None)

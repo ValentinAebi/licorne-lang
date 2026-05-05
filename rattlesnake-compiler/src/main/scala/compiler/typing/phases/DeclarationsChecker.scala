@@ -23,7 +23,7 @@ final class DeclarationsChecker(
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolCtx = ResolutionContext(program, er)
     
     Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)

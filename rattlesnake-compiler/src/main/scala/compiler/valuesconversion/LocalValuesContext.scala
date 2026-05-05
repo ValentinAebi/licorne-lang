@@ -3,6 +3,7 @@ package compiler.valuesconversion
 import compiler.identifiers.{FunOrVarId, ItId, ThisId}
 import compiler.irs.asts.Asts
 import compiler.irs.ssa.Formulas.{Formula, IdValue}
+import compiler.irs.ssa.SSA.Scope
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -32,17 +33,17 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     copy
   }
 
-  def saveNewLocal(id: FunOrVarId, value: Option[IdValue], reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean = {
+  def saveNewLocal(id: FunOrVarId, value: Option[IdValue], scope: Scope, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean = {
     if (queryLocal(id).isDefined) {
       false
     } else {
-      values(id) = LocalInfo(value, reassigPermission, declarationTypeAnnot)
+      values(id) = LocalInfo(value, scope, reassigPermission, declarationTypeAnnot)
       true
     }
   }
 
-  def saveNewLocal(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean =
-    saveNewLocal(id, Some(value), reassigPermission, declarationTypeAnnot)
+  def saveNewLocal(id: FunOrVarId, value: IdValue, scope: Scope, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Boolean =
+    saveNewLocal(id, Some(value), scope, reassigPermission, declarationTypeAnnot)
 
   def remap(id: FunOrVarId, value: IdValue): Boolean = {
     queryLocal(id) match {
@@ -53,8 +54,8 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
     }
   }
 
-  def saveOrRemap(id: FunOrVarId, value: IdValue, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Unit = {
-    val saved = saveNewLocal(id, value, reassigPermission, declarationTypeAnnot)
+  def saveOrRemap(id: FunOrVarId, value: IdValue, scope: Scope, reassigPermission: ReassigPermission, declarationTypeAnnot: Option[Type]): Unit = {
+    val saved = saveNewLocal(id, value, scope, reassigPermission, declarationTypeAnnot)
     if (!saved) {
       remap(id, value)
     }
@@ -69,10 +70,10 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   }
 
   def valueOf(id: FunOrVarId): ValueQueryResult = queryLocal(id) match {
-    case Some(LocalInfo(Some(value), reassigStatus, declarationTypeAnnot)) =>
-      KnownAndInitialized(value, reassigStatus, declarationTypeAnnot)
-    case Some(LocalInfo(None, reassigStatus, declarationTypeAnnot)) =>
-      KnownButUninitialized(id, reassigStatus, declarationTypeAnnot)
+    case Some(LocalInfo(Some(value), defScope, reassigStatus, declarationTypeAnnot)) =>
+      KnownAndInitialized(value, defScope, reassigStatus, declarationTypeAnnot)
+    case Some(LocalInfo(None, defScope, reassigStatus, declarationTypeAnnot)) =>
+      KnownButUninitialized(id, defScope, reassigStatus, declarationTypeAnnot)
     case None => Unknown(id)
   }
 
@@ -104,7 +105,7 @@ object LocalValuesContext {
   sealed trait ValueQueryResult {
     def toOption: Option[IdValue] = this match {
       case result: ErrorValueQueryResult => None
-      case KnownAndInitialized(value, _, _) => Some(value)
+      case KnownAndInitialized(value, _, _, _) => Some(value)
     }
   }
 
@@ -112,9 +113,9 @@ object LocalValuesContext {
 
   final case class Unknown(id: FunOrVarId) extends ErrorValueQueryResult
 
-  final case class KnownButUninitialized(id: FunOrVarId, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ErrorValueQueryResult
+  final case class KnownButUninitialized(id: FunOrVarId, defScope: Scope, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ErrorValueQueryResult
 
-  final case class KnownAndInitialized(value: IdValue, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ValueQueryResult
+  final case class KnownAndInitialized(value: IdValue, defScope: Scope, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ValueQueryResult
 
   private enum ExitedStatus {
     case Active, HasExited, ReportedHasExited

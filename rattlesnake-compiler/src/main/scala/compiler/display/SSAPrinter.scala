@@ -209,7 +209,7 @@ final class SSAPrinter(
           printScope(body)
           pps.newLine()
           printVarData(variables) {
-            case varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) =>
+            case varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) =>
               s"$varId: ${maybeTyped(beforeLoopVal, scope)} ; (${maybeTyped(condVal, cond)}) { ... ${maybeTyped(bodyLastVal, body)} } " ++ varData.recurDescr
           }
         }

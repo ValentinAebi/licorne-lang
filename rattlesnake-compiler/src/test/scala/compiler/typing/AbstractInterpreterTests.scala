@@ -99,7 +99,7 @@ class AbstractInterpreterTests {
   }
 
   @Test def typeModuloTypeTest(): Unit = usingFreshInterpreter { (absInt, _, solver) =>
-    import absInt.typeModuloType
+    val typeModuloType = absInt.typeModuloType(None)
     assertEquals(Some(nonNegative), typeModuloType(nonNegative, strictlyPositive))
     assertEquals(Some(nonPositive), typeModuloType(nonPositive, strictlyNegative))
     assertEquals(Some(nonNegative), typeModuloType(nonNegative, strictlyNegative))
@@ -133,10 +133,9 @@ class AbstractInterpreterTests {
     given CompilationStep = TypeChecking
 
     val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
-    val typeVarsCtx = TypeVariablesContext()
     val er = ErrorReporter(_ => fail(), _ => fail())
 
-    given ResolutionContext = ResolutionContext(program, typeVarsCtx, er)
+    given ResolutionContext = ResolutionContext(program, er)
 
     given TypeParamsContext = TypeParamsContext(Map.empty)
 
@@ -155,9 +154,8 @@ class AbstractInterpreterTests {
 
     val er = ErrorReporter(_ => fail(), _ => fail())
     val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
-    val typeVarsCtx = TypeVariablesContext()
     val dealiasingCtx = DealiasingContext(Map.empty)
-    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolutionCtx = ResolutionContext(program, er)
 
     Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)

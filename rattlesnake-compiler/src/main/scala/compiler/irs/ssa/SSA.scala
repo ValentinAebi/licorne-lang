@@ -55,7 +55,7 @@ object SSA {
 
   trait VarData
 
-  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue) extends VarData {
+  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue, varDefScope: Scope) extends VarData {
     var recurrenceOpt: Option[Recurrence] = None
     var handledThroughRecurrenceFlag: Boolean = false
 

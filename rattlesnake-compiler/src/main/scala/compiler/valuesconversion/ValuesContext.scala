@@ -2,6 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.SSA.Scope
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
@@ -23,6 +24,7 @@ trait ValuesContext {
 object ValuesContext {
   private[valuesconversion] final case class LocalInfo(
                                                         var value: Option[IdValue],
+                                                        defScope: Scope,
                                                         reassigPermission: ReassigPermission,
                                                         declarationTypeAnnot: Option[Type]
                                                       )

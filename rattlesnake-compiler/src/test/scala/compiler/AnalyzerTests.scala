@@ -121,11 +121,11 @@ class AnalyzerTests(fileName: String) {
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
       .andThen(MonotonicityAnalyzer(proxyStore))
       .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(SubtypingChecker(typeVarsCtx, proxyStore, er))
+      .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
       .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(OverridesChecker(typeVarsCtx, proxyStore, er))
+      .andThen(OverridesChecker(proxyStore, er))
     try {
       pipeline.apply(srcFiles)
     } catch {

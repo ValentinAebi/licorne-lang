@@ -17,7 +17,6 @@ import compiler.valproxies.ProxyStore
 import scala.collection.mutable
 
 final class OverridesChecker(
-                              typeVarsCtx: TypeVariablesContext,
                               proxyStore: ProxyStore,
                               er: ErrorReporter,
                               continueIfErrors: Boolean = false
@@ -30,7 +29,7 @@ final class OverridesChecker(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     Reasoning.usingFreshSolver(dealiasingCtx, proxyStore) { solver =>
-      val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+      val resolutionCtx = ResolutionContext(program, er)
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)
     }

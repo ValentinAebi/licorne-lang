@@ -107,14 +107,14 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
 
   /**
    * {{{
-   *   [a,b] % [c,d] defined by:
+   *   [a,b] % r:[c,d] defined by:
    *    -  [a,b] >= 0, [c,d] > 0  -->  [0,d-1]
    *    -  [a,b] >= 0, [c,d] < 0  -->  [0,-c-1]
    *    -  [a,b] <= 0, [c,d] > 0  -->  [-d+1,0]
    *    -  [a,b] <= 0, [c,d] < 0  -->  [c+1,0]
    * }}}
    */
-  def typeModuloType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
       import compiler.irs.ssa.FormulasDsl.*
 
@@ -123,10 +123,10 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
       lazy val `[a,b] <= 0` = solver.canProveLeZero(b)
       lazy val `[c,d] < 0` = solver.canProveLtZero(d)
 
-      if `[a,b] >= 0` && `[c,d] > 0` then (someZero, for d <- d yield d - 1)
-      else if `[a,b] >= 0` && `[c,d] < 0` then (someZero, for c <- c yield -c - 1)
-      else if `[a,b] <= 0` && `[c,d] > 0` then (for d <- d yield -d + 1, someZero)
-      else if `[a,b] <= 0` && `[c,d] < 0` then (for c <- c yield c + 1, someZero)
+      if `[a,b] >= 0` && `[c,d] > 0` then (someZero, for r <- rhsOpt.orElse(d) yield r - 1)
+      else if `[a,b] >= 0` && `[c,d] < 0` then (someZero, for r <- rhsOpt.orElse(c) yield -r - 1)
+      else if `[a,b] <= 0` && `[c,d] > 0` then (for r <- rhsOpt.orElse(d) yield -r + 1, someZero)
+      else if `[a,b] <= 0` && `[c,d] < 0` then (for r <- rhsOpt.orElse(c) yield r + 1, someZero)
       else (None, None)
   }
 
@@ -158,7 +158,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
       case Neg(operand) => interpretUnderAssumptions(operand).flatMap(unaryNegType)
       case Times(lhs, rhs) => interpretBinop(lhs, rhs, typeTimesType)
       case DivBy(lhs, rhs) => interpretBinop(lhs, rhs, typeDivType)
-      case Modulo(lhs, rhs) => interpretBinop(lhs, rhs, typeModuloType)
+      case Modulo(lhs, rhs) => interpretBinop(lhs, rhs, typeModuloType(Some(rhs)))
       case _ => None
     }
 

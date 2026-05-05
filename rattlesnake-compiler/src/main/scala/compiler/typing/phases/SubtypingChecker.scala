@@ -18,7 +18,6 @@ import scala.collection.mutable
 import scala.util.boundary
 
 final class SubtypingChecker(
-                              private val typeVarsCtx: TypeVariablesContext,
                               private val proxyStore: ProxyStore,
                               private val er: ErrorReporter
                             ) extends CompilerStep[Program, (Program, SubtypingInfo)] {
@@ -27,7 +26,7 @@ final class SubtypingChecker(
 
   override def apply(program: Program): (Program, SubtypingInfo) = {
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolutionCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolutionCtx = ResolutionContext(program, er)
     er.displayAndTerminateIfErrors()
 
     val subtypingGraph = buildSubtypingGraph(program)

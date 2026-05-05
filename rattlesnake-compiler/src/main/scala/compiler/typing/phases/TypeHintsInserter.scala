@@ -1,18 +1,18 @@
 package compiler.typing.phases
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.SSA
 import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.SSA
+import compiler.irs.ssa.SSA.*
+import compiler.lang.Types.*
 import compiler.lang.{FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
-import compiler.lang.Types.{ClosureType, NamedType, NullableType, RefinedType, Type}
 import compiler.pipeline.CompilationStep.TypeHintsInsertion
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.Reasoning
-import compiler.typing.{SubtypingInfo, TypeHintsStore}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.typing.{SubtypingInfo, TypeHintsStore}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -29,8 +29,11 @@ final class TypeHintsInserter(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
+
+    given tmpTypeVarsCtx: TypeVariablesContext = TypeVariablesContext()
+
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolCtx = ResolutionContext(program, typeVarsCtx, er)
+    val resolCtx = ResolutionContext(program, er)
     Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
@@ -42,7 +45,7 @@ final class TypeHintsInserter(
           _ => throw AssertionError("error reported during type hints insertion"),
           _ => throw AssertionError("fatal error during type hints insertion")
         )
-        val resolCtx = ResolutionContext(program, typeVarsCtx, fakeEr)
+        val resolCtx = ResolutionContext(program, fakeEr)
         traverseScope(body, funSig)(using resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx)
       }
     }
@@ -50,21 +53,21 @@ final class TypeHintsInserter(
   }
 
   private def traverseScope(scope: Scope, currFunSig: FunctionSignature)
-                           (using ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext): Unit = {
+                           (using ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext, TypeVariablesContext): Unit = {
     for (instr <- scope.instructions.reverse) {
       traverseInstr(instr, currFunSig)
     }
   }
 
   private def traverseInstr(instr: Instr, currFunSig: FunctionSignature)
-                           (using resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext, subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext): Unit = instr match {
+                           (using resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext, subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, typeVarsCtx: TypeVariablesContext): Unit = instr match {
     case Loop(cond, condVal, body, variables) =>
       for {
-        LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal) <- variables
+        LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- variables
         th <- typeHintsStore.getHints(condVal)
       } {
-        typeHintsStore.addHint(beforeLoopVal, th)
-        typeHintsStore.addHint(bodyLastVal, th)
+        typeHintsStore.offerHint(beforeLoopVal, th)
+        typeHintsStore.offerHint(bodyLastVal, th)
       }
       traverseScope(body, currFunSig)
       traverseScope(cond, currFunSig)
@@ -73,17 +76,17 @@ final class TypeHintsInserter(
         DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables
         th <- typeHintsStore.getHints(joinedVal)
       } {
-        typeHintsStore.addHint(afterThenVal, th)
-        typeHintsStore.addHint(afterElseVal, th)
+        typeHintsStore.offerHint(afterThenVal, th)
+        typeHintsStore.offerHint(afterElseVal, th)
       }
       traverseScope(thenBr, currFunSig)
       traverseScope(elseBr, currFunSig)
     case StaticTypeAssert(value, tpe) =>
-      typeHintsStore.addHint(value, tpe)
+      typeHintsStore.offerHint(value, tpe)
     case StaticAssert(value) => ()
     case AssignVal(assigned, src) =>
       for (th <- typeHintsStore.getHints(assigned)) {
-        typeHintsStore.addHint(src, th)
+        typeHintsStore.offerHint(src, th)
       }
     case AssignIntConst(assigned, src) => ()
     case AssignBoolConst(assigned, src) => ()
@@ -100,19 +103,24 @@ final class TypeHintsInserter(
     case Equal(assigned, lhs, rhs) => ()
     case Leq(assigned, lhs, rhs) => ()
     case Lt(assigned, lhs, rhs) => ()
-    case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+    case invkFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       for {
         receiverTypeId <- resolveReceiver(receiver, currFunSig)
         funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
       } {
-        val typesSubst = mutable.Map.from(funSig.typeParams.map(_.tid).zip(typeArgs))
+        val typeParams = funSig.typeParams
+        val typesSubst = Map.from(
+          if typeArgs.isEmpty
+          then typeParams.map(tp => tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, None, None, invkFunc.getPosition))
+          else typeParams.map(_.tid).zip(typeArgs)
+        )
         val valsSubst = mutable.Map.empty[IdValue, Formula]
         typeHintsStore.getHints(assigned).headOption.foreach { hint =>
-          unifyTypes(hint, funSig.retType)(using typesSubst)
+          unifyTypes(hint, funSig.retType.substitute(typesSubst, Map.empty))
         }
         for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zip(args)) {
           val paramTypeSubst = paramTypeRaw.substitute(typesSubst, valsSubst)
-          typeHintsStore.addHint(argVal, paramTypeSubst)
+          typeHintsStore.offerHint(argVal, paramTypeSubst)
           valsSubst.put(paramVal, argVal)
         }
       }
@@ -129,12 +137,12 @@ final class TypeHintsInserter(
         ownerTypeSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](ownerTypeId)
         field <- ownerTypeSig.fields.get(fieldResolTarget.fieldId)
       } {
-        typeHintsStore.addHint(rhs, field.tpe)
+        typeHintsStore.offerHint(rhs, field.tpe)
       }
     case HeapVarRead(assigned, heapVar) => ()
     case HeapVarWrite(heapVar, newValue) => ()
     case Return(retVal) =>
-      typeHintsStore.addHint(retVal, currFunSig.retType)
+      typeHintsStore.offerHint(retVal, currFunSig.retType)
     case Panic(msg) => ()
     case Cast(inValue, target) => ()
     case WeakCast(inValue) => ()
@@ -155,19 +163,29 @@ final class TypeHintsInserter(
   }
 
   private def unifyTypes(hint: Type, shape: Type)
-                        (using typesSubst: mutable.Map[TypeIdentifier, Type], dealiasingCtx: DealiasingContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext): Unit = {
-    (dealiasingCtx.dealiasType(hint), dealiasingCtx.dealiasType(shape)) match {
-      case (NamedType(hintTypeId, Nil, Nil), tpe) =>
-        typesSubst.put(hintTypeId, tpe)
-      case (tpe, NamedType(hintTypeId, Nil, Nil)) =>
-        typesSubst.put(hintTypeId, tpe)
+                        (using dealiasingCtx: DealiasingContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext): Unit = {
+    (dealiasingCtx.dealiasType(hint).withTypeVarsExpanded, dealiasingCtx.dealiasType(shape).withTypeVarsExpanded) match {
+      case (tv: TypeVariable, shape) =>
+        tv.resolve(shape)
+      case (hint, tv: TypeVariable) =>
+        tv.resolve(hint)
       case (NamedType(hintTypeId, hintTypeArgs, hintArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
         for {
           subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, hintTypeId)
-          upcastShapeType <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](hintTypeId).map(_.toType(subtypingSubst))
-          (hintTypeArg, shapeTypeArg) <- hintTypeArgs.zip(upcastShapeType.typeArgs)
+          hintTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](hintTypeId)
+          shapeTypeSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](shapeTypeId)
         } {
-          unifyTypes(hintTypeArg, shapeTypeArg)
+          val shapeSubst = shapeTypeSig.typeParams.map(_.tid).zip(shapeTypeArgs).toMap
+          val composedSubst = subtypingSubst.map {
+            case (tParam, tArg@NamedType(tArgId, Nil, Nil)) =>
+              tParam -> shapeSubst.getOrElse(tArgId, tArg)
+            case (tParam, tArg) =>
+              tParam -> tArg
+          }
+          val upcastShapeType = shapeTypeSig.toType(composedSubst)
+          for ((h, s) <- hintTypeArgs.zip(upcastShapeType.typeArgs)) {
+            unifyTypes(h, s)
+          }
         }
       case (ClosureType(hintParams, hintResult, _), ClosureType(shapeParams, shapeResult, _)) =>
         for ((ht, st) <- hintParams.zip(shapeParams)) {
