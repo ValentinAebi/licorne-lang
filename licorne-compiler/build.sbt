@@ -1,4 +1,4 @@
-name := "Licorne"
+name := "licorne-lang"
 
 version := "0.3.0-SNAPSHOT"
 
