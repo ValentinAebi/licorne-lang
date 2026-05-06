@@ -13,5 +13,5 @@ Some features that are already supported:
 
 Code examples can be found in the [test resources directory](licorne-compiler/src/test/res/analyzer-tests).
 
-Note that earlier versions of Licorne were called Rattlesnake (see the corresponding branch) and [Grattlesnake](https://github.com/epfl-systemf/grattlesnake-lang), the latter corresponding to my master's thesis work on gradual object capabilities.
+Notes on naming: Licorne stands for "<b>L</b>anguage-level <b>I</b>nferen<b>C</b>e <b>O</b>f <b>R</b>efi<b>NE</b>ments", and means "unicorn" in French. Earlier versions of Licorne were called Rattlesnake (see the corresponding branch) and [Grattlesnake](https://github.com/epfl-systemf/grattlesnake-lang), the latter corresponding to my master's thesis work on gradual object capabilities.
 
