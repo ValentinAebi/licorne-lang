@@ -1,2 +1,0 @@
-all:
-	mvn clean package
