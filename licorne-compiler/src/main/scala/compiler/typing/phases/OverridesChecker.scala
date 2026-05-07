@@ -8,7 +8,7 @@ import compiler.pipeline.CompilationStep.OverridesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{Reasoning, Solver}
+import compiler.smt.{IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
@@ -17,6 +17,7 @@ import compiler.valproxies.ProxyStore
 import scala.collection.mutable
 
 final class OverridesChecker(
+                              ihm: IntHandlingMode[?],
                               proxyStore: ProxyStore,
                               er: ErrorReporter,
                               continueIfErrors: Boolean = false
@@ -28,7 +29,7 @@ final class OverridesChecker(
     val (program, SubtypingInfo(subtypingGraph, flattenedSubtypingMaps)) = input
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshSolver(dealiasingCtx, proxyStore) { solver =>
+    Reasoning.usingFreshSolver(ihm, dealiasingCtx, proxyStore) { solver =>
       val resolutionCtx = ResolutionContext(program, er)
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)

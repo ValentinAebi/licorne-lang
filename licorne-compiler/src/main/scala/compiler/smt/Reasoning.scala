@@ -10,10 +10,10 @@ import scala.util.Using
 
 object Reasoning {
 
-  def usingFreshReasoningToolkit[T](dealiasingCtx: DealiasingContext, resolutionCtx: ResolutionContext, proxyStore: ProxyStore, globalValuesContext: GlobalValuesContext)
+  def usingFreshReasoningToolkit[T](ihm: IntHandlingMode[?], dealiasingCtx: DealiasingContext, resolutionCtx: ResolutionContext, proxyStore: ProxyStore, globalValuesContext: GlobalValuesContext)
                                    (mkSubtypingCtx: Solver => SubtypingContext)
                                    (f: (Solver, SubtypingContext, Simplifier, MeetJoinComputer, AbstractInterpreter) => T): T =
-    usingFreshSolver(dealiasingCtx, proxyStore) { solver =>
+    usingFreshSolver(ihm, dealiasingCtx, proxyStore) { solver =>
       val subtypingCtx = mkSubtypingCtx(solver)
       val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver, globalValuesContext)
       val simplifier = meetJoin.simplifier
@@ -21,9 +21,9 @@ object Reasoning {
       f(solver, subtypingCtx, simplifier, meetJoin, absInt)
     }
 
-  def usingFreshSolver[T](dealiasingCtx: DealiasingContext, proxyStore: ProxyStore)(f: Solver => T): T = Using(KContext()) { kCtx =>
+  def usingFreshSolver[T](ihm: IntHandlingMode[?], dealiasingCtx: DealiasingContext, proxyStore: ProxyStore)(f: Solver => T): T = Using(KContext()) { kCtx =>
     Using(KZ3Solver(kCtx)) { kZ3Solver =>
-      val solver = Solver(kCtx, kZ3Solver, dealiasingCtx, proxyStore)
+      val solver = Z3Solver(kCtx, kZ3Solver, ihm, dealiasingCtx, proxyStore)
       f(solver)
     }.get
   }.get

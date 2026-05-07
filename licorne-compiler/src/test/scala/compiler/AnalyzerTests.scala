@@ -4,6 +4,7 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
+import compiler.smt.ArithIntMode
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
@@ -111,6 +112,7 @@ class AnalyzerTests(fileName: String) {
       throw ExitException
     }
 
+    val ihm = ArithIntMode
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val typeHintsStore = TypeHintsStore()
@@ -119,13 +121,13 @@ class AnalyzerTests(fileName: String) {
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
-      .andThen(MonotonicityAnalyzer(proxyStore))
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(MonotonicityAnalyzer(ihm, proxyStore))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(OverridesChecker(proxyStore, er))
+      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(OverridesChecker(ihm, proxyStore, er))
     try {
       pipeline.apply(srcFiles)
     } catch {

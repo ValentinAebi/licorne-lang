@@ -10,7 +10,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{AbstractInterpreter, MeetJoinComputer, Reasoning, Simplifier, Solver}
+import compiler.smt.{AbstractInterpreter, IntHandlingMode, MeetJoinComputer, Reasoning, Simplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -19,6 +19,7 @@ import compiler.valuesconversion.GlobalValuesContext
 import scala.collection.mutable
 
 final class TypeChecker(
+                         ihm: IntHandlingMode[?],
                          typeVarsCtx: TypeVariablesContext,
                          proxyStore: ProxyStore,
                          typeHintsStore: TypeHintsStore,
@@ -37,7 +38,7 @@ final class TypeChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
 
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 

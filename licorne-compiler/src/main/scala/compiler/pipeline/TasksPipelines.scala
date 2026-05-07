@@ -4,15 +4,14 @@ import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.ImportStat
 import compiler.lexer.Lexer
 import compiler.parser.Parser
-import compiler.program.Program
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
+import compiler.smt.IntHandlingMode
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
-import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
+import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
@@ -29,9 +28,10 @@ object TasksPipelines {
                 outputDirectoryPath: Path,
                 runtimeDirPath: Path,
                 agentDirPath: Path,
+                ihm: IntHandlingMode[?],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
-    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, er)
+    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, ihm, er)
   }
 
   /**
@@ -51,6 +51,7 @@ object TasksPipelines {
   private def compilerImpl(outputDirectoryPath: Path,
                            runtimeDirPath: Path,
                            agentDirPath: Path,
+                           ihm: IntHandlingMode[?],
                            er: ErrorReporter) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
@@ -64,13 +65,13 @@ object TasksPipelines {
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
-      )).andThen(MonotonicityAnalyzer(proxyStore))
-      .andThen(TypeAliasesAnalyzer(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      )).andThen(MonotonicityAnalyzer(ihm, proxyStore))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeHintsInserter(typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(DeclarationsChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeChecker(typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, /*FIXME*/ continueIfErrors = true))
-      .andThen(OverridesChecker(proxyStore, er, /*FIXME*/ continueIfErrors = true))
+      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, /*FIXME*/ continueIfErrors = true))
+      .andThen(OverridesChecker(ihm, proxyStore, er, /*FIXME*/ continueIfErrors = true))
       .andThen((program, subtypingInfo) => program)
       .andThen(Concurrent(
         SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)

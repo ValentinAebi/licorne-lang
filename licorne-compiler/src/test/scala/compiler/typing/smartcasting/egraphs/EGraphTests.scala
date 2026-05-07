@@ -2,7 +2,7 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
-import compiler.irs.ssa.Formulas.{FunCall, Formula, Select, ValIdValue}
+import compiler.irs.ssa.Formulas.{Formula, FunCall, Select, ValIdValue}
 import compiler.irs.ssa.FormulasDsl.{autoConvertIntToIConst, *}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.irs.ssa.SSA.Scope
@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{Reasoning, Simplifier}
+import compiler.smt.{ArithIntMode, Reasoning, Simplifier}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -110,7 +110,7 @@ class EGraphTests {
   }
 
   private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, globalValuesContext) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolCtx, proxyStore, globalValuesContext) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(using simplifier)

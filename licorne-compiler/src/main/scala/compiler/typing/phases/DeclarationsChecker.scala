@@ -4,12 +4,13 @@ import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{MeetJoinComputer, Reasoning}
+import compiler.smt.{IntHandlingMode, MeetJoinComputer, Reasoning}
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
 final class DeclarationsChecker(
+                                 ihm: IntHandlingMode[?],
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
                                  typeHintsStore: TypeHintsStore,
@@ -24,8 +25,8 @@ final class DeclarationsChecker(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
-    
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
+
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
@@ -36,7 +37,7 @@ final class DeclarationsChecker(
         val objVal = globalValsCtx.resolveObject(objectId)
         globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolCtx, proxyStore)
       }
-      
+
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
 
       for ((_, interfaceSig) <- program.interfaces) {

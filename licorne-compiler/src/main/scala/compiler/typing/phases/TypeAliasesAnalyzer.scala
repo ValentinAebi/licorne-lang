@@ -9,7 +9,7 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.Reasoning
+import compiler.smt.{IntHandlingMode, Reasoning}
 import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
 import compiler.valproxies.ProxyStore
@@ -17,6 +17,7 @@ import compiler.valproxies.ProxyStore
 import scala.collection.mutable
 
 final class TypeAliasesAnalyzer(
+                                 ihm: IntHandlingMode[?],
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
                                  typeHintsStore: TypeHintsStore,
@@ -32,7 +33,7 @@ final class TypeAliasesAnalyzer(
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       

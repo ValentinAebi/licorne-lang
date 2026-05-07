@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep.TypeHintsInsertion
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.Reasoning
+import compiler.smt.{IntHandlingMode, Reasoning}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.typing.{SubtypingInfo, TypeHintsStore}
 import compiler.valproxies.ProxyStore
@@ -19,6 +19,7 @@ import compiler.valuesconversion.GlobalValuesContext
 import scala.collection.mutable
 
 final class TypeHintsInserter(
+                               ihm: IntHandlingMode[?],
                                typeVarsCtx: TypeVariablesContext,
                                proxyStore: ProxyStore,
                                typeHintsStore: TypeHintsStore,
@@ -34,7 +35,7 @@ final class TypeHintsInserter(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
-    Reasoning.usingFreshReasoningToolkit(dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       for {

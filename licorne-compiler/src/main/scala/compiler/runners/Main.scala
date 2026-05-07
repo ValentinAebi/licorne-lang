@@ -3,6 +3,7 @@ package compiler.runners
 import compiler.gennames.FileExtensions.licorne as licorneExt
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
+import compiler.smt.{ArithIntMode, BvInt32Mode, IntHandlingMode}
 
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import scala.annotation.tailrec
@@ -146,6 +147,16 @@ object Main {
   private def getRuntimeDirArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("runtime", argsMap, Some(".")))
   }
+  
+  private def getIntHandlingModeArg(argsMap: MutArgsMap): IntHandlingMode[?] = {
+    val smtIntArith = "arith"
+    val smtIntBitvec = "bitvec"
+    getValuedArg("smt-int", argsMap, Some(smtIntArith)) match {
+      case `smtIntArith` => ArithIntMode
+      case `smtIntBitvec` => BvInt32Mode
+      case unknown => error("unknown SMT integer mode: " + unknown)
+    }
+  }
 
   private def getIndentGranularityArg(argsMap: MutArgsMap): Int = {
     val argStr = getValuedArg("indent", argsMap, Some("2"))
@@ -181,8 +192,9 @@ object Main {
   private case class Run(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBasePath = getOutDirBaseArg(argsMap)
+      val ihm = getIntHandlingModeArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir)
+      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir, ihm)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -205,8 +217,9 @@ object Main {
   private case class Compile(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBase = getOutDirBaseArg(argsMap)
+      val ihm = getIntHandlingModeArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir)
+      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir, ihm)
       reportUnknownArgsIfAny(argsMap)
       val cnt = compiler.apply(sources).size
       succeed(s"wrote $cnt file(s)")
@@ -253,10 +266,12 @@ object Main {
          |
          |run: compile and run the program
          | args: -out-dir=...: required, directory where to write the output file
+         |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
+         |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |typecheck: parse and typecheck the program
          |help: displays help (this)
