@@ -195,7 +195,10 @@ object Types {
   final case class NullableType private(nullatedType: Type) extends Type {
     override def formulaDependencies: List[Formula] = nullatedType.formulaDependencies
 
-    override def toString: String = s"$nullatedType?"
+    override def toString: String = nullatedType match {
+      case nullatedType: RefinedType => s"($nullatedType)?"
+      case nullatedType => s"$nullatedType?"
+    }
   }
 
   object NullableType {

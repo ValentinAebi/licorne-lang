@@ -106,6 +106,14 @@ final class SubtypingContext(
         true
       }
     case (_, UnitType) => true
+    case (IntersectionType(subtypes), superT) =>
+      subtypes.exists(isSubtype(_, superT))
+    case (subT, IntersectionType(supertypes)) =>
+      supertypes.forall(isSubtype(subT, _))
+    case (UnionType(subtypes), superT) =>
+      subtypes.forall(isSubtype(_, superT))
+    case (subT, UnionType(supertypes)) =>
+      supertypes.exists(isSubtype(subT, _))
     case (subT: RefinedType, superT: RefinedType) =>
       val RefinedType(subBaseType, subItVal, subPredicateScope, subPredicate) = subT.flattenedRefinement
       val RefinedType(superBaseType, superItVal, superPredicateScope, superPredicate) = superT.flattenedRefinement
@@ -119,14 +127,6 @@ final class SubtypingContext(
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
     case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
       logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
-    case (IntersectionType(subtypes), superT) =>
-      subtypes.exists(isSubtype(_, superT))
-    case (subT, IntersectionType(supertypes)) =>
-      supertypes.forall(isSubtype(subT, _))
-    case (UnionType(subtypes), superT) =>
-      subtypes.forall(isSubtype(_, superT))
-    case (subT, UnionType(supertypes)) =>
-      supertypes.exists(isSubtype(subT, _))
     case (subT, AnyType) => subT != NullType
     case _ => false
   }

@@ -6,7 +6,7 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.smt.Solver
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
-import compiler.util.asIterableOfType
+import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.reflect.ClassTag
@@ -23,8 +23,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplify), simplify(result), enforcedPure)
     case variable: TypeVariable => variable
 
-    case UnionType(types) =>
-      val simplifiedTypes = types.map(simplify).filter(_ != NothingType)
+    case UnionType(originalTypes) =>
+      val simplifiedTypes = SeqSet(originalTypes).map(simplify).filter(_ != NothingType)
       if simplifiedTypes.size == 1 then simplifiedTypes.head
       else {
 
@@ -62,7 +62,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       }
 
     case IntersectionType(originalTypes) =>
-      val simplifiedTypes = originalTypes.map(simplify).filter(_ != AnyType)
+      val simplifiedTypes = SeqSet(originalTypes).map(simplify).filter(_ != AnyType)
 
       var nullableFlag = true
       var knownNullFlag = false

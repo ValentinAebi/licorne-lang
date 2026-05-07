@@ -1,0 +1,27 @@
+
+object Test {
+
+    pure fn foo1(x: Int) -> Bool {
+        panic "not implemented"
+    }
+
+    pure fn foo2(x: Int) -> Bool {
+        panic "not implemented"
+    }
+
+    fn bar1(x: Int) -> (Int with foo1(it))? {
+        if (foo1(x)) {
+            return x;
+        };
+        return null;
+    }
+
+    fn bar2(x: Int) -> (Int with foo2(it))? {
+        if (foo1(x)) {
+            // TODO improve error reporting so that the useless intersection disappears
+            return x;   //> E : return value: expected (Int with Test.foo2(it))?, found x : Int with Test.foo1(it) & Int with Test.foo1(it)
+        };
+        return null;
+    }
+
+}
