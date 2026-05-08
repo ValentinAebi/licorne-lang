@@ -1171,12 +1171,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
         ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
       case Asts.RefinedTypeTree(baseTypeTree, predicateTree) =>
-        val predicateScope = Scope.nestedInside(scope, typeTree)
-        val itVal = predicateScope.newParam(ItId, typeTree.getPosition)
-        val baseType = mkType(baseTypeTree, predicateScope)
-        predicateScope.getLocalValuesContextUnsafe.saveNewLocal(ItId, itVal, predicateScope, ReassigPermission.Val, Some(baseType))
-        generateFormula(predicateTree, predicateScope) match {
-          case Some(predicate) => RefinedType(baseType, itVal, predicateScope, predicate)
+        val baseType = mkType(baseTypeTree, scope)
+        generateFormula(predicateTree, scope) match {
+          case Some(predicate) => RefinedType(baseType, predicate)
           case None =>
             er.reportError("invalid predicate", predicateTree.getPosition)
             baseType

@@ -31,12 +31,15 @@ final class TypeHintsInserter(
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
 
+    // @formatter:off
     given tmpTypeVarsCtx: TypeVariablesContext = TypeVariablesContext()
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
+    // @formatter:on
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       for {
         (funSig, func) <- program.functions
@@ -197,9 +200,9 @@ final class TypeHintsInserter(
         unifyTypes(nullatedHint, shape)
       case (hint, NullableType(nullatedShape)) =>
         unifyTypes(hint, nullatedShape)
-      case (RefinedType(hintBase, _, _, _), shape) =>
+      case (RefinedType(hintBase, _), shape) =>
         unifyTypes(hintBase, shape)
-      case (hint, RefinedType(shapeBase, _, _, _)) =>
+      case (hint, RefinedType(shapeBase, _)) =>
         unifyTypes(hint, shapeBase)
       case _ => ()
       // TODO also handle IntersectionTypes and UnionTypes?

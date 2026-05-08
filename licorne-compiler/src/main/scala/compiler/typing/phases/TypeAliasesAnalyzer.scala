@@ -13,6 +13,7 @@ import compiler.smt.{IntHandlingMode, Reasoning}
 import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
 
@@ -28,16 +29,19 @@ final class TypeAliasesAnalyzer(
   private given CompilationStep = TypeAliasesAnalysis
 
   override def apply(program: Program): Program = {
+
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
+    
     val resolutionCtx = ResolutionContext(program, er)
     checkTypeAliasesCyclicity(program, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       
-      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
+      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
       for (tid, tSig) <- program.typeAliases do {
         val sigScope = tSig.sigScope
         val typeParamsCtx = TypeParamsContext(tSig.typeParams)
@@ -76,7 +80,7 @@ final class TypeAliasesAnalyzer(
       types.flatMap(findMentionedTypes)
     case ClosureType(params, resultType, enforcedPure) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
-    case RefinedType(baseType, itVal, scope, predicate) =>
+    case RefinedType(baseType, predicate) =>
       findMentionedTypes(baseType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       Set.empty

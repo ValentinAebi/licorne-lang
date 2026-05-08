@@ -119,27 +119,24 @@ object Types {
       apply(SeqSet(types))
   }
 
-  final case class RefinedType(baseType: Type, itVal: IdValue, predicateScope: Scope, predicate: Formula) extends Type {
+  final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
 
     def flattenedRefinement: RefinedType = {
 
       def flattenPred(refinedType: RefinedType): (Type, Formula) = {
-        val RefinedType(baseType, itVal, predicateScope, predicate) = refinedType
+        val RefinedType(baseType, predicate) = refinedType
         baseType match {
-          case inner@RefinedType(innerBase, innerIt, innerScope, innerPredicate) =>
+          case inner@RefinedType(innerBase, innerPredicate) =>
             val (base, prevPred) = flattenPred(inner)
-            val mergedPred = LogicalAnd(
-              prevPred.substitute(Map(innerIt -> itVal)),
-              predicate
-            )
+            val mergedPred = LogicalAnd(prevPred, predicate)
             (base, mergedPred)
           case _ => (baseType, predicate)
         }
       }
 
       val (base, pred) = flattenPred(this)
-      RefinedType(base, itVal, predicateScope, pred)
+      RefinedType(base, pred)
     }
 
     override def toString: String = s"$baseType ${Keyword.With} $predicate"
@@ -292,8 +289,8 @@ object Types {
       UnionType(types.map(_.substitute(typesSubst, valsSubst)))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.substitute(typesSubst, valsSubst)))
-    case RefinedType(baseType, itVal, scope, predicate) =>
-      RefinedType(baseType.substitute(typesSubst, valsSubst), itVal, scope, predicate.substitute(valsSubst.filter(_._1 != itVal)))
+    case RefinedType(baseType, predicate) =>
+      RefinedType(baseType.substitute(typesSubst, valsSubst), predicate.substitute(valsSubst))
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       IntRangeType(
         lowerBoundOpt.map(_.substitute(valsSubst)),
@@ -313,8 +310,8 @@ object Types {
       UnionType(types.map(_.withTypeVarsExpanded))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.withTypeVarsExpanded))
-    case RefinedType(baseType, itVal, scope, predicate) =>
-      RefinedType(baseType.withTypeVarsExpanded, itVal, scope, predicate)
+    case RefinedType(baseType, predicate) =>
+      RefinedType(baseType.withTypeVarsExpanded, predicate)
     case range: IntRangeType => range
     case NullableType(nullatedType) =>
       NullableType(nullatedType.withTypeVarsExpanded)
@@ -332,7 +329,7 @@ object Types {
       UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
-    case RefinedType(baseType, oldItVal, oldScope, predicate) =>
+    case RefinedType(baseType, predicate) =>
 
       def filterPred(predicate: Formula): List[Formula] = predicate match {
         case LogicalAnd(lhs, rhs) =>
@@ -347,10 +344,8 @@ object Types {
           val newScopeRoot = assignmentTarget.idValsDependencies.map(_.definingScope).maxByOption(_.depth).getOrElse(globalValsCtx.globalScope)
           val newScope = Scope.nestedInsideNodeOpt(newScopeRoot, None)
           val newItVal = newScope.newParam(ItId, currScopeAndProxyStoreOpt.flatMap(_._1.getPosition))
-          conjuncts.reduce(LogicalAnd(_, _))
-            .substitute(Map(oldItVal -> newItVal))
-            .filteredAsCondition(assignmentTarget) match {
-            case Some(newPredicate) => RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), oldItVal, newScope, newPredicate)
+          conjuncts.reduce(LogicalAnd(_, _)).filteredAsCondition(assignmentTarget) match {
+            case Some(newPredicate) => RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), newPredicate)
             case None => baseType
           }
       }
@@ -392,13 +387,16 @@ object Types {
     case tpe => tpe
   }
 
-  extension (tpe: Type) def asRefinedType(itVal: IdValue, scope: Scope): RefinedType = tpe match {
-    case refinedType: RefinedType => refinedType
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      val predicateParts = lowerBoundOpt.map(LessOrEq(_, itVal)) ++ upperBoundOpt.map(LessOrEq(itVal, _))
-      val predicate = if predicateParts.isEmpty then BoolConst(true) else predicateParts.reduce[Formula](LogicalAnd(_, _))
-      RefinedType(IntType, itVal, scope, predicate)
-    case tpe => RefinedType(tpe, itVal, scope, BoolConst(true))
+  extension (tpe: Type) def asRefinedType(using globalValsCtx: GlobalValuesContext): RefinedType = {
+    import globalValsCtx.itValue
+    tpe match {
+      case refinedType: RefinedType => refinedType
+      case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+        val predicateParts = lowerBoundOpt.map(LessOrEq(_, itValue)) ++ upperBoundOpt.map(LessOrEq(itValue, _))
+        val predicate = if predicateParts.isEmpty then BoolConst(true) else predicateParts.reduce[Formula](LogicalAnd(_, _))
+        RefinedType(IntType, predicate)
+      case tpe => RefinedType(tpe, BoolConst(true))
+    }
   }
   
   extension (tpe: Type) def withTypeVarsSubstituted: Option[Type] = {
@@ -435,10 +433,10 @@ object Types {
         for {
           types <- substAll(types)
         } yield IntersectionType(types)
-      case RefinedType(baseType, itVal, predicateScope, predicate) =>
+      case RefinedType(baseType, predicate) =>
         for {
           baseType <- baseType.withTypeVarsSubstituted
-        } yield RefinedType(baseType, itVal, predicateScope, predicate)
+        } yield RefinedType(baseType, predicate)
       case rangeType: IntRangeType => Some(rangeType)
       case NullableType(nullatedType) =>
         for {

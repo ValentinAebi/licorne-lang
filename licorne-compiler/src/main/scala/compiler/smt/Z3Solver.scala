@@ -209,7 +209,7 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
     case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
       mkClosureApp(callee, closureTypingTarget, args, ihm.iSort)
     case ClosureCall(callee, closureTypingTarget, args) => None
-    case PureClosureValue(params, body, closureVal) => convertInt(closureVal)
+    case PureClosureValue(params, body, closureVal) => None
     case Plus(lhs, rhs) =>
       for {
         l <- convertInt(lhs)
@@ -260,7 +260,7 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
     case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
       mkClosureApp(callee, closureTypingTarget, args, kCtx.mkBoolSort())
     case ClosureCall(callee, closureTypingTarget, args) => None
-    case PureClosureValue(params, body, closureVal) => convertBool(closureVal)
+    case PureClosureValue(params, body, closureVal) => None
     case Plus(lhs, rhs) => None
     case Neg(operand) => None
     case Times(lhs, rhs) => None

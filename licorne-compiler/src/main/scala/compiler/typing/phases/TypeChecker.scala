@@ -33,13 +33,13 @@ final class TypeChecker(
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
 
-    given GlobalValuesContext = program.globalValuesContext
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
 
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, simplifier)
@@ -52,7 +52,7 @@ final class TypeChecker(
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(
-        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er),
+        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er),
         er
       )
     }
@@ -94,12 +94,12 @@ final class TypeChecker(
                          solver: Solver,
                          simplifier: Simplifier,
                          absInt: AbstractInterpreter
-                       ): Unit =
+                       )(using globalValsCtx: GlobalValuesContext): Unit =
     func.bodyOpt.foreach { funcBody =>
       
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-        proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
+        proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
       val precondInfos = funSig.precondOpt match {
         case Some(precond) =>
@@ -118,7 +118,7 @@ final class TypeChecker(
       while (closuresCollector.nonEmpty) {
         val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
         val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-          proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er, closuresCollector.enqueue)
+          proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {
             sendRefinementsToSolver(paramVal, paramType.withTypeVarsExpanded, solver, dealiasingCtx)
@@ -132,12 +132,13 @@ final class TypeChecker(
       }
     }
 
-  private def sendRefinementsToSolver(subject: Formula, tpe: Type, solver: Solver, dealiasingCtx: DealiasingContext): Unit = {
+  private def sendRefinementsToSolver(subject: Formula, tpe: Type, solver: Solver, dealiasingCtx: DealiasingContext)(using globalValsCtx: GlobalValuesContext): Unit = {
+    import globalValsCtx.itValue
     dealiasingCtx.dealiasType(tpe) match {
       case range: IntRangeType =>
         solver.assertInRange(subject, range)
-      case RefinedType(baseType, itVal, predicateScope, predicate) =>
-        solver.assert(predicate.substitute(itVal, subject))
+      case RefinedType(baseType, predicate) =>
+        solver.assert(predicate.substitute(itValue, subject))
       case _ => ()
     }
   }

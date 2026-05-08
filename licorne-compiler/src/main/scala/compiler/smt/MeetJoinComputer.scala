@@ -88,7 +88,7 @@ final class MeetJoinComputer(
                   for (tpe <- types) {
                     categorizeType(tpe)
                   }
-                case RefinedType(baseType, itVal, scope, predicate) =>
+                case RefinedType(baseType, predicate) =>
                   // TODO try to also handle the predicate
                   categorizeType(baseType)
                 case intRangeType: IntRangeType =>

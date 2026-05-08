@@ -18,6 +18,10 @@ import scala.collection.mutable
 final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int, val exitManager: ExitManager) extends ValuesContext {
 
   private val values = mutable.Map.empty[FunOrVarId, LocalInfo]
+  
+  {
+    values.put(ItId, LocalInfo(Some(globalCtx.itValue), globalCtx.globalScope, ReassigPermission.Val, None))
+  }
 
   export nestedContext.globalCtx
   export globalCtx.resolveObject
@@ -60,7 +64,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
       remap(id, value)
     }
   }
-  
+
   def createShallowCopy(id: FunOrVarId): Boolean = queryLocal(id) match {
     case Some(localInfo) =>
       values(id) = localInfo.copy()
@@ -78,7 +82,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   }
 
   def getThisValue: Option[IdValue] = valueOf(ThisId).toOption
-  
+
   def getItValue: Option[IdValue] = valueOf(ItId).toOption
 
   def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnot)
@@ -123,7 +127,7 @@ object LocalValuesContext {
 
   final class ExitManager {
     private var exitedStatus = ExitedStatus.Active
-    
+
     def reset(): Unit = {
       exitedStatus = ExitedStatus.Active
     }

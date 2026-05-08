@@ -16,6 +16,11 @@ import scala.reflect.ClassTag
 // TODO some code in simplification of unions and intersections seems very similar to the code of the join and meet computations, maybe this can be improved
 final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, globalValuesContext: GlobalValuesContext) {
 
+  private given GlobalValuesContext = globalValuesContext
+
+  import globalValuesContext.nullVal
+  import globalValuesContext.itValue
+
   def simplify(tpe: Type): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
@@ -104,36 +109,36 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       then NullableType(nonNullType)
       else nonNullType
 
-    case RefinedType(base1, it12, scope, pred1) =>
+    case RefinedType(base1, pred1) =>
 
       // Step 1: T with it is S  --->  S  (if S <: T)
-      val (targetTypes, pred2Parts) = searchTypeTests(pred1, it12, base1)
+      val (targetTypes, pred2Parts) = searchTypeTests(pred1, base1)
       val base2 = if targetTypes.isEmpty then base1 else meetJoinComputer.computeMeet(targetTypes)
       val pred2 = mkSimplifiedConjunct(pred2Parts)
 
       // Step 2: T? with it != null  --->  T
-      val (containsNonNullCheck, pred3Parts) = searchNonNullCheck(pred2, it12)
+      val (containsNonNullCheck, pred3Parts) = searchNonNullCheck(pred2)
       val base3 = if containsNonNullCheck then base2.ignoreNullabilityShallow else base2
       val pred3 = mkSimplifiedConjunct(pred3Parts)
 
       // Step 3: Int with it >= 0  --->  [0,]
-      val RefinedType(b, it3, _, p) = base3.asRefinedType(it12, scope)
+      val RefinedType(b, p) = base3.asRefinedType
       val (base4, pred4) = b.withTypeVarsExpanded match {
         case IntType =>
-          val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3, it3)
+          val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3)
           val lbOpt = solver.intMax(lowerBounds)
           val ubOpt = solver.intMin(upperBounds)
           val pred4PartsAfterReadd =
-            (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, it3)) else List.empty) ++
-              (if ubOpt.isEmpty then upperBounds.map(LessOrEq(it3, _)) else List.empty) ++
+            (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, itValue)) else List.empty) ++
+              (if ubOpt.isEmpty then upperBounds.map(LessOrEq(itValue, _)) else List.empty) ++
               pred4PartsBeforeReadd
           (if lbOpt.isEmpty && ubOpt.isEmpty then IntType else IntRangeType(lbOpt, ubOpt),
             mkSimplifiedConjunct(pred4PartsAfterReadd))
         case _ => (base3, pred3)
       }
-      
+
       // Finally: remove useless predicate
-      if pred4 == BoolConst(true) then base4 else RefinedType(base4, it3, scope, pred4)
+      if pred4 == BoolConst(true) then base4 else RefinedType(base4, pred4)
 
 
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
@@ -220,17 +225,17 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   /**
    * @return (lowerBounds, upperBounds, otherConditions)
    */
-  private def searchBounds(formula: Formula, itVal: IdValue): (List[Formula], List[Formula], List[Formula]) = {
+  private def searchBounds(formula: Formula): (List[Formula], List[Formula], List[Formula]) = {
     import compiler.irs.ssa.FormulasDsl.*
     formula match {
       case LogicalAnd(lhs, rhs) =>
-        val (llb, lrb, lo) = searchBounds(lhs, itVal)
-        val (rlb, rrb, ro) = searchBounds(rhs, itVal)
+        val (llb, lrb, lo) = searchBounds(lhs)
+        val (rlb, rrb, ro) = searchBounds(rhs)
         (llb ++ rlb, lrb ++ rrb, lo ++ ro)
-      case LessOrEq(lb, `itVal`) => (List(lb), List.empty, List.empty)
-      case LessThan(lb, `itVal`) => (List(lb + 1), List.empty, List.empty)
-      case LessOrEq(`itVal`, ub) => (List.empty, List(ub), List.empty)
-      case LessThan(`itVal`, ub) => (List.empty, List(ub - 1), List.empty)
+      case LessOrEq(lb, `itValue`) => (List(lb), List.empty, List.empty)
+      case LessThan(lb, `itValue`) => (List(lb + 1), List.empty, List.empty)
+      case LessOrEq(`itValue`, ub) => (List.empty, List(ub), List.empty)
+      case LessThan(`itValue`, ub) => (List.empty, List(ub - 1), List.empty)
       case formula => (List.empty, List.empty, List(formula))
     }
   }
@@ -238,25 +243,22 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   /**
    * @return (containsNonNullCheck, formulaWithoutNonNullCheck)
    */
-  private def searchNonNullCheck(formula: Formula, itVal: IdValue): (Boolean, List[Formula]) = {
-    val nullVal = globalValuesContext.nullVal
-    formula match {
-      case LogicalAnd(lhs, rhs) =>
-        val (leftContainsNonNullCheck, leftWithoutNonNullCheck) = searchNonNullCheck(lhs, itVal)
-        val (rightContainsNonNullCheck, rightWithoutNonNullCheck) = searchNonNullCheck(rhs, itVal)
-        (leftContainsNonNullCheck || rightContainsNonNullCheck, leftWithoutNonNullCheck ++ rightWithoutNonNullCheck)
-      case LogicalNot(Equality(`itVal`, `nullVal`) | Equality(`nullVal`, `itVal`)) =>
-        (true, List.empty)
-      case formula => (false, List(formula))
-    }
+  private def searchNonNullCheck(formula: Formula): (Boolean, List[Formula]) = formula match {
+    case LogicalAnd(lhs, rhs) =>
+      val (leftContainsNonNullCheck, leftWithoutNonNullCheck) = searchNonNullCheck(lhs)
+      val (rightContainsNonNullCheck, rightWithoutNonNullCheck) = searchNonNullCheck(rhs)
+      (leftContainsNonNullCheck || rightContainsNonNullCheck, leftWithoutNonNullCheck ++ rightWithoutNonNullCheck)
+    case LogicalNot(Equality(`itValue`, `nullVal`) | Equality(`nullVal`, `itValue`)) =>
+      (true, List.empty)
+    case formula => (false, List(formula))
   }
 
-  private def searchTypeTests(formula: Formula, itVal: IdValue, baseType: Type): (List[Type], List[Formula]) = formula match {
+  private def searchTypeTests(formula: Formula, baseType: Type): (List[Type], List[Formula]) = formula match {
     case LogicalAnd(lhs, rhs) =>
-      val (lTids, lRem) = searchTypeTests(lhs, itVal, baseType)
-      val (rTids, rRem) = searchTypeTests(rhs, itVal, baseType)
+      val (lTids, lRem) = searchTypeTests(lhs, baseType)
+      val (rTids, rRem) = searchTypeTests(rhs, baseType)
       (lTids ++ rTids, lRem ++ rRem)
-    case TypePredicate(`itVal`, tpe) =>
+    case TypePredicate(`itValue`, tpe) =>
       subtypingCtx.checkDowncastTarget(baseType, tpe).asOption match {
         case Some(targetType) => (List(targetType), List.empty)
         case None => (List.empty, List(formula))

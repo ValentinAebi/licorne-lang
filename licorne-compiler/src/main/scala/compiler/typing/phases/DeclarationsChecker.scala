@@ -8,6 +8,7 @@ import compiler.smt.{IntHandlingMode, MeetJoinComputer, Reasoning}
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 
 final class DeclarationsChecker(
                                  ihm: IntHandlingMode[?],
@@ -22,12 +23,14 @@ final class DeclarationsChecker(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
+    
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
 
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, er)
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       // save types of objects
@@ -38,7 +41,7 @@ final class DeclarationsChecker(
         globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolCtx, proxyStore)
       }
 
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, er)
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
 
       for ((_, interfaceSig) <- program.interfaces) {
         typer.typeInterfaceSig(interfaceSig)

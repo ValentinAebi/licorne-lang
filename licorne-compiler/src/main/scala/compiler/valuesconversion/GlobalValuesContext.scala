@@ -1,14 +1,11 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.Formulas.{IdValue, UninterpretedConstIdValue}
-import compiler.lang.Keyword
+import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Types.TypeVariable
-import compiler.reporting.Position
 import compiler.valproxies.ProxyStore
 
-import java.util
 import scala.collection.mutable
 
 final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContext {
@@ -24,12 +21,15 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   val trueVal: IdValue = globalScope.newUninterpretedConst("true")
   val falseVal: IdValue = globalScope.newUninterpretedConst("false")
   val nullVal: IdValue = globalScope.newUninterpretedConst("null")
+  
+  val itValue: IdValue = globalScope.newUninterpretedConst("it")
 
   {
     proxyStore.saveProxy(unitVal, unitVal)
     proxyStore.saveProxy(trueVal, trueVal)
     proxyStore.saveProxy(falseVal, falseVal)
     proxyStore.saveProxy(nullVal, nullVal)
+    proxyStore.saveProxy(itValue, itValue)
   }
 
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =

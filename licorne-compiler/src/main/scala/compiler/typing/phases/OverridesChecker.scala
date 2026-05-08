@@ -11,8 +11,9 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
 
@@ -27,11 +28,13 @@ final class OverridesChecker(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSubtypingMaps)) = input
+    
+    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     Reasoning.usingFreshSolver(ihm, dealiasingCtx, proxyStore) { solver =>
       val resolutionCtx = ResolutionContext(program, er)
-      val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, er)
+      val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)
     }
     

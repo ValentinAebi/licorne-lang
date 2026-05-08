@@ -33,8 +33,8 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       UnionType(types.map(dealiasType))
     case IntersectionType(types) =>
       IntersectionType(types.map(dealiasType))
-    case RefinedType(baseType, itVal, predicateScope, predicate) =>
-      RefinedType(dealiasType(baseType), itVal, predicateScope, predicate)
+    case RefinedType(baseType, predicate) =>
+      RefinedType(dealiasType(baseType), predicate)
     case intRangeType: IntRangeType => intRangeType
     case NullableType(nullatedType) =>
       NullableType(dealiasType(nullatedType))
@@ -54,7 +54,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       types.forall(isValueType)
     case IntersectionType(types) =>
       types.exists(isValueType)
-    case RefinedType(baseType, itVal, predicateScope, predicate) =>
+    case RefinedType(baseType, predicate) =>
       isValueType(baseType)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
     case NullableType(nullatedType) =>
@@ -73,7 +73,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       case Some(tpe) => eraseRefinements(tpe)
       case None => AnyType
     }
-    case RefinedType(baseType, itVal, predicateScope, predicate) => eraseRefinements(baseType)
+    case RefinedType(baseType, predicate) => eraseRefinements(baseType)
     case UnionType(types) =>
       if types.size == 1
       then eraseRefinements(types.head)

@@ -14,6 +14,7 @@ import compiler.smt.Solver
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
 
@@ -24,8 +25,13 @@ final class SubtypingContext(
                               resolutionCtx: ResolutionContext,
                               solver: Solver,
                               proxyStore: ProxyStore,
+                              globalValuesContext: GlobalValuesContext,
                               er: ErrorReporter
                             )(using CompilationStep) {
+  
+  private given GlobalValuesContext = globalValuesContext
+  
+  import globalValuesContext.itValue
 
   def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
     if subT == superT then resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subT).map {
@@ -115,12 +121,12 @@ final class SubtypingContext(
     case (subT, UnionType(supertypes)) =>
       supertypes.exists(isSubtype(subT, _))
     case (subT: RefinedType, superT: RefinedType) =>
-      val RefinedType(subBaseType, subItVal, subPredicateScope, subPredicate) = subT.flattenedRefinement
-      val RefinedType(superBaseType, superItVal, superPredicateScope, superPredicate) = superT.flattenedRefinement
-      isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate.substitute(Map(subItVal -> superItVal)), superPredicate)
+      val RefinedType(subBaseType, subPredicate) = subT.flattenedRefinement
+      val RefinedType(superBaseType, superPredicate) = superT.flattenedRefinement
+      isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate, superPredicate)
     case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
-    case (subT@RefinedType(_, itVal, scope, _), superT) => isSubtype(subT, superT.asRefinedType(itVal, scope))
-    case (subT, superT@RefinedType(_, itVal, scope, _)) => isSubtype(subT.asRefinedType(itVal, scope), superT)
+    case (subT: RefinedType, superT) => isSubtype(subT, superT.asRefinedType)
+    case (subT, superT: RefinedType) => isSubtype(subT.asRefinedType, superT)
     case (IntRangeType(_, _), IntType) => true
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
       superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
@@ -144,9 +150,9 @@ final class SubtypingContext(
       val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
       lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
         && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
-    case RefinedType(baseType, itVal, predicateScope, predicate) =>
-      solver.canProve(predicate.substitute(itVal, subject)) || proxyStore.getProxyIfIdValue(subject).exists { proxy =>
-        solver.canProve(predicate.substitute(itVal, proxy))
+    case RefinedType(baseType, predicate) =>
+      solver.canProve(predicate.substitute(itValue, subject)) || proxyStore.getProxyIfIdValue(subject).exists { proxy =>
+        solver.canProve(predicate.substitute(itValue, proxy))
       }
     case UnionType(types) =>
       types.exists(canProveHasType(subject, _))

@@ -20,6 +20,7 @@ import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolRe
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.util.{SeqSet, findUnique, mapVals, whenInstanceOf}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
+import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.mutable
@@ -39,6 +40,7 @@ final class Typer(
                    solver: Solver,
                    simplifier: Simplifier,
                    absInt: AbstractInterpreter,
+                   globalValuesCtx: GlobalValuesContext,
                    er: ErrorReporter,
                    closuresCollectorFunc: ClosureInfo => Unit = _ => ()
                  )(using CompilationStep) {
@@ -51,7 +53,10 @@ final class Typer(
   private given ProxyStore = proxyStore
   private given Simplifier = simplifier
   private given Typer = this
+  private given GlobalValuesContext = globalValuesCtx
   // @formatter:on
+
+  import globalValuesCtx.itValue
 
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
@@ -378,7 +383,7 @@ final class Typer(
 
         val refTypeScope = Scope.nestedInsideNodeOpt(currScope, weakCast.getAstNodeOpt)
         val itVal = refTypeScope.newParam(ItId, weakCast.getPosition)
-        val RefinedType(baseType, _, _, predicate) = currScope.currentTypeOf(inValue, saveSmartcastsInIR = true).asRefinedType(itVal, refTypeScope)
+        val RefinedType(baseType, predicate) = currScope.currentTypeOf(inValue, saveSmartcastsInIR = true).asRefinedType
 
         def setWeakCastTarget(tpe: Type): Unit = {
           currScope.saveSmartcast(inValue, tpe)
@@ -393,7 +398,7 @@ final class Typer(
               er.warn("redundant weak cast", weakCast.getPosition)
           }
         } else {
-          setWeakCastTarget(RefinedType(baseType, itVal, refTypeScope, BoolConst(false)))
+          setWeakCastTarget(RefinedType(baseType, BoolConst(false)))
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
@@ -645,10 +650,11 @@ final class Typer(
         for tpe <- types do {
           typeTypeApp(tpe, ambientVarianceOpt, currScope, posOpt)
         }
-      case tpe@RefinedType(baseType, itVal, predScope, predicate) =>
-        typeTypeApp(baseType, ambientVarianceOpt, predScope, posOpt)
-        predScope.saveType(itVal, baseType)
-        val predicateType = typeFormula(predicate, predScope, posOpt)
+      case tpe@RefinedType(baseType, predicate) =>
+        typeTypeApp(baseType, ambientVarianceOpt, currScope, posOpt)
+        val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
+        tmpPredScope.saveSmartcast(itValue, baseType)
+        val predicateType = typeFormula(predicate, tmpPredScope, posOpt)
         if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
           er.reportError(s"predicate should have type $BoolType", posOpt)
         }
@@ -949,10 +955,8 @@ final class Typer(
         itSubstTarget <- findFormulaWhoseTypeCanMentionAllOthers(holes).toList
         baseType <- detectTypeForSmartcast(itSubstTarget, scope)
       } yield {
-        val refTypeScope = Scope.nestedInsideNodeOpt(scope, None)
-        val itVal = refTypeScope.newParam(ItId, scope.currentInstrInTraversal.flatMap(_.getPosition))
-        val predicate = condition.substitute(itSubstTarget, itVal)
-        itSubstTarget -> RefinedType(baseType, itVal, refTypeScope, predicate)
+        val predicate = condition.substitute(itSubstTarget, itValue)
+        itSubstTarget -> RefinedType(baseType, predicate)
       }
     }
 
@@ -961,7 +965,7 @@ final class Typer(
         extractPredicateIntoSmartcastType(lhs, scope) ++ extractPredicateIntoSmartcastType(rhs, scope)
       case LogicalNot(operand) =>
         extractPredicateIntoSmartcastType(operand, scope).mapVals {
-          case RefinedType(baseType, itVal, predicateScope, predicate) => RefinedType(baseType, itVal, predicateScope, simplifier.simplifyBool(LogicalNot(predicate)))
+          case RefinedType(baseType, predicate) => RefinedType(baseType, simplifier.simplifyBool(LogicalNot(predicate)))
         }
       case FunCall(receiver, func, typeArgs, args) =>
         performSubst(receiver :: args)
