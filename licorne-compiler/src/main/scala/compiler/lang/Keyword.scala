@@ -2,14 +2,11 @@ package compiler.lang
 
 enum Keyword(val str: String) {
   case As extends Keyword("as")
-  case Cap extends Keyword("cap")
   case Class extends Keyword("class")
-  case Const extends Keyword("const")
   case Datatype extends Keyword("datatype")
   case Else extends Keyword("else")
   case Fn extends Keyword("fn")
   case For extends Keyword("for")
-  case Fs extends Keyword("fs")
   case If extends Keyword("if")
   case It extends Keyword("it")
   case Import extends Keyword("import")
