@@ -24,6 +24,9 @@ object DivByZero {
    fn ok5(x: Int, y: Int | y != 0) -> Int =
       x % y
 
+   fn ok6(x: Int, y: Int with it != 0) -> Int =
+      x / y
+
    fn wrong1(x: Int, y: Int) -> Int =
       x % y                         //> E : I cannot prove that right-hand side y of operator '%' cannot be zero
 
@@ -33,5 +36,8 @@ object DivByZero {
       };
       return x / (y - 1);           //> E : I cannot prove that right-hand side y - 1 of operator '/' cannot be zero
    }
+
+   fn wrong3(x: Int, y: Int with it >= 0) -> Int =
+      x / y                         //> E : I cannot prove that right-hand side y of operator '/' cannot be zero
 
 }

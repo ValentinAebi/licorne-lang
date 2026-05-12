@@ -3,7 +3,7 @@ package compiler.smt
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
-import compiler.lang.Types.{IntRangeType, Type, primTypeFor}
+import compiler.lang.Types.{IntRangeType, Type, asRefinedType, primTypeFor}
 import compiler.lang.Variance.Invariant
 import compiler.lang.Types
 import compiler.smt.{Simplifier, Solver}
@@ -12,9 +12,12 @@ import compiler.irs.ssa.Formulas
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valuesconversion.GlobalValuesContext
 
-final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
-  
+final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalValsCtx: GlobalValuesContext) {
+
+  //> @formatter:off
   private given Simplifier = simplifier
+  private given GlobalValuesContext = globalValsCtx
+  //> @formatter:on
 
   /**
    * {{{
@@ -130,13 +133,16 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
       else (None, None)
   }
 
-  def unaryNegType(operand: Type): Option[Type] = operand match {
+  def unaryNegType(operand: Type): Option[Type] = simplifier.simplify(operand) match {
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val rawRange = IntRangeType(upperBoundOpt.map(Neg(_)), lowerBoundOpt.map(Neg(_)))
       Some(simplifier.simplify(rawRange))
-    case IntType => Some(IntType)
-    case DoubleType => Some(DoubleType)
-    case _ => None
+    case operand =>
+      operand.asRefinedType.baseType match {
+        case IntType => Some(IntType)
+        case DoubleType => Some(DoubleType)
+        case _ => None
+      }
   }
 
   def interpretUnderAssumptions(formula: Formula, typeAssumptions: Map[IdValue, Type], assignmentTargetOpt: Option[IdValue])
@@ -166,13 +172,16 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier) {
   }
 
   private def typeArithBinopType(l: Type, r: Type)
-                                (mergeRanges: ((Option[Formula], Option[Formula]), (Option[Formula], Option[Formula])) => (Option[Formula], Option[Formula])): Option[Type] = (l, r) match {
+                                (mergeRanges: ((Option[Formula], Option[Formula]), (Option[Formula], Option[Formula])) => (Option[Formula], Option[Formula])): Option[Type] = (simplifier.simplify(l), simplifier.simplify(r)) match {
     case (IntRangeType(llb, lub), IntRangeType(rlb, rub)) =>
       val (lb, ub) = mergeRanges((llb, lub), (rlb, rub))
       Some(simplifier.simplify(IntRangeType(lb, ub)))
-    case (IntType | IntRangeType(_, _), IntType | IntRangeType(_, _)) => Some(IntType)
-    case (DoubleType, DoubleType) => Some(DoubleType)
-    case _ => None
+    case (l, r) =>
+      (l.asRefinedType.baseType, r.asRefinedType.baseType) match {
+        case (IntType | IntRangeType(_, _), IntType | IntRangeType(_, _)) => Some(IntType)
+        case (DoubleType, DoubleType) => Some(DoubleType)
+        case _ => None
+      }
   }
 
   private def boundPlusBound(l: Option[Formula], r: Option[Formula]): Option[Formula] =
