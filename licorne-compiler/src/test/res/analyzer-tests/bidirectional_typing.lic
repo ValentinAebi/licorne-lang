@@ -25,10 +25,10 @@ object Test {
       stack.push("Hi");         // OK
    }
 
-   fn m3(x: Int) -> [0,] {
+   fn m3(x: Int) -> [0..] {
       val stack = new MutableStack();
       stack.push(when x >= 0 then x else null);
-      return stack.pop();       //> E : return value: expected [0,], found [0,]?
+      return stack.pop();       //> E : return value: expected [0..], found [0..]?
    }
 
 }

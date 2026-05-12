@@ -5,7 +5,7 @@ import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA, FormulasDsl}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
@@ -1178,10 +1178,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             er.reportError("invalid predicate", predicateTree.getPosition)
             baseType
         }
-      case rangeTypeTree@Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt) =>
+      case rangeTypeTree@Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt, upperIncluded) =>
+        import FormulasDsl.*
         IntRangeType(
           lowerBoundOpt.flatMap(lb => generateFormula(lb, scope).required("invalid lower bound", lb.getPosition)),
-          upperBoundOpt.flatMap(ub => generateFormula(ub, scope).required("invalid upper bound", ub.getPosition))
+          upperBoundOpt.flatMap(ub => generateFormula(ub, scope).required("invalid upper bound", ub.getPosition)).map { ub =>
+            if upperIncluded then ub else ub - 1
+          }
         )
       case Asts.NullableTypeTree(wrappedType) =>
         NullableType(mkType(wrappedType, scope))

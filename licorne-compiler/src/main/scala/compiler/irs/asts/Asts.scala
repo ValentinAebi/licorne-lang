@@ -496,7 +496,7 @@ object Asts {
     override def children: List[Ast] = List(baseTypeTree, predicateTree)
   }
 
-  final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr]) extends TypeTree {
+  final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr], upperIncluded: Boolean) extends TypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
   }
   

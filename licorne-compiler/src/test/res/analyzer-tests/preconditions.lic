@@ -1,11 +1,11 @@
 
 object Test {
 
-   fn clamp(min: Int, max: Int, x: Int | min <= max) -> [min,max] =
+   fn clamp(min: Int, max: Int, x: Int | min <= max) -> [min..max] =
       when x < min then min
       else when x <= max then x
       else max
 
-   fn brokenIdentityFunction(x: Int | x >= 0) -> [0,10] = x  //> E : return value: expected [0,10], found x : [0,]
+   fn brokenIdentityFunction(x: Int | x >= 0) -> [0..10] = x  //> E : return value: expected [0..10], found x : [0..]
 
 }

@@ -9,18 +9,21 @@ import compiler.reporting.Position
 
 import java.util.Objects
 import scala.collection
-import scala.reflect.ClassTag
 
 
 // TODO cleaner pretty-printing system
 object Formulas {
 
-  sealed trait Formula
+  sealed trait Formula {
+    def isAtomic = false
+  }
 
   sealed trait IdValue extends Formula {
     def uid: Long
 
     def definingScope: Scope
+
+    override def isAtomic: Boolean = true
   }
 
   sealed trait NamedIdValue(valKindDescr: String) extends IdValue {
@@ -75,6 +78,8 @@ object Formulas {
   sealed trait ConstFormula extends Formula {
     def value: Any
 
+    override def isAtomic: Boolean = true
+
     override def toString: String = value.toString
   }
 
@@ -114,7 +119,7 @@ object Formulas {
       s"$receiver.${func.funId}" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
     }
   }
-  
+
   final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
     override def toString: String = s"$callee(" ++ args.mkString(",") ++ ")"
   }
@@ -127,7 +132,7 @@ object Formulas {
       case callee => new ClosureCall(callee, target, args)
     }
   }
-  
+
   final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
     override def toString: String = Keyword.Fn.str + " " + params.mkString("(", ", ", ")") + " -> " + body
   }
@@ -145,6 +150,9 @@ object Formulas {
   }
 
   final case class Neg(operand: Formula) extends Formula {
+
+    override def isAtomic: Boolean = operand.isAtomic
+
     override def toString: String = operand match {
       case IntConst(cst) if cst < 0 => (-cst).toString
       case _ => "-" + parenthIfNot[IdValue | ConstFormula](operand)

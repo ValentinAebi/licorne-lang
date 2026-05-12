@@ -1,11 +1,11 @@
 
 object Test {
 
-   fn foo(a: Int, b: [0,9]){}
+   fn foo(a: Int, b: [0..9]){}
    fn bar(i: I with it.m(), a: A){}
 
    fn test1_wrong(x: Int, y: Int) {
-      foo(x, y);        //> E : second argument of call to foo: expected [0,9], found y : Int
+      foo(x, y);        //> E : second argument of call to foo: expected [0..9], found y : Int
    }
 
    fn test1_ok(x: Int, y: Int) {

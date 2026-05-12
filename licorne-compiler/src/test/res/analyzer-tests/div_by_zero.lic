@@ -12,11 +12,11 @@ object DivByZero {
    //   return x / y;
    //}
 
-   fn ok3(x: Int, y: [1,]) -> Int {
+   fn ok3(x: Int, y: [1..]) -> Int {
       return x / y;
    }
 
-   fn ok4(x: [0,], y: Int) -> Int =
+   fn ok4(x: [0..], y: Int) -> Int =
       when y > 0
       then x / y
       else y / (x + 1)
@@ -27,7 +27,7 @@ object DivByZero {
    fn wrong1(x: Int, y: Int) -> Int =
       x % y                         //> E : I cannot prove that right-hand side y of operator '%' cannot be zero
 
-   fn wrong2(x: Int, y: [1,]) -> Int {
+   fn wrong2(x: Int, y: [1..]) -> Int {
       if x % 100 == 0 {
          return x % y;              // OK
       };

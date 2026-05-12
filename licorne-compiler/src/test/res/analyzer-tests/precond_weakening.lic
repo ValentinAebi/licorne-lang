@@ -1,10 +1,10 @@
 
 interface I {
-   fn foo(this, i: Int, j: [0, i] | Math.abs(i) < 10) -> Int
+   fn foo(this, i: Int, j: [0..i] | Math.abs(i) < 10) -> Int
 }
 
 class A : I {
-   fn foo(this, i: Int, j: Int) -> [0,] {                           // OK
+   fn foo(this, i: Int, j: Int) -> [0..] {                           // OK
       panic "not implemented"
    }
 }
@@ -22,11 +22,11 @@ class C : I {
 }
 
 class D : I {
-   fn foo(this, i: Int, j: [-i, i]) -> [0,] {                           //> E : type mismatch on parameter j of method foo: declared type [-i,i] is not a supertype of the type [0,i] of the corresponding parameter in the overridden method foo in I
+   fn foo(this, i: Int, j: [-i..i]) -> [0..] {                           //> E : type mismatch on parameter j of method foo: declared type [-i..i] is not a supertype of the type [0..i] of the corresponding parameter in the overridden method foo in I
       panic "not implemented"
    }
 }
 
 object Math {
-   pure fn abs(i: Int) -> [0,] = when i < 0 then -i else i
+   pure fn abs(i: Int) -> [0..] = when i < 0 then -i else i
 }

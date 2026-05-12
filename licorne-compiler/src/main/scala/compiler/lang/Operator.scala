@@ -34,6 +34,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case ClosingBrace extends Operator("}", None)
 
   case Dot extends Operator(".", None)
+  case DotDot extends Operator("..", None)
   case Colon extends Operator(":", None)
   case Semicolon extends Operator(";", None)
   case Comma extends Operator(",", None)

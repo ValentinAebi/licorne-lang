@@ -2,8 +2,8 @@
 // IMPORTANT: in case this test fails for no apparent reason, remember to check if the fact that array.length() in the
 // typealias definition refers to Seq.length rather than Array.length might be the cause of the issue
 
-typealias Length = [0,]
-typealias Idx[T](array: Seq[T]) = [ 0, array.length()-1 ]
+typealias Length = [0..]
+typealias Idx[T](array: Seq[T]) = [0 ..< array.length()]
 
 interface Seq[T] {
    pure fn length(this) -> Length
@@ -54,7 +54,7 @@ object ArrayCopy {
       val copy = new Array(length = xs.length() / 2);
       for var i = 0; i < xs.length(); i += 1 {
          val t = xs.at(i);
-         copy.set(i, t);    //> E : first argument of call to set: expected Idx(copy), found i<loop-body-start@55:7> : [0,xs.length() - 1]
+         copy.set(i, t);    //> E : first argument of call to set: expected Idx(copy), found i<loop-body-start@55:7> : [0 ..< xs.length()]
       };
       return copy;
    }

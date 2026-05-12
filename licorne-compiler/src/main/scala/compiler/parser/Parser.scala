@@ -72,6 +72,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val closeBracket = op(ClosingBracket).ignored
   private val comma = op(Comma).ignored
   private val dot = op(Dot).ignored
+  private val dotDot = op(DotDot).ignored
   private val sharp = op(Sharp).ignored
   private val colon = op(Colon).ignored
   private val semicolon = op(Semicolon).ignored
@@ -261,8 +262,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     case optPure ^: paramTypes ^: resultType => ClosureTypeTree(paramTypes, resultType, optPure.isDefined)
   } setName "closureTypeTree"
 
-  private lazy val intRangeTypeTree = openBracket ::: opt(expr) ::: comma ::: opt(expr) ::: op(ClosingBracket).ignored map {
-    case lowOpt ^: highOpt => IntRangeTypeTree(lowOpt, highOpt)
+  private lazy val intRangeTypeTree = openBracket ::: opt(expr) ::: dotDot ::: opt(opt(op(LessThan)) ::: expr) ::: closeBracket map {
+    case lowOpt ^: Some(ltOpt ^: ub) => IntRangeTypeTree(lowOpt, Some(ub), upperIncluded = ltOpt.isEmpty)
+    case lowOpt ^: None => IntRangeTypeTree(lowOpt, None, upperIncluded = false)
   } setName "intRangeTypeTree"
 
   private lazy val typeTree: P[TypeTree] = recursive {

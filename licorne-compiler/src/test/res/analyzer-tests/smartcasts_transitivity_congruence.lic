@@ -1,24 +1,24 @@
 
-typealias Nat = [0,]
+typealias Nat = [0..]
 
 object Test {
 
-   fn transitivity(i: [0,], j: [0,], k: [0,]) {
+   fn transitivity(i: [0..], j: [0..], k: [0..]) {
       if i != j {
          return
       };
       if i < k {
-         j : [0,k-1]        // OK
+         j : [0..<k]        // OK
       } else {
-         j : [0,k]          //> E : type ascription: expected [0,k], found j : [0,]
+         j : [0..k]          //> E : type ascription: expected [0..k], found j : [0..]
       }
    }
 
-   fn congruence(a: Int, b: Int) -> [1,] {
+   fn congruence(a: Int, b: Int) -> [1..] {
       if foo(a) > 0 && a == b {
          return foo(b);     // OK
       } else if foo(a) > 10 {
-         return foo(b);     //> E : return value: expected [1,], found Test.foo(b) : Int
+         return foo(b);     //> E : return value: expected [1..], found Test.foo(b) : Int
       } else {
          return 1;
       }
@@ -28,21 +28,21 @@ object Test {
 
    fn eClassMergeAfter(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if x < b && y >= a && x == y {
-         return x;      //> E : return value: expected Nothing, found x : [a,b - 1]
+         return x;      //> E : return value: expected Nothing, found x : [a..<b]
       };
       panic "error"
    }
 
    fn eClassMergeBefore(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if x == y && x < b && y >= a {
-         return x;      //> E : return value: expected Nothing, found x : [a,b - 1]
+         return x;      //> E : return value: expected Nothing, found x : [a..<b]
       };
       panic "error"
    }
 
    fn eClassMergeInBetween(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if x < b && x == y && y >= a {
-         return x;      //> E : return value: expected Nothing, found x : [a,b - 1]
+         return x;      //> E : return value: expected Nothing, found x : [a..<b]
       };
       panic "error"
    }

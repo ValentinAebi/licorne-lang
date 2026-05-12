@@ -146,9 +146,29 @@ object Types {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
     override def toString: String = {
-      def boundDescr(bound: Option[Formula]): String = bound.map(_.toString).getOrElse("")
-
-      s"[${boundDescr(lowerBoundOpt)},${boundDescr(upperBoundOpt)}]"
+      val lbDescrOpt = lowerBoundOpt.map(_.toString)
+      val ((ubDescrOpt, isUbExcl), ubIsAtomic) = upperBoundOpt match {
+        case Some(Plus(end, Neg(IntConst(1)))) => Some(end.toString) -> true -> end.isAtomic
+        case Some(Plus(end, IntConst(-1))) => Some(end.toString) -> true -> end.isAtomic
+        case upperBoundOpt => upperBoundOpt.map(_.toString) -> false -> upperBoundOpt.forall(_.isAtomic)
+      }
+      val useSpaces = lowerBoundOpt.exists(!_.isAtomic) || !ubIsAtomic
+      val sb = StringBuilder()
+      sb.append("[")
+      lbDescrOpt.foreach(sb.append)
+      if (useSpaces) {
+        sb.append(" ")
+      }
+      sb.append(Operator.DotDot.str)
+      if (isUbExcl) {
+        sb.append(Operator.LessThan.str)
+      }
+      if (useSpaces) {
+        sb.append(" ")
+      }
+      ubDescrOpt.foreach(sb.append)
+      sb.append("]")
+      sb.toString()
     }
   }
 
