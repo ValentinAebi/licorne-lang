@@ -25,7 +25,7 @@ object ArrayCopy {
    fn copy1[T](xs: Array[T]) -> Array[T] {
       val length = xs.length();
       val copy = new Array(length);
-      for var i = 0; i < length; i += 1 {
+      for (var i = 0; i < length; i += 1) {
          val t = xs.at(i);
          copy.set(i, t);
       };
@@ -61,7 +61,7 @@ object ArrayCopy {
 
    fn copyOversized[T](xs: Array[T]) -> Array[T] {
       val copy = new Array(length = xs.length() + 100);
-      for var i = 0; i < xs.length(); i += 1 {
+      for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i);
          copy.set(i, t);
       };

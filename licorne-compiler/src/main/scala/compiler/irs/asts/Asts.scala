@@ -453,7 +453,7 @@ object Asts {
    * }}}
    */
   final case class ForLoop(
-                            initStats: List[LocalDef | Assignment],
+                            initStats: List[LocalDef],
                             cond: Expr,
                             stepStats: List[Assignment],
                             body: Block

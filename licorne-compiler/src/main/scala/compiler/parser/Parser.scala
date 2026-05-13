@@ -444,11 +444,16 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case cond ^: body => WhileLoop(cond, body)
     }
   } setName "whileLoop"
+  
+  private lazy val forLoopHeaderWithoutParenth: P[(List[LocalDef], Expr, List[Assignment])] = {
+    repeatWithSep(valDef OR varDef, comma) ::: semicolon ::: expr ::: semicolon ::: repeatWithSep(assignmentStat, comma) map {
+      case initStats ^: cond ^: stepStats => (initStats, cond, stepStats)
+    }
+  } setName "forLoopHeaderWithoutParenth"
 
   private lazy val forLoop = recursive {
-    kw(For).ignored ::: repeatWithSep(valDef OR varDef OR assignmentStat, comma) ::: semicolon
-      ::: expr ::: semicolon ::: repeatWithSep(assignmentStat, comma) ::: block map {
-      case initStats ^: cond ^: stepStats ^: body => ForLoop(initStats, cond, stepStats, body)
+    kw(For).ignored ::: (forLoopHeaderWithoutParenth OR openParenth ::: forLoopHeaderWithoutParenth ::: closeParenth) ::: block map {
+      case (initStats, cond, stepStats) ^: body => ForLoop(initStats, cond, stepStats, body)
     }
   } setName "forLoop"
 
