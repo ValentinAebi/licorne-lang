@@ -28,9 +28,9 @@ final class SubtypingContext(
                               globalValuesContext: GlobalValuesContext,
                               er: ErrorReporter
                             )(using CompilationStep) {
-  
+
   private given GlobalValuesContext = globalValuesContext
-  
+
   import globalValuesContext.itValue
 
   def subToSuperSubst(subT: TypeIdentifier, superT: TypeIdentifier): Option[Map[TypeIdentifier, Type]] = {
@@ -143,21 +143,22 @@ final class SubtypingContext(
   }
 
   def isSubtype(subject: Formula, subT: Type, superT: Type): Boolean =
-    isSubtype(subT, superT) || canProveHasType(subject, superT)
+    isSubtype(subT, superT) || canProveHasType(subject, subT, superT)
 
-  def canProveHasType(subject: Formula, tpe: Type): Boolean = tpe match {
+  def canProveHasType(subject: Formula, knownType: Type, targetType: Type): Boolean = targetType match {
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
-      lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
+      isSubtype(knownType, IntType)
+        && lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
         && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
     case RefinedType(baseType, predicate) =>
-      solver.canProve(predicate.substitute(itValue, subject)) || proxyStore.getProxyIfIdValue(subject).exists { proxy =>
-        solver.canProve(predicate.substitute(itValue, proxy))
-      }
+      isSubtype(knownType, baseType) && (
+        solver.canProve(predicate.substitute(itValue, subject))
+          || proxyStore.getProxyIfIdValue(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
     case UnionType(types) =>
-      types.exists(canProveHasType(subject, _))
+      types.exists(canProveHasType(subject, knownType, _))
     case IntersectionType(types) =>
-      types.forall(canProveHasType(subject, _))
+      types.forall(canProveHasType(subject, knownType, _))
     case _ => false
   }
 

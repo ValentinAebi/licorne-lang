@@ -1,0 +1,13 @@
+
+object Test {
+
+   fn foo(i: [0..]) {
+      if i < 10 {
+         i : [0..9];
+         i : [0..] & [..9];
+         i : [0..10] | [-10..-5];
+      };
+      i : [0..] & [..9];    //> E : type ascription: expected [0..] & [..9], found i : [0..]
+   }
+
+}

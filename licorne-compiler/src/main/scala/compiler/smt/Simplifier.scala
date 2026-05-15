@@ -54,11 +54,11 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
         val nonNullType = filteredTypes.size match {
           case 0 => NullType
-          case 1 => simplifiedTypes.head
+          case 1 => filteredTypes.head
           case _ => filteredTypes.asIterableOfType[IntRangeType] match {
             case Some(filteredTypes) =>
               meetJoinComputer.computeJoinOfRanges(filteredTypes)
-            case None => UnionType(simplifiedTypes)
+            case None => UnionType(filteredTypes)
           }
         }
         if nullableFlag

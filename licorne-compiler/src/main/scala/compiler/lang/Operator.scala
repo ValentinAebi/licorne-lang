@@ -41,6 +41,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case VerticalBar extends Operator("|", None)
   case QuestionMark extends Operator("?", None)
   case Sharp extends Operator("#", None)
+  case Ampersand extends Operator("&", None)
   
   case PlusEq extends Operator("+=", None)
   case MinusEq extends Operator("-=", None)

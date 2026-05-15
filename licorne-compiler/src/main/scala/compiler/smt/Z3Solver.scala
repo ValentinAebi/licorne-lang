@@ -10,9 +10,9 @@ import compiler.typing.contexts.DealiasingContext
 import compiler.valproxies.ProxyStore
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
+import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
-import io.ksmt.solver.{KSolver, KSolverStatus}
-import io.ksmt.sort.{KBoolSort, KIntSort, KSort, KUninterpretedSort}
+import io.ksmt.sort.{KBoolSort, KSort, KUninterpretedSort}
 
 import java.util
 import scala.collection.mutable
@@ -28,7 +28,7 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
   private given KContext = kCtx
 
   // useful for debugging
-  private val assertionsStack = mutable.Stack(mutable.ListBuffer.empty[KExpr[KBoolSort]])
+  private val assertionsStack = mutable.Stack(mutable.LinkedHashSet.empty[KExpr[KBoolSort]])
 
   private given DealiasingContext = dealiasingCtx
 
@@ -80,7 +80,7 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
   }
 
   def onNewFrame[T](action: => T): T = {
-    assertionsStack.push(ListBuffer.empty)
+    assertionsStack.push(mutable.LinkedHashSet.empty)
     kZ3Solver.push()
     val res = try {
       action
@@ -141,8 +141,8 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
   }
 
   def assertEq[S <: KSort](lhs: Formula, rhs: Formula, simplifiedType: SimplifiedType[S]): Unit = {
-    val conversionFunc: Formula => Iterable[KExpr[S]] = (simplifiedType : @unchecked) match {
-      case SimplifiedType.Integer[IntSort]() => convertInt
+    val conversionFunc: Formula => Iterable[KExpr[S]] = (simplifiedType: @unchecked) match {
+      case SimplifiedType.Integer[IntSort] () => convertInt
       case SimplifiedType.Boolean => convertBool
       case SimplifiedType.Object => convertObj
     }

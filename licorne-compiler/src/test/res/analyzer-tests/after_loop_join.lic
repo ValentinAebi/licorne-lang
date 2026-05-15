@@ -1,0 +1,24 @@
+
+object Test {
+
+   fn ok(var x: Int) -> [0..10] {
+      if x < 0 {
+         x = -x;
+      };
+      while x > 10 {
+         x -= 1;
+      };
+      return x;
+   }
+
+   fn bad(var x: Int) -> [0..9] {
+      if x < 0 {
+         x = -x;
+      };
+      while x > 10 {
+         x -= 1;
+      };
+      return x;     //> E : return value: expected [0..9], found x<loop-body-start@18:20> : [0..10]
+   }
+
+}

@@ -31,6 +31,7 @@ enum Keyword(val str: String) {
   case Val extends Keyword("val")
   case Var extends Keyword("var")
   case When extends Keyword("when")
+  case Where extends Keyword("where")
   case With extends Keyword("with")
   case While extends Keyword("while")
 

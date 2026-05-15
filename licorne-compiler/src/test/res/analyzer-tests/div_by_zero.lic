@@ -4,13 +4,12 @@ object DivByZero {
    fn ok1(x: Int, y: Int) -> Int =
       when y == 0 then y else x / y
 
-   // TODO use set types and allow this
-   //fn ok2(x: Int, var y: Int) -> Int {
-   //   if y == 0 {
-   //      y += 1;
-   //   };
-   //   return x / y;
-   //}
+   fn ok2(x: Int, var y: Int) -> Int {
+      if y == 0 {
+         y += 1;
+      };
+      return x / y;                 // OK
+   }
 
    fn ok3(x: Int, y: [1..]) -> Int {
       return x / y;
@@ -21,7 +20,7 @@ object DivByZero {
       then x / y
       else y / (x + 1)
 
-   fn ok5(x: Int, y: Int | y != 0) -> Int =
+   fn ok5(x: Int, y: Int where y != 0) -> Int =
       x % y
 
    fn ok6(x: Int, y: Int with it != 0) -> Int =

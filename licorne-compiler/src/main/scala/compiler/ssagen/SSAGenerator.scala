@@ -315,12 +315,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case Some(funSig, funScope) =>
             er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
-            val funSigScope = Scope.nestedInside(classSigScope, classDef)
+            val syntheticFunSigScope = Scope.nestedInside(classSigScope, classDef)
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, fieldType, funSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
-            val syntheticFuncBody = Scope.nestedInside(funSigScope, classDef)
+              precondOpt = None, fieldType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
+            val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, classDef)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
-            val retVal = syntheticFuncBody.newIntermediate("ret")
+            val retVal = syntheticFunSigScope.newIntermediate("ret")
             val resolTarget = FieldResolutionTarget(fieldId)
             targetsToResolve.addOne(resolTarget -> fieldType)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
@@ -454,14 +454,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
-        generateSSA(stat, funScope, newScopeIfBlock = false)(using ReturnCollector.doNothingCollector)
+        generateSSA(stat, funScope, newScopeIfBlock = false)(using ReturnCollector.doNothingCollector, FunctionInfo(funSigScope))
       }
       SSA.Function(owner, funId, Some(funScope))
     case None =>
       SSA.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)(using returnCollector: ReturnCollector, loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Unit = {
+  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)
+                         (using returnCollector: ReturnCollector, currFuncInfo: FunctionInfo, loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     stat match {
 
@@ -588,7 +589,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, defScope, _, _) =>
-              Some(LoopVarData(varId, beforeLoopVal = value, condVal = value.definingScope.newVar(varId, Some("loop-body-start"), bodyTree.getPosition),
+              Some(LoopVarData(varId, beforeLoopVal = value, condVal = defScope.newVar(varId, Some("loop-body-start"), bodyTree.getPosition),
                 bodyLastVal = bodyScope.newVar(varId, Some("loop-body-end"), bodyTree.getPosition), defScope))
             case _ => None
           }
@@ -632,7 +633,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
 
       case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
-        val retVal = currScope.newIntermediate("ret")
+        val retVal = currFuncInfo.funSigScope.newIntermediate("ret")
         returnedTreeOpt match {
           case Some(returnedTree) =>
             val retValProxyOpt = generateSSAExpr(retVal, returnedTree, currScope)
@@ -919,17 +920,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
         None
       case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
-        val bodyScope = Scope.nestedInside(currScope, bodyTree)
+        val closureParamsScope = Scope.nestedInside(currScope, bodyTree)
         val paramValsAndTypesB = List.newBuilder[(ParamIdValue, Type)]
         for ((id, typeTreeOpt) <- params) {
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
-          val paramVal = bodyScope.newParam(id, posOpt)
+          val paramVal = closureParamsScope.newParam(id, posOpt)
           proxyStore.saveProxy(paramVal, paramVal)
-          val givenTypeOpt = typeTreeOpt.map(mkType(_, bodyScope))
-          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, closureDefTree.getPosition)(bodyScope.valuesCtx.globalCtx.saveTypeVariable))
+          val givenTypeOpt = typeTreeOpt.map(mkType(_, closureParamsScope))
+          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, closureDefTree.getPosition)(closureParamsScope.valuesCtx.globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)
-          bodyScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, bodyScope, ReassigPermission.Val, givenTypeOpt)
+          closureParamsScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, closureParamsScope, ReassigPermission.Val, givenTypeOpt)
         }
         for (varId <- externalVarsAssignedIn(bodyTree)) {
           val heapAddr = currScope.newHeapVar(varId, closureDefTree.getPosition)
@@ -939,11 +940,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
           currScope.getLocalValuesContextUnsafe.remap(varId, heapAddr)
         }
+        val closureBodyScope = Scope.nestedInside(closureParamsScope, closureDefTree)
         val retValCollector = ReturnCollector.freshUniqueCollector
-        generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)(using retValCollector)
-        val isPure = declaredPure || isObviouslyPure(bodyScope)
+        generateSSA(bodyTree, closureBodyScope, newScopeIfBlock = false)(using retValCollector, FunctionInfo(closureParamsScope))
+        val isPure = declaredPure || isObviouslyPure(closureBodyScope)
         val paramValsAndTypes = paramValsAndTypesB.result()
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, bodyScope, isPure), closureDefTree)
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure), closureDefTree)
         for {
           closureRetVal <- retValCollector.getUniqueRet
           if isPure
@@ -1242,5 +1244,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   private def warn(msg: String, posOpt: Option[Position]): Unit = {
     er.report(Warning(SSAGeneration, msg, posOpt))
   }
+  
+  private case class FunctionInfo(funSigScope: Scope)
 
 }

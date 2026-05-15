@@ -132,7 +132,7 @@ object Lists {
    fn isSingletonList[T](ls: List[T]) -> Bool =
       ls is Cons && ls.tail is Nil
 
-   fn zip[S, T](ls1: List[S], ls2: List[T] | length(ls1) == length(ls2)) -> List[Pair[S, T]] {
+   fn zip[S, T](ls1: List[S], ls2: List[T] where length(ls1) == length(ls2)) -> List[Pair[S, T]] {
       var rem1 = ls1;
       var rem2 = ls2;
       var reversedZip = new Nil();
@@ -148,7 +148,7 @@ object Lists {
 
 object UseLists {
 
-   fn useZipCorrectly1(integers: List[Int], strings: List[String] | length(integers) == length(strings)) -> List[Pair[Int, String]] {
+   fn useZipCorrectly1(integers: List[Int], strings: List[String] where length(integers) == length(strings)) -> List[Pair[Int, String]] {
       return zip(integers, strings);
    }
 

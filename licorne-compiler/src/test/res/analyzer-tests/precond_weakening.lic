@@ -1,6 +1,6 @@
 
 interface I {
-   fn foo(this, i: Int, j: [0..i] | Math.abs(i) < 10) -> Int
+   fn foo(this, i: Int, j: [0..i] where Math.abs(i) < 10) -> Int
 }
 
 class A : I {
@@ -10,13 +10,13 @@ class A : I {
 }
 
 class B : I {
-   fn foo(this, i: Int, j: Int | Math.abs(i) < 20) -> Int {     // OK
+   fn foo(this, i: Int, j: Int where Math.abs(i) < 20) -> Int {     // OK
       panic "not implemented"
    }
 }
 
 class C : I {
-   fn foo(this, i: Int, j: Int | Math.abs(i) < 8) -> Int {           //> E : foo in C overrides foo in I but I cannot prove that the precondition of the overridden method is respected
+   fn foo(this, i: Int, j: Int where Math.abs(i) < 8) -> Int {           //> E : foo in C overrides foo in I but I cannot prove that the precondition of the overridden method is respected
       panic "not implemented"
    }
 }

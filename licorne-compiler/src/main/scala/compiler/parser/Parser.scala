@@ -79,6 +79,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = (op(Minus) ::: op(GreaterThan)).ignored
   private val doubleExclMark = op(ExclamationMark) ::: op(ExclamationMark)
+  private val verticalBar = op(VerticalBar).ignored
+  private val ampersand = op(Ampersand).ignored
 
   private val unaryOperator = op(Minus, ExclamationMark)
   private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
@@ -178,7 +180,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
 
     opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
-      ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(op(VerticalBar).ignored ::: expr) ::: closeParenth
+      ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
       case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
@@ -267,7 +269,23 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     case lowOpt ^: None => IntRangeTypeTree(lowOpt, None, upperIncluded = false)
   } setName "intRangeTypeTree"
 
-  private lazy val typeTree: P[TypeTree] = recursive {
+  private lazy val typeTree = recursive(unionTypeTree) setName "typeTree"
+
+  private lazy val unionTypeTree: P[TypeTree] = recursive {
+    repeatWithSepNonZero(intersectionTypeTree, verticalBar) map {
+      case List(singleType) => singleType
+      case types => UnionTypeTree(types)
+    }
+  } setName "unionTypeTree"
+
+  private lazy val intersectionTypeTree: P[TypeTree] = recursive {
+    repeatWithSepNonZero(simpleTypeTree, ampersand) map {
+      case List(singleType) => singleType
+      case types => IntersectionTypeTree(types)
+    }
+  } setName "typeTree"
+
+  private lazy val simpleTypeTree: P[TypeTree] = recursive {
     typeTreeWithoutPredOrQMark ::: opt(op(QuestionMark) OR kw(With).ignored ::: expr) map {
       case baseType ^: None => baseType
       case baseType ^: Some(_: Operator) => NullableTypeTree(baseType)

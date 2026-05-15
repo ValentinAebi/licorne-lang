@@ -1,12 +1,12 @@
 package compiler.typing
 
 import compiler.identifiers.{Identifier, ItId, NormalFunOrVarId, TypeIdentifier}
+import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
-import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
@@ -18,7 +18,7 @@ import compiler.smt.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
-import compiler.util.{SeqSet, findUnique, mapVals, whenInstanceOf}
+import compiler.util.{SeqSet, findUnique, mapVals}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
@@ -57,6 +57,8 @@ final class Typer(
   // @formatter:on
 
   import globalValuesCtx.itValue
+
+  private val nonZeroIntType = RefinedType(IntType, LogicalNot(Equality(itValue, IntConst(0))))
 
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
@@ -162,6 +164,9 @@ final class Typer(
               s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
           }
           subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
+          val beforeLoopType = currScope.currentTypeOf(beforeLoopVal, saveSmartcastsInIR = false)
+          val afterLoopType = meetJoin.computeJoin(beforeLoopType, typeAtEndOfBody)
+          currScope.saveSmartcast(condVal, afterLoopType)
         }
         applyBranchInfo(currScope, infoIfCondFalse)
 
@@ -440,7 +445,7 @@ final class Typer(
     val hintsIter = typeHintsStore.getHints(srcVal).iterator
     while (hintsIter.hasNext) {
       val hint = hintsIter.next()
-      if (subtypingCtx.canProveHasType(srcVal, hint)) {
+      if (subtypingCtx.canProveHasType(srcVal, regularType, hint)) {
         appliedHints.addOne(hint)
       }
     }
@@ -559,9 +564,9 @@ final class Typer(
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt))
     // TODO if set types get implemented, this should be updated to make use of them (op / : (Int, Int\{0}) -> Int)
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
-    val mayBeDivByZero = isDivOperator && !(
-      rhsType.whenInstanceOf[IntRangeType](solver.canProveIsOutsideRange(IntConst(0), _)).getOrElse(false)
-        || solver.canProveNotZero(rhs))
+    val mayBeDivByZero =
+      isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
+        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType)
     if (mayBeDivByZero) {
       val rhsDescr =
         proxyStore.getProxyIfIdValue(rhs).orElse(Some(rhs)) match {
@@ -570,7 +575,7 @@ final class Typer(
         }
       er.reportError(s"I cannot prove that right-hand side$rhsDescr of operator '$op' cannot be zero", posOpt)
     }
-    absIntFunc(lhsType.withTypeVarsExpanded, rhsType.withTypeVarsExpanded) match {
+    absIntFunc(forceRange(lhsType.withTypeVarsExpanded), forceRange(rhsType.withTypeVarsExpanded)) match {
       case Some(tpe) => tpe
       case None =>
         er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
@@ -604,7 +609,7 @@ final class Typer(
   private def typeNumericNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
                             (using TypeParamsContext): Type = {
     val operandType = dealiasingCtx.dealiasType(typeFormula(operand, currScope, posOpt))
-    val negatedType = absInt.unaryNegType(operandType.withTypeVarsExpanded) match {
+    val negatedType = absInt.unaryNegType(forceRange(operandType.withTypeVarsExpanded)) match {
       case Some(negType) => negType
       case None =>
         er.reportError(s"no unary operator ${Operator.Modulo} found for operand type $operandType", posOpt)
@@ -618,6 +623,14 @@ final class Typer(
     val operandType = dealiasingCtx.dealiasType(typeFormula(operand, currScope, posOpt))
     subtypingCtx.enforceIsSubtypeExpAct(operandType, BoolType, "negation operand", posOpt)
     BoolType
+  }
+
+  private def forceRange(tpe: Type): Type = simplifier.simplify(tpe) match {
+    case RefinedType(baseType, predicate) =>
+      forceRange(baseType)
+    case intersection@IntersectionType(types) =>
+      types.find(_.isInstanceOf[IntRangeType]).getOrElse(intersection)
+    case tpe => tpe
   }
 
   private def checkDowncast(subject: Formula, tid: TypeIdentifier, currScope: Scope, posOpt: Option[Position])
@@ -963,6 +976,10 @@ final class Typer(
     condition match {
       case LogicalAnd(lhs, rhs) =>
         extractPredicateIntoSmartcastType(lhs, scope) ++ extractPredicateIntoSmartcastType(rhs, scope)
+      // TODO this is useful to prevent divisions by zero, but maybe we can generalize and support equalities as well
+      //  Additionally, leqToSmartcasts and ltToSmartcasts can probably be turned into special cases of this (using the simplifier)
+      case LogicalNot(Equality(lhs, rhs)) =>
+        performSubst(List(lhs, rhs))
       case LogicalNot(operand) =>
         extractPredicateIntoSmartcastType(operand, scope).mapVals {
           case RefinedType(baseType, predicate) => RefinedType(baseType, simplifier.simplifyBool(LogicalNot(predicate)))

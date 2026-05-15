@@ -192,7 +192,10 @@ object Formulas {
   }
 
   final case class LogicalNot(operand: Formula) extends Formula {
-    override def toString: String = s"!$operand"
+    override def toString: String = operand match {
+      case Equality(lhs, rhs) => s"$lhs != $rhs"
+      case operand => s"!${parenthIfNot[IdValue | ConstFormula | FunCall | ClosureCall](operand)}"
+    }
   }
 
   final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula {
