@@ -1021,7 +1021,7 @@ final class Typer(
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-    receiverType.withTypeVarsExpanded.ignoreNullabilityShallow match {
+    receiverType.withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
