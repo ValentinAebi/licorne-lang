@@ -784,7 +784,7 @@ final class Typer(
     }
   }
 
-  def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = {
+  def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): Unit = solver.onNewFrame {
     val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = functionSignature
 
     val fullTypeParamsCtx = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParams) {
@@ -798,7 +798,6 @@ final class Typer(
       }
       isReceiver = false
     }
-    typeTypeApp(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
     precondOpt.foreach { precond =>
       val precondType = typeFormula(precond, sigScope, declPosOpt)(using fullTypeParamsCtx)
       if (!subtypingCtx.isSubtype(precondType, BoolType)) {
@@ -807,7 +806,9 @@ final class Typer(
       if (!precond.isPure) {
         er.reportError("I cannot prove that precondition is pure", declPosOpt)
       }
+      solver.assert(precond)
     }
+    typeTypeApp(retType, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): Unit = {
