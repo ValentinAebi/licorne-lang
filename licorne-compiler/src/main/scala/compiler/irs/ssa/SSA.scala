@@ -12,7 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.Simplifier
+import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.EGraph
 import compiler.valproxies.ProxyStore
@@ -258,7 +258,7 @@ object SSA {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore): Unit = {
+    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
         if (types.contains(idVal)) {
@@ -270,6 +270,7 @@ object SSA {
       } else {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
+      solver.takeType(idVal, tpe)
     }
 
     def saveSmartcast(f: Formula, smartcastType: Type)(using simplifier: Simplifier): Unit = {

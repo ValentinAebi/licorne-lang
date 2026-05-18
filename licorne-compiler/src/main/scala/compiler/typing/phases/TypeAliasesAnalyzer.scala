@@ -9,7 +9,7 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{IntHandlingMode, Reasoning}
+import compiler.smt.{IntHandlingMode, Reasoning, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
 import compiler.valproxies.ProxyStore
@@ -40,6 +40,16 @@ final class TypeAliasesAnalyzer(
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
+      
+      given Solver = solver
+
+      // save types of objects
+      val globalValsCtx = program.globalValuesContext
+      val globalScope = globalValsCtx.globalScope
+      for ((objectId, objectSig) <- program.objects) {
+        val objVal = globalValsCtx.resolveObject(objectId)
+        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolutionCtx, proxyStore)
+      }
       
       val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
       for (tid, tSig) <- program.typeAliases do {

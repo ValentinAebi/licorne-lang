@@ -100,11 +100,12 @@ object Errors {
    */
   final class ErrorReporter(errorsConsumer: ErrorsConsumer, exit: => ExitCode => Nothing) {
     private val errors = mutable.ListBuffer.empty[NonFatal]
+    private var suspended = false
 
     /**
      * Add an error to the stack of non fatal errors
      */
-    def report(nonFatalError: NonFatal): Unit = {
+    def report(nonFatalError: NonFatal): Unit = if (!suspended) {
       errors.addOne(nonFatalError)
     }
 
@@ -119,7 +120,7 @@ object Errors {
     }
 
     def getErrors: List[CompilationError] = errors.toList
-    
+
     def errorsCnt: Int = errors.size
 
     def displayErrors(): Unit = {
@@ -164,9 +165,24 @@ object Errors {
       displayExitMessage()
       exit(fatalErrorExitCode)
     }
-    
+
     def clear(): Unit = {
       errors.clear()
+    }
+
+    def withReportingSuspended[T](action: => T): T = {
+      suspended = true
+      val res = action
+      suspended = false
+      res
+    }
+
+    def withReportingSuspendedIf[T](cond: Boolean)(action: => T): T = {
+      if (cond) {
+        withReportingSuspended(action)
+      } else {
+        action
+      }
     }
 
     private def displayAndDeleteWarnings(): Unit = {

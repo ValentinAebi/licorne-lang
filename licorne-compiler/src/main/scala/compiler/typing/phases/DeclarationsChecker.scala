@@ -33,14 +33,6 @@ final class DeclarationsChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      // save types of objects
-      val globalValsCtx = program.globalValuesContext
-      val globalScope = globalValsCtx.globalScope
-      for ((objectId, objectSig) <- program.objects) {
-        val objVal = globalValsCtx.resolveObject(objectId)
-        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolCtx, proxyStore)
-      }
-
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
 
       for ((_, interfaceSig) <- program.interfaces) {

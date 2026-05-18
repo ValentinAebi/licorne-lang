@@ -42,7 +42,7 @@ final class TypeChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, simplifier)
+      saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, solver, simplifier)
 
       for {
         (funSig, func) <- program.functions
@@ -68,12 +68,14 @@ final class TypeChecker(
   // TODO check that user-provided assignments of type parameters match bounds
 
   private def saveTypesOfGlobalConstants(globalValsCtx: GlobalValuesContext, resolCtx: ResolutionContext,
-                                         proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+                                         proxyStore: ProxyStore, solver: Solver, simplifier: Simplifier): Unit = {
 
     // @formatter:off
+    given GlobalValuesContext = globalValsCtx
     given TypeParamsContext = TypeParamsContext.empty
     given ResolutionContext = resolCtx
     given ProxyStore = proxyStore
+    given Solver = solver
     given Simplifier = simplifier
     // @formatter:on
 

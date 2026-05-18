@@ -1,0 +1,36 @@
+package checker_framework_examples;
+
+
+object Ex_11_5 {
+
+    fn lessThan(arr1: Array[Int], arr2: Array[Int] where arr1.length() == arr2.length()) -> Bool {
+        for (var i = 0; i < arr1.length(); i += 1) {
+            if (arr1.at(i) < arr2.at(i)) {
+                return true;
+            } else if (arr1.at(i) > arr2.at(i)) {
+                return false;
+            }
+        };
+        return false;
+    }
+
+}
+
+typealias Length = [0..]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
+
+class Array[T] {
+
+    pure fn length(this) -> Length {
+        panic "compile to bytecode ARRAYLENGTH";
+    }
+
+    fn at(this, i: Idx(this)) -> T {
+        panic "compile to bytecode xALOAD"
+    }
+
+    fn set(this, i: Idx(this), value: T) {
+        panic "compile to bytecode xASTORE"
+    }
+
+}

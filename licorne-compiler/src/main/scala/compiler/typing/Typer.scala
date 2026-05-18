@@ -51,6 +51,7 @@ final class Typer(
   private given SubtypingContext = subtypingCtx
   private given MeetJoinComputer = meetJoin
   private given ProxyStore = proxyStore
+  private given Solver = solver
   private given Simplifier = simplifier
   private given Typer = this
   private given GlobalValuesContext = globalValuesCtx
@@ -201,12 +202,12 @@ final class Typer(
 
       case staticTypeAssert@StaticTypeAssert(value, tpe) =>
         val valueType = currScope.currentTypeOf(value, saveSmartcastsInIR = true)
-        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", staticTypeAssert.getPosition)
+        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case StaticAssert(value) => ???
 
-      case AssignVal(assigned, src) =>
-        val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src, saveSmartcastsInIR = true))
+      case assignVal@AssignVal(assigned, src) =>
+        val assignedType = tryToApplyHint(src, currScope.currentTypeOf(src, saveSmartcastsInIR = true), currScope, assignVal.getPosition)
         currScope.saveType(assigned, assignedType)
         saveEquality(assigned, src)
 
@@ -278,7 +279,7 @@ final class Typer(
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
         val calleeType = currScope.currentTypeOf(callee, saveSmartcastsInIR = true)
         val argsValsAndTypes = args.map(arg => Some(arg) -> currScope.currentTypeOf(arg, saveSmartcastsInIR = true))
-        val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, invkClosure.getPosition)
+        val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
         tryToResolveTypeVarsUsingHints(assigned, tpe)
 
@@ -297,7 +298,7 @@ final class Typer(
         val fieldType = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
         val rhsType = currScope.currentTypeOf(rhs, saveSmartcastsInIR = true)
         tryToResolveTypeVars(fieldType, rhsType)
-        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", fw.getPosition)
+        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
         val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
         if (isInitializationOfStableField) {
           val ow = proxyStore.getProxy(owner).getOrElse(owner)
@@ -329,7 +330,7 @@ final class Typer(
         val newValType = currScope.currentTypeOf(newValue, saveSmartcastsInIR = true)
         heapVarsTypeStore.getType(heapVar) match {
           case Some(expType) =>
-            subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", heapVarWr.getPosition)
+            subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", currScope, heapVarWr.getPosition)
           case None =>
             // TODO maybe try to save refined types also here, instead of falling back to the range-erased type?
             heapVarsTypeStore.saveType(heapVar, newValType.ignoreRangesShallow)
@@ -422,7 +423,7 @@ final class Typer(
               er.warn(s"returned value has no effect, since return type is $UnitType", ret.getPosition)
             }
             val retValType = currScope.currentTypeOf(retVal, saveSmartcastsInIR = true)
-            subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", ret.getPosition)
+            subtypingCtx.enforceIsSubtypeExpAct(retVal, retValType, executionEnvir.expectedResultType, "return value", currScope, ret.getPosition)
           case None =>
             er.reportError("unexpected return in this position", ret.getPosition)
         }
@@ -440,12 +441,12 @@ final class Typer(
     }
   }
 
-  private def tryToApplyHint(srcVal: IdValue, regularType: Type): Type = {
+  private def tryToApplyHint(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
     val appliedHints = mutable.ListBuffer.empty[Type]
     val hintsIter = typeHintsStore.getHints(srcVal).iterator
     while (hintsIter.hasNext) {
       val hint = hintsIter.next()
-      if (subtypingCtx.canProveHasType(srcVal, regularType, hint)) {
+      if (subtypingCtx.canProveHasType(srcVal, regularType, hint, currScope, posOpt)) {
         appliedHints.addOne(hint)
       }
     }
@@ -459,9 +460,9 @@ final class Typer(
     }
   }
 
-  def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position])
-                 (using typeParamsCtx: TypeParamsContext): Type =
-    scope.smartcastFor(formula, saveSmartcasts = true).getOrElse(formula match {
+  def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position], suspendReporting: Boolean = false)
+                 (using typeParamsCtx: TypeParamsContext): Type = er.withReportingSuspendedIf(suspendReporting) {
+    val tpe = scope.smartcastFor(formula, saveSmartcasts = true).getOrElse(formula match {
       case value: IdValue => scope.currentTypeOf(value, saveSmartcastsInIR = false)
       case IntConst(value) => IntType
       case BoolConst(value) => BoolType
@@ -485,7 +486,7 @@ final class Typer(
       case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
         val calleeType = typeFormula(callee, scope, posOpt)
         val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-        typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, posOpt)
+        typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
       case ClosureCall(callee, closureTypingTarget, args) =>
         assert(closureTypingTarget.isUnresolvable)
         NothingType
@@ -520,6 +521,11 @@ final class Typer(
         checkDowncast(subject, tpe, scope, posOpt)
         BoolType
     })
+    if (formula.isPure) {
+      solver.takeType(formula, tpe)
+    }
+    tpe
+  }
 
   private def detectTypeForSmartcast(formula: Formula, scope: Scope)(using TypeParamsContext): Option[Type] = formula match {
     case value: IdValue =>
@@ -566,7 +572,7 @@ final class Typer(
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
     val mayBeDivByZero =
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
-        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType)
+        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope, posOpt)
     if (mayBeDivByZero) {
       val rhsDescr =
         proxyStore.getProxyIfIdValue(rhs).orElse(Some(rhs)) match {
@@ -598,6 +604,7 @@ final class Typer(
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt))
     val expectedOperandType = lhsType.ignoreRangesShallow match {
       case tpe@(IntType | DoubleType) => tpe
+      // TODO be careful when compiling this, maybe we need to enforce that both types are equal
       case _ => UnionType(IntType, DoubleType)
     }
     subtypingCtx.enforceIsSubtypeExpAct(lhsType, expectedOperandType, s"operand of $op", posOpt)
@@ -736,7 +743,7 @@ final class Typer(
           val paramsWithType = sig.params.map { case (paramId, (paramType, paramVal)) =>
             Some(paramVal) -> paramType.substitute(typeArgsSubst, Map.empty)
           }
-          checkArgumentsList(paramsWithType, argsWithTypes, s"application of ${sig.id}", posOpt)
+          checkArgumentsList(paramsWithType, argsWithTypes, s"application of ${sig.id}", currScope, posOpt)
         case None =>
           er.reportError(s"type not found: $typeName", posOpt)
       }
@@ -1027,13 +1034,14 @@ final class Typer(
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
             }
             val argsSubst = checkArgumentsList(paramTypesInclThis, (Some(receiver), receiverType) :: typedCallArgs,
-              s"call to ${invkTarget.funId}", posOpt, argsIncludeReceiver = true)
+              s"call to ${invkTarget.funId}", scope, posOpt, argsIncludeReceiver = true)
             addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             funSig.precondOpt.foreach { precondRaw =>
               val precondSubst = precondRaw.substitute(argsSubst)
               if (!solver.canProve(precondSubst)) {
                 er.reportError(s"illegal call to ${funSig.functionName}: I cannot prove that its precondition $precondSubst holds", posOpt)
               }
+              solver.assert(precondSubst)
             }
             val instantiatedRetType = simplifier.simplify(funSig.retType.substitute(composedTypeSubst, argsSubst))
             invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
@@ -1047,11 +1055,12 @@ final class Typer(
     }
   }
 
-  private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], posOpt: Option[Position]) = {
+  private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
+                             (using TypeParamsContext): Type = {
     requireNonNullable(calleeType.withTypeVarsExpanded, "closure", posOpt) match {
       case calleeType@ClosureType(paramTypes, resultType, enforcedPure) =>
         closureTypingTarget.resolve(calleeType)
-        checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", posOpt)
+        checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", currScope, posOpt)
         if (!enforcedPure) {
           forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
         }
@@ -1199,7 +1208,8 @@ final class Typer(
     case _ => None
   }
 
-  private def checkArgumentsList(params: Iterable[(Option[IdValue], Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, posOpt: Option[Position], argsIncludeReceiver: Boolean = false): mutable.Map[IdValue, Formula] = {
+  private def checkArgumentsList(params: Iterable[(Option[IdValue], Type)], args: Iterable[(Option[Formula], Type)], ctxDescr: String, currScope: Scope, posOpt: Option[Position], argsIncludeReceiver: Boolean = false)
+                                (using TypeParamsContext): mutable.Map[IdValue, Formula] = {
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
@@ -1221,7 +1231,7 @@ final class Typer(
     var argIdx = if argsIncludeReceiver then 0 else 1
     for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
       val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", posOpt)
+      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
       paramValOpt.foreach { paramVal =>
         addToSubstIfValid(paramVal, argOpt, subst)
       }

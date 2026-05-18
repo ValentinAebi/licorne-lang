@@ -8,6 +8,7 @@ import compiler.lang.Types.PrimitiveType.AnyType
 import compiler.smt.Z3Solver.{closureInvkFunId, javaList, selectFuncPrefix}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valproxies.ProxyStore
+import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
@@ -16,7 +17,6 @@ import io.ksmt.sort.{KBoolSort, KSort, KUninterpretedSort}
 
 import java.util
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.boundary
 import scala.util.boundary.Label
 
@@ -179,6 +179,12 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
     range.upperBoundOpt.foreach { ub =>
       assertLeq(formula, ub)
     }
+  }
+
+  override def takeType(subject: Formula, tpe: Types.Type)(using globalValsCtx: GlobalValuesContext): Unit = {
+    val itValue = globalValsCtx.itValue
+    val predicate = tpe.withTypeVarsExpanded.asRefinedType.predicate
+    assert(predicate.substitute(itValue, subject))
   }
 
   def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean = onNewFrame {
@@ -370,10 +376,9 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
       if (kArgs.isEmpty) {
         boundary.break(Seq.empty)
       }
-      for (kArg <- kArgs) {
-        paramsList.add(paramSort)
-        argsList.add(kArg)
-      }
+      paramsList.add(paramSort)
+      // last should correspond to the proxy
+      argsList.add(kArgs.last)
     }
   }
 
