@@ -11,7 +11,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{IntHandlingMode, Reasoning, Solver}
 import compiler.typing.contexts.*
-import compiler.typing.{HeapVarsTypeStore, TypeHintsStore, Typer}
+import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -24,12 +24,13 @@ final class TypeAliasesAnalyzer(
                                  typeHintsStore: TypeHintsStore,
                                  heapVarsTypeStore: HeapVarsTypeStore,
                                  er: ErrorReporter
-                               ) extends CompilerStep[Program, Program] {
+                               ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeAliasesAnalysis
 
-  override def apply(program: Program): Program = {
-
+  override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
+    val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
+    
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
     
     val resolutionCtx = ResolutionContext(program, er)
@@ -38,7 +39,7 @@ final class TypeAliasesAnalyzer(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       
       given Solver = solver
@@ -63,7 +64,7 @@ final class TypeAliasesAnalyzer(
     }
 
     er.displayAndTerminateIfErrors()
-    program
+    input
   }
 
   private def checkTypeAliasesCyclicity(program: Program, resolutionCtx: ResolutionContext): Unit = {

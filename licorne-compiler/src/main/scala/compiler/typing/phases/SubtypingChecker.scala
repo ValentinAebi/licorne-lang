@@ -10,8 +10,8 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.SubtypingInfo
+import compiler.typing.contexts.ResolutionContext
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -25,7 +25,6 @@ final class SubtypingChecker(
   private given CompilationStep = SubtypingAnalysis
 
   override def apply(program: Program): (Program, SubtypingInfo) = {
-    val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolutionCtx = ResolutionContext(program, er)
     er.displayAndTerminateIfErrors()
 
