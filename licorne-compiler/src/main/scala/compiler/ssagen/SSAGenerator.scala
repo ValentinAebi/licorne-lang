@@ -41,7 +41,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
-    val allFunctionsB = SeqMap.newBuilder[FunctionSignature, SSA.Function]
+    val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
     val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
     for (src <- sources) {
       src.pkgDeclOpt.foreach { pkgDecl =>
@@ -152,8 +152,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             given ImportsContext = createImportsCtx(src, None)
 
             val typeAliasSigScope = Scope.nestedInside(globalScope, df)
-            val itValue = typeAliasSigScope.newParam(ItId, df.getPosition)
-            typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(ItId, itValue, typeAliasSigScope, ReassigPermission.Val, None)
             val typeParams = typeParamTrees.convert(typeAliasSigScope)
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
             params.foreach {
@@ -163,7 +161,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 typeAliasParams(paramId) = (paramType, paramValue)
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, typeAliasSigScope, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeId, typeParams, itValue, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
+            val sig = TypeAliasSignature(typeId, typeParams, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope), typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
@@ -306,7 +304,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                              classSigScope: Scope,
                                              thisValue: NamedIdValue,
                                              thisType: Type,
-                                             allFunctionsCollector: SeqMapBuilder[FunctionSignature, SSA.Function]
+                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
                                            ): Iterable[(FieldResolutionTarget, Type)] = {
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, Type)]
     fields.foreach {
@@ -326,7 +324,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
             syntheticFuncBody.instructions.addOne(Return(retVal))
             functionsMap.put(fld.id, (syntheticFunSig, syntheticFunc))
-            allFunctionsCollector.addOne(syntheticFunSig -> syntheticFunc)
+            allFunctionsCollector.addOne(syntheticFunSig.ownerAndName -> syntheticFunc)
         }
       case _ => ()
     }
@@ -337,7 +335,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                 functionsProvider: Asts.EncapsulatedTypeDefTree,
                                 functionsProviderIncompleteSig: EncapsulatedTypeSig,
                                 globalScope: Scope,
-                                allFunctionsB: SeqMapBuilder[FunctionSignature, SSA.Function]
+                                allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
                               )(using loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (funDef <- functionsProvider.functions) {
@@ -410,7 +408,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
           funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition)
         functions(funDef.id) = (sig, function)
-        allFunctionsB.addOne(sig -> function)
+        allFunctionsB.addOne(sig.ownerAndName -> function)
         if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
           reportError("main methods are only allowed in objects", funDef.getPosition)
         }

@@ -228,26 +228,28 @@ final class SubtypingContext(
     enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT" ++ counterexampleMessage(), posOpt)
   }
 
-  def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer): Unit = {
+  def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
+                            (using TypeParamsContext, Typer): Unit = {
     counterExBoxOpt.foreach(_.reinitialize())
 
     def toStringAlongSubT(f: Formula): String = f match {
       case f: IntConst => f.toString
-      case f => s"$f : $subT"
+      case f => s"$f : ${subT.withTypeVarsExpanded}"
     }
 
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.getProxy(subject) match {
           case Some(proxy) if proxy.isPure => toStringAlongSubT(proxy)
-          case _ => subT.toString
+          case _ => subT.withTypeVarsExpanded.toString
         }
       case subject => toStringAlongSubT(subject)
     }
-    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
+    enforceIsSubtype(subject, subT, superT, s"$posDescr: expected ${superT.withTypeVarsExpanded}, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
   }
 
-  def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer): Unit = subjectOpt match {
+  def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
+                            (using TypeParamsContext, Typer): Unit = subjectOpt match {
     case Some(subject) => enforceIsSubtypeExpAct(subject, subT, superT, posDescr, scope, posOpt)
     case None => enforceIsSubtypeExpAct(subT, superT, posDescr, posOpt)
   }

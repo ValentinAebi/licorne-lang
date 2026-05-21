@@ -3,7 +3,7 @@ package compiler.typing.phases
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas
-import compiler.lang.Types
+import compiler.lang.{TypeAliasSignature, Types}
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
@@ -30,42 +30,35 @@ final class TypeAliasesAnalyzer(
   private given CompilationStep = TypeAliasesAnalysis
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
-    val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
+    val (programOld, subtypingInfo@SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
     
-    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
+    given globalValsCtx: GlobalValuesContext = programOld.globalValuesContext
     
-    val resolutionCtx = ResolutionContext(program, er)
-    checkTypeAliasesCyclicity(program, resolutionCtx)
+    val resolutionCtx = ResolutionContext(programOld, er)
+    checkTypeAliasesCyclicity(programOld, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+    val dealiasingCtx = DealiasingContext(programOld.typeAliases)
+    val programNew = Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       
       given Solver = solver
 
       // save types of objects
-      val globalValsCtx = program.globalValuesContext
+      val globalValsCtx = programOld.globalValuesContext
       val globalScope = globalValsCtx.globalScope
-      for ((objectId, objectSig) <- program.objects) {
+      for ((objectId, objectSig) <- programOld.objects) {
         val objVal = globalValsCtx.resolveObject(objectId)
         globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolutionCtx, proxyStore)
       }
       
       val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
-      for (tid, tSig) <- program.typeAliases do {
-        val sigScope = tSig.sigScope
-        val typeParamsCtx = TypeParamsContext(tSig.typeParams)
-        for ((paramId, (paramType, paramVal)) <- tSig.params) {
-          sigScope.saveType(paramVal, paramType)(using typeParamsCtx, simplifier, resolutionCtx, proxyStore)
-        }
-        typer.typeTypeApp(tSig.rhs, None, sigScope, tSig.declPosOpt)(using typeParamsCtx)
-      }
+      programOld.copy(typeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig))
     }
 
     er.displayAndTerminateIfErrors()
-    input
+    (programNew, subtypingInfo)
   }
 
   private def checkTypeAliasesCyclicity(program: Program, resolutionCtx: ResolutionContext): Unit = {

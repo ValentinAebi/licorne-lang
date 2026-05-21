@@ -29,6 +29,8 @@ final case class FunctionSignature(
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
 
+  def ownerAndName: (TypeIdentifier, FunOrVarId) = (ownerName, functionName)
+
   def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
 
   def isPure: Boolean = purity == Purity.Pure
@@ -104,10 +106,12 @@ sealed trait TypeSignature {
 
   def declPosOpt: Option[Position]
 
-  def toType(typesSubst: Map[TypeIdentifier, Type]): NamedType = {
+  def toType(typesSubst: scala.collection.Map[TypeIdentifier, Type], paramsSubst: scala.collection.Map[IdValue, Formula] = Map.empty): NamedType = {
     NamedType(id,
       typeParams.map(tp => typesSubst.getOrElse(tp.tid, NamedType(tp.tid, List.empty, List.empty))),
-      params.map(_._2._2).toList
+      params.map {
+        case (paramId, (paramType, paramVal)) => paramsSubst.getOrElse(paramVal, paramVal)
+      }.toList
     )
   }
 
@@ -118,7 +122,6 @@ sealed trait TypeSignature {
 final case class TypeAliasSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[TypeTypeParamInfo],
-                                     itValue: IdValue,
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type,
                                      sigScope: Scope,
@@ -220,7 +223,7 @@ enum Field {
     case _: ReassignableField => false
     case _: StableField => true
   }
-  
+
   def hasPublicSyntheticAccessor: Boolean = this match {
     case Field.ReassignableField(id, tpe) => false
     case Field.StableField(id, tpe, value, isPublishedAsMethod) => isPublishedAsMethod

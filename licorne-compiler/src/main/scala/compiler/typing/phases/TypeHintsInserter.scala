@@ -43,7 +43,8 @@ final class TypeHintsInserter(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       for {
-        (funSig, func) <- program.functions
+        ((ownerId, funId), func) <- program.functions
+        funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
         body <- func.bodyOpt
       } {
         val fakeEr = ErrorReporter(

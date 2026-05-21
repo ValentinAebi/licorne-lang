@@ -59,7 +59,7 @@ final class SSAPrinter(
 
   private def printTypeAlias(typealiasSig: TypeAliasSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val TypeAliasSignature(id, typeParams, idValue, params, rhs, sigScope, declPosOpt) = typealiasSig
+    val TypeAliasSignature(id, typeParams, params, rhs, sigScope, declPosOpt) = typealiasSig
     pps.add(s"TYPEALIAS (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkTypeAliasParamsDescr(params))
@@ -148,7 +148,7 @@ final class SSAPrinter(
     val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = funSig
     pps.add(if isMain then "MAIN " else "")
       .add(s"METHOD ($visibility, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
-    program.functions.get(funSig)
+    program.functions.get(funSig.ownerAndName)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>
         pps.addSpace()

@@ -45,7 +45,8 @@ final class TypeChecker(
       saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, solver, simplifier)
 
       for {
-        (funSig, func) <- program.functions
+        ((ownerId, funId), func) <- program.functions
+        funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
         if !funSig.isSynthetic
       } {
         checkFunc(funSig, func, dealiasingCtx, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
@@ -113,7 +114,7 @@ final class TypeChecker(
         for ((paramVal, paramType) <- funSig.paramsInclThis) {
           solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType).withTypeVarsExpanded)
         }
-        funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams))
+        funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams))
       }
       checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
 

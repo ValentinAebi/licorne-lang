@@ -20,6 +20,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   private val values = mutable.Map.empty[FunOrVarId, LocalInfo]
   
   {
+    // FIXME check this
     values.put(ItId, LocalInfo(Some(globalCtx.itValue), globalCtx.globalScope, ReassigPermission.Val, None))
   }
 

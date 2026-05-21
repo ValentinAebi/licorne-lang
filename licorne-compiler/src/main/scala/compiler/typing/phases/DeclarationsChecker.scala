@@ -23,37 +23,42 @@ final class DeclarationsChecker(
   private given CompilationStep = DeclarationsAnalysis
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
-    val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
-    
-    given globalValsCtx: GlobalValuesContext = program.globalValuesContext
+    val (programOld, subtypingInfo@SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
 
-    val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolCtx = ResolutionContext(program, er)
+    given globalValsCtx: GlobalValuesContext = programOld.globalValuesContext
 
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+    val dealiasingCtx = DealiasingContext(programOld.typeAliases)
+    val resolCtx = ResolutionContext(programOld, er)
+
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
 
-      for ((_, interfaceSig) <- program.interfaces) {
-        typer.typeInterfaceSig(interfaceSig)
-      }
-      for ((_, classSig) <- program.classes) {
-        typer.typeClassSig(classSig)
-      }
-      for ((_, objectSig) <- program.objects) {
-        typer.typeObjectSig(objectSig)
-      }
-      for ((_, datatypeSig) <- program.datatypes) {
-        typer.typeDatatypeSig(datatypeSig)
-      }
-      for ((_, recordSig) <- program.records) {
-        typer.typeRecordSig(recordSig)
-      }
+      val programNew = Program(globalValsCtx,
+        for ((id, interfaceSig) <- programOld.interfaces) yield {
+          id -> typer.typeInterfaceSig(interfaceSig)
+        },
+        for ((id, classSig) <- programOld.classes) yield {
+          id -> typer.typeClassSig(classSig)
+        },
+        for ((id, objectSig) <- programOld.objects) yield {
+          id -> typer.typeObjectSig(objectSig)
+        },
+        for ((id, datatypeSig) <- programOld.datatypes) yield {
+          id -> typer.typeDatatypeSig(datatypeSig)
+        },
+        for ((id, recordSig) <- programOld.records) yield {
+          id -> typer.typeRecordSig(recordSig)
+        },
+        programOld.typeAliases,
+        programOld.functions,
+        programOld.loops
+      )
 
       er.displayAndTerminateIfErrors()
-      input
+      (programNew, subtypingInfo)
     }
   }
 

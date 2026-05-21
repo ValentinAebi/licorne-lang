@@ -1,6 +1,6 @@
 package compiler.program
 
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.SSA
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType
@@ -21,7 +21,7 @@ final case class Program(
                           datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
-                          functions: SeqMap[FunctionSignature, SSA.Function],
+                          functions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function],
                           loops: Seq[SSA.Loop]
                         ) {
 
@@ -48,7 +48,7 @@ object Program {
       }
     }
 
-    def build(allFunctions: SeqMap[FunctionSignature, SSA.Function], loops: Seq[SSA.Loop]): Program = {
+    def build(allFunctions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function], loops: Seq[SSA.Loop]): Program = {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]
