@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep.TypeHintsInsertion
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{IntHandlingMode, Reasoning}
+import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.typing.{SubtypingInfo, TypeHintsStore}
 import compiler.valproxies.ProxyStore
@@ -23,7 +23,8 @@ final class TypeHintsInserter(
                                typeVarsCtx: TypeVariablesContext,
                                proxyStore: ProxyStore,
                                typeHintsStore: TypeHintsStore,
-                               er: ErrorReporter
+                               er: ErrorReporter,
+                               counterExBoxOpt: Option[CounterexampleBox]
                              ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeHintsInsertion
@@ -38,8 +39,8 @@ final class TypeHintsInserter(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       for {
         (funSig, func) <- program.functions

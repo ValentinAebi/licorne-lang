@@ -8,7 +8,7 @@ import compiler.pipeline.CompilationStep.OverridesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{IntHandlingMode, Reasoning, Solver}
+import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
@@ -21,6 +21,7 @@ final class OverridesChecker(
                               ihm: IntHandlingMode[?],
                               proxyStore: ProxyStore,
                               er: ErrorReporter,
+                              counterExBoxOpt: Option[CounterexampleBox],
                               continueIfErrors: Boolean = false
                             ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
@@ -32,9 +33,9 @@ final class OverridesChecker(
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshSolver(ihm, dealiasingCtx, proxyStore) { solver =>
+    Reasoning.usingFreshSolver(ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt) { solver =>
       val resolutionCtx = ResolutionContext(program, er)
-      val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
+      val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)
     }
     

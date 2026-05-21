@@ -110,8 +110,8 @@ class EGraphTests {
   }
 
   private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
-    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolCtx, proxyStore, globalValuesContext) { solver =>
-      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, globalValuesContext, er)
+    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolCtx, proxyStore, globalValuesContext, None) { solver =>
+      SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, globalValuesContext, er, None)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(using simplifier)
     }

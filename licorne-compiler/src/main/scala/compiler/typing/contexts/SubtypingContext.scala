@@ -11,7 +11,7 @@ import compiler.lang.{RuntimeTypeSignature, TypeParamInfo, TypeTypeParamInfo}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.Solver
+import compiler.smt.{CounterexampleBox, Solver}
 import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
@@ -28,7 +28,8 @@ final class SubtypingContext(
                               solver: Solver,
                               proxyStore: ProxyStore,
                               globalValuesContext: GlobalValuesContext,
-                              er: ErrorReporter
+                              er: ErrorReporter,
+                              counterExBoxOpt: Option[CounterexampleBox]
                             )(using CompilationStep) {
 
   private given GlobalValuesContext = globalValuesContext
@@ -50,7 +51,6 @@ final class SubtypingContext(
   def isEnumCaseOf(subId: TypeIdentifier, superId: TypeIdentifier): Boolean =
     subToSuperSubst(subId, superId).isDefined
 
-  // TODO when adding refinements on NamedTypes (typically, non-nullity), add cases for them here
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
     dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
       case NamedType(originId, originTypeArgs, Nil) =>
@@ -223,10 +223,13 @@ final class SubtypingContext(
     }
   }
 
-  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit =
-    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT", posOpt)
+  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
+    counterExBoxOpt.foreach(_.reinitialize())
+    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT" ++ counterexampleMessage(), posOpt)
+  }
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer): Unit = {
+    counterExBoxOpt.foreach(_.reinitialize())
 
     def toStringAlongSubT(f: Formula): String = f match {
       case f: IntConst => f.toString
@@ -241,7 +244,7 @@ final class SubtypingContext(
         }
       case subject => toStringAlongSubT(subject)
     }
-    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr", scope, posOpt)
+    enforceIsSubtype(subject, dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer): Unit = subjectOpt match {
@@ -252,6 +255,11 @@ final class SubtypingContext(
   def checkBounds(tParam: TypeParamInfo, tArg: Type): Boolean = {
     tParam.lowerBoundOpt.forall(lb => isSubtype(lb, tArg))
       && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
+  }
+
+  private def counterexampleMessage(): String = counterExBoxOpt.flatMap(_.describe) match {
+    case Some(msg) if msg.nonEmpty => s". Counter-example: $msg"
+    case _ => ""
   }
 
 }

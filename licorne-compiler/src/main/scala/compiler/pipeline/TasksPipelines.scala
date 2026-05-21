@@ -7,7 +7,7 @@ import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.smt.IntHandlingMode
+import compiler.smt.{CounterexampleBox, IntHandlingMode}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
@@ -29,9 +29,10 @@ object TasksPipelines {
                 runtimeDirPath: Path,
                 agentDirPath: Path,
                 ihm: IntHandlingMode[?],
+                counterExBoxOpt: Option[CounterexampleBox],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
-    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, ihm, er)
+    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, ihm, er, counterExBoxOpt)
   }
 
   /**
@@ -52,7 +53,8 @@ object TasksPipelines {
                            runtimeDirPath: Path,
                            agentDirPath: Path,
                            ihm: IntHandlingMode[?],
-                           er: ErrorReporter) = {
+                           er: ErrorReporter,
+                           counterExBoxOpt: Option[CounterexampleBox]) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val typeHintsStore = TypeHintsStore()
@@ -65,13 +67,13 @@ object TasksPipelines {
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
-      )).andThen(MonotonicityAnalyzer(ihm, proxyStore))
+      )).andThen(MonotonicityAnalyzer(ihm, proxyStore, counterExBoxOpt))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, /*FIXME*/ continueIfErrors = true))
-      .andThen(OverridesChecker(ihm, proxyStore, er, /*FIXME*/ continueIfErrors = true))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt, /*FIXME*/ continueIfErrors = true))
+      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt, /*FIXME*/ continueIfErrors = true))
       .andThen((program, subtypingInfo) => program)
       .andThen(Concurrent(
         SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)

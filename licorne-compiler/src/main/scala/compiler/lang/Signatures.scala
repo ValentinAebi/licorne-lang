@@ -68,7 +68,7 @@ final case class FunctionSignature(
     printListIfNonEmpty(typeParams, "[", "]", sb)
     printListIfNonEmpty(paramsInclThis, "(", "", sb) { case (param, tpe) => s"$param: $tpe" }
     precondOpt.foreach { precond =>
-      sb.append("| ").append(precond)
+      sb.append(s"${Keyword.Where} ").append(precond)
     }
     sb.append(")")
     sb.append(" -> ").append(retType)

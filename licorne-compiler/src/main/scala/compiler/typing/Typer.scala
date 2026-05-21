@@ -385,7 +385,8 @@ final class Typer(
         }
 
       case weakCast@WeakCast(inValue) =>
-        // TODO maybe resolve only when we know the right target, and be more precise
+        // FIXME maybe resolve only when we know the right target, and be more precise
+        //  Also, setting the predicate to false may cause the type to be simplified to Nothing
 
         val refTypeScope = Scope.nestedInsideNodeOpt(currScope, weakCast.getAstNodeOpt)
         val itVal = refTypeScope.newParam(ItId, weakCast.getPosition)

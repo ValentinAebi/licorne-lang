@@ -3,7 +3,7 @@ package compiler.runners
 import compiler.gennames.FileExtensions.licorne as licorneExt
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
-import compiler.smt.{ArithIntMode, BvInt32Mode, IntHandlingMode}
+import compiler.smt.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
 
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import scala.annotation.tailrec
@@ -170,6 +170,10 @@ object Main {
   private def getPrintAllParenthesesArg(argsMap: MutArgsMap): Boolean = {
     getUnvalArg("all-parenth", argsMap)
   }
+  
+  private def getCounterExBoxArg(argsMap: MutArgsMap): Option[CounterexampleBox] = {
+    Option.when(getUnvalArg("counter-ex", argsMap))(new CounterexampleBox)
+  }
 
   private def getProgramArgsArg(argsMap: MutArgsMap): Array[String] = {
     val emptyArrStr = "[]"
@@ -194,7 +198,8 @@ object Main {
       val outDirBasePath = getOutDirBaseArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir, ihm)
+      val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir, ihm, counterExBoxOpt)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -219,7 +224,8 @@ object Main {
       val outDirBase = getOutDirBaseArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val runtimeDir = getRuntimeDirArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir, ihm)
+      val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
       val cnt = compiler.apply(sources).size
       succeed(s"wrote $cnt file(s)")
@@ -267,11 +273,13 @@ object Main {
          |run: compile and run the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
+         |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
+         |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |typecheck: parse and typecheck the program
          |help: displays help (this)

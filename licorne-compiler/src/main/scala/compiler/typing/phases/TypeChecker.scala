@@ -24,6 +24,7 @@ final class TypeChecker(
                          typeHintsStore: TypeHintsStore,
                          heapVarsTypeStore: HeapVarsTypeStore,
                          er: ErrorReporter,
+                         counterExBoxOpt: Option[CounterexampleBox],
                          continueIfErrors: Boolean = false
                        ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
@@ -37,8 +38,8 @@ final class TypeChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
 
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, solver, simplifier)

@@ -1,0 +1,14 @@
+
+typealias Nat = [0..]
+
+object Fibonacci {
+
+    fn fibonacci(n: Nat) -> [0..] & [n..] {
+        if (n <= 1) {
+            return n;
+        } else {
+            return fibonacci(n-1) + fibonacci(n-2);     //> E : return value: expected [0..] & [n..], found [2 * n - 3 .. ]
+        }
+    }
+
+}

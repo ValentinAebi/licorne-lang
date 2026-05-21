@@ -9,7 +9,7 @@ import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{IntHandlingMode, Reasoning, Solver}
+import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.valproxies.ProxyStore
@@ -23,7 +23,8 @@ final class TypeAliasesAnalyzer(
                                  proxyStore: ProxyStore,
                                  typeHintsStore: TypeHintsStore,
                                  heapVarsTypeStore: HeapVarsTypeStore,
-                                 er: ErrorReporter
+                                 er: ErrorReporter,
+                                 counterExBoxOpt: Option[CounterexampleBox]
                                ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeAliasesAnalysis
@@ -38,8 +39,8 @@ final class TypeAliasesAnalyzer(
     er.displayAndTerminateIfErrors()
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er)
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolutionCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       
       given Solver = solver

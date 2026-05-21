@@ -4,7 +4,7 @@ import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{IntHandlingMode, MeetJoinComputer, Reasoning}
+import compiler.smt.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
@@ -16,7 +16,8 @@ final class DeclarationsChecker(
                                  proxyStore: ProxyStore,
                                  typeHintsStore: TypeHintsStore,
                                  heapVarsTypeStore: HeapVarsTypeStore,
-                                 er: ErrorReporter
+                                 er: ErrorReporter,
+                                 counterExBoxOpt: Option[CounterexampleBox]
                                ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = DeclarationsAnalysis
@@ -29,8 +30,8 @@ final class DeclarationsChecker(
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
 
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er)
+    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
       val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)

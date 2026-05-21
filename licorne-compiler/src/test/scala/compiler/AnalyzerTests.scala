@@ -4,7 +4,7 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
-import compiler.smt.ArithIntMode
+import compiler.smt.{ArithIntMode, CounterexampleBox}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
@@ -118,16 +118,17 @@ class AnalyzerTests(fileName: String) {
     val typeHintsStore = TypeHintsStore()
     val heapVarsTypeStore = HeapVarsTypeStore()
     val er = ErrorReporter(errorsConsumer, exitCalled)
+    val counterExBoxOpt = Option.empty[CounterexampleBox]
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
-      .andThen(MonotonicityAnalyzer(ihm, proxyStore))
+      .andThen(MonotonicityAnalyzer(ihm, proxyStore, counterExBoxOpt))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er))
-      .andThen(OverridesChecker(ihm, proxyStore, er))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
     try {
       pipeline.apply(srcFiles)
     } catch {
