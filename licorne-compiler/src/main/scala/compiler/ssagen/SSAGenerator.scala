@@ -2,10 +2,10 @@ package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source}
+import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source, VariableRef}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA, FormulasDsl}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, SSA}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
@@ -21,7 +21,7 @@ import compiler.typing.contexts.TypeVariablesContext
 import compiler.util.{SeqSet, javaIterToList}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
-import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
+import compiler.valuesconversion.LocalValuesContext.{ErrorValueQueryResult, KnownAndInitialized}
 
 import java.io.File
 import java.nio.file.Path
@@ -995,9 +995,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.BoolLit(value) => Some(BoolConst(value))
         case Asts.StringLit(value) => Some(StringConst(value))
         case Asts.NullRef() => Some(currScope.valuesCtx.globalCtx.nullVal)
-        case Asts.VariableRef(name) => currScope.getLocalValuesContextOpt.flatMap(_.valueOf(name).toOption)
-        case Asts.ThisRef() => currScope.getLocalValuesContextOpt.flatMap(_.getThisValue)
-        case Asts.ItRef() => currScope.getLocalValuesContextOpt.flatMap(_.getItValue)
+        case Asts.VariableRef(name) =>
+          currScope.getLocalValuesContextOpt.flatMap(_.valueOf(name).toOption) match {
+            case someVal@Some(_) => someVal
+            case None =>
+              er.reportError(s"not found: $name", expr.getPosition)
+              None
+          }
+        case Asts.ThisRef() => generateFormula(VariableRef(ThisId), currScope)
+        case Asts.ItRef() => generateFormula(VariableRef(ItId), currScope)
         case Asts.ObjectRef(objectName) => Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         // TODO non-prefixed calls (implicit this)?
