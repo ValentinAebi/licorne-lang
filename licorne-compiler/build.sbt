@@ -10,6 +10,7 @@ libraryDependencies += "com.github.sbt" % "junit-interface" % "0.13.3" % Test
 libraryDependencies += "io.ksmt" % "ksmt-core" % "0.6.4"
 libraryDependencies += "io.ksmt" % "ksmt-z3" % "0.6.4"
 
+assembly / assemblyJarName := "licorne-compiler.jar"
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", _*) => MergeStrategy.discard
   case _                        => MergeStrategy.first
