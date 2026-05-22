@@ -161,7 +161,7 @@ final class TypeHintsInserter(
 
   private def resolveReceiver(receiver: IdValue, currFunSig: FunctionSignature)
                              (using globalValsCtx: GlobalValuesContext): Option[TypeIdentifier] = {
-    proxyStore.getProxy(receiver).getOrElse(receiver) match {
+    proxyStore.developDeep(receiver).getOrElse(receiver) match {
       case value: UninterpretedConstIdValue => globalValsCtx.getNameOfObject(value)
       case value if value == currFunSig.receiverVal => Some(currFunSig.ownerName)
       case _ => None

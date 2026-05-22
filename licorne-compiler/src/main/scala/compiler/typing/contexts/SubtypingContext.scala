@@ -148,9 +148,11 @@ final class SubtypingContext(
     isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope, posOpt)
 
   def canProveHasType(subject: Formula, knownType: Type, targetType: Type, scope: Scope, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext, typer: Typer): Boolean = solver.onNewFrame {
-    val knownTypeAsRefined = dealiasingCtx.dealiasType(knownType.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
-    solver.takeType(subject, knownTypeAsRefined)
-    typer.typeFormula(knownTypeAsRefined.predicate, scope, posOpt, suspendReporting = true)
+    for (t <- knownType.breakdownIfIntersection) {
+      val tRefined = dealiasingCtx.dealiasType(t.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
+      solver.takeType(subject, tRefined)
+      typer.typeFormula(tRefined.predicate, scope, posOpt, suspendReporting = true)
+    }
     dealiasingCtx.dealiasType(targetType.withTypeVarsExpanded).withTypeVarsExpanded match {
       case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
         // pass the types of all subformulas of the predicate to the solver
@@ -160,16 +162,22 @@ final class SubtypingContext(
         upperBoundOpt.foreach { ub =>
           typer.typeFormula(ub, scope, posOpt, suspendReporting = true)
         }
-        val subjectProxyOpt = proxyStore.getProxyIfIdValue(subject)
         isSubtype(knownType, IntType)
-          && lowerBoundOpt.forall(lb => solver.canProveLeq(lb, subject) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(lb, subjectProxy)))
-          && upperBoundOpt.forall(ub => solver.canProveLeq(subject, ub) || subjectProxyOpt.exists(subjectProxy => solver.canProveLeq(subjectProxy, ub)))
+          && lowerBoundOpt.forall { lb =>
+          solver.canProveLeq(lb, subject)
+            || proxyStore.developNearest(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
+            || proxyStore.developDeep(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
+        } && upperBoundOpt.forall { ub =>
+          solver.canProveLeq(subject, ub)
+            || proxyStore.developNearest(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
+            || proxyStore.developDeep(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
+        }
       case RefinedType(baseType, predicate) =>
         // pass the types of all subformulas of the predicate to the solver
         typer.typeFormula(predicate, scope, posOpt, suspendReporting = true)
         isSubtype(knownType, baseType) && (
           solver.canProve(predicate.substitute(itValue, subject))
-            || proxyStore.getProxyIfIdValue(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
+            || proxyStore.developDeep(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
       case UnionType(types) =>
         types.exists(canProveHasType(subject, knownType, _, scope, posOpt))
       case IntersectionType(types) =>
@@ -239,7 +247,7 @@ final class SubtypingContext(
 
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
-        proxyStore.getProxy(subject) match {
+        proxyStore.developNearest(subject) match {
           case Some(proxy) if proxy.isPure => toStringAlongSubT(proxy)
           case _ => subT.withTypeVarsExpanded.toString
         }

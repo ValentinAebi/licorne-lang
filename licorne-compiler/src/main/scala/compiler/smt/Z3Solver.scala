@@ -1,23 +1,17 @@
 package compiler.smt
 
+import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, Formulas, InvocationTarget}
 import compiler.lang.Types
-import compiler.lang.Types.IntRangeType
-import compiler.lang.Types.PrimitiveType.AnyType
-import compiler.typing.contexts.DealiasingContext
-import compiler.valproxies.ProxyStore
+import compiler.lang.Types.*
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
-import io.ksmt.sort.{KBoolSort, KSort, KUninterpretedSort}
+import io.ksmt.sort.{KBoolSort, KSort}
 
-import java.util
 import scala.collection.mutable
-import scala.util.boundary
-import scala.util.boundary.Label
 
 
 final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, ihm: IntHandlingMode[IntSort], converter: FormulasConverter[IntSort], counterExBoxOpt: Option[CounterexampleBox]) extends Solver {
@@ -189,8 +183,10 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
 
   override def takeType(subject: Formula, tpe: Types.Type)(using globalValsCtx: GlobalValuesContext): Unit = {
     val itValue = globalValsCtx.itValue
-    val predicate = tpe.withTypeVarsExpanded.asRefinedType.predicate
-    assert(predicate.substitute(itValue, subject))
+    for (t <- tpe.breakdownIfIntersection) {
+      val predicate = t.withTypeVarsExpanded.asRefinedType.predicate
+      assert(predicate.substitute(itValue, subject))
+    }
   }
 
   def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean = onNewFrame {

@@ -28,6 +28,7 @@ import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
 
+// FIXME code following loops and disjunctions should be made a subscope of the current scope
 final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootsForPkgMismatchCheckOpt: Option[List[Path]]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
@@ -612,8 +613,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
-              init <- proxyStore.getProxy(beforeLoopVal)
-            } yield Recurrence(init, proxyStore.develop(bodyLastLocalVal), condVal)
+              init <- proxyStore.developDeep(beforeLoopVal)
+              induct <- proxyStore.developDeep(bodyLastLocalVal)
+            } yield Recurrence(init, induct, condVal)
             bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
@@ -633,8 +635,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val retVal = currFuncInfo.funSigScope.newIntermediate("ret")
         returnedTreeOpt match {
           case Some(returnedTree) =>
-            val retValProxyOpt = generateSSAExpr(retVal, returnedTree, currScope)
-            retValProxyOpt match {
+            generateSSAExpr(retVal, returnedTree, currScope)
+            proxyStore.developDeep(retVal) match {
               case Some(retValProxy) =>
                 returnCollector.offerReturn(retValProxy)
               case None =>
@@ -682,12 +684,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
       val operandVal = currScope.newIntermediate()
-      val proxyOfOperandOpt = generateSSAExpr(operandVal, operandTree, currScope)
+      generateSSAExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
       for {
         mkFormula <- mkFormulaOpt
-        proyOfOperand <- proxyOfOperandOpt
-      } yield mkFormula(proyOfOperand)
+      } yield mkFormula(operandVal)
     }
 
     def generateUnaryWithProxy(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormula: Formula => Formula): Option[Formula] =
@@ -695,23 +696,18 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
       var lhsVal = currScope.newIntermediate()
-      var lhsProxyOpt = generateSSAExpr(lhsVal, lhs, currScope)
+      generateSSAExpr(lhsVal, lhs, currScope)
       var rhsVal = currScope.newIntermediate()
-      var rhsProxyOpt = generateSSAExpr(rhsVal, rhs, currScope)
+      generateSSAExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
         lhsVal = rhsVal
         rhsVal = lhsBefore
-        val lhsProxyOptBefore = lhsProxyOpt
-        lhsProxyOpt = rhsProxyOpt
-        rhsProxyOpt = lhsProxyOptBefore
       }
       currScope.saveInstr(mkInstr(lhsVal, rhsVal), expr)
       for {
         mkFormula <- mkFormulaOpt
-        lhsProxy <- lhsProxyOpt
-        rhsProxy <- rhsProxyOpt
-      } yield mkFormula(lhsProxy, rhsProxy)
+      } yield mkFormula(lhsVal, rhsVal)
     }
 
     def generateBinaryWithProxy(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormula: (Formula, Formula) => Formula, swapOperands: Boolean = false): Option[Formula] =
@@ -769,7 +765,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val argVals = generateArgsList(argTrees)
         val invkTarget = InvocationTarget(funId)
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
-        mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
+        Some(FunCall(receiverVal, invkTarget, typeArgs, argVals))
       case callTree@Asts.Call(callee@Asts.VariableRef(rawFunId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(rawFunId) =>
         findImplicitReceiverInImports(rawFunId, currScope) match {
@@ -778,7 +774,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val argVals = generateArgsList(argTrees)
             val invkTarget = InvocationTarget(targetFunId)
             currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
-            mkProxyForFunCall(receiverVal, invkTarget, typeArgs, argVals)
+            Some(FunCall(receiverVal, invkTarget, typeArgs, argVals))
           case None =>
             reportError(s"no receiver found for call to $rawFunId", callTree.getPosition)
             None
@@ -792,10 +788,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
         currScope.saveInstr(InvokeClosure(resultVal, calleeVal, target, args), expr)
-        for {
-          calleeProxy <- proxyStore.getProxy(calleeVal)
-          argProxies <- proxiesOfArgsList(args)
-        } yield ClosureCall(calleeProxy, target, argProxies)
+        Some(ClosureCall(calleeVal, target, args))
       case Asts.UnaryOp(Operator.Minus, operandTree) =>
         generateUnaryWithProxy(operandTree, NumNeg(resultVal, _), Neg(_))
       case Asts.UnaryOp(Operator.ExclamationMark, operandTree) =>
@@ -844,9 +837,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(lhsVal, lhsTree, currScope)
         val unresolvedField = FieldResolutionTarget(fieldId)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, unresolvedField), selectTree)
-        for {
-          lhsProxy <- proxyStore.getProxy(lhsVal)
-        } yield Select(lhsProxy, unresolvedField)
+        Some(Select(lhsVal, unresolvedField))
       case typeTestTree@Asts.TypeTest(testedExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
         val typeName = importsCtx.applyImports(typeNameRaw)
         generateUnaryWithProxy(testedExprTree, TypeTest(resultVal, _, typeName), TypePredicate(_, typeName))
@@ -879,18 +870,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
         // retrieve info from lowering
-        proxyStore.getProxy(thenVal) match {
-          case Some(BoolConst(true)) =>
-            for {
-              cv <- proxyStore.getProxy(condVal)
-              ev <- proxyStore.getProxy(elseVal)
-            } yield LogicalOr(cv, ev)
-          case _ => proxyStore.getProxy(elseVal) match {
-            case Some(BoolConst(false)) =>
-              for {
-                cv <- proxyStore.getProxy(condVal)
-                tv <- proxyStore.getProxy(thenVal)
-              } yield LogicalAnd(cv, tv)
+        proxyStore.developDeep(thenVal) match {
+          case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
+          case _ => proxyStore.developDeep(elseVal) match {
+            case Some(BoolConst(false)) => Some(LogicalAnd(condVal, thenVal))
             case _ => None
           }
         }
@@ -958,22 +941,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       proxyStore.saveProxy(resultVal, proxyOpt)
     }
     proxyOpt
-  }
-
-  private def mkProxyForFunCall(receiverVal: IdValue, invkTarget: InvocationTarget, typeArgs: List[Type], argVals: List[IdValue]): Option[FunCall] = {
-    for {
-      recProxy <- proxyStore.getProxy(receiverVal)
-      argsProxies <- proxiesOfArgsList(argVals)
-    } yield FunCall(recProxy, invkTarget, typeArgs, argsProxies)
-  }
-
-  private def proxiesOfArgsList(argVals: List[IdValue]): Option[List[Formula]] = {
-    argVals.foldRight[Option[List[Formula]]](Some(Nil)) {
-      case (arg, Some(acc)) => proxyStore.getProxy(arg) map { argProxy =>
-        argProxy :: acc
-      }
-      case (_, None) => None
-    }
   }
 
   private def generateFormula(expr: Expr, currScope: Scope)(using importsCtx: ImportsContext): Option[Formula] = {

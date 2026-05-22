@@ -29,11 +29,6 @@ final case class BranchingInfo(
     this.assumptions.concat(that.assumptions)
   )
 
-  def filteredPure(typer: Typer): BranchingInfo = BranchingInfo(
-    smartcasts.filter((subject, _) => subject.isPure),
-    assumptions.filter(_.isPure)
-  )
-
   def boundFor(subject: IdValue, boundMode: BoundMode, solver: Solver): Option[Formula] = boundary {
     import compiler.irs.ssa.FormulasDsl.*
     // TODO try to find best bound instead of stopping at first bound found?

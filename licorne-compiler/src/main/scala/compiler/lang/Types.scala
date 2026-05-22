@@ -482,6 +482,11 @@ object Types {
     case NullableType(nullatedType) => nullatedType.allTypeVariables
     case tv: TypeVariable => SeqSet(tv)
   }
+  
+  extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
+    case IntersectionType(types) => types
+    case tpe => SeqSet(tpe)
+  }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None

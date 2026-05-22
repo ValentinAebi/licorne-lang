@@ -104,7 +104,7 @@ final class Typer(
           } yield {
             val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
             val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
-            val preIterationBoundOpt = proxyStore.getProxy(beforeLoopVal)
+            val preIterationBoundOpt = proxyStore.developDeep(beforeLoopVal)
             val inBodyType = simplifier.simplify(
               monotonicity match {
                 case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
@@ -155,17 +155,18 @@ final class Typer(
         typeScopeInstructions(bodyScope, infoIfCondTrue)
         for {
           varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars
-          if !varData.handledThroughRecurrenceFlag
         } {
           val typeAtEndOfBody = bodyScope.currentTypeOf(bodyLastVal, saveSmartcastsInIR = false)
-          val typeInCond = condScope.currentTypeOf(condVal, saveSmartcastsInIR = false)
-          lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
-            case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
-              s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
-            case _ =>
-              s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+          if (!varData.handledThroughRecurrenceFlag) {
+            val typeInCond = condScope.currentTypeOf(condVal, saveSmartcastsInIR = false)
+            lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
+              case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
+                s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
+              case _ =>
+                s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+            }
+            subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
           }
-          subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
           val beforeLoopType = currScope.currentTypeOf(beforeLoopVal, saveSmartcastsInIR = false)
           val afterLoopType = meetJoin.computeJoin(beforeLoopType, typeAtEndOfBody)
           currScope.saveSmartcast(condVal, afterLoopType)
@@ -245,7 +246,7 @@ final class Typer(
       }
 
       case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(proxyStore.getProxy(rhs)), Operator.Modulo, rem.getPosition)
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(proxyStore.developDeep(rhs)), Operator.Modulo, rem.getPosition)
       }
 
       case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
@@ -287,7 +288,7 @@ final class Typer(
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
         val ownerType = currScope.currentTypeOf(owner, saveSmartcastsInIR = true)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        proxyStore.getProxy(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = false)) match {
+        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = false)) match {
           case Some(smartcastType) =>
             currScope.saveType(assigned, smartcastType)
           case None =>
@@ -302,7 +303,7 @@ final class Typer(
         subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
         val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
         if (isInitializationOfStableField) {
-          val ow = proxyStore.getProxy(owner).getOrElse(owner)
+          val ow = proxyStore.developDeep(owner).getOrElse(owner)
           val select = Select(ow, fieldResolTarget)
           saveEquality(select, rhs, persist = true)
           fieldResolTarget.getReceiverSigUnsafe match {
@@ -380,7 +381,7 @@ final class Typer(
       case cast@Cast(inValue, target) =>
         checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
           currScope.saveSmartcast(inValue, assertedType)
-          proxyStore.getProxy(inValue).foreach { proxy =>
+          proxyStore.developDeep(inValue).foreach { proxy =>
             currScope.saveSmartcast(proxy, assertedType)
           }
         }
@@ -421,7 +422,7 @@ final class Typer(
         executionEnvirOpt match {
           case Some(executionEnvir) =>
             val unitVal = currScope.getLocalValuesContextUnsafe.globalCtx.unitVal
-            if (executionEnvir.expectedResultType == UnitType && retVal != unitVal && !proxyStore.getProxy(retVal).contains(unitVal)) {
+            if (executionEnvir.expectedResultType == UnitType && retVal != unitVal && !proxyStore.developDeep(retVal).contains(unitVal)) {
               er.warn(s"returned value has no effect, since return type is $UnitType", ret.getPosition)
             }
             val retValType = currScope.currentTypeOf(retVal, saveSmartcastsInIR = true)
@@ -577,7 +578,7 @@ final class Typer(
         && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope, posOpt)
     if (mayBeDivByZero) {
       val rhsDescr =
-        proxyStore.getProxyIfIdValue(rhs).orElse(Some(rhs)) match {
+        proxyStore.developDeep(rhs).orElse(Some(rhs)) match {
           case Some(f) => s" $f"
           case None => ""
         }
@@ -961,10 +962,8 @@ final class Typer(
         case _ => ()
       }
       solver.assert(assumption)
-      val developedAssumption = proxyStore.develop(assumption)
-      if (developedAssumption.isPure) {
-        solver.assert(developedAssumption)
-      }
+      val developedAssumption = proxyStore.developDeep(assumption).getOrElse(assumption)
+      solver.assert(developedAssumption)
       val smartcasts = developedAssumption match {
         case LessOrEq(lhs, rhs) =>
           leqToSmartcasts(lhs, rhs)
@@ -1185,7 +1184,7 @@ final class Typer(
 
   private def receiverIsThisPtr(currScope: Scope, receiver: Formula): Boolean = {
     currScope.getLocalValuesContextUnsafe.getThisValue.exists { thisVal =>
-      receiver == thisVal || proxyStore.getProxyIfIdValue(receiver).contains(thisVal)
+      receiver == thisVal || proxyStore.developDeep(receiver).contains(thisVal)
     }
   }
 
@@ -1304,7 +1303,7 @@ final class Typer(
 
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {
     argOpt.foreach { rawArg =>
-      proxyStore.getProxyIfIdValue(rawArg)
+      proxyStore.developNearest(rawArg)
         .orElse(Some(rawArg).filter(_.idValsDependencies.forall(_.isInstanceOf[NamedIdValue])))
         .filter(_.isPure)
         .foreach { repl =>

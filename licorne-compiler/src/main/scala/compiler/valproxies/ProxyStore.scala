@@ -25,54 +25,108 @@ final class ProxyStore {
     proxies(idVal) = proxy
   }
 
-  def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal).orElse(idVal match {
-    case idVal: (ParamIdValue | UninterpretedConstIdValue) => Some(idVal)
-    case _ => None
-  })
+  def developDeep(formula: Formula): Option[Formula] =
+    dev(formula, developLocals = true)
 
-  def getProxyIfIdValue(formula: Formula): Option[Formula] = formula match {
-    case value: IdValue => getProxy(value)
-    case _ => None
+  def developNearest(formula: Formula): Option[Formula] =
+    dev(formula, developLocals = false)
+
+  // TODO memoize
+  private def dev(formula: Formula, developLocals: Boolean): Option[Formula] = {
+    val stepRes: Option[Formula] = formula match {
+      case idValue: (ParamIdValue | UninterpretedConstIdValue) => Some(idValue)
+      case idValue: (ValIdValue | VarIdValue) if !developLocals => Some(idValue)
+      case idValue: IdValue if proxies.contains(idValue) => Some(proxies.apply(idValue))
+      case idValue: IdValue => None
+      case cst: ConstFormula => Some(cst)
+      case Select(owner, field) if field.isResolvedAndStable => for {
+        owp <- dev(owner, developLocals)
+      } yield Select(owp, field)
+      case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+        for {
+          rcp <- dev(receiver, developLocals)
+          argsp <- devAll(args, developLocals)
+        } yield FunCall(rcp, func, typeArgs, argsp)
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+        for {
+          clp <- dev(callee, developLocals)
+          argsp <- devAll(args, developLocals)
+        } yield ClosureCall(clp, closureTypingTarget, argsp)
+      case pureClosureValue: PureClosureValue => Some(pureClosureValue)
+      case Plus(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield Plus(lp, rp)
+      case Neg(operand) => for {
+        op <- dev(operand, developLocals)
+      } yield Neg(op)
+      case Times(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield Times(lp, rp)
+      case DivBy(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield DivBy(lp, rp)
+      case Modulo(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield Modulo(lp, rp)
+      case LogicalAnd(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield LogicalAnd(lp, rp)
+      case LogicalNot(operand) => for {
+        op <- dev(operand, developLocals)
+      } yield LogicalNot(op)
+      case LogicalOr(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield LogicalOr(lp, rp)
+      case Equality(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield Equality(lp, rp)
+      case LessOrEq(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield LessOrEq(lp, rp)
+      case LessThan(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals)
+        rp <- dev(rhs, developLocals)
+      } yield LessThan(lp, rp)
+      case TypePredicate(subject, tpe) => for {
+        sp <- dev(subject, developLocals)
+      } yield TypePredicate(sp, tpe)
+      case _ => None
+    }
+    stepRes.flatMap {
+      case res if res == formula => Some(res)
+      case res => dev(res, developLocals)
+    } orElse {
+      Option.when(formula.isInstanceOf[ValIdValue | VarIdValue]) {
+        formula
+      }
+    }
   }
 
-  def develop(formula: Formula): Formula = {
-    val oneStepRes = formula match {
-      case value: IdValue => getProxy(value).getOrElse(value)
-      case formula: ConstFormula => formula
-      case Select(owner, field) => Select(develop(owner), field)
-      case FunCall(receiver, func, typeArgs, args) =>
-        FunCall(develop(receiver), func, typeArgs, args.map(develop))
-      case ClosureCall(callee, closureTypingTarget, args) =>
-        ClosureCall(develop(callee), closureTypingTarget, args.map(develop))
-      case pureClosureValue: PureClosureValue => pureClosureValue
-      case Plus(lhs, rhs) => Plus(develop(lhs), develop(rhs))
-      case Neg(operand) => Neg(develop(operand))
-      case Times(lhs, rhs) => Times(develop(lhs), develop(rhs))
-      case DivBy(lhs, rhs) => DivBy(develop(lhs), develop(rhs))
-      case Modulo(lhs, rhs) => Modulo(develop(lhs), develop(rhs))
-      case LogicalAnd(lhs, rhs) => LogicalAnd(develop(lhs), develop(rhs))
-      case LogicalNot(operand) => LogicalNot(develop(operand))
-      case LogicalOr(lhs, rhs) => LogicalOr(develop(lhs), develop(rhs))
-      case Equality(lhs, rhs) => Equality(develop(lhs), develop(rhs))
-      case LessOrEq(lhs, rhs) => LessOrEq(develop(lhs), develop(rhs))
-      case LessThan(lhs, rhs) => LessThan(develop(lhs), develop(rhs))
-      case TypePredicate(subject, tpe) => TypePredicate(develop(subject), tpe)
+  private def devAll(ls: List[Formula], developLocals: Boolean): Option[List[Formula]] = {
+    ls.foldRight(Option(List.empty[Formula])) {
+      case (curr, Some(acc)) => dev(curr, developLocals).map(_ :: acc)
+      case _ => None
     }
-    if oneStepRes == formula then oneStepRes
-    else develop(oneStepRes)
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
                               (using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
-    val (directInfoIfTrue, directInfoIfFalse) = infosFor(cond)(using outerScope)
-    val (proxyInfoIfTrue, proxyInfoIfFalse) = getProxy(cond) match {
-      case Some(proxy) if proxy.isPure =>
-        val (infoIfTrue, infoIfFalse) = infosFor(proxy)(using outerScope)
-        (infoIfTrue.filteredPure(typer), infoIfFalse.filteredPure(typer))
-      case _ => (BranchingInfo.empty, BranchingInfo.empty)
-    }
-    (ambientBranchingInfo ++ directInfoIfTrue ++ proxyInfoIfTrue,
-      ambientBranchingInfo ++ directInfoIfFalse ++ proxyInfoIfFalse)
+    val (infoIfTrueNearest, infoIfFalseNearest) =
+      developNearest(cond).map(infosFor(_)(using outerScope))
+        .getOrElse((BranchingInfo.empty, BranchingInfo.empty))
+    val (infoIfTrueDeep, infoIfFalseDeep) =
+      developDeep(cond).map(infosFor(_)(using outerScope))
+        .getOrElse((BranchingInfo.empty, BranchingInfo.empty))
+    (ambientBranchingInfo ++ infoIfTrueNearest ++ infoIfTrueDeep,
+      ambientBranchingInfo ++ infoIfFalseNearest ++ infoIfFalseDeep)
   }
 
   def rawInfosFor(cond: Formula, outerScope: Scope)(using dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) =
@@ -100,13 +154,8 @@ final class ProxyStore {
         (BranchingInfo.ofAssumption(lt), BranchingInfo.ofAssumption(LessOrEq(rhs, lhs)))
       case TypePredicate(subject, tpe) =>
         (BranchingInfo.ofPositiveSmartcast(subject, tpe), BranchingInfo.ofNegativeSmartcast(subject, tpe))
-      case cond => (BranchingInfo.ofAssumption(cond), BranchingInfo.empty)
+      case cond => (BranchingInfo.ofAssumption(cond), BranchingInfo.ofAssumption(LogicalNot(cond)))
     }
-  }
-  
-  def isNullOrItsProxy(value: IdValue, scope: Scope): Boolean = {
-    val nullVal = scope.valuesCtx.globalCtx.nullVal
-    value == nullVal || getProxy(value).contains(nullVal)
   }
 
   override def toString: String = "ProxyStore {\n" ++ proxies.mkString("\n").indent(2) ++ "}"
