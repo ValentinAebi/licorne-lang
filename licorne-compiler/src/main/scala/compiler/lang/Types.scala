@@ -465,6 +465,23 @@ object Types {
       case tv: TypeVariable => tv.actualTypeIfResolved
     }
   }
+  
+  extension (tpe: Type) def allTypeVariables: SeqSet[TypeVariable] = tpe match {
+    case primitiveType: PrimitiveType => SeqSet.empty
+    case NamedType(typeName, typeArgs, args) =>
+      SeqSet(typeArgs.flatMap(_.allTypeVariables))
+    case ClosureType(params, result, enforcedPure) =>
+      SeqSet(params.flatMap(_.allTypeVariables) ++ result.allTypeVariables)
+    case UnionType(types) =>
+      SeqSet(types.flatMap(_.allTypeVariables))
+    case IntersectionType(types) =>
+      SeqSet(types.flatMap(_.allTypeVariables))
+    case RefinedType(baseType, predicate) =>
+      baseType.allTypeVariables
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => SeqSet.empty
+    case NullableType(nullatedType) => nullatedType.allTypeVariables
+    case tv: TypeVariable => SeqSet(tv)
+  }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None

@@ -1,0 +1,12 @@
+
+interface Foo[T] {
+   fn get(this) -> T
+}
+
+object Test {
+
+   fn bar(f: Foo) -> Int {    //> E : type variable ?T in type of parameter f could not be resolved in a way that preserves encapsulation
+      return f.get();
+   }
+
+}

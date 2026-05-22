@@ -1,16 +1,26 @@
 package compiler.lang
 
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Field.StableField
 import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
-import compiler.lang.Types.{NamedType, Type}
+import compiler.lang.Types.{NamedType, Type, TypeVariable}
 import compiler.reporting.Position
 import compiler.util.{SeqSet, mapVals}
 
 import scala.collection.immutable.SeqMap
+
+trait DeclSignature {
+  def sigName: Identifier
+
+  def typeParams: List[TypeParamInfo]
+
+  def typeVarsWithDescr: SeqSet[(TypeVariable, String)]
+
+  def declPosOpt: Option[Position]
+}
 
 final case class FunctionSignature(
                                     ownerName: TypeIdentifier,
@@ -25,7 +35,9 @@ final case class FunctionSignature(
                                     isMain: Boolean,
                                     declPosOpt: Option[Position],
                                     isSynthetic: Boolean = false
-                                  ) extends ExecutionEnvironment {
+                                  ) extends DeclSignature, ExecutionEnvironment {
+
+  override def sigName: Identifier = functionName
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
 
@@ -43,6 +55,15 @@ final case class FunctionSignature(
   override def requiresPurityInBody: Boolean = isPure
 
   override def root: FunctionSignature = this
+
+  override def typeVarsWithDescr: SeqSet[(TypeVariable, String)] = SeqSet(
+    typeParams.flatMap { tp =>
+      tp.upperBoundOpt.toList.flatMap(_.allTypeVariables).map(_ -> s"upper bound of type variable ${tp.tid}")
+        ++ tp.lowerBoundOpt.toList.flatMap(_.allTypeVariables).map(_ -> s"lower bound of type variable ${tp.tid}")
+    } ++ paramsInclThis.flatMap { (idVal, tpe) =>
+      tpe.allTypeVariables.map(_ -> s"type of parameter ${idVal.name}")
+    } ++ retType.allTypeVariables.map(_ -> s"return type of method $functionName")
+  )
 
   def substitute(newOwnerName: TypeIdentifier, typesSubst: Map[TypeIdentifier, Type]): FunctionSignature = FunctionSignature(
     newOwnerName,
@@ -95,16 +116,27 @@ private def printListIfNonEmpty[T](ls: Iterable[T], opening: String, closing: St
   }
 }
 
-sealed trait TypeSignature {
+sealed trait TypeSignature extends DeclSignature {
   def id: TypeIdentifier
 
   def typeParams: List[TypeTypeParamInfo]
 
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
+  def directSupertypes: List[NamedType]
+
   def sigScope: Scope
 
-  def declPosOpt: Option[Position]
+  override def sigName: Identifier = id
+
+  override def typeVarsWithDescr: SeqSet[(TypeVariable, String)] = SeqSet(
+    typeParams.flatMap { tp =>
+      tp.upperBoundOpt.toList.flatMap(_.allTypeVariables).map(_ -> s"upper bound of type variable ${tp.tid}")
+        ++ tp.lowerBoundOpt.toList.flatMap(_.allTypeVariables).map(_ -> s"lower bound of type variable ${tp.tid}")
+    } ++ params.flatMap { case (paramId, (tpe, _)) =>
+      tpe.allTypeVariables.map(_ -> s"type of parameter $paramId")
+    } ++ directSupertypes.flatMap(st => st.allTypeVariables.map(_ -> s"supertype $st of $id"))
+  )
 
   def toType(typesSubst: scala.collection.Map[TypeIdentifier, Type], paramsSubst: scala.collection.Map[IdValue, Formula] = Map.empty): NamedType = {
     NamedType(id,
@@ -126,7 +158,9 @@ final case class TypeAliasSignature(
                                      rhs: Type,
                                      sigScope: Scope,
                                      declPosOpt: Option[Position]
-                                   ) extends TypeSignature
+                                   ) extends TypeSignature {
+  override def directSupertypes: List[NamedType] = List.empty
+}
 
 sealed trait RuntimeTypeSignature extends TypeSignature {
   override def params: SeqMap[FunOrVarId, (Type, IdValue)] = SeqMap.empty

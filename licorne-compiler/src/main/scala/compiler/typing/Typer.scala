@@ -824,7 +824,10 @@ final class Typer(
       solver.assert(precond)
     }
     val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
-    FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt, retTypeInst, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic)
+    checkingAllTypeVarsResolved {
+      FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt,
+        retTypeInst, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic)
+    }
   }
 
   def typeTypeAliasSig(typealiasSig: TypeAliasSignature): TypeAliasSignature = {
@@ -840,7 +843,9 @@ final class Typer(
       (paramId, (paramTypeInst, paramVal))
     }
     val rhsInst = instantiateType(rhsRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
-    TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, sigScope, declPosOpt)
+    }
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): InterfaceSignature = {
@@ -854,7 +859,9 @@ final class Typer(
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
     val directSuperTypesInst = typeSupertypesAsInterfaces(interfaceSig, resolutionCtx, fullTypeParamsCtx)
-    InterfaceSignature(id, typeParamsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      InterfaceSignature(id, typeParamsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    }
   }
 
   def typeClassSig(classSig: ClassSignature): ClassSignature = {
@@ -871,7 +878,9 @@ final class Typer(
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
     val directSuperTypesInst = typeSupertypesAsInterfaces(classSig, resolutionCtx, fullTypeParamsCtx)
-    ClassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      ClassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    }
   }
 
   def typeObjectSig(objSig: ObjectSignature): ObjectSignature = {
@@ -881,7 +890,9 @@ final class Typer(
       funId -> typeFunSig(funSig, TypeParamsContext.empty)
     }
     val directSuperTypesInst = typeSupertypes(objSig, "interface", resolutionCtx, TypeParamsContext.empty)
-    ObjectSignature(id, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      ObjectSignature(id, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+    }
   }
 
   def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
@@ -892,7 +903,9 @@ final class Typer(
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     val directSupertypesInst = typeSupertypesAsDatatypes(datatypeSig, resolutionCtx, fullTypeParamsCtx)
-    DatatypeSignature(id, typeParamsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      DatatypeSignature(id, typeParamsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
+    }
   }
 
   def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
@@ -906,7 +919,20 @@ final class Typer(
       id -> typeStableField(fld, fullTypeParamsCtx, sigScope, declPosOpt)
     }
     val directSupertypesInst = typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
-    RecordSignature(id, typeParamsInst, fieldsInst, directSupertypesInst, sigScope, declPosOpt)
+    checkingAllTypeVarsResolved {
+      RecordSignature(id, typeParamsInst, fieldsInst, directSupertypesInst, sigScope, declPosOpt)
+    }
+  }
+
+  private def checkingAllTypeVarsResolved[S <: DeclSignature](sig: S): S = {
+    for ((tv, descr) <- sig.typeVarsWithDescr) {
+      if (!tv.isResolved) {
+        er.reportError(s"type variable $tv in $descr could not be resolved in a way that preserves encapsulation", sig.declPosOpt)
+        tv.resolve(NullableType(AnyType))
+      }
+      tv.lock()
+    }
+    sig
   }
 
   private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
@@ -1166,26 +1192,25 @@ final class Typer(
   private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, scope: Scope,
                                posOpt: Option[Position], ctxDescrForReportingOpt: Option[String])
                               (using TypeParamsContext): Map[TypeIdentifier, Type] = {
-    if (typeParams.size == typeArgs.size) {
-      val substBuilder = Map.newBuilder[TypeIdentifier, Type]
-      for ((tParam, tArgRaw) <- typeParams.zip(typeArgs)) {
-        val tArgInst = instantiateType(tArgRaw, tParam.varianceOpt, scope, posOpt)
-        ctxDescrForReportingOpt.foreach { ctxDescr =>
-          checkTypeIsInBounds(tArgInst, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt, tParam.tid)
-        }
-        substBuilder.addOne(tParam.tid -> tArgInst)
+    val substBuilder = Map.newBuilder[TypeIdentifier, Type]
+    for ((tParam, tArgRaw) <- typeParams.zip(typeArgs)) {
+      val tArgInst = instantiateType(tArgRaw, tParam.varianceOpt, scope, posOpt)
+      ctxDescrForReportingOpt.foreach { ctxDescr =>
+        checkTypeIsInBounds(tArgInst, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt, tParam.tid)
       }
-      substBuilder.result()
-    } else {
+      substBuilder.addOne(tParam.tid -> tArgInst)
+    }
+    for (tp <- typeParams.drop(typeArgs.size)) {
+      substBuilder.addOne(tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt))
+    }
+    if (typeArgs.size > typeParams.size) {
       ctxDescrForReportingOpt.foreach { ctxDescr =>
         if (typeArgs.nonEmpty) {
-          er.reportError(s"wrong number of type parameters for $ctxDescr", posOpt)
+          er.reportError(s"too many type parameters for $ctxDescr", posOpt)
         }
       }
-      Map.from(for tp <- typeParams yield {
-        tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt)
-      })
     }
+    substBuilder.result()
   }
 
   def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier): Unit = {
