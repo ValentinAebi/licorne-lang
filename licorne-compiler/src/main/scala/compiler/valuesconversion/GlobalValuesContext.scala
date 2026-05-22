@@ -24,19 +24,10 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   
   val itValue: IdValue = globalScope.newUninterpretedConst("it")
 
-  {
-    proxyStore.saveProxy(unitVal, unitVal)
-    proxyStore.saveProxy(trueVal, trueVal)
-    proxyStore.saveProxy(falseVal, falseVal)
-    proxyStore.saveProxy(nullVal, nullVal)
-    proxyStore.saveProxy(itValue, itValue)
-  }
-
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =
     idToObjName.getOrElseUpdate(objectId, {
       val value = globalScope.newUninterpretedConst(objectId.stringId)
       objNameToId(value) = objectId
-      proxyStore.saveProxy(value, value)
       value
     })
     

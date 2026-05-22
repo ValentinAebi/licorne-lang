@@ -389,7 +389,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             paramsInclThis(paramValue) = paramType
             val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
             funSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramTree.paramId, paramValue, funSigScope, reassigPermission, Some(paramType))
-            proxyStore.saveProxy(paramValue, paramValue)
           }
           isFirst = false
         }
@@ -924,7 +923,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
           val paramVal = closureParamsScope.newParam(id, posOpt)
-          proxyStore.saveProxy(paramVal, paramVal)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, closureParamsScope))
           val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, closureDefTree.getPosition)(closureParamsScope.valuesCtx.globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)

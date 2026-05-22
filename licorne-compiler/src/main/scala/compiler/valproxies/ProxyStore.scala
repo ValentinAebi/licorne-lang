@@ -25,7 +25,10 @@ final class ProxyStore {
     proxies(idVal) = proxy
   }
 
-  def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal)
+  def getProxy(idVal: IdValue): Option[Formula] = proxies.get(idVal).orElse(idVal match {
+    case idVal: (ParamIdValue | UninterpretedConstIdValue) => Some(idVal)
+    case _ => None
+  })
 
   def getProxyIfIdValue(formula: Formula): Option[Formula] = formula match {
     case value: IdValue => getProxy(value)
