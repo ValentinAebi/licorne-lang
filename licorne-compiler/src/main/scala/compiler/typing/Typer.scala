@@ -943,7 +943,7 @@ final class Typer(
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectTypeForSmartcast(subject, scope)
-        smartcastType <- smartcastData.tryToSmartcast(originalType, resolutionCtx.typesReasoningCache, subtypingCtx)
+        smartcastType <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache, subtypingCtx)
       } {
         if (smartcastType == NothingType) {
           scope.markHasExited()
