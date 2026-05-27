@@ -238,12 +238,14 @@ object Asts {
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
   }
+  
+  sealed trait TypeParam extends Ast
 
-  final case class TypeParamWithoutVariance(name: String, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
+  final case class TypeParamWithoutVariance(name: String, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends TypeParam {
     override def children: List[Ast] = Nil
   }
 
-  final case class TypeParamWithVariance(name: String, variance: Variance, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends Ast {
+  final case class TypeParamWithVariance(name: String, variance: Variance, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends TypeParam {
     override def children: List[Ast] = Nil
   }
 

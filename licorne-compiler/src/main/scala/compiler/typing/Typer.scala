@@ -18,6 +18,7 @@ import compiler.smt.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
+import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{SeqSet, findUnique, mapVals}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
@@ -1249,18 +1250,6 @@ final class Typer(
       }
       superTInst
     }
-  }
-
-  private def processTypeParamsAccumulating[T <: TypeParamInfo](initialTypeParamsCtx: TypeParamsContext, typeParamsRaw: Iterable[T])
-                                                               (action: T => TypeParamsContext ?=> T): (List[T], TypeParamsContext) = {
-    val typeParamsInstB = List.newBuilder[T]
-    var typeParamsCtx = initialTypeParamsCtx
-    for (tParamRaw <- typeParamsRaw) {
-      val tParamInst = action(tParamRaw)(using typeParamsCtx)
-      typeParamsInstB.addOne(tParamInst)
-      typeParamsCtx = typeParamsCtx.extendedWith(tParamInst)
-    }
-    (typeParamsInstB.result(), typeParamsCtx)
   }
 
   private def expVariance(ambientVarianceOpt: Option[Variance], tParam: TypeParamInfo): Option[Variance] = (tParam, ambientVarianceOpt) match {

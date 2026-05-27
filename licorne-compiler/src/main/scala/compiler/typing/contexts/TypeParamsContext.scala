@@ -15,20 +15,32 @@ final case class TypeParamsContext(typeParams: Map[TypeIdentifier, TypeParamInfo
       case _ => None
     }
   }
-  
+
   def extendedWith(newTypeParam: TypeParamInfo): TypeParamsContext =
     TypeParamsContext(typeParams + (newTypeParam.tid -> newTypeParam))
-  
+
   def extendedWith(newTypeParams: Iterable[TypeParamInfo]): TypeParamsContext =
     TypeParamsContext(typeParams ++ newTypeParams.map(tp => tp.tid -> tp))
 
 }
 
 object TypeParamsContext {
-  
+
   def apply(typeParams: Iterable[TypeParamInfo]): TypeParamsContext =
     TypeParamsContext(typeParams.map(tParam => tParam.tid -> tParam).toMap)
-  
+
   def empty: TypeParamsContext = TypeParamsContext(Map.empty)
-  
+
+  def processTypeParamsAccumulating[T <: TypeParamInfo, U](initialTypeParamsCtx: TypeParamsContext, typeParamsRaw: Iterable[U])
+                                                          (action: U => TypeParamsContext ?=> T): (List[T], TypeParamsContext) = {
+    val typeParamsInstB = List.newBuilder[T]
+    var typeParamsCtx = initialTypeParamsCtx
+    for (tParamRaw <- typeParamsRaw) {
+      val tParamInst = action(tParamRaw)(using typeParamsCtx)
+      typeParamsInstB.addOne(tParamInst)
+      typeParamsCtx = typeParamsCtx.extendedWith(tParamInst)
+    }
+    (typeParamsInstB.result(), typeParamsCtx)
+  }
+
 }
