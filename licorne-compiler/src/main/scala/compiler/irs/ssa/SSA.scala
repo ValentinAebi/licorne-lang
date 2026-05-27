@@ -7,7 +7,7 @@ import compiler.irs.ssa.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import Formulas.*
 import compiler.lang.Types.PrimitiveType.NothingType
-import compiler.lang.Types.{NullableType, PrimitiveType, Type}
+import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep
 import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
@@ -271,6 +271,11 @@ object SSA {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
       solver.takeType(idVal, tpe)
+      tpe match {
+        case ClosureType(params, result, enforcedPure) if enforcedPure =>
+          proxyStore.validateClosurePurity(idVal)
+        case _ => ()
+      }
     }
 
     def saveSmartcast(f: Formula, smartcastType: Type)(using simplifier: Simplifier): Unit = {

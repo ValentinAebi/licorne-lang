@@ -1,6 +1,6 @@
 package lists;
 
-import lists.Lists.{zip, length};
+import lists.Lists.{zip, length, filter};
 
 typealias Length = [0..]
 
@@ -166,4 +166,14 @@ object UseLists {
       return zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length(integers) == lists.Lists.length(strings) holds
    }
 
+   fn instanceTests(ls: List[I]) {
+      val filtered = filter(ls, fn (x) -> x is A && x.value() >= 0);
+      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with 0 <= it.value()]
+   }
+
+}
+
+interface I
+class A : I {
+   pure fn value(this) -> Int = 42
 }

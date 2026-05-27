@@ -673,7 +673,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateSSAExpr(retVal, returnedTree, currScope)
-            proxyStore.developDeep(retVal) match {
+            proxyStore.developDeep(retVal, bypassPurityChecks = true) match {
               case Some(retValProxy) =>
                 returnCollector.offerReturn(retValProxy)
               case None =>
@@ -962,10 +962,14 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val isPure = declaredPure || isObviouslyPure(closureBodyScope)
         val paramValsAndTypes = paramValsAndTypesB.result()
         currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure), closureDefTree)
-        for {
-          closureRetVal <- retValCollector.getUniqueRet
-          if isPure
-        } yield PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
+        retValCollector.getUniqueRet.flatMap { closureRetVal =>
+          val closure = PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
+          if isPure then Some(closure)
+          else {
+            proxyStore.savePossiblyImpureClosure(resultVal, closure)
+            None
+          }
+        }
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg")
         generateSSAExpr(msgVal, msgTree, currScope)

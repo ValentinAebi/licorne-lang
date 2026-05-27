@@ -11,6 +11,7 @@ import scala.collection.mutable
 
 final class ProxyStore {
   private val proxies = mutable.Map.empty[IdValue, Formula]
+  private val possiblyImpureClosures = mutable.Map.empty[IdValue, PureClosureValue]
 
   def hasProxyFor(idVal: IdValue): Boolean = proxies.contains(idVal)
 
@@ -25,84 +26,94 @@ final class ProxyStore {
     proxies(idVal) = proxy
   }
 
-  def developDeep(formula: Formula): Option[Formula] =
-    dev(formula, developLocals = true)
+  def savePossiblyImpureClosure(idVal: IdValue, closure: PureClosureValue): Unit = {
+    possiblyImpureClosures.put(idVal, closure)
+  }
 
-  def developNearest(formula: Formula): Option[Formula] =
-    dev(formula, developLocals = false)
+  def validateClosurePurity(idVal: IdValue): Unit = {
+    possiblyImpureClosures.get(idVal).foreach { closure =>
+      proxies.put(idVal, closure)
+    }
+  }
+
+  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = true, bypassPurityChecks)
+
+  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = false, bypassPurityChecks)
 
   // TODO memoize
-  private def dev(formula: Formula, developLocals: Boolean): Option[Formula] = {
+  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean): Option[Formula] = {
     val stepRes: Option[Formula] = formula match {
       case idValue: (ParamIdValue | UninterpretedConstIdValue) => Some(idValue)
       case idValue: (ValIdValue | VarIdValue) if !developLocals => Some(idValue)
       case idValue: IdValue if proxies.contains(idValue) => Some(proxies.apply(idValue))
       case idValue: IdValue => None
       case cst: ConstFormula => Some(cst)
-      case Select(owner, field) if field.isResolvedAndStable => for {
-        owp <- dev(owner, developLocals)
+      case Select(owner, field) if bypassPurityChecks || field.isResolvedAndStable => for {
+        owp <- dev(owner, developLocals, bypassPurityChecks)
       } yield Select(owp, field)
-      case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      case FunCall(receiver, func, typeArgs, args) if bypassPurityChecks || func.isResolvedAndPure =>
         for {
-          rcp <- dev(receiver, developLocals)
-          argsp <- devAll(args, developLocals)
+          rcp <- dev(receiver, developLocals, bypassPurityChecks)
+          argsp <- devAll(args, developLocals, bypassPurityChecks)
         } yield FunCall(rcp, func, typeArgs, argsp)
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      case ClosureCall(callee, closureTypingTarget, args) if bypassPurityChecks || closureTypingTarget.isResolvedAndPure =>
         for {
-          clp <- dev(callee, developLocals)
-          argsp <- devAll(args, developLocals)
+          clp <- dev(callee, developLocals, bypassPurityChecks)
+          argsp <- devAll(args, developLocals, bypassPurityChecks)
         } yield ClosureCall(clp, closureTypingTarget, argsp)
       case pureClosureValue: PureClosureValue => Some(pureClosureValue)
       case Plus(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield Plus(lp, rp)
       case Neg(operand) => for {
-        op <- dev(operand, developLocals)
+        op <- dev(operand, developLocals, bypassPurityChecks)
       } yield Neg(op)
       case Times(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield Times(lp, rp)
       case DivBy(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield DivBy(lp, rp)
       case Modulo(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield Modulo(lp, rp)
       case LogicalAnd(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield LogicalAnd(lp, rp)
       case LogicalNot(operand) => for {
-        op <- dev(operand, developLocals)
+        op <- dev(operand, developLocals, bypassPurityChecks)
       } yield LogicalNot(op)
       case LogicalOr(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield LogicalOr(lp, rp)
       case Equality(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield Equality(lp, rp)
       case LessOrEq(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield LessOrEq(lp, rp)
       case LessThan(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals)
-        rp <- dev(rhs, developLocals)
+        lp <- dev(lhs, developLocals, bypassPurityChecks)
+        rp <- dev(rhs, developLocals, bypassPurityChecks)
       } yield LessThan(lp, rp)
       case TypePredicate(subject, tpe) => for {
-        sp <- dev(subject, developLocals)
+        sp <- dev(subject, developLocals, bypassPurityChecks)
       } yield TypePredicate(sp, tpe)
       case _ => None
     }
     stepRes.flatMap {
       case res if res == formula => Some(res)
-      case res => dev(res, developLocals)
+      case res => dev(res, developLocals, bypassPurityChecks)
     } orElse {
       Option.when(formula.isInstanceOf[ValIdValue | VarIdValue]) {
         formula
@@ -110,9 +121,9 @@ final class ProxyStore {
     }
   }
 
-  private def devAll(ls: List[Formula], developLocals: Boolean): Option[List[Formula]] = {
+  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean): Option[List[Formula]] = {
     ls.foldRight(Option(List.empty[Formula])) {
-      case (curr, Some(acc)) => dev(curr, developLocals).map(_ :: acc)
+      case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks).map(_ :: acc)
       case _ => None
     }
   }
