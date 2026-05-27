@@ -355,7 +355,7 @@ final class Typer(
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
         }
 
-      case mkClosure@MkClosure(assigned, params, body, isPure) =>
+      case mkClosure@MkClosure(assigned, params, body, knownPureBeforeTyping) =>
         val id = NormalFunOrVarId(assigned match {
           case assigned: NamedIdValue => assigned.irDescr
           case assigned: IntermediateIdValue => assigned.toString
@@ -366,6 +366,8 @@ final class Typer(
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
         }
+        val isPure = knownPureBeforeTyping || typeHintsStore.hasPureClosureHintFor(assigned)
+        mkClosure.isPure = isPure
         currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
         executionEnvirOpt match {
           case Some(executionEnvir) =>
