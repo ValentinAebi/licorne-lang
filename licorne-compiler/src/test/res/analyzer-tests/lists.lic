@@ -166,9 +166,9 @@ object UseLists {
       return zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length(integers) == lists.Lists.length(strings) holds
    }
 
-   fn instanceTests(ls: List[I]) {
-      val filtered = filter(ls, fn (x) -> x is A && x.value() >= 0);
-      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with 0 <= it.value()]
+   fn instanceTests(ls: List[I], thres: Int) {
+      val filtered = filter(ls, fn (x) -> x is A && x.value() >= thres);
+      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()]
    }
 
 }

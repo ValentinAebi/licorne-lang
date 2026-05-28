@@ -229,11 +229,18 @@ object Types {
 
   final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val instantiationPosOpt: Option[Position]) extends Type {
     private val uid = typeVarUidGen.incrementAndGet()
-    private var actualTypeOpt = Option.empty[Type]
+    private var actualTypeOptBackingField = Option.empty[Type]
     private var lockedFlag = false
 
+    private def actualTypeOptAccessor: Option[Type] = actualTypeOptBackingField match {
+      case Some(tpe) =>
+        lock()
+        Some(tpe)
+      case None => None
+    }
+
     private def setActualType(tpe: Type): Unit = {
-      actualTypeOpt = Some(tpe match {
+      actualTypeOptBackingField = Some(tpe match {
         case IntRangeType(Some(lb), Some(ub)) if lb == ub => IntType
         case tpe => tpe
       })
@@ -267,7 +274,7 @@ object Types {
       lockedFlag = true
     }
 
-    def actualTypeIfResolved: Option[Type] = actualTypeOpt.map(goUpPath)
+    def actualTypeIfResolved: Option[Type] = actualTypeOptAccessor.map(goUpPath)
 
     def isResolved: Boolean = actualTypeIfResolved.isDefined
 
@@ -277,7 +284,7 @@ object Types {
       if isResolved then actualTypeIfResolved.get.toString else s"?$id"
 
     private def goUpPath(tpe: Type): Type = tpe match {
-      case tVar: TypeVariable => tVar.actualTypeOpt match {
+      case tVar: TypeVariable => tVar.actualTypeOptAccessor match {
         case Some(actualType) =>
           val repr = goUpPath(actualType)
           tVar.setActualType(repr)

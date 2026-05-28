@@ -21,7 +21,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   import globalValuesContext.nullVal
   import globalValuesContext.itValue
 
-  def simplify(tpe: Type): Type = tpe match {
+  def simplify(tpe: Type): Type = tpe.withTypeVarsExpanded match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(simplify), args)
