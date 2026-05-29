@@ -130,7 +130,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             }
             val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using loopsCollector)
-            val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, classSigScope, thisValue, computeThisType(noFunctionsSig), allFunctionsB)
+            val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((target, tpe) <- targetsToResolve) {
@@ -340,8 +340,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                              classDef: Asts.ClassDef,
                                              fields: Iterable[(FunOrVarId, Field)],
                                              functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
-                                             classSigScope: Scope,
-                                             thisValue: NamedIdValue,
+                                             globalScope: Scope,
                                              thisType: Type,
                                              allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
                                            ): Iterable[(FieldResolutionTarget, Type)] = {
@@ -352,7 +351,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case Some(funSig, funScope) =>
             er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
-            val syntheticFunSigScope = Scope.nestedInside(classSigScope, classDef)
+            val syntheticFunSigScope = Scope.nestedInside(globalScope, classDef)
+            val thisValue = syntheticFunSigScope.newParam(ThisId, classDef.getPosition)
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
               precondOpt = None, fieldType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, classDef)

@@ -870,6 +870,7 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
+    saveReceiverType(interfaceSig, fullTypeParamsCtx)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
@@ -886,6 +887,7 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
+    saveReceiverType(classSig, fullTypeParamsCtx)
     val fieldsInst = typeFieldsUsing(typeField(_, classSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
@@ -915,6 +917,7 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
+    saveReceiverType(datatypeSig, fullTypeParamsCtx)
     val directSupertypesInst = typeSupertypesAsDatatypes(datatypeSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
       DatatypeSignature(id, typeParamsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
@@ -928,11 +931,18 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
+    saveReceiverType(recordSig, fullTypeParamsCtx)
     val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
     val directSupertypesInst = typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
       RecordSignature(id, typeParamsInst, fieldsInst, directSupertypesInst, sigScope, declPosOpt)
     }
+  }
+
+  private def saveReceiverType(sig: TypeSignature, typeParamsCtx: TypeParamsContext): Unit = {
+    val thisVal = sig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
+    val tpe = sig.toType(Map.empty, Map.empty)
+    sig.sigScope.saveType(thisVal, tpe)(using typeParamsCtx)
   }
 
   private def typeFieldsUsing[F <: Field](indivTypingFunc: F => F)
