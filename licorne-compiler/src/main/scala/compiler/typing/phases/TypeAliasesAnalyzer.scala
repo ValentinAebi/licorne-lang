@@ -50,7 +50,7 @@ final class TypeAliasesAnalyzer(
       val globalScope = globalValsCtx.globalScope
       for ((objectId, objectSig) <- programOld.objects) {
         val objVal = globalValsCtx.resolveObject(objectId)
-        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, simplifier, resolutionCtx, proxyStore)
+        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
       }
       
       val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)

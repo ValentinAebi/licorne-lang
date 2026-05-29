@@ -2,6 +2,7 @@ package compiler.smt
 
 import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.{IntRangeType, Type}
+import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.solver.KSolverStatus
 import io.ksmt.sort.KSort
@@ -54,7 +55,7 @@ trait Solver {
 
   def assertInRange(formula: Formula, range: IntRangeType): Unit
   
-  def takeType(subject: Formula, tpe: Type)(using GlobalValuesContext): Unit
+  def takeType(subject: Formula, tpe: Type)(using DealiasingContext, GlobalValuesContext): Unit
 
   def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean
 

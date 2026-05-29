@@ -4,6 +4,7 @@ import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
+import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
@@ -181,10 +182,10 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
     }
   }
 
-  override def takeType(subject: Formula, tpe: Types.Type)(using globalValsCtx: GlobalValuesContext): Unit = {
+  override def takeType(subject: Formula, tpe: Types.Type)(using dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = {
     val itValue = globalValsCtx.itValue
     for (t <- tpe.breakdownIfIntersection) {
-      val predicate = t.withTypeVarsExpanded.asRefinedType.predicate
+      val predicate = dealiasingCtx.dealiasType(t).withTypeVarsExpanded.asRefinedType.predicate
       assert(predicate.substitute(itValue, subject))
     }
   }

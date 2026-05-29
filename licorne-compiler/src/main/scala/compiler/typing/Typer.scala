@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.identifiers.{Identifier, ItId, NormalFunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, Identifier, ItId, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
@@ -298,10 +298,14 @@ final class Typer(
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
         val ownerType = currScope.currentTypeOf(owner, saveSmartcastsInIR = true)
-        val fieldType = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
+        val fieldTypeRaw = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
+        val fieldTypeSubst = fieldResolTarget.getReceiverSigOpt match {
+          case Some(recSig) => fieldTypeRaw.substitute(Map.empty, Map(recSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get -> owner))
+          case None => fieldTypeRaw
+        }
         val rhsType = currScope.currentTypeOf(rhs, saveSmartcastsInIR = true)
-        tryToResolveTypeVars(fieldType, rhsType)
-        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldType, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
+        tryToResolveTypeVars(fieldTypeSubst, rhsType)
+        subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldTypeSubst, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
         val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
         if (isInitializationOfStableField) {
           val ow = proxyStore.developDeep(owner).getOrElse(owner)
@@ -762,17 +766,24 @@ final class Typer(
     }
   }
 
-  def typeField(field: Field, currScope: Scope, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Field = field match {
-    case ReassignableField(id, typeRaw) =>
-      val typeInst = instantiateType(typeRaw, Some(Invariant), currScope, posOpt)(using typeParamsCtx)
-      ReassignableField(id, typeInst)
-    case field: StableField => typeStableField(field, typeParamsCtx, currScope, posOpt)
+  def typeField(field: Field, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Field = {
+    val sigScope = owner.sigScope
+    field match {
+      case ReassignableField(id, typeRaw) =>
+        val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)(using typeParamsCtx)
+        val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
+        ReassignableField(id, typeInst.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal)(using owner)))
+      case field: StableField => typeStableField(field, owner, typeParamsCtx, posOpt)
+    }
   }
 
-  def typeStableField(field: StableField, typeParamsCtx: TypeParamsContext, currScope: Scope, posOpt: Option[Position]): StableField = {
+  def typeStableField(field: StableField, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): StableField = {
+    val sigScope = owner.sigScope
     val StableField(id, typeRaw, value, isPublishedAsMethod) = field
-    val typeInst = instantiateType(typeRaw, Some(Covariant), currScope, posOpt)(using typeParamsCtx)
-    StableField(id, typeInst, value, isPublishedAsMethod)
+    val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)(using typeParamsCtx)
+    sigScope.saveType(value, typeInst)(using typeParamsCtx)
+    val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
+    StableField(id, typeInst.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal)(using owner)), value, isPublishedAsMethod)
   }
 
   // TODO merge with typeFunTypeParam?
@@ -843,7 +854,7 @@ final class Typer(
     }
     val paramsInst = for ((paramId, (paramTypeRaw, paramVal)) <- paramsRaw) yield {
       val paramTypeInst = instantiateType(paramTypeRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
-      sigScope.saveType(paramVal, paramTypeInst)(using fullTypeParamsCtx, simplifier, resolutionCtx, proxyStore)
+      sigScope.saveType(paramVal, paramTypeInst)(using fullTypeParamsCtx, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
       (paramId, (paramTypeInst, paramVal))
     }
     val rhsInst = instantiateType(rhsRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
@@ -875,9 +886,7 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
-    val fieldsInst = for (id, fld) <- fieldsRaw yield {
-      id -> typeField(fld, sigScope, fullTypeParamsCtx, declPosOpt)
-    }
+    val fieldsInst = typeFieldsUsing(typeField(_, classSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
@@ -919,13 +928,22 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
-    val fieldsInst = for (id, fld) <- fieldsRaw yield {
-      id -> typeStableField(fld, fullTypeParamsCtx, sigScope, declPosOpt)
-    }
+    val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
     val directSupertypesInst = typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
       RecordSignature(id, typeParamsInst, fieldsInst, directSupertypesInst, sigScope, declPosOpt)
     }
+  }
+
+  private def typeFieldsUsing[F <: Field](indivTypingFunc: F => F)
+                                         (fieldsRaw: SeqMap[FunOrVarId, F]) = {
+    val fieldsInstB = SeqMap.newBuilder[FunOrVarId, F]
+    for ((id, rawField) <- fieldsRaw) {
+      val typedField = indivTypingFunc(rawField)
+      fieldsInstB.addOne(id -> typedField)
+    }
+    val fieldsInst = fieldsInstB.result()
+    fieldsInst
   }
 
   private def checkingAllTypeVarsResolved[S <: DeclSignature](sig: S): S = {
@@ -1101,7 +1119,6 @@ final class Typer(
             }
             val argsSubst = checkArgumentsList(paramTypesInclThis, (Some(receiver), receiverType) :: typedCallArgs,
               s"call to ${invkTarget.funId}", scope, posOpt, argsIncludeReceiver = true)
-            addToSubstIfValid(funSig.receiverVal, Some(receiver), argsSubst)
             funSig.precondOpt.foreach { precondRaw =>
               val precondSubst = precondRaw.substitute(argsSubst)
               if (!solver.canProve(precondSubst)) {
@@ -1294,12 +1311,8 @@ final class Typer(
 
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {
     argOpt.foreach { rawArg =>
-      proxyStore.developNearest(rawArg)
-        .orElse(Some(rawArg).filter(_.idValsDependencies.forall(_.isInstanceOf[NamedIdValue])))
-        .filter(_.isPure)
-        .foreach { repl =>
-          subst.put(paramVal, repl)
-        }
+      val repl = proxyStore.developNearest(rawArg).getOrElse(rawArg)
+      subst.put(paramVal, repl)
     }
   }
 

@@ -13,7 +13,7 @@ import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.smt.{Simplifier, Solver}
-import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.EGraph
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
@@ -258,7 +258,7 @@ object SSA {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
+    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
         if (types.contains(idVal)) {
@@ -399,12 +399,8 @@ object SSA {
       HeapVarIdValue(srcId, this, _, posOpt)
     }
 
-    def newIntermediate(): IntermediateIdValue = newValue {
-      IntermediateIdValue(this, _, None)
-    }
-
     def newIntermediate(nameHint: String): IntermediateIdValue = newValue {
-      IntermediateIdValue(this, _, Some(nameHint))
+      IntermediateIdValue(this, _, nameHint)
     }
 
     def newUninterpretedConst(name: String): UninterpretedConstIdValue = newValue {

@@ -39,6 +39,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   override def apply(input: (List[Asts.Source], PackagesInfo)): Program = {
     val (sources, packagesInfo) = input
 
+    given List[Source] = sources
+
     given PackagesInfo = packagesInfo
 
     val programBuilder = Program.Builder(er, proxyStore)
@@ -219,7 +221,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree])
-                              (using packagesInfo: PackagesInfo): ImportsContext = {
+                              (using allSources: List[Source], packagesInfo: PackagesInfo): ImportsContext = {
     val localFunctions = currEncapsulatedTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
     val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
@@ -252,12 +254,19 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       }
     }
 
-    // import types from this file
-    val currPkgPrefix = source.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
-    for (df <- source.defs) {
-      // prioritize explicit imports
-      if (!typeImports.contains(df.name)) {
-        typeImports.put(df.name, TypeIdentifier(currPkgPrefix, df.name))
+    source.pkgDeclOpt.foreach { currPkgDecl =>
+      // import types from this package
+      val currPkgPrefix = source.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
+      for {
+        // TODO can be optimized (by not traversing the whole list of files)
+        s <- allSources
+        if s.pkgDeclOpt.contains(currPkgDecl)
+        df <- s.defs
+      } {
+        // prioritize explicit imports
+        if (!typeImports.contains(df.name)) {
+          typeImports.put(df.name, TypeIdentifier(currPkgPrefix, df.name))
+        }
       }
     }
 
@@ -562,10 +571,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
-        val ownerVal = currScope.newIntermediate()
+        val ownerVal = currScope.newIntermediate(s"$fieldId-owner")
         generateSSAExpr(ownerVal, ownerTree, currScope)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
-        val rhsVal = currScope.newIntermediate()
+        val rhsVal = currScope.newIntermediate(fieldId.stringId)
         generateSSAExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget(fieldId), rhsVal), assig)
@@ -712,7 +721,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
       val argsValsB = List.newBuilder[IdValue]
       for (argTree <- argsTrees) {
-        val argVal = currScope.newIntermediate()
+        val argVal = currScope.newIntermediate("arg")
         argsValsB.addOne(argVal)
         generateSSAExpr(argVal, argTree, currScope)
       }
@@ -720,7 +729,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
 
     def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
-      val operandVal = currScope.newIntermediate()
+      val operandVal = currScope.newIntermediate("unaryop")
       generateSSAExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
       for {
@@ -732,9 +741,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       generateUnary(operandTree, mkInstr, Some(mkFormula))
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
-      var lhsVal = currScope.newIntermediate()
+      var lhsVal = currScope.newIntermediate("leftop")
       generateSSAExpr(lhsVal, lhs, currScope)
-      var rhsVal = currScope.newIntermediate()
+      var rhsVal = currScope.newIntermediate("rightop")
       generateSSAExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
@@ -796,7 +805,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
         Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
-        val receiverVal = currScope.newIntermediate()
+        val receiverVal = currScope.newIntermediate("receiver")
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
@@ -820,7 +829,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
         }
-        val calleeVal = currScope.newIntermediate()
+        val calleeVal = currScope.newIntermediate("callee")
         generateSSAExpr(calleeVal, calleeTree, currScope)
         val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
@@ -870,7 +879,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhs, operator, rhs) =>
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>
-        val lhsVal = currScope.newIntermediate()
+        val lhsVal = currScope.newIntermediate(fieldId.stringId)
         generateSSAExpr(lhsVal, lhsTree, currScope)
         val unresolvedField = FieldResolutionTarget(fieldId)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, unresolvedField), selectTree)
@@ -885,7 +894,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val initializationScope = Scope.nestedInside(currScope, recordOrClassInstTree, objInitializedHereOpt = Some(resultVal))
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
-          val rhsVal = currScope.newIntermediate()
+          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId)
           generateSSAExpr(rhsVal, initializerRhs, currScope)
           initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget(initializer.fieldName), rhsVal), initializer)
         }
@@ -920,7 +929,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
-        val inVal = currScope.newIntermediate()
+        val inVal = currScope.newIntermediate("converted-val")
         generateSSAExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
         None
@@ -928,7 +937,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
       case weakcast@Asts.Weakcast(castExpr) =>
-        val inVal = currScope.newIntermediate()
+        val inVal = currScope.newIntermediate("weak-cast-subject")
         generateSSAExpr(inVal, castExpr, currScope)
         currScope.saveInstr(WeakCast(inVal), weakcast)
         None

@@ -147,6 +147,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
       }
+    // FIXME improve simplification of nullable types
     case NullableType(nullatedType@(NothingType | NullType)) =>
       simplify(nullatedType)
     case NullableType(nullatedType) =>

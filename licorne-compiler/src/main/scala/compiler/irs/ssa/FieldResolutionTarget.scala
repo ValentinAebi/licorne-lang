@@ -27,6 +27,8 @@ final class FieldResolutionTarget(val fieldId: FunOrVarId) {
     receiverSigOpt = Some(receiverSig)
     instantiatedFieldTypeOpt = Some(instantiatedFieldType)
   }
+  
+  def getReceiverSigOpt: Option[UserInstantiableTypeSig] = receiverSigOpt
 
   def getReceiverSigUnsafe: UserInstantiableTypeSig = receiverSigOpt.get
 

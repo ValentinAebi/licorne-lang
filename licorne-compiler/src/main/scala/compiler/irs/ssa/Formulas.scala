@@ -3,7 +3,8 @@ package compiler.irs.ssa
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
-import compiler.lang.Keyword
+import compiler.lang.Field.StableField
+import compiler.lang.{Field, Keyword, UserInstantiableTypeSig}
 import compiler.lang.Types.Type
 import compiler.reporting.Position
 
@@ -71,8 +72,8 @@ object Formulas {
     override def toString: String = name
   }
 
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHintOpt: Option[String]) extends IdValue {
-    override def toString: String = s"${"$"}$uid@${definingScope.scopeUid}i"
+  final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHint: String) extends IdValue {
+    override def toString: String = s"$nameHint-snapshot@${"$"}$uid@${definingScope.scopeUid}i"
   }
 
   sealed trait ConstFormula extends Formula {
@@ -361,6 +362,38 @@ object Formulas {
       lhs.idValsDependencies ++ rhs.idValsDependencies
     case TypePredicate(subject, tpe) =>
       subject.idValsDependencies
+  }
+
+  extension (formula: Formula) def transformParamValsIntoThisSelect(thisVal: IdValue)(using owner: UserInstantiableTypeSig): Formula = formula match {
+    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if definingScope == thisVal.definingScope =>
+      val field = FieldResolutionTarget(id)
+      owner.stableFields.get(paramIdVal.id).foreach { fld =>
+        field.resolve(owner, fld.tpe)
+      }
+      Select(thisVal, field)
+    case value: IdValue => value
+    case cst: ConstFormula => cst
+    case Select(owner, field) => Select(owner.transformParamValsIntoThisSelect(thisVal), field)
+    case FunCall(receiver, func, typeArgs, args) => FunCall(
+      receiver.transformParamValsIntoThisSelect(thisVal),
+      func,
+      typeArgs.map(_.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal))),
+      args.map(_.transformParamValsIntoThisSelect(thisVal))
+    )
+    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.transformParamValsIntoThisSelect(thisVal), closureTypingTarget, args.map(_.transformParamValsIntoThisSelect(thisVal)))
+    case closure: PureClosureValue => closure
+    case Plus(lhs, rhs) => Plus(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case Neg(operand) => Neg(operand.transformParamValsIntoThisSelect(thisVal))
+    case Times(lhs, rhs) => Times(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case DivBy(lhs, rhs) => DivBy(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case Modulo(lhs, rhs) => Modulo(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case LogicalNot(operand) => LogicalNot(operand.transformParamValsIntoThisSelect(thisVal))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case Equality(lhs, rhs) => Equality(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoThisSelect(thisVal), tpe)
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =

@@ -35,21 +35,22 @@ final class TypeChecker(
 
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
-    val dealiasingCtx = DealiasingContext(program.typeAliases)
+    given dealiasingCtx: DealiasingContext = DealiasingContext(program.typeAliases)
+
     val resolCtx = ResolutionContext(program, er)
 
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      saveTypesOfGlobalConstants(program.globalValuesContext, resolCtx, proxyStore, solver, simplifier)
+      saveTypesOfGlobalConstants(resolCtx, proxyStore, solver, simplifier)
 
       for {
         ((ownerId, funId), func) <- program.functions
         funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
         if !funSig.isSynthetic
       } {
-        checkFunc(funSig, func, dealiasingCtx, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
+        checkFunc(funSig, func, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(
@@ -68,11 +69,10 @@ final class TypeChecker(
 
   // TODO check that user-provided assignments of type parameters match bounds
 
-  private def saveTypesOfGlobalConstants(globalValsCtx: GlobalValuesContext, resolCtx: ResolutionContext,
-                                         proxyStore: ProxyStore, solver: Solver, simplifier: Simplifier): Unit = {
+  private def saveTypesOfGlobalConstants(resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, simplifier: Simplifier)
+                                        (using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit = {
 
     // @formatter:off
-    given GlobalValuesContext = globalValsCtx
     given TypeParamsContext = TypeParamsContext.empty
     given ResolutionContext = resolCtx
     given ProxyStore = proxyStore
@@ -89,7 +89,6 @@ final class TypeChecker(
   private def checkFunc(
                          funSig: FunctionSignature,
                          func: SSA.Function,
-                         dealiasingCtx: DealiasingContext,
                          resolCtx: ResolutionContext,
                          subtypingCtx: SubtypingContext,
                          meetJoin: MeetJoinComputer,
@@ -97,7 +96,7 @@ final class TypeChecker(
                          solver: Solver,
                          simplifier: Simplifier,
                          absInt: AbstractInterpreter
-                       )(using globalValsCtx: GlobalValuesContext): Unit =
+                       )(using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit =
     func.bodyOpt.foreach { funcBody =>
 
       val closuresCollector = mutable.Queue.empty[ClosureInfo]

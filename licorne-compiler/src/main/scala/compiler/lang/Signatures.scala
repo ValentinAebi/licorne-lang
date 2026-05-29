@@ -3,7 +3,7 @@ package compiler.lang
 import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Field.StableField
-import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type, TypeVariable}
@@ -172,6 +172,16 @@ sealed trait ConcreteTypeSig extends RuntimeTypeSignature
 
 sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
   def fields: SeqMap[FunOrVarId, Field]
+
+  def stableFields: SeqMap[FunOrVarId, StableField] = {
+    val stableFieldsB = SeqMap.newBuilder[FunOrVarId, StableField]
+    fields.foreach {
+      case (id, fld: StableField) =>
+        stableFieldsB.addOne(id, fld)
+      case _ => ()
+    }
+    stableFieldsB.result()
+  }
 }
 
 sealed trait AbstractTypeSig extends RuntimeTypeSignature
@@ -247,7 +257,7 @@ final case class RecordSignature(
 
 enum Field {
   case ReassignableField(id: FunOrVarId, tpe: Type)
-  case StableField(id: FunOrVarId, tpe: Type, value: IdValue, isPublishedAsMethod: Boolean)
+  case StableField(id: FunOrVarId, tpe: Type, value: ParamIdValue, isPublishedAsMethod: Boolean)
 
   def id: FunOrVarId
 

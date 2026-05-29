@@ -19,7 +19,7 @@ object Main {
     val cmdLine = args.mkString(" ")
     try {
       val (action, pathStrs) = parseCmdLine(splitAtSpacesExceptBetweenBrackets(cmdLine))
-      if (pathStrs.exists(!_.endsWith(licorneExt))) {
+      if (pathStrs.exists(!_.endsWith("." + licorneExt))) {
         error(s"all sources must be .$licorneExt files")
       }
       val paths = extractAllPaths(pathStrs)
@@ -37,8 +37,8 @@ object Main {
         if (parent == null) {
           error("bad source path: " + pathStr)
         }
-        Files.list(parent)
-          .filter(_.toString.endsWith("." + licorneExt))
+        Files.walk(parent)
+          .filter(path => path.toFile.isFile && path.toString.endsWith("." + licorneExt))
           .toArray(new Array[Path](_))
           .toSeq
       }.getOrElse {
@@ -143,11 +143,11 @@ object Main {
   private def getOutDirBaseArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
   }
-  
+
   private def getRuntimeDirArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("runtime", argsMap, Some(".")))
   }
-  
+
   private def getIntHandlingModeArg(argsMap: MutArgsMap): IntHandlingMode[?] = {
     val smtIntArith = "arith"
     val smtIntBitvec = "bitvec"
@@ -170,7 +170,7 @@ object Main {
   private def getPrintAllParenthesesArg(argsMap: MutArgsMap): Boolean = {
     getUnvalArg("all-parenth", argsMap)
   }
-  
+
   private def getCounterExBoxArg(argsMap: MutArgsMap): Option[CounterexampleBox] = {
     Option.when(getUnvalArg("counter-ex", argsMap))(new CounterexampleBox)
   }
@@ -203,9 +203,9 @@ object Main {
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
-      if (mainClasses.isEmpty){
+      if (mainClasses.isEmpty) {
         error("no main class found")
-      } else if (mainClasses.size >= 2){
+      } else if (mainClasses.size >= 2) {
         error("found more than one main class")
       }
       val process = new Runner(error, outDirBasePath).runMain(mainClasses.head, inheritIO = true, programArgs)

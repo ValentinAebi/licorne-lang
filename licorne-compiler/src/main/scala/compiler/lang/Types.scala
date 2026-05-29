@@ -490,6 +490,18 @@ object Types {
     case tv: TypeVariable => SeqSet(tv)
   }
   
+  extension (tpe: Type) def withDependenciesTransformed(f: Formula => Formula): Type = tpe match {
+    case primitiveType: PrimitiveType => primitiveType
+    case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withDependenciesTransformed(f)), args.map(f))
+    case ClosureType(params, result, enforcedPure) => ClosureType(params.map(_.withDependenciesTransformed(f)), result.withDependenciesTransformed(f), enforcedPure)
+    case UnionType(types) => UnionType(types.map(_.withDependenciesTransformed(f)))
+    case IntersectionType(types) => IntersectionType(types.map(_.withDependenciesTransformed(f)))
+    case RefinedType(baseType, predicate) => RefinedType(baseType.withDependenciesTransformed(f), f(predicate))
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntRangeType(lowerBoundOpt.map(f), upperBoundOpt.map(f))
+    case NullableType(nullatedType) => NullableType(nullatedType.withDependenciesTransformed(f))
+    case tv: TypeVariable => tv
+  }
+  
   extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
     case IntersectionType(types) => types
     case tpe => SeqSet(tpe)
