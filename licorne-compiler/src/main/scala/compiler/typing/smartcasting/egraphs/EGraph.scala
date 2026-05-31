@@ -60,7 +60,9 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  private def merge(cl1: EClass, cl2: EClass)(using Simplifier): Unit = {
+  private def merge(cl1Arg: EClass, cl2Arg: EClass)(using Simplifier): Unit = {
+    val cl1 = canonicalize(cl1Arg)
+    val cl2 = canonicalize(cl2Arg)
     if (cl1 == cl2) {
       return
     }
