@@ -201,20 +201,25 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     }
 
     var cstOpt = Option.empty[Int]
+
+    def simplifyAndAddToSummary(f: Formula, coef: Int): Unit = f match {
+      case IntConst(0) => ()
+      case IntConst(1) =>
+        assert(cstOpt.isEmpty)
+        cstOpt = Some(coef)
+      case _ if coef == 0 => ()
+      case _ if coef == 1 =>
+        addToSummary(f)
+      case _ if coef == -1 =>
+        addToSummary(Neg(f))
+      case DivBy(lhs, IntConst(rhsVal)) if coef % rhsVal == 0 =>
+        simplifyAndAddToSummary(lhs, coef / rhsVal)
+      case _ =>
+        addToSummary(Times(IntConst(coef), f))
+    }
+
     for ((f, coef) <- linearize(formula)) {
-      f match {
-        case IntConst(0) => ()
-        case IntConst(1) =>
-          assert(cstOpt.isEmpty)
-          cstOpt = Some(coef)
-        case _ if coef == 0 => ()
-        case _ if coef == 1 =>
-          addToSummary(f)
-        case _ if coef == -1 =>
-          addToSummary(Neg(f))
-        case _ =>
-          addToSummary(Times(IntConst(coef), f))
-      }
+      simplifyAndAddToSummary(f, coef)
     }
     cstOpt.foreach { cst =>
       if (cst != 0 || summaryOpt.isEmpty) {
@@ -318,20 +323,17 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       })
     case Neg(operand) =>
       for ((f, coef) <- linearize(operand)) yield (f, -coef)
-    case Times(lhs, rhs) =>
+    case formula: Times => Map(linearizeTimes(formula))
+    case DivBy(lhs, rhs) =>
       val sLhs = simplifyInt(lhs)
       val sRhs = simplifyInt(rhs)
       (sLhs, sRhs) match {
-        case (IntConst(lc), IntConst(rc)) =>
-          Map(IntConst(lc * rc) -> 1)
-        case (IntConst(lc), sRhs) =>
-          Map(sRhs -> lc)
-        case (sLhs, IntConst(rc)) =>
-          Map(sLhs -> rc)
+        case (sLhs: Times, IntConst(rc)) =>
+          val (resF, resCoef) = linearizeTimes(sLhs)
+          Map(resF -> resCoef / rc)
         case _ =>
           Map(formula -> 1)
       }
-    case DivBy(lhs, rhs) => Map(formula -> 1)
     case Modulo(lhs, rhs) => Map(formula -> 1)
     case Equality(lhs, rhs) => Map.empty
     case LessOrEq(lhs, rhs) => Map.empty
@@ -340,6 +342,29 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case LogicalAnd(lhs, rhs) => Map.empty
     case LogicalOr(lhs, rhs) => Map.empty
     case TypePredicate(subject, tpe) => Map.empty
+  }
+
+  private def linearizeTimes(times: Times): (Formula, Int) = {
+    val Times(lhs, rhs) = times
+
+    val sLhs = simplifyInt(lhs)
+    val sRhs = simplifyInt(rhs)
+
+    def computeTerm(sLhs: Formula, sRhs: Formula): Option[(Formula, Int)] = (sLhs, sRhs) match {
+      case (IntConst(lc), IntConst(rc)) =>
+        Some(IntConst(lc * rc) -> 1)
+      case (IntConst(lc), sRhs: Times) =>
+        val (resF, resCoef) = linearizeTimes(sRhs)
+        Some(resF, lc * resCoef)
+      case (IntConst(lc), sRhs) =>
+        Some(sRhs -> lc)
+      case (sLhs, sRhs: IntConst) =>
+        computeTerm(sRhs, sLhs)
+      case _ =>
+        None
+    }
+
+    computeTerm(sLhs, sRhs).getOrElse(times -> 1)
   }
 
   private def evalNumericBinop(lhs: Formula, rhs: Formula, intBinop: (Int, Int) => Int, doubleBinop: (Double, Double) => Double, rhsCanBeZero: Boolean): Option[IntConst] =
