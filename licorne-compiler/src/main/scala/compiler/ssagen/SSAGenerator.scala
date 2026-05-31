@@ -571,7 +571,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
-        val ownerVal = currScope.newIntermediate(s"$fieldId-owner")
+        val ownerVal = currScope.newIntermediate(s"$fieldId'owner")
         generateSSAExpr(ownerVal, ownerTree, currScope)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val rhsVal = currScope.newIntermediate(fieldId.stringId)
@@ -929,7 +929,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
-        val inVal = currScope.newIntermediate("converted-val")
+        val inVal = currScope.newIntermediate("convertedval")
         generateSSAExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
         None
@@ -937,7 +937,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
       case weakcast@Asts.Weakcast(castExpr) =>
-        val inVal = currScope.newIntermediate("weak-cast-subject")
+        val inVal = currScope.newIntermediate("weakcast$subject")
         generateSSAExpr(inVal, castExpr, currScope)
         currScope.saveInstr(WeakCast(inVal), weakcast)
         None

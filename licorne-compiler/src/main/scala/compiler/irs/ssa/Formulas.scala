@@ -73,7 +73,7 @@ object Formulas {
   }
 
   final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHint: String) extends IdValue {
-    override def toString: String = s"$nameHint-snapshot@${"$"}$uid@${definingScope.scopeUid}i"
+    override def toString: String = s"$nameHint${"$"}snapshot${"$"}$uid@${definingScope.scopeUid}i"
   }
 
   sealed trait ConstFormula extends Formula {

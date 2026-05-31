@@ -2,6 +2,7 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
+import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.{Formula, IntConst, IntermediateIdValue}
 import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Types.*
@@ -233,27 +234,32 @@ final class SubtypingContext(
 
   def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
     counterExBoxOpt.foreach(_.reinitialize())
-    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superT, found $subT" ++ counterexampleMessage(), posOpt)
+    lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
+    lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
+    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superTDev, found $subTDev" ++ counterexampleMessage(), posOpt)
   }
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
                             (using TypeParamsContext, Typer, DealiasingContext): Unit = {
     counterExBoxOpt.foreach(_.reinitialize())
 
+    lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
+    lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
+
     def toStringAlongSubT(f: Formula): String = f match {
       case f: IntConst => f.toString
-      case f => s"$f : ${subT.withTypeVarsExpanded}"
+      case f => s"$f : $subTDev"
     }
 
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
         proxyStore.developNearest(subject) match {
           case Some(proxy) if proxy.isPure => toStringAlongSubT(proxy)
-          case _ => subT.withTypeVarsExpanded.toString
+          case _ => subTDev.toString
         }
       case subject => toStringAlongSubT(subject)
     }
-    enforceIsSubtype(subject, subT, superT, s"$posDescr: expected ${superT.withTypeVarsExpanded}, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
+    enforceIsSubtype(subject, subT, superT, s"$posDescr: expected $superTDev, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
@@ -265,6 +271,10 @@ final class SubtypingContext(
   def checkBounds(tParam: TypeParamInfo, tArg: Type): Boolean = {
     tParam.lowerBoundOpt.forall(lb => isSubtype(lb, tArg))
       && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
+  }
+
+  private def developTypeDeps(tpe: Type): Type = tpe.withDependenciesTransformed { dep =>
+    proxyStore.developNearest(dep).getOrElse(dep)
   }
 
   private def counterexampleMessage(): String = counterExBoxOpt.flatMap(_.describe) match {
