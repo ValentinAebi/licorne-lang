@@ -29,6 +29,9 @@ import scala.collection.mutable
 import scala.reflect.ClassTag
 
 
+// FIXME relax modularity regarding methods of the same class
+//  Maybe replace simple methods with their definitions
+//  We could also accept inference of return type for private functions, but that seems less interesting
 final class Typer(
                    executionEnvirOpt: Option[ExecutionEnvironment],
                    dealiasingCtx: DealiasingContext,
