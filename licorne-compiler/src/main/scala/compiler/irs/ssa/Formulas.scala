@@ -1,6 +1,6 @@
 package compiler.irs.ssa
 
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Field.StableField
@@ -365,7 +365,7 @@ object Formulas {
   }
 
   extension (formula: Formula) def transformParamValsIntoThisSelect(thisVal: IdValue)(using owner: UserInstantiableTypeSig): Formula = formula match {
-    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if definingScope == thisVal.definingScope =>
+    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId && definingScope == thisVal.definingScope =>
       val field = FieldResolutionTarget(id)
       owner.stableFields.get(paramIdVal.id).foreach { fld =>
         field.resolve(owner, fld.tpe)
