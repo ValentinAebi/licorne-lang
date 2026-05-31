@@ -84,8 +84,10 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         }
       }
 
-      if (knownNullFlag && !nullableFlag) {
+      if (nonNullableDealiasedTypes.contains(NothingType) || knownNullFlag && !nullableFlag) {
         return NothingType
+      } else if (knownNullFlag) {
+        return NullType
       }
 
       val filteredTypes =
@@ -95,7 +97,6 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
           }
         }
       // TODO if datatypes/structs, maybe compute intersection (?)
-      // TODO might fallback to AnyType in cases where Null could be better, maybe look into a fix for this
       val nonNullType = filteredTypes.size match {
         case 0 => AnyType
         case 1 => filteredTypes.head
@@ -148,7 +149,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         case (lb, ub) => IntRangeType(lb, ub)
       }
     // FIXME improve simplification of nullable types
-    case NullableType(nullatedType@(NothingType | NullType)) =>
+    case NullableType(nullatedType) if subtypingCtx.isSubtype(NullType, nullatedType) =>
       simplify(nullatedType)
     case NullableType(nullatedType) =>
       NullableType(simplify(nullatedType))
