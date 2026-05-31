@@ -213,7 +213,7 @@ object Types {
     override def formulaDependencies: List[Formula] = nullatedType.formulaDependencies
 
     override def toString: String = nullatedType match {
-      case nullatedType: RefinedType => s"($nullatedType)?"
+      case nullatedType: (RefinedType | UnionType | IntersectionType) => s"($nullatedType)?"
       case nullatedType => s"$nullatedType?"
     }
   }
