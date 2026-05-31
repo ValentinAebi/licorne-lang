@@ -163,7 +163,7 @@ object Formulas {
   final case class Times(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
       val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
+      val rhsStr = parenthIf[Plus | Neg | DivBy](rhs)
       s"$lhsStr * $rhsStr"
     }
   }
@@ -171,7 +171,7 @@ object Formulas {
   final case class DivBy(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
       val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
+      val rhsStr = parenthIf[Plus | Neg | Times | DivBy](rhs)
       s"$lhsStr / $rhsStr"
     }
   }
@@ -179,7 +179,7 @@ object Formulas {
   final case class Modulo(lhs: Formula, rhs: Formula) extends Formula {
     override def toString: String = {
       val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIfNot[IdValue | ConstFormula](rhs)
+      val rhsStr = parenthIf[Plus | Neg | Times | DivBy](rhs)
       s"$lhsStr % $rhsStr"
     }
   }
