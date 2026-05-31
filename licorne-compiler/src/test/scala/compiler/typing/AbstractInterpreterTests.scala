@@ -34,6 +34,7 @@ class AbstractInterpreterTests {
   private val b: IdValue = abScope.newVal(NormalFunOrVarId("b"), None)
 
   private val `[0,10]` = IntRangeType(0, 10)
+  private val `[0/a,10]` = IntRangeType(0 / a, 10)
   private val `[-10,0]` = IntRangeType(-10, 0)
   private val `[-5,5]` = IntRangeType(-5, 5)
   private val `[-5,15]` = IntRangeType(-5, 15)
@@ -94,7 +95,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(nonPositive), typeDivType(nonNegative, strictlyNegative))
     assertEquals(Some(nonPositive), typeDivType(nonPositive, strictlyPositive))
     assertEquals(Some(IntType), typeDivType(nonNegative, nonNegative))
-    assertEquals(Some(nonNegative), typeDivType(`[0,10]`, `[1,a]`))
+    assertEquals(Some(`[0/a,10]`), typeDivType(`[0,10]`, `[1,a]`))
     assertEquals(Some(IntType), typeDivType(`[-5,5]`, `[1,a]`))
   }
 

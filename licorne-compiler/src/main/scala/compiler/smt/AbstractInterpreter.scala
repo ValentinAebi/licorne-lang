@@ -1,14 +1,12 @@
 package compiler.smt
 
-import compiler.irs.ssa.SSA.Scope
-import compiler.irs.ssa.Formulas.*
-import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
-import compiler.lang.Types.{IntRangeType, Type, asRefinedType, primTypeFor}
-import compiler.lang.Variance.Invariant
-import compiler.lang.Types
-import compiler.smt.{Simplifier, Solver}
-import AbstractInterpreter.someZero
 import compiler.irs.ssa.Formulas
+import compiler.irs.ssa.Formulas.*
+import compiler.lang.Types
+import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
+import compiler.lang.Types.{IntRangeType, Type, asRefinedType}
+import compiler.smt.AbstractInterpreter.someZero
+import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -91,20 +89,31 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
   /**
    * {{{
    *   [a,b] / [c,d] defined by:
-   *    -  [a,b] >= 0, [c,d] > 0  or  [a,b] <= 0, [c,d] < 0  -->  [0,∞]
-   *    -  [a,b] >= 0, [c,d] < 0  or  [a,b] <= 0, [c,d] > 0  -->  [-∞,0]
+   *    -  [a,b] >= 0, [c,d] > 0  -->  [a/d,b/c]
+   *    -  [a,b] <= 0, [c,d] < 0  -->  [b/c,a/d]
+   *    -  [a,b] >= 0, [c,d] < 0  -->  [b/d,a/c]
+   *    -  [a,b] <= 0, [c,d] > 0  -->  [a/c,b/d]
    * }}}
    */
   def typeDivType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
+
+      extension (f: Option[Formula]) def orZero: Option[Formula] = f.orElse(Some(IntConst(0)))
 
       lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
       lazy val `[c,d] > 0` = solver.canProveGtZero(c)
       lazy val `[a,b] <= 0` = solver.canProveLeZero(b)
       lazy val `[c,d] < 0` = solver.canProveLtZero(d)
 
-      if `[a,b] >= 0` && `[c,d] > 0` || `[a,b] <= 0` && `[c,d] < 0` then (someZero, None)
-      else if `[a,b] >= 0` && `[c,d] < 0` || `[a,b] <= 0` && `[c,d] > 0` then (None, someZero)
+      def aDivC = boundDivBound(a, c)
+      def aDivD = boundDivBound(a, d)
+      def bDivC = boundDivBound(b, c)
+      def bDivD = boundDivBound(b, d)
+
+      if `[a,b] >= 0` && `[c,d] > 0` then (aDivD.orZero, bDivC)
+      else if `[a,b] <= 0` && `[c,d] < 0` then (bDivC.orZero, aDivD)
+      else if `[a,b] >= 0` && `[c,d] < 0` then (bDivD, aDivC.orZero)
+      else if `[a,b] <= 0` && `[c,d] > 0` then (aDivC, bDivD.orZero)
       else (None, None)
   }
 
@@ -201,6 +210,12 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
       lf <- l
       rf <- r
     } yield Times(lf, rf)
+
+  private def boundDivBound(l: Option[Formula], r: Option[Formula]): Option[Formula] =
+    for {
+      lf <- l
+      rf <- r
+    } yield DivBy(lf, rf)
 
 }
 
