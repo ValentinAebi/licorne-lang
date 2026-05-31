@@ -1019,7 +1019,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
         case Asts.ThisRef() => generateFormula(VariableRef(ThisId), currScope)
         case Asts.ItRef() => generateFormula(VariableRef(ItId), currScope)
-        case Asts.ObjectRef(objectName) => Some(currScope.valuesCtx.resolveObject(objectName))
+        case Asts.ObjectRef(objectNameRaw) =>
+          val objectName = importsCtx.applyImports(objectNameRaw)
+          Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         // TODO non-prefixed calls (implicit this)?
         case Asts.Call(callee, typeArgTrees, args) =>

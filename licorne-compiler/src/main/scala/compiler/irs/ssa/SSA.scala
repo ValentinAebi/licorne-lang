@@ -286,7 +286,7 @@ object SSA {
       smartcastsEGraph.saveNonNull(f)
     }
 
-    def currentTypeOf(formula: Formula, saveSmartcastsInIR: Boolean)(using ProxyStore): Type = {
+    def getCurrentTypeOf(formula: Formula, saveSmartcastsInIR: Boolean)(using ProxyStore): Type = {
       val maybeNullableType = smartcastFor(formula, saveSmartcastsInIR)
         .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)

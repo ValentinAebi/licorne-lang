@@ -316,7 +316,7 @@ final class SSAPrinter(
   }
 
   private def maybeTyped(formula: Formula, scope: Scope): String =
-    if printTypes then s"$formula : ${scope.currentTypeOf(formula, saveSmartcastsInIR = false)}" else formula.toString
+    if printTypes then s"$formula : ${scope.getCurrentTypeOf(formula, saveSmartcastsInIR = false)}" else formula.toString
 
   private def maybePrintHintsFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
     val hints = typeHintsStore.getHints(idValue)
