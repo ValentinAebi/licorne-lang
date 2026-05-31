@@ -1003,34 +1003,45 @@ final class Typer(
         case _ => ()
       }
       solver.assert(assumption)
-      val developedAssumption = proxyStore.developDeep(assumption).getOrElse(assumption)
-      solver.assert(developedAssumption)
-      val smartcasts = developedAssumption match {
-        case LessOrEq(lhs, rhs) =>
-          leqToSmartcasts(lhs, rhs)
-        case LessThan(lhs, rhs) =>
-          ltToSmartcasts(lhs, rhs)
-        case developedAssumption =>
-          extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(simplifier.simplify)
-      }
+      val smartcasts =
+        smartcastsFromAssumption(assumption, scope)
+          ++ proxyStore.developNearest(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
+          ++ proxyStore.developDeep(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
       smartcasts.foreach { (subject, smartcastType) =>
         scope.saveSmartcast(subject, smartcastType)
-      }
-      val nullVal = scope.valuesCtx.globalCtx.nullVal
-      developedAssumption match {
-        case LogicalNot(Equality(lhs, rhs)) =>
-          if (lhs == nullVal) {
-            scope.saveNonNull(rhs)
-          } else if (rhs == nullVal) {
-            scope.saveNonNull(lhs)
-          }
-        case _ => ()
       }
     }
     if (solver.checkUnsat()) {
       scope.markHasExited()
       scope.insertInstrDuringTraversal(Unreachable())
     }
+  }
+
+  private def smartcastsFromAssumption(assumption: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = {
+    solver.assert(assumption)
+    val smartcasts = assumption match {
+      case LessOrEq(lhs, rhs) =>
+        solver.takeType(lhs, scope.detectCurrentType(lhs))
+        solver.takeType(rhs, scope.detectCurrentType(rhs))
+        leqToSmartcasts(lhs, rhs)
+      case LessThan(lhs, rhs) =>
+        solver.takeType(lhs, scope.detectCurrentType(lhs))
+        solver.takeType(rhs, scope.detectCurrentType(rhs))
+        ltToSmartcasts(lhs, rhs)
+      case developedAssumption =>
+        extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(simplifier.simplify)
+    }
+    val nullVal = scope.valuesCtx.globalCtx.nullVal
+    assumption match {
+      case LogicalNot(Equality(lhs, rhs)) =>
+        if (lhs == nullVal) {
+          scope.saveNonNull(rhs)
+        } else if (rhs == nullVal) {
+          scope.saveNonNull(lhs)
+        }
+      case _ => ()
+    }
+    smartcasts
   }
 
   private def leqToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
@@ -1163,7 +1174,7 @@ final class Typer(
 
   extension (scope: Scope) private def detectCurrentType(formula: Formula): Type =
     doComputeCurrentType(scope, formula, None, saveSmartcastsInIR = false)
-  
+
   private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean): Type = {
     val tpe = scope.getCurrentTypeOf(formula, saveSmartcastsInIR)
     posOptIfShouldReport.foreach { posOpt =>
