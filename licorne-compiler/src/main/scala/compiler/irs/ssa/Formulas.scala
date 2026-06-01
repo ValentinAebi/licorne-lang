@@ -295,13 +295,13 @@ object Formulas {
     case Times(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case DivBy(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Modulo(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
-    case LogicalAnd(lhs, rhs) => false
-    case LogicalNot(operand) => false
-    case LogicalOr(lhs, rhs) => false
-    case Equality(lhs, rhs) => false
-    case LessOrEq(lhs, rhs) => false
-    case LessThan(lhs, rhs) => false
-    case TypePredicate(subject, tpe) => false
+    case LogicalAnd(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case LogicalNot(operand) => typeCanMention(operand)
+    case LogicalOr(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case Equality(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case LessOrEq(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case LessThan(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case TypePredicate(subject, tpe) => typeCanMention(subject)
   }
 
   extension (formula: Formula) def isPure: Boolean = formula match {

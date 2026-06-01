@@ -506,6 +506,12 @@ object Types {
     case IntersectionType(types) => types
     case tpe => SeqSet(tpe)
   }
+  
+  extension (tpe: Type) def refinedWith(newPredicate: Formula)(using GlobalValuesContext): RefinedType = {
+    val RefinedType(baseType, predicate) = tpe.asRefinedType
+    val mergedPredicate = if predicate == BoolConst(true) then newPredicate else LogicalAnd(predicate, newPredicate)
+    RefinedType(baseType, newPredicate)
+  }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None

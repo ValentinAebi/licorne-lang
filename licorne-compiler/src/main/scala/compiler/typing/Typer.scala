@@ -323,6 +323,15 @@ final class Typer(
                 invkTarget.resolve(receiverSig, funSig, fld.tpe)
                 val accessorCall = FunCall(ow, invkTarget, List.empty, List.empty)
                 saveEquality(select, accessorCall, persist = true)
+                ow match {
+                  case ow: IdValue =>
+                    proxyStore.developDeep(rhs).foreach { devRhs =>
+                      val additPredicate = Equality(accessorCall.substitute(ow, itValue), devRhs)
+                      currScope.saveType(ow, currScope.detectCurrentType(ow).refinedWith(additPredicate), allowOverwrite = true)
+                      currScope.saveType(owner, currScope.detectCurrentType(owner).refinedWith(additPredicate), allowOverwrite = true)
+                    }
+                  case _ => ()
+                }
               }
             case _ => ()
           }

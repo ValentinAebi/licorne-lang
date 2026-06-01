@@ -258,15 +258,15 @@ object SSA {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
+    def saveType(idVal: IdValue, tpe: Type, allowOverwrite: Boolean = false)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
-        if (types.contains(idVal)) {
+        if (!allowOverwrite && types.contains(idVal)) {
           throw IllegalStateException(s"$idVal has already been assigned a type")
         }
         types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
-        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore))(using getLocalValuesContextUnsafe.globalCtx))
+        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore))(using getLocalValuesContextUnsafe.globalCtx), allowOverwrite)
       } else {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
