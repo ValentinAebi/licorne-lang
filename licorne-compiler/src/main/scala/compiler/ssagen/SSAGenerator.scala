@@ -953,7 +953,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
           val paramVal = closureParamsScope.newParam(id, posOpt)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, closureParamsScope))
-          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, closureDefTree.getPosition)(closureParamsScope.valuesCtx.globalCtx.saveTypeVariable))
+          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, typeParamsCtx, closureDefTree.getPosition)(closureParamsScope.valuesCtx.globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)
           closureParamsScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, closureParamsScope, ReassigPermission.Val, givenTypeOpt)
         }

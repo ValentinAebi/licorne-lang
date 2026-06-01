@@ -22,7 +22,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    *   [a,b] + [c,d]  ==  [a+b,c+d]
    * }}}
    */
-  def typePlusType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typePlusType(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) => (boundPlusBound(a, c), boundPlusBound(b, d))
   }
 
@@ -31,7 +31,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    *   [a,b] - [c,d]  ==  [a-d,b-c]
    * }}}
    */
-  def typeMinusType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typeMinusType(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) => (boundMinusBound(a, d), boundMinusBound(b, c))
   }
 
@@ -49,7 +49,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    * where *** stands for [min{a*d,b*c},max{a*c,b*d}]
    * }}}
    */
-  def typeTimesType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typeTimesType(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
       lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
       lazy val `[a,b] <= 0` = solver.canProveLeZero(b)
@@ -95,7 +95,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    *    -  [a,b] <= 0, [c,d] > 0  -->  [a/c,b/d]
    * }}}
    */
-  def typeDivType(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typeDivType(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
 
       extension (f: Option[Formula]) def orZero: Option[Formula] = f.orElse(Some(IntConst(0)))
@@ -126,7 +126,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    *    -  [a,b] <= 0, [c,d] < 0  -->  [c+1,0]
    * }}}
    */
-  def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type): Option[Type] = typeArithBinopType(l, r) {
+  def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
     case ((a, b), (c, d)) =>
       import compiler.irs.ssa.FormulasDsl.*
 
@@ -142,7 +142,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
       else (None, None)
   }
 
-  def unaryNegType(operand: Type): Option[Type] = simplifier.simplify(operand) match {
+  def unaryNegType(operand: Type)(using TypeParamsContext): Option[Type] = simplifier.simplify(operand) match {
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val rawRange = IntRangeType(upperBoundOpt.map(Neg(_)), lowerBoundOpt.map(Neg(_)))
       Some(simplifier.simplify(rawRange))
@@ -181,7 +181,8 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
   }
 
   private def typeArithBinopType(l: Type, r: Type)
-                                (mergeRanges: ((Option[Formula], Option[Formula]), (Option[Formula], Option[Formula])) => (Option[Formula], Option[Formula])): Option[Type] = (simplifier.simplify(l), simplifier.simplify(r)) match {
+                                (mergeRanges: ((Option[Formula], Option[Formula]), (Option[Formula], Option[Formula])) => (Option[Formula], Option[Formula]))
+                                (using TypeParamsContext): Option[Type] = (simplifier.simplify(l), simplifier.simplify(r)) match {
     case (IntRangeType(llb, lub), IntRangeType(rlb, rub)) =>
       val (lb, ub) = mergeRanges((llb, lub), (rlb, rub))
       Some(simplifier.simplify(IntRangeType(lb, ub)))

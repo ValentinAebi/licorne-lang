@@ -93,7 +93,7 @@ final class SubtypingContext(
   }
 
   // TODO memoize? But we need to take smartcasts into account
-  def isSubtype(subT: Type, superT: Type): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
+  def isSubtype(subT: Type, superT: Type)(using TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (tv: TypeVariable, superT) =>
@@ -187,40 +187,50 @@ final class SubtypingContext(
     }
   }
 
-  def isSubtype(subT: NamedType, superT: NamedType): Boolean = {
+  def isSubtype(subT: NamedType, superT: NamedType)(using typeParamsCtx: TypeParamsContext): Boolean = {
     val NamedType(subTId, subTTypeArgs, subTArgs) = subT
     val NamedType(superTId, superTTypeArgs, superTArgs) = superT
-    subTArgs.isEmpty && superTArgs.isEmpty && (subToSuperSubst(subTId, superTId) match {
-      case None => false
-      case Some(subToSuperParamsSubst) =>
-        (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subTId), resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId)) match {
-          case (Some(subTSig), Some(superTSig)) =>
-            val subTSubst = subTSig.typeParams.zip(subTTypeArgs).toMap
-            val subst = Map.from(
-              for ((paramInSuper, argInSuper) <- subToSuperParamsSubst) yield
-                paramInSuper -> (argInSuper match {
-                  case NamedType(argInSuperId, Nil, Nil) =>
-                    subTSubst.find((tParam, tArg) => tParam.tid == argInSuperId) match {
-                      case Some(_, tArg) => tArg
-                      case None => argInSuper
-                    }
-                  case _ => argInSuper
-                })
-            )
-            superTTypeArgs.zip(superTSig.typeParams).forall { (expTypeArg, tParam) =>
-              val actTypeArg = subst.apply(tParam.tid)
-              tParam.variance match {
-                case Invariant => isSubtype(actTypeArg, expTypeArg) && isSubtype(expTypeArg, actTypeArg)
-                case Covariant => isSubtype(actTypeArg, expTypeArg)
-                case Contravariant => isSubtype(expTypeArg, actTypeArg)
-              }
+    subTArgs.isEmpty && superTArgs.isEmpty && {
+      (for {
+        subTInfo <- typeParamsCtx.resolve(subTId)
+        subTUb <- subTInfo.upperBoundOpt
+      } yield isSubtype(subTUb, superT)).getOrElse(false) ||
+        (for {
+          superTInfo <- typeParamsCtx.resolve(superTId)
+          superTLb <- superTInfo.lowerBoundOpt
+        } yield isSubtype(subT, superTLb)).getOrElse(false) ||
+        (subToSuperSubst(subTId, superTId) match {
+          case None => false
+          case Some(subToSuperParamsSubst) =>
+            (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subTId), resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](superTId)) match {
+              case (Some(subTSig), Some(superTSig)) =>
+                val subTSubst = subTSig.typeParams.zip(subTTypeArgs).toMap
+                val subst = Map.from(
+                  for ((paramInSuper, argInSuper) <- subToSuperParamsSubst) yield
+                    paramInSuper -> (argInSuper match {
+                      case NamedType(argInSuperId, Nil, Nil) =>
+                        subTSubst.find((tParam, tArg) => tParam.tid == argInSuperId) match {
+                          case Some(_, tArg) => tArg
+                          case None => argInSuper
+                        }
+                      case _ => argInSuper
+                    })
+                )
+                superTTypeArgs.zip(superTSig.typeParams).forall { (expTypeArg, tParam) =>
+                  val actTypeArg = subst.apply(tParam.tid)
+                  tParam.variance match {
+                    case Invariant => isSubtype(actTypeArg, expTypeArg) && isSubtype(expTypeArg, actTypeArg)
+                    case Covariant => isSubtype(actTypeArg, expTypeArg)
+                    case Contravariant => isSubtype(expTypeArg, actTypeArg)
+                  }
+                }
+              case _ => false
             }
-          case _ => false
-        }
-    })
+        })
+    }
   }
 
-  def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position]): Unit = {
+  def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     if (!isSubtype(subT, superT)) {
       er.reportError(msg, posOpt)
     }
@@ -232,7 +242,7 @@ final class SubtypingContext(
     }
   }
 
-  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position]): Unit = {
+  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     counterExBoxOpt.foreach(_.reinitialize())
     lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
     lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
@@ -268,7 +278,7 @@ final class SubtypingContext(
     case None => enforceIsSubtypeExpAct(subT, superT, posDescr, posOpt)
   }
 
-  def checkBounds(tParam: TypeParamInfo, tArg: Type): Boolean = {
+  def checkBounds(tParam: TypeParamInfo, tArg: Type)(using TypeParamsContext): Boolean = {
     tParam.lowerBoundOpt.forall(lb => isSubtype(lb, tArg))
       && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
   }

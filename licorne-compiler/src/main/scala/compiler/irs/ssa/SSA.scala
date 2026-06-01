@@ -243,8 +243,8 @@ object SSA {
 
     def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
-    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using Simplifier): Unit = {
-      smartcastsEGraph.merge(f1, f2)(using proxyStore)
+    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit = {
+      smartcastsEGraph.merge(f1, f2)(using typeParamsCtx, proxyStore)
       if (persist) {
         outScopeOpt.foreach { outScope =>
           outScope.eMerge(f1, f2)
@@ -278,7 +278,7 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type)(using simplifier: Simplifier): Unit = {
+    def saveSmartcast(f: Formula, smartcastType: Type)(using TypeParamsContext, Simplifier): Unit = {
       smartcastsEGraph.saveSmartcast(f, smartcastType)
     }
 

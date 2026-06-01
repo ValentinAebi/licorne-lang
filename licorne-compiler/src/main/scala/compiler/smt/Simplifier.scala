@@ -5,7 +5,7 @@ import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.smt.Solver
-import compiler.typing.contexts.{DealiasingContext, SubtypingContext}
+import compiler.typing.contexts.{DealiasingContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -21,7 +21,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   import globalValuesContext.nullVal
   import globalValuesContext.itValue
 
-  def simplify(tpe: Type): Type = tpe.withTypeVarsExpanded match {
+  def simplify(tpe: Type)(using TypeParamsContext): Type = tpe.withTypeVarsExpanded match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
       NamedType(typeName, typeArgs.map(simplify), args)

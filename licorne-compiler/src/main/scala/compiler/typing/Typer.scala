@@ -367,7 +367,7 @@ final class Typer(
           case assigned: NamedIdValue => assigned.irDescr
           case assigned: IntermediateIdValue => assigned.toString
         })
-        val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, body.getPosition)
+        val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, typeParamsCtx, body.getPosition)
         val paramTypesB = List.newBuilder[Type]
         for ((paramVal, paramType) <- params) {
           body.saveType(paramVal, paramType)
@@ -467,7 +467,7 @@ final class Typer(
     else simplifier.simplify(IntersectionType(SeqSet(regularType +: appliedHints)))
   }
 
-  private def tryToResolveTypeVarsUsingHints(value: IdValue, tpe: Type): Unit = {
+  private def tryToResolveTypeVarsUsingHints(value: IdValue, tpe: Type)(using TypeParamsContext): Unit = {
     for (hint <- typeHintsStore.getHints(value)) {
       tryToResolveTypeVars(hint, tpe)(using tvResolMode = TypeVarsResolMode.ParamsAndArgs)
     }
@@ -652,7 +652,7 @@ final class Typer(
     BoolType
   }
 
-  private def forceRange(tpe: Type): Type = simplifier.simplify(tpe) match {
+  private def forceRange(tpe: Type)(using TypeParamsContext): Type = simplifier.simplify(tpe) match {
     case RefinedType(baseType, predicate) =>
       forceRange(baseType)
     case intersection@IntersectionType(types) =>
@@ -840,7 +840,7 @@ final class Typer(
     }
     precondOpt.foreach { precond =>
       val precondType = typeFormula(precond, sigScope, declPosOpt)(using fullTypeParamsCtx)
-      if (!subtypingCtx.isSubtype(precondType, BoolType)) {
+      if (!subtypingCtx.isSubtype(precondType, BoolType)(using fullTypeParamsCtx)) {
         er.reportError(s"precondition must have type $BoolType", declPosOpt)
       }
       if (!precond.isPure) {
@@ -1044,7 +1044,7 @@ final class Typer(
     smartcasts
   }
 
-  private def leqToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
+  private def leqToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {
     val directlyInferredSmartcastOpt =
       if (lhs.typeCanMention(rhs)) {
         Some(lhs -> IntRangeType.ofUpperBound(rhs))
@@ -1078,7 +1078,7 @@ final class Typer(
     directlyInferredSmartcastOpt.toList ++ linSmartcastOpt
   }
 
-  private def ltToSmartcasts(lhs: Formula, rhs: Formula): List[(Formula, Type)] = {
+  private def ltToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {
     import compiler.irs.ssa.FormulasDsl.*
     leqToSmartcasts(lhs + 1, rhs)
   }
@@ -1259,7 +1259,7 @@ final class Typer(
 
   private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, scope: Scope,
                                posOpt: Option[Position], ctxDescrForReportingOpt: Option[String])
-                              (using TypeParamsContext): Map[TypeIdentifier, Type] = {
+                              (using typeParamsCtx: TypeParamsContext): Map[TypeIdentifier, Type] = {
     val substBuilder = Map.newBuilder[TypeIdentifier, Type]
     for ((tParam, tArgRaw) <- typeParams.zip(typeArgs)) {
       val tArgInst = instantiateType(tArgRaw, tParam.varianceOpt, scope, posOpt)
@@ -1269,7 +1269,7 @@ final class Typer(
       substBuilder.addOne(tParam.tid -> tArgInst)
     }
     for (tp <- typeParams.drop(typeArgs.size)) {
-      substBuilder.addOne(tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, posOpt))
+      substBuilder.addOne(tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, posOpt))
     }
     if (typeArgs.size > typeParams.size) {
       ctxDescrForReportingOpt.foreach { ctxDescr =>
@@ -1281,7 +1281,7 @@ final class Typer(
     substBuilder.result()
   }
 
-  def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier): Unit = {
+  def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier)(using TypeParamsContext): Unit = {
     upperBoundOpt.foreach { upperBound =>
       subtypingCtx.enforceIsSubtype(tpe, upperBound, s"type variable $typeVarId has been resolved to type $tpe, which violates its upper bound $upperBound", posOpt)
     }
@@ -1369,7 +1369,7 @@ final class Typer(
     case ParamsOnly, ParamsAndArgs
   }
 
-  private def tryToResolveTypeVars(paramType: Type, argType: Type)(using tvResolMode: TypeVarsResolMode = TypeVarsResolMode.ParamsOnly): Unit = (dealiasingCtx.dealiasType(paramType).withTypeVarsExpanded, dealiasingCtx.dealiasType(argType).withTypeVarsExpanded) match {
+  private def tryToResolveTypeVars(paramType: Type, argType: Type)(using tvResolMode: TypeVarsResolMode = TypeVarsResolMode.ParamsOnly, typeParamsCtx: TypeParamsContext): Unit = (dealiasingCtx.dealiasType(paramType).withTypeVarsExpanded, dealiasingCtx.dealiasType(argType).withTypeVarsExpanded) match {
     case (paramType@NamedType(paramTypeName, paramTypeArgs, _), argType@NamedType(argTypeName, argTypeArgs, _)) =>
       for {
         paramTSig <- resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](paramTypeName)

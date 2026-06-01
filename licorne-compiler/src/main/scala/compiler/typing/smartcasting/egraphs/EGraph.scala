@@ -5,6 +5,7 @@ import compiler.irs.ssa.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
 import compiler.smt.Simplifier
+import compiler.typing.contexts.TypeParamsContext
 import compiler.typing.smartcasting.egraphs.EGraph.closureInvkFunId
 import compiler.valproxies.ProxyStore
 
@@ -38,11 +39,11 @@ final class EGraph private[egraphs](startClId: Long) {
   def areEqual(f1: Formula, f2: Formula): Boolean =
     classOf(f1) eq classOf(f2)
 
-  def merge(f1: Formula, f2: Formula)(using ProxyStore, Simplifier): Unit = {
+  def merge(f1: Formula, f2: Formula)(using TypeParamsContext, ProxyStore, Simplifier): Unit = {
     doMerge(f1, f2, recurseOnProxies = true)
   }
 
-  private def doMerge(f1: Formula, f2: Formula, recurseOnProxies: Boolean)(using proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+  private def doMerge(f1: Formula, f2: Formula, recurseOnProxies: Boolean)(using typeParamsCtx: TypeParamsContext, proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
     val cl1 = classOf(f1)
     val cl2 = classOf(f2)
     merge(cl1, cl2)
@@ -52,7 +53,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  private def mergeWithProxy(f: Formula)(using proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+  private def mergeWithProxy(f: Formula)(using typeParamsCtx: TypeParamsContext, proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
     proxyStore.developNearest(f) match {
       case Some(proxy) if proxy != f && proxy.isPure =>
         doMerge(f, proxy, recurseOnProxies = false)
@@ -60,7 +61,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  private def merge(cl1Arg: EClass, cl2Arg: EClass)(using Simplifier): Unit = {
+  private def merge(cl1Arg: EClass, cl2Arg: EClass)(using TypeParamsContext, Simplifier): Unit = {
     val cl1 = canonicalize(cl1Arg)
     val cl2 = canonicalize(cl2Arg)
     if (cl1 == cl2) {
@@ -91,7 +92,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type)(using simplifier: Simplifier): Unit =
+  def saveSmartcast(formula: Formula, tpe: Type)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit =
     classOf(formula).saveSmartcast(tpe)
     
   def saveNonNull(formula: Formula): Unit = {

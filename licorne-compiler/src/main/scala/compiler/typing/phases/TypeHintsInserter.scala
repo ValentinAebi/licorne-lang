@@ -52,21 +52,22 @@ final class TypeHintsInserter(
           _ => throw AssertionError("fatal error during type hints insertion")
         )
         val resolCtx = ResolutionContext(program, fakeEr)
-        traverseScope(body, funSig)(using resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx)
+        val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
+        traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx)
       }
     }
     input
   }
 
   private def traverseScope(scope: Scope, currEnvir: ExecutionEnvironment)
-                           (using ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext, TypeVariablesContext): Unit = {
+                           (using TypeParamsContext, ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext, TypeVariablesContext): Unit = {
     for (instr <- scope.instructions.reverse) {
       traverseInstr(instr, currEnvir)
     }
   }
 
   private def traverseInstr(instr: Instr, currEnvir: ExecutionEnvironment)
-                           (using resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext,
+                           (using typeParamsCtx: TypeParamsContext, resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext,
                             subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, typeVarsCtx: TypeVariablesContext): Unit = instr match {
     case Loop(cond, condVal, body, variables) =>
       for {
@@ -118,7 +119,7 @@ final class TypeHintsInserter(
         val typeParams = funSig.typeParams
         val typesSubst = Map.from(
           if typeArgs.isEmpty
-          then typeParams.map(tp => tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, None, None, invkFunc.getPosition))
+          then typeParams.map(tp => tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, None, None, typeParamsCtx, invkFunc.getPosition))
           else typeParams.map(_.tid).zip(typeArgs)
         )
         val valsSubst = mutable.Map.empty[IdValue, Formula]
@@ -134,7 +135,7 @@ final class TypeHintsInserter(
     case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs) => ()
     case mkClosure@MkClosure(assigned, params, body, declaredPure) =>
-      val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, mkClosure.getPosition), BranchingInfo.empty, declaredPure, currEnvir, TypeParamsContext.empty /* TODO check this */)
+      val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, currEnvir, TypeParamsContext.empty /* TODO check this */)
       traverseScope(body, closureInfo)
     case MkHeapVar(assigned) => ()
     case TypeTest(assigned, testedValue, testedTypeId) => ()

@@ -12,8 +12,8 @@ import scala.collection.mutable
 final class TypeVariablesContext {
   private val allTypeVariables = mutable.ListBuffer.empty[TypeVariable]
   
-  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], instantiationPosOpt: Option[Position]): TypeVariable =
-    TypeVariable(id, upperBoundOpt, lowerBoundOpt, instantiationPosOpt)(saveTypeVariable)
+  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], typeParamsCtx: TypeParamsContext, instantiationPosOpt: Option[Position]): TypeVariable =
+    TypeVariable(id, upperBoundOpt, lowerBoundOpt, typeParamsCtx, instantiationPosOpt)(saveTypeVariable)
 
   def saveTypeVariable(tv: TypeVariable): Unit = {
     allTypeVariables.addOne(tv)
@@ -26,7 +26,7 @@ final class TypeVariablesContext {
         case Some(tpe) =>
           val ub = tv.upperBoundOpt.map(_.substitute(subst, Map.empty))
           val lb = tv.lowerBoundOpt.map(_.substitute(subst, Map.empty))
-          typer.checkTypeIsInBounds(tpe, ub, lb, tv.instantiationPosOpt, tv.id)
+          typer.checkTypeIsInBounds(tpe, ub, lb, tv.instantiationPosOpt, tv.id)(using tv.typeParamsCtx)
           tv.id match {
             case tid: TypeIdentifier =>
               subst.put(tid, tpe)

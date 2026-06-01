@@ -23,6 +23,8 @@ import scala.collection.mutable
 import scala.collection.immutable.SeqMap
 
 final class SimplificationTests {
+  
+  private given TypeParamsContext = TypeParamsContext.empty
 
   private val proxyStore = ProxyStore()
   private val dummyScope = Scope.root(GlobalValuesContext(proxyStore))

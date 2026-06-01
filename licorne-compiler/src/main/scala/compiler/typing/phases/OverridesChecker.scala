@@ -11,7 +11,7 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -74,8 +74,8 @@ final class OverridesChecker(
                 }
                 if (typeParamsLenMatch && paramsLenMatch) {
                   val funTypeParamsSubst = mutable.Map.empty[TypeIdentifier, Type]
-                  for ((superFunTp, subFunTp) <- superFunTypeParams zip subFunTypeParams) {
-
+                  val (_, fullTypeParamsCtx) = TypeParamsContext.processTypeParamsAccumulating(TypeParamsContext(subTSig.typeParams), superFunTypeParams zip subFunTypeParams) { (superFunTp, subFunTp) =>
+                    
                     def mkErrorMsg(upOrLow: String): String =
                       s"$upOrLow bound of type parameter ${subFunTp.tid} of function $funId in $subT does not conform to the signature of the overridden function in $superT"
 
@@ -96,6 +96,7 @@ final class OverridesChecker(
                       }
                     }
                     funTypeParamsSubst.addOne(superFunTp.tid -> NamedType(subFunTp.tid, List.empty, List.empty))
+                    subFunTp
                   }
                   val typeParamsSubst = typeTypeParamsSubst ++ funTypeParamsSubst
                   val valsSubst = mutable.Map.empty[IdValue, IdValue]
@@ -108,14 +109,14 @@ final class OverridesChecker(
                     if (subParamTypeErased != superParamTypeErased) {
                       er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funId: " +
                         s"erased type is $subParamTypeErased but should be $superParamTypeErased since the method overrides $funId in $superTSubst", subFunDeclPosOpt)
-                    } else if (!subtypingCtx.isSubtype(superParamTypeSubst, subParamType)) {
+                    } else if (!subtypingCtx.isSubtype(superParamTypeSubst, subParamType)(using fullTypeParamsCtx)) {
                       er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funId: " +
                         s"declared type $subParamType is not a supertype of the type $superParamTypeSubst of the corresponding parameter in the overridden method $funId in $superT", subFunDeclPosOpt)
                     }
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)
+                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)(using fullTypeParamsCtx)
                   val precondOverrideIsValid = subFunPrecondOpt.forall(subFunPrecond => superFunPrecondOpt.exists(superFunPrecond => solver.canProveImplication(superFunPrecond.substitute(valsSubst), subFunPrecond)))
                   if (!precondOverrideIsValid) {
                     er.reportError(s"$funId in $subT overrides $funId in $superT but I cannot prove that the precondition of the overridden method is respected", subFunDeclPosOpt)

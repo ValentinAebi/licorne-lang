@@ -7,7 +7,7 @@ import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullTyp
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.smt.{Simplifier, Solver}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -26,10 +26,10 @@ final class MeetJoinComputer(
 
   private[smt] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
 
-  def computeJoin(types: Type*): Type =
+  def computeJoin(types: Type*)(using TypeParamsContext): Type =
     computeJoin(Iterable.from(types))
 
-  def computeJoin(inputTypes: Iterable[Type]): Type = {
+  def computeJoin(inputTypes: Iterable[Type])(using TypeParamsContext): Type = {
 
     // first pass: flatten UnionTypes and NullableTypes and remove duplicates
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
@@ -135,7 +135,7 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeJoinOfNamed(types: Iterable[NamedType]): Option[NamedType] = {
+  def computeJoinOfNamed(types: Iterable[NamedType])(using TypeParamsContext): Option[NamedType] = {
     val typesToSubst = Map.from(for {
       tpe@NamedType(tid, typeArgs, args) <- types
     } yield {
@@ -187,7 +187,7 @@ final class MeetJoinComputer(
     None
   }
 
-  def computeJoinOfClosures(types: Iterable[ClosureType]): Option[ClosureType] = if types.isEmpty then None else {
+  def computeJoinOfClosures(types: Iterable[ClosureType])(using TypeParamsContext): Option[ClosureType] = if types.isEmpty then None else {
     val paramLengthsMatch = types.map(_.params.size).toSet.size == 1
     val paramTypesMeetsB = List.newBuilder[Type]
     val paramTypesIterators = types.map(_.params.iterator)
@@ -267,10 +267,10 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeMeet(types: Type*): Type =
+  def computeMeet(types: Type*)(using TypeParamsContext): Type =
     computeMeet(types.toList)
 
-  def computeMeet(types: Iterable[Type]): Type = {
+  def computeMeet(types: Iterable[Type])(using TypeParamsContext): Type = {
     val expandedTypes = SeqSet(types).map(_.withTypeVarsExpanded)
     if expandedTypes.size == 1 then expandedTypes.head
     else {
@@ -310,7 +310,7 @@ final class MeetJoinComputer(
     }
   }
 
-  def computeMeetOfRanges(types: Iterable[IntRangeType]): Type = {
+  def computeMeetOfRanges(types: Iterable[IntRangeType])(using TypeParamsContext): Type = {
 
     def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
       if bounds.isEmpty || bounds.forall(_.isEmpty) then None

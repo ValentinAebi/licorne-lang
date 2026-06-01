@@ -25,6 +25,8 @@ import scala.collection.immutable.SeqMap
 
 class AbstractInterpreterTests {
 
+  private given TypeParamsContext = TypeParamsContext.empty
+
   private given globalValuesCtx: GlobalValuesContext = GlobalValuesContext(proxyStore)
 
   private val proxyStore = ProxyStore()

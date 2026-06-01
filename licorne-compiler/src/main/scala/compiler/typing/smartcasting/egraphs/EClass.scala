@@ -3,6 +3,7 @@ package compiler.typing.smartcasting.egraphs
 import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.{IntersectionType, Type}
 import compiler.smt.Simplifier
+import compiler.typing.contexts.TypeParamsContext
 
 import scala.collection.mutable
 
@@ -28,7 +29,7 @@ final class EClass(val uid: Long) {
 
   def nodesView: Iterable[ENode] = nodes
 
-  def saveSmartcast(tpe: Type)(using simplifier: Simplifier): Unit = {
+  def saveSmartcast(tpe: Type)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit = {
     val newSmartcast = smartcastTypeOpt match {
       case Some(oldSmartcastType) =>
         simplifier.simplify(IntersectionType(oldSmartcastType, tpe))
