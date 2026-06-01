@@ -845,13 +845,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateBinaryWithProxy(lhsTree, rhsTree, Add(resultVal, _, _), Plus(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Minus, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Sub(resultVal, _, _), (a, b) => Plus(a, Neg(b)))
+      // TODO for *,/,% see if we keep the proxy or not: non-determinism?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Times, rhsTree) =>
-        // TODO see if we keep the proxy or not: non-determinism?
         generateBinaryWithProxy(lhsTree, rhsTree, Mul(resultVal, _, _), Times(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Div(resultVal, _, _)) // TODO proxy?
+        generateBinaryWithProxy(lhsTree, rhsTree, Div(resultVal, _, _), DivBy(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Modulo, rhsTree) =>
-        generateBinary(lhsTree, rhsTree, Rem(resultVal, _, _)) // TODO proxy?
+        generateBinaryWithProxy(lhsTree, rhsTree, Rem(resultVal, _, _), DivBy(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessThan, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Lt(resultVal, _, _), LessThan(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterThan, rhsTree) =>

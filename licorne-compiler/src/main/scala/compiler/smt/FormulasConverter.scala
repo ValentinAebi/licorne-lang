@@ -64,17 +64,22 @@ final class FormulasConverter[IntSort <: KSort](
         for {
           n <- convertInt(negated)
         } yield ihm.neg(n)
+      // TODO see if *,/,% should be included
       case Times(lhs, rhs) =>
         for {
           l <- convertInt(lhs)
           r <- convertInt(rhs)
-        } yield ihm.times(l, r) // TODO see if we keep or not, as it introduces indecidability (?)
+        } yield ihm.times(l, r)
       case DivBy(lhs, rhs) =>
         for {
           l <- convertInt(lhs)
           r <- convertInt(rhs)
-        } yield ihm.div(l, r) // TODO see if division and modulo should be included
-      case Modulo(lhs, rhs) => None
+        } yield ihm.div(l, r)
+      case Modulo(lhs, rhs) =>
+        for {
+          l <- convertInt(lhs)
+          r <- convertInt(rhs)
+        } yield ihm.div(l, r)
       case LogicalNot(operand) => None
       case LogicalAnd(lhs, rhs) => None
       case LogicalOr(lhs, rhs) => None
