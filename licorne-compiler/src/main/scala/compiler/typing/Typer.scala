@@ -549,6 +549,8 @@ final class Typer(
       case TypePredicate(subject, tpe) =>
         checkDowncast(subject, tpe, scope, posOpt)
         BoolType
+      case Phi(terms) =>
+        meetJoin.computeJoin(terms.map(typeFormula(_, scope, posOpt, suspendReporting)))
     })
     if (formula.isPure) {
       solver.takeType(formula, tpe)

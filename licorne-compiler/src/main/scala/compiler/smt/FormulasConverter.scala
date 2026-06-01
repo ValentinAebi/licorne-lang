@@ -23,7 +23,8 @@ final class FormulasConverter[IntSort <: KSort](
                                                  dealiasingCtx: DealiasingContext,
                                                  globalValsContext: GlobalValuesContext,
                                                  proxyStore: ProxyStore,
-                                                 counterExBoxOpt: Option[CounterexampleBox]
+                                                 counterExBoxOpt: Option[CounterexampleBox],
+                                                 acceptPhis: Boolean
                                                ) {
   private val anySort = kCtx.mkUninterpretedSort(AnyType.toString)
 
@@ -81,6 +82,17 @@ final class FormulasConverter[IntSort <: KSort](
       case LessThan(lhs, rhs) => None
       case Equality(lhs, rhs) => None
       case TypePredicate(subject, tpe) => None
+      case Phi(terms) if acceptPhis && terms.nonEmpty =>
+        terms.map(convertInt).reduce { (as, bs) =>
+          for {
+            a <- as
+            b <- bs
+          } yield {
+            val dummyCond = kCtx.mkFreshConst("dummy", kCtx.mkBoolSort())
+            kCtx.mkIte(dummyCond, a, b)
+          }
+        }
+      case Phi(terms) => None
     }
   }
 
@@ -142,6 +154,7 @@ final class FormulasConverter[IntSort <: KSort](
           r <- convertInt(rhs)
         } yield kCtx.mkEq(l, r)
       case TypePredicate(subject, tpe) => None
+      case Phi(terms) => None
     }
   }
 

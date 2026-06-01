@@ -304,6 +304,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case LessOrEq(lhs, rhs) => evalComparisonBinop[IntConst](lhs, rhs, _.value <= _.value)
     case LessThan(lhs, rhs) => evalComparisonBinop[IntConst](lhs, rhs, _.value < _.value)
     case TypePredicate(subject, tpe) => None
+    case Phi(terms) if terms.size == 1 => eval(terms.head)
+    case Phi(terms) => None
   }
 
   def linearize(formula: Formula): Map[Formula, Int] = formula match {
@@ -342,6 +344,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case LogicalAnd(lhs, rhs) => Map.empty
     case LogicalOr(lhs, rhs) => Map.empty
     case TypePredicate(subject, tpe) => Map.empty
+    case Phi(terms) if terms.size == 1 => linearize(terms.head)
+    case Phi(terms) => Map.empty
   }
 
   private def linearizeTimes(times: Times): (Formula, Int) = {

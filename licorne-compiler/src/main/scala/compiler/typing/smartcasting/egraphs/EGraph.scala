@@ -163,6 +163,7 @@ final class EGraph private[egraphs](startClId: Long) {
       TypePredicateNode(classOf(subject), tpe)
     case PureClosureValue(params, body, closureVal) =>
       encode(closureVal)
+    case Phi(terms) => UnknownENode()
   }
 
   private[egraphs] def canonicalize(n: ENode): Unit = n match {
@@ -180,6 +181,7 @@ final class EGraph private[egraphs](startClId: Long) {
       sel.receiver = canonicalize(receiver)
     case tpred@TypePredicateNode(subject, tpe) =>
       tpred.subject = canonicalize(subject)
+    case _: UnknownENode => ()
   }
 
   private def canonicalize(clazz: EClass): EClass = {

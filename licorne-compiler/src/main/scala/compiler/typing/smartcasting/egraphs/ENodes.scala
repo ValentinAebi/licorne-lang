@@ -62,3 +62,9 @@ final case class TypePredicateNode(var subject: EClass, tpe: TypeIdentifier) ext
 
   override def toString: String = s"${subject.shortDescr}-is-$tpe"
 }
+
+final /* not case */ class UnknownENode extends ENode {
+  override def operands: List[EClass] = List.empty
+
+  override def toString: String = "unknown"
+}

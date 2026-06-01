@@ -7,6 +7,7 @@ import compiler.lang.Field.StableField
 import compiler.lang.{Field, Keyword, UserInstantiableTypeSig}
 import compiler.lang.Types.Type
 import compiler.reporting.Position
+import compiler.util.SeqSet
 
 import java.util.Objects
 import scala.collection
@@ -218,6 +219,15 @@ object Formulas {
   final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
     override def toString: String = s"$subject is $tpe"
   }
+  
+  final case class Phi(terms: SeqSet[Formula]) extends Formula {
+    override def toString: String = terms.mkString("phi(", ",", ")")
+  }
+  
+  object Phi {
+    def apply(terms: Iterable[Formula]): Phi = new Phi(SeqSet(terms))
+    def apply(terms: Formula*): Phi = new Phi(SeqSet(terms))
+  }
 
   private inline def parenthIf[F <: Formula](inline term: Formula): String = {
     val parenth = term.isInstanceOf[F]
@@ -251,6 +261,7 @@ object Formulas {
     case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(subst), rhs.substitute(subst))
     case LessThan(lhs, rhs) => LessThan(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
+    case Phi(terms) => Phi(terms.map(_.substitute(subst)))
   }
 
   // TODO may be optimized: when operand(s) do not change, return input as is
@@ -275,6 +286,7 @@ object Formulas {
     case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(target, repl), rhs.substitute(target, repl))
     case LessThan(lhs, rhs) => LessThan(lhs.substitute(target, repl), rhs.substitute(target, repl))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(target, repl), tpe)
+    case Phi(terms) => Phi(terms.map(_.substitute(target, repl)))
   }
 
   extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {
@@ -302,6 +314,7 @@ object Formulas {
     case LessOrEq(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case LessThan(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case TypePredicate(subject, tpe) => typeCanMention(subject)
+    case Phi(terms) => terms.forall(typeCanMention)
   }
 
   extension (formula: Formula) def isPure: Boolean = formula match {
@@ -327,6 +340,7 @@ object Formulas {
     case LessOrEq(lhs, rhs) => lhs.isPure && rhs.isPure
     case LessThan(lhs, rhs) => lhs.isPure && rhs.isPure
     case TypePredicate(subject, tpe) => subject.isPure
+    case Phi(terms) => terms.forall(_.isPure)
   }
 
   extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {
@@ -362,6 +376,7 @@ object Formulas {
       lhs.idValsDependencies ++ rhs.idValsDependencies
     case TypePredicate(subject, tpe) =>
       subject.idValsDependencies
+    case Phi(terms) => terms.flatMap(_.idValsDependencies)
   }
 
   extension (formula: Formula) def transformParamValsIntoThisSelect(thisVal: IdValue)(using owner: UserInstantiableTypeSig): Formula = formula match {
@@ -394,6 +409,7 @@ object Formulas {
     case LessOrEq(lhs, rhs) => LessOrEq(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
     case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
     case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoThisSelect(thisVal), tpe)
+    case Phi(terms) => Phi(terms.map(_.transformParamValsIntoThisSelect(thisVal)))
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =

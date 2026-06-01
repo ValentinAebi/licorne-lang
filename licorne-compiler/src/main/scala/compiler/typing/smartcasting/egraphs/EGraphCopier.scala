@@ -64,6 +64,8 @@ final class EGraphCopier {
           nodeCopier.put(original, copy)
           copy.subject = copyOf(subject)
           copy
+        case _: UnknownENode =>
+          new UnknownENode
       }
     }
   }

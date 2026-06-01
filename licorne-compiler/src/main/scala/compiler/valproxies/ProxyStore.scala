@@ -5,6 +5,7 @@ import compiler.irs.ssa.SSA.Scope
 import Formulas.*
 import compiler.typing.Typer
 import compiler.typing.contexts.DealiasingContext
+import compiler.util.SeqSet
 
 import scala.collection.mutable
 
@@ -36,14 +37,14 @@ final class ProxyStore {
     }
   }
 
-  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = true, bypassPurityChecks)
+  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis)
 
-  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = false, bypassPurityChecks)
+  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis)
 
   // TODO memoize
-  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean): Option[Formula] = {
+  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean): Option[Formula] = {
     val stepRes: Option[Formula] = formula match {
       case idValue: (ParamIdValue | UninterpretedConstIdValue) => Some(idValue)
       case idValue: (ValIdValue | VarIdValue) if !developLocals => Some(idValue)
@@ -51,69 +52,78 @@ final class ProxyStore {
       case idValue: IdValue => None
       case cst: ConstFormula => Some(cst)
       case Select(owner, field) if bypassPurityChecks || field.isResolvedAndStable => for {
-        owp <- dev(owner, developLocals, bypassPurityChecks)
+        owp <- dev(owner, developLocals, bypassPurityChecks, acceptPhis)
       } yield Select(owp, field)
       case FunCall(receiver, func, typeArgs, args) if bypassPurityChecks || func.isResolvedAndPure =>
         for {
-          rcp <- dev(receiver, developLocals, bypassPurityChecks)
-          argsp <- devAll(args, developLocals, bypassPurityChecks)
+          rcp <- dev(receiver, developLocals, bypassPurityChecks, acceptPhis)
+          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis)
         } yield FunCall(rcp, func, typeArgs, argsp)
       case ClosureCall(callee, closureTypingTarget, args) if bypassPurityChecks || closureTypingTarget.isResolvedAndPure =>
         for {
-          clp <- dev(callee, developLocals, bypassPurityChecks)
-          argsp <- devAll(args, developLocals, bypassPurityChecks)
+          clp <- dev(callee, developLocals, bypassPurityChecks, acceptPhis)
+          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis)
         } yield ClosureCall(clp, closureTypingTarget, argsp)
       case pureClosureValue: PureClosureValue => Some(pureClosureValue)
       case Plus(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield Plus(lp, rp)
       case Neg(operand) => for {
-        op <- dev(operand, developLocals, bypassPurityChecks)
+        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis)
       } yield Neg(op)
       case Times(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield Times(lp, rp)
       case DivBy(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield DivBy(lp, rp)
       case Modulo(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield Modulo(lp, rp)
       case LogicalAnd(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield LogicalAnd(lp, rp)
       case LogicalNot(operand) => for {
-        op <- dev(operand, developLocals, bypassPurityChecks)
+        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis)
       } yield LogicalNot(op)
       case LogicalOr(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield LogicalOr(lp, rp)
       case Equality(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield Equality(lp, rp)
       case LessOrEq(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield LessOrEq(lp, rp)
       case LessThan(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks)
-        rp <- dev(rhs, developLocals, bypassPurityChecks)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
       } yield LessThan(lp, rp)
       case TypePredicate(subject, tpe) => for {
-        sp <- dev(subject, developLocals, bypassPurityChecks)
+        sp <- dev(subject, developLocals, bypassPurityChecks, acceptPhis)
       } yield TypePredicate(sp, tpe)
+      case Phi(terms) if terms.size == 1 => dev(terms.head, developLocals, bypassPurityChecks, acceptPhis)
+      case Phi(terms) if acceptPhis =>
+        val flattenedTermsOpt = terms.foldRight(Option(List.empty[Formula])) { (curr, accOpt) =>
+          for {
+            acc <- accOpt
+            d <- dev(curr, developLocals, bypassPurityChecks, acceptPhis)
+          } yield flattenPhis(d) ++ acc
+        }
+        flattenedTermsOpt.map(Phi(_))
       case _ => None
     }
     stepRes.flatMap {
       case res if res == formula => Some(res)
-      case res => dev(res, developLocals, bypassPurityChecks)
+      case res => dev(res, developLocals, bypassPurityChecks, acceptPhis)
     } orElse {
       Option.when(formula.isInstanceOf[ValIdValue | VarIdValue]) {
         formula
@@ -121,11 +131,20 @@ final class ProxyStore {
     }
   }
 
-  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean): Option[List[Formula]] = {
+  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean): Option[List[Formula]] = {
     ls.foldRight(Option(List.empty[Formula])) {
-      case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks).map(_ :: acc)
+      case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks, acceptPhis).map(_ :: acc)
       case _ => None
     }
+  }
+
+  private def flattenPhis(f: Formula): List[Formula] = f match {
+    case Phi(terms) =>
+      terms.toList.flatMap {
+        case Phi(terms) => terms.flatMap(flattenPhis)
+        case term => List(term)
+      }
+    case f => List(f)
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)

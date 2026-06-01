@@ -22,7 +22,7 @@ final class MonotonicityAnalyzer(ihm: IntHandlingMode[?], proxyStore: ProxyStore
     program
   }
 
-  private def inferInvariants(loop: Loop, dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = Reasoning.usingFreshSolver(ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt) { solver =>
+  private def inferInvariants(loop: Loop, dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = Reasoning.usingFreshSolver(ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt, acceptPhis = true) { solver =>
     for {
       loopVarData <- loop.variables
       recurrence <- loopVarData.recurrenceOpt

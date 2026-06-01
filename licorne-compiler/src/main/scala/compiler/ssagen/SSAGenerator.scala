@@ -618,6 +618,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               val joinVal = currScope.newVar(varId, Some("join"), ite.getPosition)
               variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
               currScope.getLocalValuesContextUnsafe.remap(varId, joinVal)
+              proxyStore.saveProxy(joinVal, Phi(thenEndVal, elseEndVal))
             case (KnownAndInitialized(thenEndVal, _, _, _), _) if !thenScope.hasExited =>
               currScope.getLocalValuesContextUnsafe.remap(varId, thenEndVal)
             case (_, KnownAndInitialized(elseEndVal, _, _, _)) if !elseScope.hasExited =>
@@ -660,7 +661,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
               init <- proxyStore.developDeep(beforeLoopVal)
-              induct <- proxyStore.developDeep(bodyLastLocalVal)
+              induct <- proxyStore.developDeep(bodyLastLocalVal, acceptPhis = true)
             } yield Recurrence(init, induct, condVal)
             bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
