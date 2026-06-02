@@ -38,19 +38,24 @@ object Formulas {
 
   }
 
-  final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p") {
+  sealed trait LocalIdValue {
+    this: NamedIdValue =>
+    def id: FunOrVarId
+  }
+
+  final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p"), LocalIdValue {
     override def name: String = id.stringId
 
     override def toString: String = name
   }
 
-  final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s") {
+  final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s"), LocalIdValue {
     override def name: String = id.stringId
 
     override def toString: String = name
   }
 
-  final case class VarIdValue(id: FunOrVarId, declOpt: Option[LocalDecl], definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r") {
+  final case class VarIdValue(id: FunOrVarId, declOpt: Option[LocalDecl], definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r"), LocalIdValue {
     override def name: String = id.stringId
 
     override def toString: String = (descrOpt, posOpt) match {
@@ -219,13 +224,14 @@ object Formulas {
   final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
     override def toString: String = s"$subject is $tpe"
   }
-  
+
   final case class Phi(terms: SeqSet[Formula]) extends Formula {
     override def toString: String = terms.mkString("phi(", ",", ")")
   }
-  
+
   object Phi {
     def apply(terms: Iterable[Formula]): Phi = new Phi(SeqSet(terms))
+
     def apply(terms: Formula*): Phi = new Phi(SeqSet(terms))
   }
 

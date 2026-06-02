@@ -230,19 +230,23 @@ final class SubtypingContext(
     }
   }
 
-  def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position])(using TypeParamsContext): Unit = {
-    if (!isSubtype(subT, superT)) {
+  def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
+    val isSubt = isSubtype(subT, superT)
+    if (!isSubt) {
       er.reportError(msg, posOpt)
     }
+    isSubt
   }
 
-  def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: => String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer, DealiasingContext): Unit = {
-    if (!isSubtype(subject, subT, superT, scope, posOpt)) {
+  def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: => String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer, DealiasingContext): Boolean = {
+    val isSubT = isSubtype(subject, subT, superT, scope, posOpt)
+    if (!isSubT) {
       er.reportError(msg, posOpt)
     }
+    isSubT
   }
 
-  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position])(using TypeParamsContext): Unit = {
+  def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
     counterExBoxOpt.foreach(_.reinitialize())
     lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
     lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
@@ -250,7 +254,7 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
-                            (using TypeParamsContext, Typer, DealiasingContext): Unit = {
+                            (using TypeParamsContext, Typer, DealiasingContext): Boolean = {
     counterExBoxOpt.foreach(_.reinitialize())
 
     lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)

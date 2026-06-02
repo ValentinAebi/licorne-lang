@@ -86,8 +86,6 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
 
   def getItValue: Option[IdValue] = valueOf(ItId).toOption
 
-  def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnotOpt)
-
   def knows(id: FunOrVarId): Boolean = queryLocal(id).isDefined
 
   def isReassignableOrUnknown(id: FunOrVarId): Boolean =
@@ -114,16 +112,16 @@ object LocalValuesContext {
     }
 
     def declOpt: Option[LocalDecl] = this match {
-      case found: KnownAndInitialized => found.localInfo.declOpt
-      case found: KnownButUninitialized => found.localInfo.declOpt
+      case found: KnownAndInitialized => found.localInfo.declaration
+      case found: KnownButUninitialized => found.localInfo.declaration
       case _ => None
     }
     
     def setDecl(localDecl: LocalDecl): Unit = this match {
       case found: KnownAndInitialized =>
-        found.localInfo.declOpt = Some(localDecl)
+        found.localInfo.declaration = localDecl
       case found: KnownButUninitialized =>
-        found.localInfo.declOpt = Some(localDecl)
+        found.localInfo.declaration = localDecl
       case _ => ()
     }
 

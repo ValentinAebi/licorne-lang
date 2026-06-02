@@ -566,7 +566,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateSSAExpr(newValue, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
         currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId) match {
-          case KnownAndInitialized(heapVarAddr: HeapVarIdValue, defScope, reassigStatus, declarationTypeAnnotOpt) =>
+          case KnownAndInitialized(heapVarAddr: HeapVarIdValue, defScope, reassigStatus, _) =>
             currScope.saveInstr(HeapVarWrite(heapVarAddr, newValue), assig)
           case _ =>
             currScope.getLocalValuesContextUnsafe.remap(lhsLocalId, newValue)
@@ -666,7 +666,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               init <- proxyStore.developDeep(beforeLoopVal)
               induct <- proxyStore.developDeep(bodyLastLocalVal, acceptPhis = true)
             } yield Recurrence(init, induct, condVal)
-            bodyScope.instructions.addOne(AssignVal(bodyLastVal, bodyLastLocalVal))
+            bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
           }
           val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)

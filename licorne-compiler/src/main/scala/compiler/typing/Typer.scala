@@ -21,7 +21,7 @@ import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{SeqSet, findUnique, mapVals}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
-import compiler.valuesconversion.GlobalValuesContext
+import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.immutable.SeqMap
@@ -109,7 +109,7 @@ final class Typer(
             val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
             val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
             val preIterationBoundOpt = proxyStore.developDeep(beforeLoopVal)
-            val inBodyType = simplifier.simplify(
+            val inferredInBodyType = simplifier.simplify(
               monotonicity match {
                 case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
                 case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
@@ -117,6 +117,10 @@ final class Typer(
                 case NonMonotonous => IntType
               }
             )
+            val inBodyType = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt match {
+              case Some(LocalDecl(_, tpe)) => simplifier.simplify(IntersectionType(tpe, inferredInBodyType))
+              case None => inferredInBodyType
+            }
             val feedbackType =
               absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)(using currScope.getLocalValuesContextUnsafe.globalCtx).getOrElse {
                 preIterationBoundOpt match {
@@ -137,7 +141,6 @@ final class Typer(
             varDefScope.saveType(inCondVal, inCondType) // after loop
             condScope.saveSmartcast(inCondVal, inCondType) // inside condition
             bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
-            varData.handledThroughRecurrenceFlag = true
           }) orElse {
             // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
             val tpe =
@@ -161,16 +164,14 @@ final class Typer(
           varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars
         } {
           val typeAtEndOfBody = bodyScope.detectCurrentType(bodyLastVal)
-          if (!varData.handledThroughRecurrenceFlag) {
-            val typeInCond = condScope.detectCurrentType(condVal)
-            lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
-              case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
-                s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
-              case _ =>
-                s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
-            }
-            subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
+          val typeInCond = condScope.detectCurrentType(condVal)
+          lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
+            case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
+              s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
+            case _ =>
+              s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
           }
+          subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
           val beforeLoopType = currScope.detectCurrentType(beforeLoopVal)
           val afterLoopType = meetJoin.computeJoin(beforeLoopType, typeAtEndOfBody)
           currScope.saveSmartcast(condVal, afterLoopType)
@@ -213,7 +214,17 @@ final class Typer(
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case assignVal@AssignVal(assigned, src) =>
-        val assignedType = tryToApplyHint(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
+        val srcType = tryToApplyHint(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
+        val assignedType = assigned match {
+          case idVal: LocalIdValue =>
+            currScope.getLocalValuesContextUnsafe.valueOf(idVal.id).declOpt match {
+              case Some(decl) =>
+                val isSubT = subtypingCtx.enforceIsSubtypeExpAct(src, srcType, decl.tpe, s"assignment to ${idVal.id}", currScope, assignVal.getPosition)
+                if isSubT then srcType else decl.tpe
+              case None => srcType
+            }
+          case _ => srcType
+        }
         currScope.saveType(assigned, assignedType)
         saveEquality(assigned, src)
 
@@ -1177,13 +1188,13 @@ final class Typer(
     }
   }
 
-  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])(using TypeParamsContext): Type =
+  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position]): Type =
     doComputeCurrentType(scope, formula, Some(posOpt), saveSmartcastsInIR = true)
 
-  extension (scope: Scope) private def detectCurrentType(formula: Formula)(using TypeParamsContext): Type =
+  extension (scope: Scope) private def detectCurrentType(formula: Formula): Type =
     doComputeCurrentType(scope, formula, None, saveSmartcastsInIR = false)
 
-  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean)(using TypeParamsContext): Type = {
+  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean): Type = {
     val tpe = scope.getCurrentTypeOf(formula, saveSmartcastsInIR)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {
@@ -1192,15 +1203,7 @@ final class Typer(
         case _ => ()
       }
     }
-    formula match {
-      case varIdVal: VarIdValue =>
-        varIdVal.declOpt match {
-          case Some(LocalDecl(localId, declType)) if !subtypingCtx.isSubtype(tpe, declType) =>
-            simplifier.simplify(IntersectionType(tpe, declType))
-          case _ => tpe
-        }
-      case _ => tpe
-    }
+    tpe
   }
 
   private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])

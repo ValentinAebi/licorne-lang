@@ -26,8 +26,16 @@ object ValuesContext {
                                                         var value: Option[IdValue],
                                                         defScope: Scope,
                                                         reassigPermission: ReassigPermission,
-                                                        declarationTypeAnnotOpt: Option[Type]
+                                                        var declarationTypeAnnotOpt: Option[Type]
                                                       ){
-    var declOpt: Option[LocalDecl] = None
+    private var declOpt: Option[LocalDecl] = None
+
+    // TODO see if there is a less ugly way of doing this
+    def declaration_=(decl: LocalDecl): Unit = {
+      declOpt = Some(decl)
+      declarationTypeAnnotOpt = Some(decl.tpe)
+    }
+
+    def declaration: Option[LocalDecl] = declOpt
   }
 }
