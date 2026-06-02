@@ -6,6 +6,7 @@ import compiler.irs.asts.Asts
 import compiler.irs.ssa.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import Formulas.*
+import compiler.irs.ssa.SSA.SoftCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep
@@ -160,15 +161,22 @@ object SSA {
   final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
   final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr
+  
   final case class SoftCast(inValue: IdValue) extends RealInstr, PureInstr {
-    private var targetTypeOpt: Option[Type] = None
+    private var modeOpt = Option.empty[SoftCastMode]
     
-    def targetType: Option[Type] = targetTypeOpt
+    def setMode(mode: SoftCastMode): Unit = {
+      modeOpt = Some(mode)
+    }
     
-    def targetType_=(tpe: Type): Unit = {
-      targetTypeOpt = Some(tpe)
+    def isNonNullAssertion: Boolean = modeOpt.contains(AssertNonNull)
+    
+    def getTargetRefinement: Option[Formula] = modeOpt.flatMap {
+      case AssertNonNull => None
+      case AssertPredicate(newPredicate) => Some(newPredicate)
     }
   }
+  
   final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr
 
   final case class LocalDecl(localId: FunOrVarId, var tpe: Type) extends RealInstr
@@ -330,12 +338,12 @@ object SSA {
         eGraph
     }
 
-    private def typeOfNoSmartcastIfIdVal(f: Formula): Option[Type] = f match {
+    def typeOfNoSmartcastIfIdVal(f: Formula): Option[Type] = f match {
       case f: IdValue => typeOfNoSmartcast(f)
       case _ => None
     }
 
-    private def typeOfNoSmartcast(idValue: IdValue): Option[Type] = {
+    def typeOfNoSmartcast(idValue: IdValue): Option[Type] = {
       types.get(idValue).orElse {
         outScopeOpt.flatMap(_.typeOfNoSmartcast(idValue))
       }
@@ -472,5 +480,10 @@ object SSA {
   sealed trait PseudoInstr extends Instr
   
   final case class Unreachable() extends PseudoInstr, ScopeEndingInstr
+
+  enum SoftCastMode {
+    case AssertNonNull
+    case AssertPredicate(newPredicate: Formula)
+  }
 
 }

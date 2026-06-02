@@ -110,7 +110,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       then NullableType(nonNullType)
       else nonNullType
 
-    case RefinedType(base1, pred1) =>
+    case refinedType: RefinedType =>
+      val RefinedType(base1, pred1) = refinedType.flattenedRefinement
 
       // Step 1: T with it is S  --->  S  (if S <: T)
       val (targetTypes, pred2Parts) = searchTypeTests(pred1, base1)

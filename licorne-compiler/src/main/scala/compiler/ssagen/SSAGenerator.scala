@@ -946,9 +946,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
       case softcast@Asts.SoftCast(castExpr) =>
-        val inVal = currScope.newIntermediate("softcast$subject")
-        generateSSAExpr(inVal, castExpr, currScope)
-        currScope.saveInstr(SoftCast(inVal), softcast)
+        generateSSAExpr(resultVal, castExpr, currScope)
+        currScope.saveInstr(SoftCast(resultVal), softcast)
         None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
         generateSSAExpr(resultVal, ascribedExpr, currScope)

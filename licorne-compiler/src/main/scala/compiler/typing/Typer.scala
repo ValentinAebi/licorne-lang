@@ -3,6 +3,7 @@ package compiler.typing
 import compiler.identifiers.*
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
+import compiler.irs.ssa.SSA.SoftCastMode.{AssertNonNull, AssertPredicate}
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
 import compiler.lang
 import compiler.lang.*
@@ -419,27 +420,25 @@ final class Typer(
         }
 
       case softcast@SoftCast(inValue) =>
-        // FIXME maybe resolve only when we know the right target, and be more precise
-        //  Also, setting the predicate to false may cause the type to be simplified to Nothing
-
-        val refTypeScope = Scope.nestedInsideNodeOpt(currScope, softcast.getAstNodeOpt)
-        val itVal = refTypeScope.newParam(ItId, softcast.getPosition)
-        val RefinedType(baseType, predicate) = currScope.computeCurrentType(inValue, softcast.getPosition).asRefinedType
-
-        def setSoftCastTarget(tpe: Type): Unit = {
-          currScope.saveSmartcast(inValue, tpe)
-          softcast.targetType = tpe
-        }
-
-        if (predicate == BoolConst(false)) {
-          baseType match {
-            case NullableType(nullatedType) =>
-              setSoftCastTarget(nullatedType)
-            case _ =>
-              er.warn("redundant weak cast", softcast.getPosition)
-          }
-        } else {
-          setSoftCastTarget(RefinedType(baseType, BoolConst(false)))
+        val preType = currScope.computeCurrentType(inValue, softcast.getPosition)
+        val targetTypeOpt = typeHintsStore.getHints(inValue).headOption
+        (preType, targetTypeOpt) match {
+          case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
+            er.warn(s"soft cast is useless: I inferred target type $targetType, which is a supertype of the input type $preType", softcast.getPosition)
+          case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
+            softcast.setMode(AssertNonNull)
+            currScope.saveSmartcast(inValue, nullatedType)
+          case (preType, Some(targetType)) =>
+            val RefinedType(inBase, inPred) = preType.asRefinedType.flattenedRefinement
+            val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
+            if (subtypingCtx.isSubtype(inBase, targetBase)) {
+              softcast.setMode(AssertPredicate(targetPred))
+              currScope.saveSmartcast(inValue, targetType)
+            } else {
+              er.reportError(s"soft cast is not sufficient to cast $inBase to $targetBase", softcast.getPosition)
+            }
+          case (preType, None) =>
+            er.reportError("soft cast target type could not be resolved, please provide a type annotation", softcast.getPosition)
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>

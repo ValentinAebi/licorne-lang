@@ -297,7 +297,8 @@ final class SSAPrinter(
       case SSA.Cast(inValue, target) =>
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
       case softcast@SSA.SoftCast(inValue) =>
-        pps.add(s"SOFTCAST ${maybeTyped(inValue, scope)} as ${softcast.targetType.getOrElse("??")}")
+        val targetDescr = if softcast.isNonNullAssertion then "non-null" else softcast.getTargetRefinement.map(_.toString).getOrElse("<unspecified>")
+        pps.add(s"SOFTCAST ${maybeTyped(inValue, scope)} to predicate $targetDescr")
       case SSA.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)
@@ -313,8 +314,13 @@ final class SSAPrinter(
     }
   }
 
-  private def maybeTyped(formula: Formula, scope: Scope): String =
-    if printTypes then s"$formula : ${scope.getCurrentTypeOf(formula, saveSmartcastsInIR = false)}" else formula.toString
+  private def maybeTyped(formula: Formula, scope: Scope): String = {
+    val typeOpt = scope.typeOfNoSmartcastIfIdVal(formula).filter(_ => printTypes)
+    typeOpt match {
+      case Some(tpe) => s"$formula : $tpe"
+      case None => formula.toString
+    }
+  }
 
   private def maybePrintHintsFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
     val hints = typeHintsStore.getHints(idValue)
