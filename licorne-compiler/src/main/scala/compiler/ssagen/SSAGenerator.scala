@@ -508,6 +508,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                          (using returnCollector: ReturnCollector, currFuncInfo: FunctionInfo, loopsCollector: mutable.ListBuffer[SSA.Loop],
                           importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
+    if (currScope.getLocalValuesContextUnsafe.hasExited) {
+      currScope.saveInstr(Unreachable(), stat)
+      return
+    }
+
     stat match {
 
       case expr: Asts.Expr =>
@@ -783,7 +788,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(AssignVal(resultVal, nullVal), expr)
         Some(nullVal)
       case varRefTree@Asts.VariableRef(name) =>
-        currScope.getLocalValuesContextUnsafe.valueOf(name) : @unchecked match {
+        (currScope.getLocalValuesContextUnsafe.valueOf(name): @unchecked) match {
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRefTree.getPosition)
             None
