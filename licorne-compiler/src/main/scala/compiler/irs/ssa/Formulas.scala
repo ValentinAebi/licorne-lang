@@ -1,7 +1,7 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Field.StableField
 import compiler.lang.{Field, Keyword, UserInstantiableTypeSig}
@@ -50,7 +50,7 @@ object Formulas {
     override def toString: String = name
   }
 
-  final case class VarIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r") {
+  final case class VarIdValue(id: FunOrVarId, declOpt: Option[LocalDecl], definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r") {
     override def name: String = id.stringId
 
     override def toString: String = (descrOpt, posOpt) match {
@@ -106,7 +106,7 @@ object Formulas {
     override def toString: String = s"$owner.${field.fieldId}"
   }
 
-  final case class FunCall(receiver: Formula, func: InvocationTarget, typeArgs: List[Type], args: List[Formula]) extends Formula {
+  final case class FunCall(receiver: Formula, func: InvocationTarget, var typeArgs: List[Type], args: List[Formula]) extends Formula {
 
     override def equals(that: Any): Boolean = that match {
       case FunCall(thatReceiver, thatFunc, _, thatArgs) =>

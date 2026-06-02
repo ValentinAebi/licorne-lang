@@ -117,7 +117,7 @@ object SSA {
   }
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
   
-  final case class StaticTypeAssert(value: IdValue, tpe: Type) extends RealInstr, PureInstr
+  final case class StaticTypeAssert(value: IdValue, var tpe: Type) extends RealInstr, PureInstr
   final case class StaticAssert(value: IdValue) extends RealInstr, PureInstr
 
   sealed trait AssigningInstr extends RealInstr {
@@ -147,10 +147,10 @@ object SSA {
 
   final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr
   final case class HeapVarRead(assigned: IdValue, heapVar: HeapVarIdValue) extends AssigningInstr
-  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
+  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, var typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, closureTypingTarget: ClosureTypingTarget, args: List[IdValue]) extends AssigningInstr
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, typeArgs: List[Type]) extends AssigningInstr
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type]) extends AssigningInstr
   final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], var body: Scope, var isPure: Boolean) extends AssigningInstr
   final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr
 
@@ -172,6 +172,8 @@ object SSA {
     }
   }
   final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr
+
+  final case class LocalDecl(localId: FunOrVarId, var tpe: Type) extends RealInstr
 
   final class Scope private(
                              val outScopeOpt: Option[Scope],
@@ -391,8 +393,8 @@ object SSA {
       ValIdValue(srcId, this, _, posOpt)
     }
 
-    def newVar(srcId: FunOrVarId, descrOpt: Option[String], posOpt: Option[Position]): VarIdValue = newValue {
-      VarIdValue(srcId, this, _, descrOpt, posOpt)
+    def newVar(srcId: FunOrVarId, declOpt: Option[LocalDecl], descrOpt: Option[String], posOpt: Option[Position]): VarIdValue = newValue {
+      VarIdValue(srcId, declOpt, this, _, descrOpt, posOpt)
     }
 
     def newHeapVar(srcId: FunOrVarId, posOpt: Option[Position]): HeapVarIdValue = newValue {
@@ -470,8 +472,7 @@ object SSA {
   }
 
   sealed trait PseudoInstr extends Instr
-
-  final case class LocalDecl(localId: FunOrVarId, tpe: Type) extends PseudoInstr
+  
   final case class Unreachable() extends PseudoInstr, ScopeEndingInstr
 
 }

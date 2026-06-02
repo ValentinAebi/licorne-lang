@@ -537,13 +537,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         } else rhsOpt match {
           case Some(rhs) =>
             generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope, newScopeIfBlock)
-            generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
+            generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotOpt = None, rhs)
               .withDesugaringSource(localDef), currScope, newScopeIfBlock)
           case None =>
-            typeAnnotOpt.foreach { typeAnnot =>
-              currScope.saveInstr(LocalDecl(localName, typeAnnot), localDef)
-            }
             currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, currScope, reassigPermission, typeAnnotOpt)
+            typeAnnotOpt.foreach { typeAnnot =>
+              val localDecl = LocalDecl(localName, typeAnnot)
+              currScope.saveInstr(localDecl, localDef)
+              currScope.getLocalValuesContextUnsafe.valueOf(localName).setDecl(localDecl)
+            }
         }
 
       case assig@Asts.VarAssig(Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhsTree) =>
@@ -559,7 +561,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val newValue =
           if varIsReassignable
-          then currScope.newVar(lhsLocalId, None, assig.getPosition)
+          then currScope.newVar(lhsLocalId, currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId).declOpt, None, assig.getPosition)
           else currScope.newVal(lhsLocalId, assig.getPosition)
         generateSSAExpr(newValue, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
@@ -615,7 +617,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         for (varId <- allAssignedVars) {
           (thenScope.getLocalValuesContextUnsafe.valueOf(varId), elseScope.getLocalValuesContextUnsafe.valueOf(varId)) match {
             case (KnownAndInitialized(thenEndVal, _, _, _), KnownAndInitialized(elseEndVal, _, _, _)) if !thenScope.hasExited && !elseScope.hasExited =>
-              val joinVal = currScope.newVar(varId, Some("join"), ite.getPosition)
+              val joinVal = currScope.newVar(varId, currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt, Some("join"), ite.getPosition)
               variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
               currScope.getLocalValuesContextUnsafe.remap(varId, joinVal)
               proxyStore.saveProxy(joinVal, Phi(thenEndVal, elseEndVal))
@@ -634,8 +636,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val loopUpdatedVars = externalVarsAssignedIn(whileLoop).toList.flatMap { varId =>
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, defScope, _, _) =>
-              Some(LoopVarData(varId, beforeLoopVal = value, condVal = defScope.newVar(varId, Some("loop-body-start"), bodyTree.getPosition),
-                bodyLastVal = bodyScope.newVar(varId, Some("loop-body-end"), bodyTree.getPosition), defScope))
+              val localDeclOpt = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt
+              Some(LoopVarData(varId, beforeLoopVal = value, condVal = defScope.newVar(varId, localDeclOpt, Some("loop-body-start"), bodyTree.getPosition),
+                bodyLastVal = bodyScope.newVar(varId, localDeclOpt, Some("loop-body-end"), bodyTree.getPosition), defScope))
             case _ => None
           }
         }
@@ -780,7 +783,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(AssignVal(resultVal, nullVal), expr)
         Some(nullVal)
       case varRefTree@Asts.VariableRef(name) =>
-        currScope.getLocalValuesContextUnsafe.valueOf(name) match {
+        currScope.getLocalValuesContextUnsafe.valueOf(name) : @unchecked match {
           case LocalValuesContext.Unknown(id) =>
             reportError(s"not found: $id", varRefTree.getPosition)
             None

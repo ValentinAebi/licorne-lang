@@ -3,7 +3,7 @@ package compiler.valuesconversion
 import compiler.identifiers.{FunOrVarId, ItId, ThisId}
 import compiler.irs.asts.Asts
 import compiler.irs.ssa.Formulas.{Formula, IdValue}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
@@ -18,7 +18,7 @@ import scala.collection.mutable
 final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int, val exitManager: ExitManager) extends ValuesContext {
 
   private val values = mutable.Map.empty[FunOrVarId, LocalInfo]
-  
+
   {
     // FIXME check this
     values.put(ItId, LocalInfo(Some(globalCtx.itValue), globalCtx.globalScope, ReassigPermission.Val, None))
@@ -75,10 +75,10 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
   }
 
   def valueOf(id: FunOrVarId): ValueQueryResult = queryLocal(id) match {
-    case Some(LocalInfo(Some(value), defScope, reassigStatus, declarationTypeAnnot)) =>
-      KnownAndInitialized(value, defScope, reassigStatus, declarationTypeAnnot)
-    case Some(LocalInfo(None, defScope, reassigStatus, declarationTypeAnnot)) =>
-      KnownButUninitialized(id, defScope, reassigStatus, declarationTypeAnnot)
+    case Some(localInfo@LocalInfo(Some(value), defScope, reassigStatus, declarationTypeAnnot)) =>
+      KnownAndInitialized(localInfo)
+    case Some(localInfo@LocalInfo(None, defScope, reassigStatus, declarationTypeAnnot)) =>
+      KnownButUninitialized(id, localInfo)
     case None => Unknown(id)
   }
 
@@ -86,7 +86,7 @@ final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int,
 
   def getItValue: Option[IdValue] = valueOf(ItId).toOption
 
-  def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnot)
+  def typeUpperBoundOf(id: FunOrVarId): Option[Type] = queryLocal(id).flatMap(_.declarationTypeAnnotOpt)
 
   def knows(id: FunOrVarId): Boolean = queryLocal(id).isDefined
 
@@ -109,18 +109,60 @@ object LocalValuesContext {
 
   sealed trait ValueQueryResult {
     def toOption: Option[IdValue] = this match {
-      case result: ErrorValueQueryResult => None
       case KnownAndInitialized(value, _, _, _) => Some(value)
+      case _ => None
     }
+
+    def declOpt: Option[LocalDecl] = this match {
+      case found: KnownAndInitialized => found.localInfo.declOpt
+      case found: KnownButUninitialized => found.localInfo.declOpt
+      case _ => None
+    }
+    
+    def setDecl(localDecl: LocalDecl): Unit = this match {
+      case found: KnownAndInitialized =>
+        found.localInfo.declOpt = Some(localDecl)
+      case found: KnownButUninitialized =>
+        found.localInfo.declOpt = Some(localDecl)
+      case _ => ()
+    }
+
   }
 
   sealed trait ErrorValueQueryResult extends ValueQueryResult
 
   final case class Unknown(id: FunOrVarId) extends ErrorValueQueryResult
 
-  final case class KnownButUninitialized(id: FunOrVarId, defScope: Scope, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ErrorValueQueryResult
+  final class KnownButUninitialized(val id: FunOrVarId, val localInfo: LocalInfo) extends ErrorValueQueryResult {
+    require(localInfo.value.isEmpty)
+    export localInfo.{defScope, reassigPermission, declarationTypeAnnotOpt}
+  }
 
-  final case class KnownAndInitialized(value: IdValue, defScope: Scope, reassigStatus: ReassigPermission, declarationTypeAnnotOpt: Option[Type]) extends ValueQueryResult
+  object KnownButUninitialized {
+    def unapply(vqr: ValueQueryResult): Option[(FunOrVarId, Scope, ReassigPermission, Option[Type])] = vqr match {
+      case vqr: KnownButUninitialized =>
+        val LocalInfo(_, defScope, reassigPermission, declarationTypeAnnot) = vqr.localInfo
+        Some(vqr.id, defScope, reassigPermission, declarationTypeAnnot)
+      case _ => None
+    }
+  }
+
+  final class KnownAndInitialized(val localInfo: LocalInfo) extends ValueQueryResult {
+    require(localInfo.value.isDefined)
+
+    def value: IdValue = localInfo.value.get
+
+    export localInfo.{defScope, reassigPermission, declarationTypeAnnotOpt}
+  }
+
+  object KnownAndInitialized {
+    def unapply(vqr: ValueQueryResult): Option[(IdValue, Scope, ReassigPermission, Option[Type])] = vqr match {
+      case vqr: KnownAndInitialized =>
+        val LocalInfo(valueOpt, defScope, reassigPermission, declarationTypeAnnot) = vqr.localInfo
+        Some(valueOpt.get, defScope, reassigPermission, declarationTypeAnnot)
+      case _ => None
+    }
+  }
 
   private enum ExitedStatus {
     case Active, HasExited, ReportedHasExited

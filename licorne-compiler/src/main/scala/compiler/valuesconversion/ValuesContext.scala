@@ -2,7 +2,7 @@ package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
 import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
@@ -26,6 +26,8 @@ object ValuesContext {
                                                         var value: Option[IdValue],
                                                         defScope: Scope,
                                                         reassigPermission: ReassigPermission,
-                                                        declarationTypeAnnot: Option[Type]
-                                                      )
+                                                        declarationTypeAnnotOpt: Option[Type]
+                                                      ){
+    var declOpt: Option[LocalDecl] = None
+  }
 }

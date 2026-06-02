@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.identifiers.{FunOrVarId, Identifier, ItId, NormalFunOrVarId, TypeIdentifier}
+import compiler.identifiers.*
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
@@ -206,9 +206,11 @@ final class Typer(
           currScope.markHasExited()
         }
 
-      case staticTypeAssert@StaticTypeAssert(value, tpe) =>
+      case staticTypeAssert@StaticTypeAssert(value, rawType) =>
         val valueType = currScope.computeCurrentType(value, staticTypeAssert.getPosition)
-        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, tpe, "type ascription", currScope, staticTypeAssert.getPosition)
+        val instantiatedType = instantiateType(rawType, None, currScope, staticTypeAssert.getPosition)
+        staticTypeAssert.tpe = instantiatedType
+        subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case StaticAssert(value) => ???
 
@@ -276,8 +278,10 @@ final class Typer(
       case Equal(assigned, lhs, rhs) =>
         currScope.saveType(assigned, BoolType)
 
-      case invk@InvokeFunc(assigned, receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-        val returnType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, invk.getPosition)
+      case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
+        val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
+        invk.typeArgs = instTypeArgs
+        val returnType = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingHints(assigned, returnType)
         currScope.markHasExitedIfNothing(returnType)
@@ -456,6 +460,9 @@ final class Typer(
         subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
         currScope.markHasExited()
 
+      case localDecl@LocalDecl(localId, tpe) =>
+        localDecl.tpe = instantiateType(tpe, None, currScope, localDecl.getPosition)
+
       case Drop(droppedValue) => ()
 
       case scope: Scope =>
@@ -506,8 +513,10 @@ final class Typer(
         assert(field.isUnresolvable)
         NothingType
       case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
-      case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-        resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
+      case call@FunCall(receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
+        val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, scope, posOpt))
+        call.typeArgs = instTypeArgs
+        resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, scope, posOpt)
       case FunCall(receiver, func, typeArgs, args) =>
         assert(func.isUnresolvable)
         NothingType
@@ -562,21 +571,11 @@ final class Typer(
     case value: IdValue =>
       Some(scope.detectCurrentType(value))
     case Select(owner, field) =>
-      if (field.isNotResolvedYet) {
-        detectTypeForSmartcast(owner, scope) match {
-          case Some(ownerType) =>
-            val selectType = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, None)
-            Some(selectType)
-          case None => None
-        }
-      } else if (field.isResolved) {
+      if (field.isResolved) {
         Some(field.getInstantiatedFieldTypeUnsafe)
       } else None
-    case FunCall(receiver, func, typeArgs, args) =>
-      if (func.isNotResolvedYet) {
-        val retType = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, None)
-        Option.when(retType != NothingType)(retType)
-      } else if (func.isResolved) {
+    case funCall@FunCall(receiver, func, typeArgsRaw, args) =>
+      if (func.isResolved) {
         Some(func.getInstantiatedReturnTypeUnsafe)
       } else None
     case ClosureCall(callee, closureTypingTarget, args) =>
@@ -1180,13 +1179,13 @@ final class Typer(
     }
   }
 
-  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position]): Type =
+  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])(using TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, Some(posOpt), saveSmartcastsInIR = true)
 
-  extension (scope: Scope) private def detectCurrentType(formula: Formula): Type =
+  extension (scope: Scope) private def detectCurrentType(formula: Formula)(using TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, None, saveSmartcastsInIR = false)
 
-  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean): Type = {
+  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean)(using TypeParamsContext): Type = {
     val tpe = scope.getCurrentTypeOf(formula, saveSmartcastsInIR)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {
@@ -1195,7 +1194,15 @@ final class Typer(
         case _ => ()
       }
     }
-    tpe
+    formula match {
+      case varIdVal: VarIdValue =>
+        varIdVal.declOpt match {
+          case Some(LocalDecl(localId, declType)) if !subtypingCtx.isSubtype(tpe, declType) =>
+            simplifier.simplify(IntersectionType(tpe, declType))
+          case _ => tpe
+        }
+      case _ => tpe
+    }
   }
 
   private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
