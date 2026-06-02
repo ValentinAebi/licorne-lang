@@ -418,28 +418,28 @@ final class Typer(
           }
         }
 
-      case weakCast@WeakCast(inValue) =>
+      case softcast@SoftCast(inValue) =>
         // FIXME maybe resolve only when we know the right target, and be more precise
         //  Also, setting the predicate to false may cause the type to be simplified to Nothing
 
-        val refTypeScope = Scope.nestedInsideNodeOpt(currScope, weakCast.getAstNodeOpt)
-        val itVal = refTypeScope.newParam(ItId, weakCast.getPosition)
-        val RefinedType(baseType, predicate) = currScope.computeCurrentType(inValue, weakCast.getPosition).asRefinedType
+        val refTypeScope = Scope.nestedInsideNodeOpt(currScope, softcast.getAstNodeOpt)
+        val itVal = refTypeScope.newParam(ItId, softcast.getPosition)
+        val RefinedType(baseType, predicate) = currScope.computeCurrentType(inValue, softcast.getPosition).asRefinedType
 
-        def setWeakCastTarget(tpe: Type): Unit = {
+        def setSoftCastTarget(tpe: Type): Unit = {
           currScope.saveSmartcast(inValue, tpe)
-          weakCast.targetType = tpe
+          softcast.targetType = tpe
         }
 
         if (predicate == BoolConst(false)) {
           baseType match {
             case NullableType(nullatedType) =>
-              setWeakCastTarget(nullatedType)
+              setSoftCastTarget(nullatedType)
             case _ =>
-              er.warn("redundant weak cast", weakCast.getPosition)
+              er.warn("redundant weak cast", softcast.getPosition)
           }
         } else {
-          setWeakCastTarget(RefinedType(baseType, BoolConst(false)))
+          setSoftCastTarget(RefinedType(baseType, BoolConst(false)))
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
