@@ -212,8 +212,6 @@ final class Typer(
         staticTypeAssert.tpe = instantiatedType
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
-      case StaticAssert(value) => ???
-
       case assignVal@AssignVal(assigned, src) =>
         val assignedType = tryToApplyHint(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
         currScope.saveType(assigned, assignedType)

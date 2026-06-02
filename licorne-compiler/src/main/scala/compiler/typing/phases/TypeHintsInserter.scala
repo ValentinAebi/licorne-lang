@@ -91,7 +91,6 @@ final class TypeHintsInserter(
       traverseScope(elseBr, currEnvir)
     case StaticTypeAssert(value, tpe) =>
       typeHintsStore.offerHint(value, tpe)
-    case StaticAssert(value) => ()
     case AssignVal(assigned, src) =>
       for (th <- typeHintsStore.getHints(assigned)) {
         typeHintsStore.offerHint(src, th)

@@ -229,8 +229,6 @@ final class SSAPrinter(
         pps.add("END IF")
       case SSA.StaticTypeAssert(assertedValue, tpe) =>
         pps.add(s"TYPE-ASSERT ${maybeTyped(assertedValue, scope)} : $tpe")
-      case SSA.StaticAssert(assertionValue) =>
-        pps.add(s"ASSERT ${maybeTyped(assertionValue, scope)}")
       case AssignVal(assigned, src) =>
         pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
       case AssignIntConst(assigned, src) =>
