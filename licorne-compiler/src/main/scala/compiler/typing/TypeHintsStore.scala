@@ -42,3 +42,7 @@ final class TypeHintsStore {
   }.mkString("{\n", ",\n", "\n}")
 
 }
+
+object TypeHintsStore {
+  def newEmpty: TypeHintsStore = TypeHintsStore()
+}

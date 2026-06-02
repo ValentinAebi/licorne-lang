@@ -37,14 +37,14 @@ final class ProxyStore {
     }
   }
 
-  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis)
+  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
 
-  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis)
+  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
 
   // TODO memoize
-  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean): Option[Formula] = {
+  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean): Option[Formula] = {
     val stepRes: Option[Formula] = formula match {
       case idValue: (ParamIdValue | UninterpretedConstIdValue) => Some(idValue)
       case idValue: (ValIdValue | VarIdValue) if !developLocals => Some(idValue)
@@ -52,88 +52,92 @@ final class ProxyStore {
       case idValue: IdValue => None
       case cst: ConstFormula => Some(cst)
       case Select(owner, field) if bypassPurityChecks || field.isResolvedAndStable => for {
-        owp <- dev(owner, developLocals, bypassPurityChecks, acceptPhis)
+        owp <- dev(owner, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Select(owp, field)
       case FunCall(receiver, func, typeArgs, args) if bypassPurityChecks || func.isResolvedAndPure =>
         for {
-          rcp <- dev(receiver, developLocals, bypassPurityChecks, acceptPhis)
-          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis)
+          rcp <- dev(receiver, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
         } yield FunCall(rcp, func, typeArgs, argsp)
       case ClosureCall(callee, closureTypingTarget, args) if bypassPurityChecks || closureTypingTarget.isResolvedAndPure =>
         for {
-          clp <- dev(callee, developLocals, bypassPurityChecks, acceptPhis)
-          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis)
+          clp <- dev(callee, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+          argsp <- devAll(args, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
         } yield ClosureCall(clp, closureTypingTarget, argsp)
       case pureClosureValue: PureClosureValue => Some(pureClosureValue)
       case Plus(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Plus(lp, rp)
       case Neg(operand) => for {
-        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis)
+        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Neg(op)
       case Times(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Times(lp, rp)
       case DivBy(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield DivBy(lp, rp)
       case Modulo(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Modulo(lp, rp)
-      case LogicalAnd(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
-      } yield LogicalAnd(lp, rp)
+      case LogicalAnd(lhs, rhs) =>
+        (dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission), dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)) match {
+          case (Some(lp), Some(rp)) => Some(LogicalAnd(lp, rp))
+          case (l, None) if allowConjunctsOmission => l
+          case (None, r) if allowConjunctsOmission => r
+          case _ => None
+        }
       case LogicalNot(operand) => for {
-        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis)
+        op <- dev(operand, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield LogicalNot(op)
       case LogicalOr(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield LogicalOr(lp, rp)
       case Equality(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield Equality(lp, rp)
       case LessOrEq(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield LessOrEq(lp, rp)
       case LessThan(lhs, rhs) => for {
-        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis)
-        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis)
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield LessThan(lp, rp)
       case TypePredicate(subject, tpe) => for {
-        sp <- dev(subject, developLocals, bypassPurityChecks, acceptPhis)
+        sp <- dev(subject, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield TypePredicate(sp, tpe)
-      case Phi(terms) if terms.size == 1 => dev(terms.head, developLocals, bypassPurityChecks, acceptPhis)
+      case Phi(terms) if terms.size == 1 => dev(terms.head, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       case Phi(terms) if acceptPhis =>
         val flattenedTermsOpt = terms.foldRight(Option(List.empty[Formula])) { (curr, accOpt) =>
           for {
             acc <- accOpt
-            d <- dev(curr, developLocals, bypassPurityChecks, acceptPhis)
+            d <- dev(curr, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
           } yield flattenPhis(d) ++ acc
         }
         flattenedTermsOpt.map(Phi(_))
       case _ => None
     }
-    stepRes.flatMap {
-      case res if res == formula => Some(res)
-      case res => dev(res, developLocals, bypassPurityChecks, acceptPhis)
-    } orElse {
+    (stepRes match {
+      case Some(res) if res == formula => Some(res)
+      case Some(res) => dev(res, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+      case None => None
+    }).orElse {
       Option.when(formula.isInstanceOf[ValIdValue | VarIdValue]) {
         formula
       }
     }
   }
 
-  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean): Option[List[Formula]] = {
+  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean): Option[List[Formula]] = {
     ls.foldRight(Option(List.empty[Formula])) {
-      case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks, acceptPhis).map(_ :: acc)
+      case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission).map(_ :: acc)
       case _ => None
     }
   }
@@ -150,7 +154,7 @@ final class ProxyStore {
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
                               (using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
     val (infoIfTrueNearest, infoIfFalseNearest) =
-      developNearest(cond).map(infosFor(_)(using outerScope))
+      developNearest(cond, allowConjunctsOmission = true).map(infosFor(_)(using outerScope))
         .getOrElse((BranchingInfo.empty, BranchingInfo.empty))
     val (infoIfTrueDeep, infoIfFalseDeep) =
       developDeep(cond).map(infosFor(_)(using outerScope))

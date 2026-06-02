@@ -48,7 +48,8 @@ final class Typer(
                    absInt: AbstractInterpreter,
                    globalValuesCtx: GlobalValuesContext,
                    er: ErrorReporter,
-                   closuresCollectorFunc: ClosureInfo => Unit = _ => ()
+                   closuresCollectorFunc: ClosureInfo => Unit = _ => (),
+                   allowWriteToIR: Boolean = true
                  )(using CompilationStep) {
 
   // @formatter:off
@@ -211,7 +212,9 @@ final class Typer(
       case staticTypeAssert@StaticTypeAssert(value, rawType) =>
         val valueType = currScope.computeCurrentType(value, staticTypeAssert.getPosition)
         val instantiatedType = instantiateType(rawType, None, currScope, staticTypeAssert.getPosition)
-        staticTypeAssert.tpe = instantiatedType
+        irModif {
+          staticTypeAssert.tpe = instantiatedType
+        }
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case assignVal@AssignVal(assigned, src) =>
@@ -290,8 +293,12 @@ final class Typer(
 
       case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
-        invk.typeArgs = instTypeArgs
-        val returnType = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
+        val (returnType, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
+        if (instRecTypeArgs.nonEmpty) {
+          irModif {
+            invk.typeArgs = instFunTypeArgs
+          }
+        }
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingHints(assigned, returnType)
         currScope.markHasExitedIfNothing(returnType)
@@ -334,7 +341,9 @@ final class Typer(
               if (fld.hasPublicSyntheticAccessor) {
                 val invkTarget = InvocationTarget(fld.id)
                 val funSig = resolutionCtx.resolveFunSig(receiverSig.id, fld.id).asInstanceOf[FuncResolResult.Success].funSig
-                invkTarget.resolve(receiverSig, funSig, fld.tpe)
+                irModif {
+                  invkTarget.resolve(receiverSig, funSig, fld.tpe)
+                }
                 val accessorCall = FunCall(ow, invkTarget, List.empty, List.empty)
                 saveEquality(select, accessorCall, persist = true)
                 ow match {
@@ -374,10 +383,13 @@ final class Typer(
         // defer typing to first write
         ()
 
-      case instantiate@Instantiate(assigned, classOrRecordName, typeArgs) =>
+      case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw) =>
         resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
           case Some(typeSig) =>
-            val typesSubst = instantiateTypes(typeSig.typeParams, typeArgs, subtypingCtx, currScope, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
+            val (typesSubst, instantiatedTypeArgs) = instantiateTypes(typeSig.typeParams, typeArgsRaw, subtypingCtx, currScope, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
+            irModif {
+              instantiate.typeArgs = instantiatedTypeArgs
+            }
             val tpe = typeSig.toType(typesSubst)
             currScope.saveType(assigned, tpe)
             tryToResolveTypeVarsUsingHints(assigned, tpe)
@@ -397,7 +409,9 @@ final class Typer(
           paramTypesB.addOne(paramType)
         }
         val isPure = knownPureBeforeTyping || typeHintsStore.hasPureClosureHintFor(assigned)
-        mkClosure.isPure = isPure
+        irModif {
+          mkClosure.isPure = isPure
+        }
         currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
         executionEnvirOpt match {
           case Some(executionEnvir) =>
@@ -420,19 +434,23 @@ final class Typer(
         }
 
       case softcast@SoftCast(inValue) =>
-        val preType = currScope.computeCurrentType(inValue, softcast.getPosition)
-        val targetTypeOpt = typeHintsStore.getHints(inValue).headOption
+        val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, softcast.getPosition)).withTypeVarsExpanded
+        val targetTypeOpt = typeHintsStore.getHints(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
           case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
             er.warn(s"soft cast is useless: I inferred target type $targetType, which is a supertype of the input type $preType", softcast.getPosition)
           case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
-            softcast.setMode(AssertNonNull)
+            irModif {
+              softcast.setMode(AssertNonNull)
+            }
             currScope.saveSmartcast(inValue, nullatedType)
           case (preType, Some(targetType)) =>
             val RefinedType(inBase, inPred) = preType.asRefinedType.flattenedRefinement
             val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
-              softcast.setMode(AssertPredicate(targetPred))
+              irModif {
+                softcast.setMode(AssertPredicate(targetPred))
+              }
               currScope.saveSmartcast(inValue, targetType)
             } else {
               er.reportError(s"soft cast is not sufficient to cast $inBase to $targetBase", softcast.getPosition)
@@ -469,7 +487,9 @@ final class Typer(
         currScope.markHasExited()
 
       case localDecl@LocalDecl(localId, tpe) =>
-        localDecl.tpe = instantiateType(tpe, None, currScope, localDecl.getPosition)
+        irModif {
+          localDecl.tpe = instantiateType(tpe, None, currScope, localDecl.getPosition)
+        }
 
       case Drop(droppedValue) => ()
 
@@ -521,10 +541,14 @@ final class Typer(
         assert(field.isUnresolvable)
         NothingType
       case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
-      case call@FunCall(receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
-        val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, scope, posOpt))
-        call.typeArgs = instTypeArgs
-        resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, scope, posOpt)
+      case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+        val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
+        if (funTypeArgsInst.nonEmpty) {
+          irModif {
+            call.typeArgs = funTypeArgsInst
+          }
+        }
+        tpe
       case FunCall(receiver, func, typeArgs, args) =>
         assert(func.isUnresolvable)
         NothingType
@@ -780,7 +804,7 @@ final class Typer(
           if (subTIfInSuperTPos.isDefined && sig.typeParams.nonEmpty && typeArgs.isEmpty) {
             er.reportError(s"missing type arguments for $typeName", posOpt)
           }
-          val typeArgsSubst = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, Some(s"application of type $typeName"))
+          val (typeArgsSubst, _) = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, Some(s"application of type $typeName"))
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
           val paramsWithType = sig.params.map { case (paramId, (paramType, paramVal)) =>
             Some(paramVal) -> paramType.substitute(typeArgsSubst, Map.empty)
@@ -1143,13 +1167,15 @@ final class Typer(
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
                                         callArgs: List[Formula], scope: Scope, posOpt: Option[Position])
-                                       (using tParamsCtx: TypeParamsContext): Type = {
+                                       (using tParamsCtx: TypeParamsContext): (Type, List[Type], List[Type]) = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
       er.reportError(s"method ${invkTarget.funId} not found in type $receiverType", posOpt)
-      invkTarget.markUnresolvable()
-      NothingType
+      irModif {
+        invkTarget.markUnresolvable()
+      }
+      (NothingType, callTypeArgs, List.empty)
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
@@ -1160,8 +1186,8 @@ final class Typer(
             if (funSig.visibility == Visibility.Private && !receiverIsThisPtr(scope, receiver)) {
               er.reportError(s"illegal access to ${Visibility.Private} method ${funSig.functionName}", posOpt)
             }
-            val receiverTypeSubst = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
-            val callTypeSubst = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
+            val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
+            val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val paramTypesInclThis = funSig.paramsInclThis.map { (paramVal, tpe) =>
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
@@ -1176,11 +1202,13 @@ final class Typer(
               solver.assert(precondSubst)
             }
             val instantiatedRetType = simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst))
-            invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
+            irModif {
+              invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
+            }
             if (isPurityRequired && !funSig.isPure) {
               er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
             }
-            instantiatedRetType
+            (instantiatedRetType, instRecTypeArgs, instFunTypeArgs)
           case _ => errorCase()
         }
       case _ => errorCase()
@@ -1202,14 +1230,16 @@ final class Typer(
         case _ => ()
       }
     }
-    tpe
+    tpe.withTypeVarsExpanded
   }
 
   private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
                              (using TypeParamsContext): Type = {
     requireNonNullable(calleeType.withTypeVarsExpanded, "closure", posOpt) match {
       case calleeType@ClosureType(paramTypes, resultType, enforcedPure) =>
-        closureTypingTarget.resolve(calleeType)
+        irModif {
+          closureTypingTarget.resolve(calleeType)
+        }
         checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", currScope, posOpt)
         if (!enforcedPure) {
           forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
@@ -1232,7 +1262,9 @@ final class Typer(
 
     def errorCase() = {
       er.reportError(s"field ${fieldResolTarget.fieldId} not found in type $ownerType", posOpt)
-      fieldResolTarget.markUnresolvable()
+      irModif {
+        fieldResolTarget.markUnresolvable()
+      }
       NothingType
     }
 
@@ -1244,9 +1276,11 @@ final class Typer(
               er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
             }
             // TODO check that we can indeed ignore errors here (reportErrors = false)
-            val typeSubst = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
+            val (typeSubst, instTypeArgs) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
             val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
-            fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
+            irModif {
+              fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
+            }
             if (needsWriteAccess && field.isStable && !isInitScopeOfOwner) {
               er.reportError(s"illegal update of ${Keyword.Val}-field ${field.id}", posOpt)
             }
@@ -1277,14 +1311,16 @@ final class Typer(
 
   private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, scope: Scope,
                                posOpt: Option[Position], ctxDescrForReportingOpt: Option[String])
-                              (using typeParamsCtx: TypeParamsContext): Map[TypeIdentifier, Type] = {
+                              (using typeParamsCtx: TypeParamsContext): (Map[TypeIdentifier, Type], List[Type]) = {
     val substBuilder = Map.newBuilder[TypeIdentifier, Type]
+    val instTypesB = List.newBuilder[Type]
     for ((tParam, tArgRaw) <- typeParams.zip(typeArgs)) {
       val tArgInst = instantiateType(tArgRaw, tParam.varianceOpt, scope, posOpt)
       ctxDescrForReportingOpt.foreach { ctxDescr =>
         checkTypeIsInBounds(tArgInst, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt, tParam.tid)
       }
       substBuilder.addOne(tParam.tid -> tArgInst)
+      instTypesB.addOne(tArgInst)
     }
     for (tp <- typeParams.drop(typeArgs.size)) {
       substBuilder.addOne(tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, posOpt))
@@ -1296,7 +1332,7 @@ final class Typer(
         }
       }
     }
-    substBuilder.result()
+    (substBuilder.result(), instTypesB.result())
   }
 
   def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier)(using TypeParamsContext): Unit = {
@@ -1430,6 +1466,12 @@ final class Typer(
     case 2 => "second argument"
     case 3 => "third argument"
     case i => s"${i}th argument"
+  }
+
+  private def irModif(action: => Unit): Unit = {
+    if (allowWriteToIR) {
+      val _ = action
+    }
   }
 
 }

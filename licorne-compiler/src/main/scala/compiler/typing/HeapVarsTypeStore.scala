@@ -14,3 +14,7 @@ final class HeapVarsTypeStore {
   export types.contains
 
 }
+
+object HeapVarsTypeStore {
+  def newEmpty: HeapVarsTypeStore = HeapVarsTypeStore()
+}

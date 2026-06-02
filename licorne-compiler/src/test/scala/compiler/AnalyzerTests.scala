@@ -125,8 +125,8 @@ class AnalyzerTests(fileName: String) {
       .andThen(MonotonicityAnalyzer(ihm, proxyStore, counterExBoxOpt))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeHintsInserter(ihm, typeVarsCtx, proxyStore, typeHintsStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeHintsInserter(ihm, proxyStore, typeHintsStore, er, counterExBoxOpt))
       .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
     try {

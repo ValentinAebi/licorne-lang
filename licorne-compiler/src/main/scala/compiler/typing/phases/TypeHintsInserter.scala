@@ -12,7 +12,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
-import compiler.typing.{ClosureInfo, SubtypingInfo, TypeHintsStore}
+import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -20,7 +20,6 @@ import scala.collection.mutable
 
 final class TypeHintsInserter(
                                ihm: IntHandlingMode[?],
-                               typeVarsCtx: TypeVariablesContext,
                                proxyStore: ProxyStore,
                                typeHintsStore: TypeHintsStore,
                                er: ErrorReporter,
@@ -42,25 +41,29 @@ final class TypeHintsInserter(
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
-      for {
-        ((ownerId, funId), func) <- program.functions
-        funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
-        body <- func.bodyOpt
-      } {
-        val fakeEr = ErrorReporter(
-          _ => throw AssertionError("error reported during type hints insertion"),
-          _ => throw AssertionError("fatal error during type hints insertion")
-        )
-        val resolCtx = ResolutionContext(program, fakeEr)
-        val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
-        traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx)
+      val fakeEr = ErrorReporter(
+        _ => throw AssertionError("error reported during type hints insertion"),
+        _ => throw AssertionError("fatal error during type hints insertion")
+      )
+      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeHintsStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
+      fakeEr.withReportingSuspended {
+        for {
+          ((ownerId, funId), func) <- program.functions
+          funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
+          body <- func.bodyOpt
+        } {
+          val resolCtx = ResolutionContext(program, fakeEr)
+          val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
+          val lightweightTyper = LightweightTyper(typer, dealiasingCtx, funSig.sigScope, typeParamsCtx)
+          traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx, tmpTypeVarsCtx, lightweightTyper)
+        }
       }
     }
     input
   }
 
   private def traverseScope(scope: Scope, currEnvir: ExecutionEnvironment)
-                           (using TypeParamsContext, ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext, TypeVariablesContext): Unit = {
+                           (using TypeParamsContext, ResolutionContext, GlobalValuesContext, SubtypingContext, DealiasingContext, TypeVariablesContext, LightweightTyper): Unit = {
     for (instr <- scope.instructions.reverse) {
       traverseInstr(instr, currEnvir)
     }
@@ -68,7 +71,7 @@ final class TypeHintsInserter(
 
   private def traverseInstr(instr: Instr, currEnvir: ExecutionEnvironment)
                            (using typeParamsCtx: TypeParamsContext, resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext,
-                            subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, typeVarsCtx: TypeVariablesContext): Unit = instr match {
+                            subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, typeVarsCtx: TypeVariablesContext, lt: LightweightTyper): Unit = instr match {
     case Loop(cond, condVal, body, variables) =>
       for {
         LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- variables
@@ -112,19 +115,20 @@ final class TypeHintsInserter(
     case Lt(assigned, lhs, rhs) => ()
     case invkFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       for {
-        receiverTypeId <- resolveReceiver(receiver, currEnvir)
+        (receiverTypeId, owTypesSubst, owValsSubst) <- resolveReceiver(receiver, currEnvir)
         funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
       } {
         val typeParams = funSig.typeParams
-        val typesSubst = Map.from(
+        val typesSubst = owTypesSubst ++ Map.from(
           if typeArgs.isEmpty
           then typeParams.map(tp => tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, None, None, typeParamsCtx, invkFunc.getPosition))
           else typeParams.map(_.tid).zip(typeArgs)
         )
-        val valsSubst = mutable.Map.empty[IdValue, Formula]
         typeHintsStore.getHints(assigned).headOption.foreach { hint =>
-          unifyTypes(hint, funSig.retType.substitute(typesSubst, Map.empty))
+          unifyTypes(hint, funSig.retType.substitute(typesSubst, owValsSubst))
         }
+        val valsSubst = mutable.Map.from(owValsSubst)
+        valsSubst.put(funSig.receiverVal, receiver)
         for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zip(args)) {
           val paramTypeSubst = paramTypeRaw.substitute(typesSubst, valsSubst)
           typeHintsStore.offerHint(argVal, paramTypeSubst)
@@ -142,11 +146,11 @@ final class TypeHintsInserter(
     case FieldRead(assigned, owner, field) => ()
     case FieldWrite(owner, fieldResolTarget, rhs) =>
       for {
-        ownerTypeId <- resolveReceiver(owner, currEnvir)
+        (ownerTypeId, owTypesSubst, owValsSubst) <- resolveReceiver(owner, currEnvir)
         ownerTypeSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](ownerTypeId)
         field <- ownerTypeSig.fields.get(fieldResolTarget.fieldId)
       } {
-        typeHintsStore.offerHint(rhs, field.tpe)
+        typeHintsStore.offerHint(rhs, field.tpe.substitute(owTypesSubst, owValsSubst))
       }
     case HeapVarRead(assigned, heapVar) => ()
     case HeapVarWrite(heapVar, newValue) => ()
@@ -163,10 +167,14 @@ final class TypeHintsInserter(
   }
 
   private def resolveReceiver(receiver: IdValue, currEnvir: ExecutionEnvironment)
-                             (using globalValsCtx: GlobalValuesContext): Option[TypeIdentifier] = {
-    proxyStore.developDeep(receiver).getOrElse(receiver) match {
-      case value: UninterpretedConstIdValue => globalValsCtx.getNameOfObject(value)
-      case value if value == currEnvir.root.receiverVal => Some(currEnvir.root.ownerName)
+                             (using globalValsCtx: GlobalValuesContext, resolCtx: ResolutionContext, lt: LightweightTyper): Option[(TypeIdentifier, Map[TypeIdentifier, Type], Map[IdValue, Formula])] = {
+    lt.detectDealiasedTypeOf(receiver).asRefinedType.baseType match {
+      case NamedType(typeName, typeArgs, args) =>
+        resolCtx.resolveTypeSigAs[RuntimeTypeSignature](typeName).map { sig =>
+          val typesSubst = sig.typeParams.map(_.tid).zip(typeArgs).toMap
+          val valsSubst = sig.params.map(_._2._2).zip(args).toMap
+          (typeName, typesSubst, valsSubst)
+        }
       case _ => None
     }
   }
@@ -211,6 +219,14 @@ final class TypeHintsInserter(
         unifyTypes(hint, shapeBase)
       case _ => ()
       // TODO also handle IntersectionTypes and UnionTypes?
+    }
+  }
+
+  private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
+    def detectDealiasedTypeOf(formula: Formula): Type = {
+      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true).getOrElse(formula)
+      val typeRaw = typer.typeFormula(dev, funSigScope, None)(using typeParamsCtx)
+      dealiasingCtx.dealiasType(typeRaw)
     }
   }
 
