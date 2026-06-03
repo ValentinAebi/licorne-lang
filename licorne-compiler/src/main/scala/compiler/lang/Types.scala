@@ -512,6 +512,11 @@ object Types {
     val mergedPredicate = if predicate == BoolConst(true) then newPredicate else LogicalAnd(predicate, newPredicate)
     RefinedType(baseType, newPredicate)
   }
+  
+  extension (tpe: Type) def flattenedPredIfGenRefined: Type = tpe match {
+    case refinedType: RefinedType => refinedType.flattenedRefinement
+    case tpe => tpe
+  }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
     case None => None

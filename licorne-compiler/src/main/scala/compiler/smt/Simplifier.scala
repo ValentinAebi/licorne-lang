@@ -29,7 +29,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case variable: TypeVariable => variable
 
     case UnionType(originalTypes) =>
-      val simplifiedTypes = SeqSet(originalTypes).map(simplify).filter(_ != NothingType)
+      val simplifiedTypes = SeqSet(originalTypes).map(simplify(_).flattenedPredIfGenRefined).filter(_ != NothingType)
       if simplifiedTypes.size == 1 then simplifiedTypes.head
       else {
 
@@ -67,7 +67,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       }
 
     case IntersectionType(originalTypes) =>
-      val simplifiedTypes = SeqSet(originalTypes).map(simplify).filter(_ != AnyType)
+      val simplifiedTypes = SeqSet(originalTypes).map(simplify(_).flattenedPredIfGenRefined).filter(_ != AnyType)
 
       var nullableFlag = true
       var knownNullFlag = false
@@ -103,7 +103,13 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         case _ => filteredTypes.asIterableOfType[IntRangeType] match {
           case Some(filteredTypes) =>
             meetJoinComputer.computeMeetOfRanges(filteredTypes)
-          case None => IntersectionType(filteredTypes)
+          case None => filteredTypes.asIterableOfType[RefinedType] match {
+            case Some(filteredTypes) =>
+              val baseType = meetJoinComputer.computeMeet(filteredTypes.map(_.baseType))
+              val pred = filteredTypes.map(_.predicate).reduce(LogicalAnd(_, _))
+              RefinedType(baseType, pred)
+            case None => IntersectionType(filteredTypes)
+          }
         }
       }
       if nullableFlag

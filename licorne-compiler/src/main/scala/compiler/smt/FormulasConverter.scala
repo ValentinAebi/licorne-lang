@@ -88,7 +88,7 @@ final class FormulasConverter[IntSort <: KSort](
         for {
           l <- convertInt(lhs)
           r <- convertInt(rhs)
-        } yield ihm.div(l, r)
+        } yield ihm.modulo(l, r)
       case LogicalNot(operand) => None
       case LogicalAnd(lhs, rhs) => None
       case LogicalOr(lhs, rhs) => None

@@ -79,12 +79,17 @@ final class Typer(
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
         applyBranchInfo(scope, branchInfo)
-        while (instrIter.hasNext) {
+        var stop = false
+        while (instrIter.hasNext && !stop) {
           val instr = instrIter.next()
           if (!instr.isInstanceOf[Drop]) {
             scope.reportHasExitedIfNeeded(er, instr.getPosition)
           }
-          typeInstr(instr, scope, branchInfo)
+          if (scope.hasExited){
+            stop = true
+          } else {
+            typeInstr(instr, scope, branchInfo)
+          }
         }
       }
     }
@@ -388,6 +393,11 @@ final class Typer(
         ()
 
       case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw) =>
+        assigned match {
+          case intermIdVal: IntermediateIdValue =>
+            intermIdVal.nameHint = s"new_$classOrRecordName"
+          case _ => ()
+        }
         resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
           case Some(typeSig) =>
             val (typesSubst, instantiatedTypeArgs) = instantiateTypes(typeSig.typeParams, typeArgsRaw, subtypingCtx, currScope, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
@@ -1183,7 +1193,7 @@ final class Typer(
     }
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-    dealiasingCtx.dealiasType(receiverType).withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
+    dealiasingCtx.dealiasType(receiverType.withTypeVarsExpanded).withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
@@ -1272,7 +1282,8 @@ final class Typer(
       NothingType
     }
 
-    requireNonNullable(ownerType.withTypeVarsExpanded, s"owner of field ${fieldResolTarget.fieldId}", posOpt) match {
+    val owt = requireNonNullable(ownerType.withTypeVarsExpanded, s"owner of field ${fieldResolTarget.fieldId}", posOpt)
+    dealiasingCtx.dealiasType(owt.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType.baseType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>

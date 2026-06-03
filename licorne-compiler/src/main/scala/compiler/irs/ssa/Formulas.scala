@@ -78,7 +78,7 @@ object Formulas {
     override def toString: String = name
   }
 
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHint: String) extends IdValue {
+  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String) extends IdValue {
     override def toString: String = s"$nameHint${"$"}snapshot${"$"}$uid@${definingScope.scopeUid}i"
   }
 

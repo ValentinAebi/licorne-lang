@@ -16,6 +16,7 @@ trait IntHandlingMode[IntSort <: KSort] {
   def neg(operand: KExpr[IntSort])(using KContext): KExpr[IntSort]
   def times(l: KExpr[IntSort], r: KExpr[IntSort])(using KContext): KExpr[IntSort]
   def div(l: KExpr[IntSort], r: KExpr[IntSort])(using KContext): KExpr[IntSort]
+  def modulo(l: KExpr[IntSort], r: KExpr[IntSort])(using KContext): KExpr[IntSort]
   
   def leq(l: KExpr[IntSort], r: KExpr[IntSort])(using KContext): KExpr[KBoolSort]
   def lt(l: KExpr[IntSort], r: KExpr[IntSort])(using KContext): KExpr[KBoolSort]
@@ -36,6 +37,8 @@ object ArithIntMode extends IntHandlingMode[KIntSort] {
 
   override def div(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkArithDiv(l, r)
 
+  override def modulo(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkIntMod(l, r)
+
   override def leq(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkArithLe(l, r)
 
   override def lt(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkArithLt(l, r)
@@ -55,6 +58,8 @@ object BvInt32Mode extends IntHandlingMode[KBv32Sort] {
   override def times(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvMulExpr(l, r)
 
   override def div(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvSignedDivExpr(l, r)
+
+  override def modulo(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvSignedModExpr(l, r)
 
   override def leq(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkBvSignedLessOrEqualExpr(l, r)
 

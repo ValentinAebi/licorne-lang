@@ -859,7 +859,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Div(resultVal, _, _), DivBy(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Modulo, rhsTree) =>
-        generateBinaryWithProxy(lhsTree, rhsTree, Rem(resultVal, _, _), DivBy(_, _))
+        generateBinaryWithProxy(lhsTree, rhsTree, Rem(resultVal, _, _), Modulo(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.LessThan, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Lt(resultVal, _, _), LessThan(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterThan, rhsTree) =>
