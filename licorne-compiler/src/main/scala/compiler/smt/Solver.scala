@@ -9,6 +9,8 @@ import io.ksmt.sort.KSort
 
 trait Solver {
 
+  def acceptingPhisForInts[T](action: => T): T
+
   def check(): KSolverStatus
   
   def checkSat(): Boolean

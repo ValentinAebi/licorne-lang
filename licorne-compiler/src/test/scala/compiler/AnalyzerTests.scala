@@ -122,7 +122,6 @@ class AnalyzerTests(fileName: String) {
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
-      .andThen(MonotonicityAnalyzer(ihm, proxyStore, counterExBoxOpt))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))

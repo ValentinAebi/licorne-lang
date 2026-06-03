@@ -22,6 +22,8 @@ final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: K
 
   // useful for debugging
   private val assertionsStack = mutable.Stack(mutable.LinkedHashSet.empty[KExpr[KBoolSort]])
+  
+  export converter.acceptingPhisForInts
 
   def check(): KSolverStatus = kZ3Solver.check()
 

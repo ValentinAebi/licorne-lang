@@ -21,9 +21,9 @@ object Reasoning {
       f(solver, subtypingCtx, simplifier, meetJoin, absInt)
     }
 
-  def usingFreshSolver[T](ihm: IntHandlingMode[?], dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext, proxyStore: ProxyStore, counterExBoxOpt: Option[CounterexampleBox], acceptPhis: Boolean = false)(f: Solver => T): T = Using(KContext()) { kCtx =>
+  def usingFreshSolver[T](ihm: IntHandlingMode[?], dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext, proxyStore: ProxyStore, counterExBoxOpt: Option[CounterexampleBox])(f: Solver => T): T = Using(KContext()) { kCtx =>
     Using(KZ3Solver(kCtx)) { kZ3Solver =>
-      val converter = FormulasConverter(kCtx, ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt, acceptPhis)
+      val converter = FormulasConverter(kCtx, ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt)
       val solver = Z3Solver(kCtx, kZ3Solver, ihm, converter, counterExBoxOpt)
       f(solver)
     }.get

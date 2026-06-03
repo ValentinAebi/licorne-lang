@@ -13,7 +13,7 @@ object Test {
         }
     }
 
-    fn test(arr: Array[String]) {
+    fn test2(arr: Array[String]) {
         var i = arr.length() - 1;
         while i >= 0 {
             print(arr.get(i));

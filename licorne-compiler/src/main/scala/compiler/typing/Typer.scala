@@ -70,6 +70,10 @@ final class Typer(
 
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
+  def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
+    meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
+    closuresCollectorFunc, allowWriteToIR = false)
+
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
       scope.resetHasExited()
@@ -106,7 +110,7 @@ final class Typer(
         for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
           (for {
             recurrence <- varData.recurrenceOpt
-            monotonicity <- Some(recurrence.computeMonotonicity(solver)).filter(_ != NonMonotonous)
+            monotonicity <- Some(recurrence.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, currScope)).filter(_ != NonMonotonous)
           } yield {
             val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
             val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)

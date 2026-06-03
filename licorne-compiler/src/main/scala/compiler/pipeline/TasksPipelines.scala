@@ -67,7 +67,7 @@ object TasksPipelines {
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
-      )).andThen(MonotonicityAnalyzer(ihm, proxyStore, counterExBoxOpt))
+      ))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
