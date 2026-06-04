@@ -4,7 +4,7 @@ import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
-import compiler.lang.Types.{IntRangeType, Type, asRefinedType}
+import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
 import compiler.smt.AbstractInterpreter.someZero
 import compiler.smt.{Simplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
@@ -106,8 +106,11 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
       lazy val `[c,d] < 0` = solver.canProveLtZero(d)
 
       def aDivC = boundDivBound(a, c)
+
       def aDivD = boundDivBound(a, d)
+
       def bDivC = boundDivBound(b, c)
+
       def bDivD = boundDivBound(b, d)
 
       if `[a,b] >= 0` && `[c,d] > 0` then (aDivD.orZero, bDivC)
@@ -126,20 +129,29 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
    *    -  [a,b] <= 0, [c,d] < 0  -->  [c+1,0]
    * }}}
    */
-  def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type)(using TypeParamsContext): Option[Type] = typeArithBinopType(l, r) {
-    case ((a, b), (c, d)) =>
-      import compiler.irs.ssa.FormulasDsl.*
+  def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type)(using TypeParamsContext): Option[Type] = {
+    val rawTypeOpt = typeArithBinopType(l, r) {
+      case ((a, b), (c, d)) =>
+        import compiler.irs.ssa.FormulasDsl.*
 
-      lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
-      lazy val `[c,d] > 0` = solver.canProveGtZero(c)
-      lazy val `[a,b] <= 0` = solver.canProveLeZero(b)
-      lazy val `[c,d] < 0` = solver.canProveLtZero(d)
+        lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
+        lazy val `[c,d] > 0` = solver.canProveGtZero(c)
+        lazy val `[a,b] <= 0` = solver.canProveLeZero(b)
+        lazy val `[c,d] < 0` = solver.canProveLtZero(d)
 
-      if `[a,b] >= 0` && `[c,d] > 0` then (someZero, for r <- rhsOpt.orElse(d) yield r - 1)
-      else if `[a,b] >= 0` && `[c,d] < 0` then (someZero, for r <- rhsOpt.orElse(c) yield -r - 1)
-      else if `[a,b] <= 0` && `[c,d] > 0` then (for r <- rhsOpt.orElse(d) yield -r + 1, someZero)
-      else if `[a,b] <= 0` && `[c,d] < 0` then (for r <- rhsOpt.orElse(c) yield r + 1, someZero)
-      else (None, None)
+        if `[a,b] >= 0` && `[c,d] > 0` then (someZero, for r <- rhsOpt.orElse(d) yield r - 1)
+        else if `[a,b] >= 0` && `[c,d] < 0` then (someZero, for r <- rhsOpt.orElse(c) yield -r - 1)
+        else if `[a,b] <= 0` && `[c,d] > 0` then (for r <- rhsOpt.orElse(d) yield -r + 1, someZero)
+        else if `[a,b] <= 0` && `[c,d] < 0` then (for r <- rhsOpt.orElse(c) yield r + 1, someZero)
+        else (None, None)
+    }
+    import compiler.irs.ssa.FormulasDsl.*
+    (rawTypeOpt, rhsOpt) match {
+      case (Some(rawType), Some(rhs)) =>
+        Some(simplifier.simplify(IntersectionType(rawType, IntRangeType(0, rhs - 1))))
+      case (None, Some(rhs)) => Some(IntRangeType(0, rhs - 1))
+      case (rawTypeOpt, None) => rawTypeOpt
+    }
   }
 
   def unaryNegType(operand: Type)(using TypeParamsContext): Option[Type] = simplifier.simplify(operand) match {
