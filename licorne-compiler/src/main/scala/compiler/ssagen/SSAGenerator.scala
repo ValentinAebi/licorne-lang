@@ -900,17 +900,16 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
       case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeIdRaw, typeArgTrees, initializers) =>
-        val initializationScope = Scope.nestedInside(currScope, recordOrClassInstTree, objInitializedHereOpt = Some(resultVal))
+        val argsB = List.newBuilder[(FunOrVarId, IdValue)]
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
           val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId)
           generateSSAExpr(rhsVal, initializerRhs, currScope)
-          initializationScope.saveInstr(FieldWrite(resultVal, FieldResolutionTarget(initializer.fieldName), rhsVal), initializer)
+          argsB.addOne(initializer.fieldName -> rhsVal)
         }
         val typeId = importsCtx.applyImports(typeIdRaw)
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
-        currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs), recordOrClassInstTree)
-        currScope.saveInstr(initializationScope, recordOrClassInstTree)
+        currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs, argsB.result()), recordOrClassInstTree)
         None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
         val condVal = currScope.newIntermediate("cond")

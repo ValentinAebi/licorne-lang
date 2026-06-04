@@ -5,7 +5,7 @@ import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
 import compiler.irs.ssa.SSA
 import compiler.irs.ssa.SSA.*
 import compiler.lang.Types.*
-import compiler.lang.{ExecutionEnvironment, FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
+import compiler.lang.{ExecutionEnvironment, FunctionSignature, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeHintsInsertion
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -119,11 +119,7 @@ final class TypeHintsInserter(
         funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
       } {
         val typeParams = funSig.typeParams
-        val typesSubst = owTypesSubst ++ Map.from(
-          if typeArgs.isEmpty
-          then typeParams.map(tp => tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, None, None, typeParamsCtx, invkFunc.getPosition))
-          else typeParams.map(_.tid).zip(typeArgs)
-        )
+        val typesSubst = owTypesSubst ++ createTypeParamsSubst(typeParams, typeArgs)
         typeHintsStore.getHints(assigned).headOption.foreach { hint =>
           unifyTypes(hint, funSig.retType.substitute(typesSubst, owValsSubst))
         }
@@ -136,7 +132,20 @@ final class TypeHintsInserter(
         }
       }
     case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
-    case Instantiate(assigned, classOrRecordName, typeArgs) => ()
+    case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
+      for {
+        hint <- typeHintsStore.getHints(assigned).headOption
+        tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
+      } {
+        val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
+        for {
+          (fldId, fldVal) <- fieldsInit
+          fld <- tSig.fields.get(fldId)
+        } {
+          val expFldType = fld.tpe.substitute(subst, Map.empty)
+          typeHintsStore.offerHint(fldVal, expFldType)
+        }
+      }
     case mkClosure@MkClosure(assigned, params, body, declaredPure) =>
       val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, currEnvir, TypeParamsContext.empty /* TODO check this */)
       traverseScope(body, closureInfo)
@@ -177,6 +186,18 @@ final class TypeHintsInserter(
         }
       case _ => None
     }
+  }
+
+  private def createTypeParamsSubst(typeParams: List[TypeParamInfo], typeArgs: List[Type])(using tpCtx: TypeParamsContext, tvCtx: TypeVariablesContext): Map[TypeIdentifier, Type] = {
+    val substB = Map.newBuilder[TypeIdentifier, Type]
+    val typeParamsIter = typeParams.iterator
+    val typeArgsIter = typeArgs.iterator
+    while (typeParamsIter.nonEmpty) {
+      val tParam = typeParamsIter.next()
+      val tArg = typeArgsIter.nextOption().getOrElse(tvCtx.newTypeVariable(tParam.tid, None, None, tpCtx, None))
+      substB.addOne(tParam.tid -> tArg)
+    }
+    substB.result()
   }
 
   private def unifyTypes(hint: Type, shape: Type)

@@ -271,8 +271,8 @@ final class SSAPrinter(
         printArgsList(args)
       case InvokeClosure(assigned, callee, _, args) =>
         pps.add(s"INVK-CLOSURE ${maybeTyped(assigned, scope)} := $callee" ++ args.mkString("(", ",", ")"))
-      case Instantiate(assigned, classOrRecordName, typeArgs) =>
-        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
+      case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
+        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName" ++ fieldsInit.map((fldId, rhsVal) => s"$fldId := $rhsVal").mkString("(", ", ", ")"))
         printTypeArgsList(typeArgs)
       case MkClosure(assigned, params, body, declaredPure) =>
         val purityDescr = if declaredPure then " (pure)" else ""

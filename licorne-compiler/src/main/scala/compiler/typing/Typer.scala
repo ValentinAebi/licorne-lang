@@ -328,10 +328,13 @@ final class Typer(
           case None =>
             currScope.saveType(assigned, tpe)
         }
+        if (field.isResolved && field.getReceiverSigUnsafe.fields.get(field.fieldId).exists(_.hasPublicSyntheticAccessor)) {
+          er.warn(s"field ${field.fieldId} has an accessor, hence the raw field should not be used", fr.getPosition)
+        }
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
         val ownerType = currScope.computeCurrentType(owner, fw.getPosition)
-        val fieldTypeRaw = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition, isInInitializer = currScope.isInitScopeOf(owner))
+        val fieldTypeRaw = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition)
         val fieldTypeSubst = fieldResolTarget.getReceiverSigOpt match {
           case Some(recSig) => fieldTypeRaw.substitute(Map.empty, Map(recSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get -> owner))
           case None => fieldTypeRaw
@@ -339,35 +342,6 @@ final class Typer(
         val rhsType = currScope.computeCurrentType(rhs, fw.getPosition)
         tryToResolveTypeVars(fieldTypeSubst, rhsType)
         subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldTypeSubst, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
-        val isInitializationOfStableField = fieldResolTarget.isResolvedAndStable
-        if (isInitializationOfStableField) {
-          val ow = proxyStore.developDeep(owner).getOrElse(owner)
-          val select = Select(ow, fieldResolTarget)
-          saveEquality(select, rhs, persist = true)
-          fieldResolTarget.getReceiverSigUnsafe match {
-            case receiverSig: ClassSignature =>
-              val fld = receiverSig.fields.apply(fieldResolTarget.fieldId)
-              if (fld.hasPublicSyntheticAccessor) {
-                val invkTarget = InvocationTarget(fld.id)
-                val funSig = resolutionCtx.resolveFunSig(receiverSig.id, fld.id).asInstanceOf[FuncResolResult.Success].funSig
-                irModif {
-                  invkTarget.resolve(receiverSig, funSig, fld.tpe)
-                }
-                val accessorCall = FunCall(ow, invkTarget, List.empty, List.empty)
-                saveEquality(select, accessorCall, persist = true)
-                ow match {
-                  case ow: IdValue =>
-                    proxyStore.developDeep(rhs).foreach { devRhs =>
-                      val additPredicate = Equality(accessorCall.substitute(ow, itValue), devRhs)
-                      currScope.saveType(ow, currScope.detectCurrentType(ow).refinedWith(additPredicate), allowOverwrite = true)
-                      currScope.saveType(owner, currScope.detectCurrentType(owner).refinedWith(additPredicate), allowOverwrite = true)
-                    }
-                  case _ => ()
-                }
-              }
-            case _ => ()
-          }
-        }
 
       case instr: (InvokeFunc | InvokeClosure | FieldRead | FieldWrite) =>
         throw AssertionError("typing phase run more than once on the same piece of code: " + instr.getClass.getSimpleName)
@@ -392,10 +366,10 @@ final class Typer(
         // defer typing to first write
         ()
 
-      case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw) =>
+      case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw, fieldsInit) =>
         assigned match {
           case intermIdVal: IntermediateIdValue =>
-            intermIdVal.nameHint = s"new_$classOrRecordName"
+            intermIdVal.nameHint = s"new_${classOrRecordName.nonPrefixedId}"
           case _ => ()
         }
         resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
@@ -404,9 +378,8 @@ final class Typer(
             irModif {
               instantiate.typeArgs = instantiatedTypeArgs
             }
-            val tpe = typeSig.toType(typesSubst)
+            val tpe = typeInstInitializers(instantiate, typeSig, currScope, typesSubst)
             currScope.saveType(assigned, tpe)
-            tryToResolveTypeVarsUsingHints(assigned, tpe)
           case None =>
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
         }
@@ -512,12 +485,67 @@ final class Typer(
     }
   }
 
+  private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type])
+                                  (using TypeParamsContext): Type = {
+    val assigned = instantiate.assigned
+    val newInstanceTypeBase = typeSig.toType(typesSubst)
+    tryToResolveTypeVarsUsingHints(assigned, newInstanceTypeBase)
+    val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
+    fieldsInitArgsSubst.put(typeSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get, assigned)
+    val returnTypePredParts = mutable.ListBuffer.empty[Formula]
+    val expFieldsIter = typeSig.fields.iterator
+    val actFieldsIter = instantiate.fieldsInit.iterator
+    var errorFlag = false
+    while (!errorFlag && expFieldsIter.hasNext && actFieldsIter.hasNext) {
+      val (_, fld) = expFieldsIter.next()
+      val (initFldId, rhsVal) = actFieldsIter.next()
+      if (initFldId == fld.id) {
+        val rhsValType = currScope.getCurrentTypeOf(rhsVal, saveSmartcastsInIR = true)
+        val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
+        subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field $initFldId", currScope, instantiate.getPosition)
+        if (fld.isStable) {
+          val resolTarget = FieldResolutionTarget(fld.id)
+          resolTarget.resolve(typeSig, expType)
+          val select = Select(assigned, resolTarget)
+          returnTypePredParts.addOne(Equality(select, rhsVal))
+          solver.assertEq(select, rhsVal, SimplifiedType.from(rhsValType))
+          typeSig match {
+            case typeSig: ClassSignature if fld.hasPublicSyntheticAccessor =>
+              val invkTarget = InvocationTarget(fld.id)
+              invkTarget.resolve(typeSig, resolutionCtx.resolveFunSig(typeSig.id, fld.id).forceGetFunSig, expType)
+              val accessorCall = FunCall(assigned, invkTarget, List.empty, List.empty)
+              solver.assertEq(accessorCall, select, SimplifiedType.from(rhsValType))
+            case _ => ()
+          }
+        }
+      } else {
+        er.reportError(s"expected initializer of field ${fld.id}, found label $initFldId", instantiate.getPosition)
+        errorFlag = true
+      }
+    }
+    if (!errorFlag && expFieldsIter.hasNext) {
+      er.reportError(s"missing initializer for field ${expFieldsIter.next()._1}", instantiate.getPosition)
+      errorFlag = true
+    }
+    if (!errorFlag && actFieldsIter.hasNext) {
+      er.reportError(s"unexpected initializer for field ${actFieldsIter.next()._1}", instantiate.getPosition)
+      errorFlag = true
+    }
+    val newInstanceType =
+      if returnTypePredParts.isEmpty then newInstanceTypeBase
+      else {
+        val pred = returnTypePredParts.reduce(LogicalAnd(_, _)).substitute(assigned, itValue)
+        RefinedType(newInstanceTypeBase, pred)
+      }
+    newInstanceType
+  }
+
   private def tryToApplyHint(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
     val appliedHints = mutable.ListBuffer.empty[Type]
     val hintsIter = typeHintsStore.getHints(srcVal).iterator
     while (hintsIter.hasNext) {
       val hint = hintsIter.next()
-      if (subtypingCtx.canProveHasType(srcVal, regularType, hint, currScope, posOpt)) {
+      if (subtypingCtx.canProveHasType(srcVal, regularType, hint, currScope)) {
         appliedHints.addOne(hint)
       }
     }
@@ -648,7 +676,7 @@ final class Typer(
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
     val mayBeDivByZero =
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
-        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope, posOpt)
+        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope)
     if (mayBeDivByZero) {
       val rhsDescr =
         proxyStore.developDeep(rhs).orElse(Some(rhs)) match {
@@ -1266,14 +1294,8 @@ final class Typer(
   }
 
   private def resolveFieldAccess(owner: Formula, ownerType: Type, fieldResolTarget: FieldResolutionTarget, currScope: Scope,
-                                 needsWriteAccess: Boolean, posOpt: Option[Position], isInInitializer: Boolean = false)
+                                 needsWriteAccess: Boolean, posOpt: Option[Position])
                                 (using TypeParamsContext): Type = {
-
-    def isInitScopeOfOwner: Boolean = owner match {
-      case owner: IdValue => currScope.isInitScopeOf(owner)
-      case _ => false
-    }
-
     def errorCase() = {
       er.reportError(s"field ${fieldResolTarget.fieldId} not found in type $ownerType", posOpt)
       irModif {
@@ -1287,7 +1309,7 @@ final class Typer(
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
-            if (!isInInitializer && ownerSig.isInstanceOf[EncapsulatedTypeSig] && !receiverIsThisPtr(currScope, owner)) {
+            if (ownerSig.isInstanceOf[EncapsulatedTypeSig] && !receiverIsThisPtr(currScope, owner)) {
               er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
             }
             // TODO check that we can indeed ignore errors here (reportErrors = false)
@@ -1296,10 +1318,10 @@ final class Typer(
             irModif {
               fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
             }
-            if (needsWriteAccess && field.isStable && !isInitScopeOfOwner) {
+            if (needsWriteAccess && field.isStable) {
               er.reportError(s"illegal update of ${Keyword.Val}-field ${field.id}", posOpt)
             }
-            if (isPurityRequired && !field.isStable && !isInitScopeOfOwner) {
+            if (isPurityRequired && !field.isStable) {
               er.reportError(s"illegal access to impure field ${field.id}", posOpt)
             }
             instantiatedFieldType

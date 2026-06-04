@@ -149,7 +149,7 @@ object SSA {
   final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, var typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr
   final case class InvokeClosure(assigned: IdValue, callee: IdValue, closureTypingTarget: ClosureTypingTarget, args: List[IdValue]) extends AssigningInstr
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type]) extends AssigningInstr
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(FunOrVarId, IdValue)]) extends AssigningInstr
   final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], body: Scope, var isPure: Boolean) extends AssigningInstr
   final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr
 
@@ -184,7 +184,6 @@ object SSA {
   final class Scope private(
                              val outScopeOpt: Option[Scope],
                              val valuesCtx: ValuesContext,
-                             objectInitializedInThisScopeOpt: Option[IdValue],
                              private val proxyStore: ProxyStore
                            ) extends RealInstr {
     private var enclosingFunctionOpt = Option.empty[Function]
@@ -349,9 +348,6 @@ object SSA {
       }
     }
 
-    def isInitScopeOf(idValue: IdValue): Boolean =
-      objectInitializedInThisScopeOpt.contains(idValue)
-
     override def toString: String = {
       val outerScopeDescr = outScopeOpt match {
         case Some(outScope) => s" nested inside ${outScope.scopeUid}"
@@ -425,11 +421,11 @@ object SSA {
 
   object Scope {
 
-    def nestedInside(outScope: Scope, astNode: Asts.Ast, objInitializedHereOpt: Option[IdValue] = None): Scope =
-      nestedInsideNodeOpt(outScope, Some(astNode), objInitializedHereOpt)
+    def nestedInside(outScope: Scope, astNode: Asts.Ast): Scope =
+      nestedInsideNodeOpt(outScope, Some(astNode))
 
-    def nestedInsideNodeOpt(outScope: Scope, astNodeOpt: Option[Asts.Ast], objInitializedHereOpt: Option[IdValue] = None): Scope = {
-      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, objInitializedHereOpt, outScope.proxyStore)
+    def nestedInsideNodeOpt(outScope: Scope, astNodeOpt: Option[Asts.Ast]): Scope = {
+      val newScope = new Scope(Some(outScope), outScope.valuesCtx.withOneMoreFrame, outScope.proxyStore)
       astNodeOpt.foreach { astNode =>
         newScope.setAstNode(astNode)
       }
@@ -440,7 +436,7 @@ object SSA {
     }
 
     def root(globalValuesCtx: GlobalValuesContext): Scope =
-      new Scope(None, globalValuesCtx, objectInitializedInThisScopeOpt = None, globalValuesCtx.proxyStore)
+      new Scope(None, globalValuesCtx, globalValuesCtx.proxyStore)
 
     private val scopeUidGen = new AtomicLong(-1)
 

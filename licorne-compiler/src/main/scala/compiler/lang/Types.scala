@@ -411,6 +411,9 @@ object Types {
 
   extension (tpe: Type) def ignoreNullabilityShallow: Type = tpe match {
     case NullableType(nullatedType) => nullatedType
+    case refinedType: RefinedType =>
+      val RefinedType(base, pred) = refinedType.flattenedRefinement
+      RefinedType(base.ignoreNullabilityShallow, pred)
     case tpe => tpe
   }
 
@@ -512,7 +515,7 @@ object Types {
     val mergedPredicate = if predicate == BoolConst(true) then newPredicate else LogicalAnd(predicate, newPredicate)
     RefinedType(baseType, newPredicate)
   }
-  
+
   extension (tpe: Type) def flattenedPredIfGenRefined: Type = tpe match {
     case refinedType: RefinedType => refinedType.flattenedRefinement
     case tpe => tpe

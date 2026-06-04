@@ -145,23 +145,23 @@ final class SubtypingContext(
     case tpe => tpe
   }
 
-  def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
-    isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope, posOpt)
+  def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope)(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
+    isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope)
 
-  def canProveHasType(subject: Formula, knownType: Type, targetType: Type, scope: Scope, posOpt: Option[Position])(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean = solver.onNewFrame {
+  def canProveHasType(subject: Formula, knownType: Type, targetType: Type, scope: Scope)(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean = solver.onNewFrame {
     for (t <- knownType.breakdownIfIntersection) {
       val tRefined = dealiasingCtx.dealiasType(t.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
       solver.takeType(subject, tRefined)
-      typer.typeFormula(tRefined.predicate, scope, posOpt, suspendReporting = true)
+      typer.typeFormula(tRefined.predicate, scope, None, suspendReporting = true)
     }
     dealiasingCtx.dealiasType(targetType.withTypeVarsExpanded).withTypeVarsExpanded match {
       case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
         // pass the types of all subformulas of the predicate to the solver
         lowerBoundOpt.foreach { lb =>
-          typer.typeFormula(lb, scope, posOpt, suspendReporting = true)
+          typer.typeFormula(lb, scope, None, suspendReporting = true)
         }
         upperBoundOpt.foreach { ub =>
-          typer.typeFormula(ub, scope, posOpt, suspendReporting = true)
+          typer.typeFormula(ub, scope, None, suspendReporting = true)
         }
         isSubtype(knownType, IntType)
           && lowerBoundOpt.forall { lb =>
@@ -175,14 +175,14 @@ final class SubtypingContext(
         }
       case RefinedType(baseType, predicate) =>
         // pass the types of all subformulas of the predicate to the solver
-        typer.typeFormula(predicate, scope, posOpt, suspendReporting = true)
+        typer.typeFormula(predicate, scope, None, suspendReporting = true)
         isSubtype(knownType, baseType) && (
           solver.canProve(predicate.substitute(itValue, subject))
             || proxyStore.developDeep(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
       case UnionType(types) =>
-        types.exists(canProveHasType(subject, knownType, _, scope, posOpt))
+        types.exists(canProveHasType(subject, knownType, _, scope))
       case IntersectionType(types) =>
-        types.forall(canProveHasType(subject, knownType, _, scope, posOpt))
+        types.forall(canProveHasType(subject, knownType, _, scope))
       case _ => false
     }
   }
@@ -239,7 +239,7 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: => String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer, DealiasingContext): Boolean = {
-    val isSubT = isSubtype(subject, subT, superT, scope, posOpt)
+    val isSubT = isSubtype(subject, subT, superT, scope)
     if (!isSubT) {
       er.reportError(msg, posOpt)
     }
