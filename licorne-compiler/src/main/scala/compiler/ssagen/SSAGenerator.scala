@@ -19,7 +19,7 @@ import compiler.reporting.Position
 import compiler.ssagen.ImportsScanner.PackagesInfo
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
-import compiler.util.{SeqSet, javaIterToList}
+import compiler.util.{SeqSet, javaIterToList, mapVals}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
@@ -133,8 +133,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isInterface = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
-            for ((target, tpe) <- targetsToResolve) {
-              target.resolve(classSig, tpe)
+            for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
+              fldTarget.resolve(classSig, tpe)
+              callTarget.resolve(classSig, accessorSig, tpe)
             }
             programBuilder.saveSignature(classSig, df.getPosition)
 
@@ -343,8 +344,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                              globalScope: Scope,
                                              thisType: Type,
                                              allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
-                                           ): Iterable[(FieldResolutionTarget, Type)] = {
-    val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, Type)]
+                                           ): Iterable[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)] = {
+    val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)]
+    val accessorsSubst = mutable.Map.empty[IdValue, IdValue => FunCall]
     fields.foreach {
       case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod)) if isPublishedAsMethod =>
         functionsMap.get(fieldId) match {
@@ -353,17 +355,20 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           case None =>
             val syntheticFunSigScope = Scope.nestedInside(globalScope, classDef)
             val thisValue = syntheticFunSigScope.newParam(ThisId, classDef.getPosition)
+            val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, fieldType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, classDef.getPosition, isSynthetic = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, classDef)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
             val resolTarget = FieldResolutionTarget(fieldId)
-            targetsToResolve.addOne(resolTarget -> fieldType)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
             syntheticFuncBody.instructions.addOne(Return(retVal))
             functionsMap.put(fld.id, (syntheticFunSig, syntheticFunc))
             allFunctionsCollector.addOne(syntheticFunSig.ownerAndName -> syntheticFunc)
+            val accessorInvkTarget = InvocationTarget(fld.id)
+            accessorsSubst.put(fld.value, (thisVal: IdValue) => FunCall(thisVal, accessorInvkTarget, List.empty, List.empty))
+            targetsToResolve.addOne(resolTarget, accessorInvkTarget, syntheticFunSig, accessorRetType)
         }
       case _ => ()
     }

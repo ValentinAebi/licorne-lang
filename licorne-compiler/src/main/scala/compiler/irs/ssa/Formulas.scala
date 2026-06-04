@@ -3,9 +3,8 @@ package compiler.irs.ssa
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
-import compiler.lang.Field.StableField
-import compiler.lang.{Field, Keyword, UserInstantiableTypeSig}
 import compiler.lang.Types.Type
+import compiler.lang.{Keyword, UserInstantiableTypeSig}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 
@@ -385,37 +384,37 @@ object Formulas {
     case Phi(terms) => terms.flatMap(_.idValsDependencies)
   }
 
-  extension (formula: Formula) def transformParamValsIntoThisSelect(thisVal: IdValue)(using owner: UserInstantiableTypeSig): Formula = formula match {
-    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId && definingScope == thisVal.definingScope =>
+  extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula)(using ownerSig: UserInstantiableTypeSig): Formula = formula match {
+    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId =>
       val field = FieldResolutionTarget(id)
-      owner.stableFields.get(paramIdVal.id).foreach { fld =>
-        field.resolve(owner, fld.tpe)
+      ownerSig.stableFields.get(paramIdVal.id).foreach { fld =>
+        field.resolve(ownerSig, fld.tpe)
       }
-      Select(thisVal, field)
+      Select(owner, field)
     case value: IdValue => value
     case cst: ConstFormula => cst
-    case Select(owner, field) => Select(owner.transformParamValsIntoThisSelect(thisVal), field)
+    case Select(owner, field) => Select(owner.transformParamValsIntoSelectOn(owner), field)
     case FunCall(receiver, func, typeArgs, args) => FunCall(
-      receiver.transformParamValsIntoThisSelect(thisVal),
+      receiver.transformParamValsIntoSelectOn(owner),
       func,
-      typeArgs.map(_.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal))),
-      args.map(_.transformParamValsIntoThisSelect(thisVal))
+      typeArgs.map(_.withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner))),
+      args.map(_.transformParamValsIntoSelectOn(owner))
     )
-    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.transformParamValsIntoThisSelect(thisVal), closureTypingTarget, args.map(_.transformParamValsIntoThisSelect(thisVal)))
+    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.transformParamValsIntoSelectOn(owner), closureTypingTarget, args.map(_.transformParamValsIntoSelectOn(owner)))
     case closure: PureClosureValue => closure
-    case Plus(lhs, rhs) => Plus(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case Neg(operand) => Neg(operand.transformParamValsIntoThisSelect(thisVal))
-    case Times(lhs, rhs) => Times(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case DivBy(lhs, rhs) => DivBy(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case Modulo(lhs, rhs) => Modulo(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case LogicalNot(operand) => LogicalNot(operand.transformParamValsIntoThisSelect(thisVal))
-    case LogicalOr(lhs, rhs) => LogicalOr(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case Equality(lhs, rhs) => Equality(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoThisSelect(thisVal), rhs.transformParamValsIntoThisSelect(thisVal))
-    case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoThisSelect(thisVal), tpe)
-    case Phi(terms) => Phi(terms.map(_.transformParamValsIntoThisSelect(thisVal)))
+    case Plus(lhs, rhs) => Plus(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case Neg(operand) => Neg(operand.transformParamValsIntoSelectOn(owner))
+    case Times(lhs, rhs) => Times(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case DivBy(lhs, rhs) => DivBy(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case Modulo(lhs, rhs) => Modulo(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case LogicalNot(operand) => LogicalNot(operand.transformParamValsIntoSelectOn(owner))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case Equality(lhs, rhs) => Equality(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoSelectOn(owner), tpe)
+    case Phi(terms) => Phi(terms.map(_.transformParamValsIntoSelectOn(owner)))
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =

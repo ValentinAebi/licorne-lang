@@ -491,7 +491,6 @@ final class Typer(
     val newInstanceTypeBase = typeSig.toType(typesSubst)
     tryToResolveTypeVarsUsingHints(assigned, newInstanceTypeBase)
     val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
-    fieldsInitArgsSubst.put(typeSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get, assigned)
     val returnTypePredParts = mutable.ListBuffer.empty[Formula]
     val expFieldsIter = typeSig.fields.iterator
     val actFieldsIter = instantiate.fieldsInit.iterator
@@ -503,20 +502,24 @@ final class Typer(
         val rhsValType = currScope.getCurrentTypeOf(rhsVal, saveSmartcastsInIR = true)
         val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
         subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field $initFldId", currScope, instantiate.getPosition)
-        if (fld.isStable) {
-          val resolTarget = FieldResolutionTarget(fld.id)
-          resolTarget.resolve(typeSig, expType)
-          val select = Select(assigned, resolTarget)
-          returnTypePredParts.addOne(Equality(select, rhsVal))
-          solver.assertEq(select, rhsVal, SimplifiedType.from(rhsValType))
-          typeSig match {
-            case typeSig: ClassSignature if fld.hasPublicSyntheticAccessor =>
-              val invkTarget = InvocationTarget(fld.id)
-              invkTarget.resolve(typeSig, resolutionCtx.resolveFunSig(typeSig.id, fld.id).forceGetFunSig, expType)
-              val accessorCall = FunCall(assigned, invkTarget, List.empty, List.empty)
-              solver.assertEq(accessorCall, select, SimplifiedType.from(rhsValType))
-            case _ => ()
-          }
+        fld match {
+          case fld: StableField =>
+            val resolTarget = FieldResolutionTarget(fld.id)
+            resolTarget.resolve(typeSig, expType)
+            val itSelect = Select(itValue, resolTarget)
+            returnTypePredParts.addOne(Equality(itSelect, rhsVal))
+            val assignedSelect = Select(assigned, resolTarget)
+            solver.assertEq(assignedSelect, rhsVal, SimplifiedType.from(rhsValType))
+            typeSig match {
+              case typeSig: ClassSignature if fld.hasPublicSyntheticAccessor =>
+                val invkTarget = InvocationTarget(fld.id)
+                invkTarget.resolve(typeSig, resolutionCtx.resolveFunSig(typeSig.id, fld.id).forceGetFunSig, expType)
+                val assignedAccessorCall = FunCall(assigned, invkTarget, List.empty, List.empty)
+                solver.assertEq(assignedAccessorCall, rhsVal, SimplifiedType.from(rhsValType))
+              case _ => ()
+            }
+            fieldsInitArgsSubst.put(fld.value, rhsVal)
+          case _ => ()
         }
       } else {
         er.reportError(s"expected initializer of field ${fld.id}, found label $initFldId", instantiate.getPosition)
@@ -534,7 +537,7 @@ final class Typer(
     val newInstanceType =
       if returnTypePredParts.isEmpty then newInstanceTypeBase
       else {
-        val pred = returnTypePredParts.reduce(LogicalAnd(_, _)).substitute(assigned, itValue)
+        val pred = returnTypePredParts.reduce(LogicalAnd(_, _))
         RefinedType(newInstanceTypeBase, pred)
       }
     newInstanceType
@@ -866,7 +869,7 @@ final class Typer(
       case ReassignableField(id, typeRaw) =>
         val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)(using typeParamsCtx)
         val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
-        ReassignableField(id, typeInst.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal)(using owner)))
+        ReassignableField(id, typeInst)
       case field: StableField => typeStableField(field, owner, typeParamsCtx, posOpt)
     }
   }
@@ -877,7 +880,7 @@ final class Typer(
     val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)(using typeParamsCtx)
     sigScope.saveType(value, typeInst)(using typeParamsCtx)
     val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
-    StableField(id, typeInst.withDependenciesTransformed(_.transformParamValsIntoThisSelect(thisVal)(using owner)), value, isPublishedAsMethod)
+    StableField(id, typeInst, value, isPublishedAsMethod)
   }
 
   // TODO merge with typeFunTypeParam?
@@ -1314,7 +1317,7 @@ final class Typer(
             }
             // TODO check that we can indeed ignore errors here (reportErrors = false)
             val (typeSubst, instTypeArgs) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
-            val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty)
+            val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty).withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
             irModif {
               fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
             }
