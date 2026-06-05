@@ -173,7 +173,8 @@ final class SubtypingContext(
             || proxyStore.developNearest(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
             || proxyStore.developDeep(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
         }
-      case RefinedType(baseType, predicate) =>
+      case refinedType: RefinedType =>
+        val RefinedType(baseType, predicate) = refinedType.flattenedRefinement
         // pass the types of all subformulas of the predicate to the solver
         typer.typeFormula(predicate, scope, None, suspendReporting = true)
         isSubtype(knownType, baseType) && (

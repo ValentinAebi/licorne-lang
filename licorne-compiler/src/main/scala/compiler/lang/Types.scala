@@ -122,7 +122,7 @@ object Types {
   final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
 
-    def flattenedRefinement: RefinedType = {
+    def flattenedRefinement(using globalValsCtx: GlobalValuesContext): RefinedType = {
 
       def flattenPred(refinedType: RefinedType): (Type, Formula) = {
         val RefinedType(baseType, predicate) = refinedType
@@ -131,6 +131,11 @@ object Types {
             val (base, prevPred) = flattenPred(inner)
             val mergedPred = LogicalAnd(prevPred, predicate)
             (base, mergedPred)
+          case range: IntRangeType =>
+            range.boundsAsPredicate(globalValsCtx.itValue) match {
+              case BoolConst(true) => (IntType, predicate)
+              case boundsPred => (IntType, LogicalAnd(boundsPred, predicate))
+            }
           case _ => (baseType, predicate)
         }
       }
@@ -145,6 +150,13 @@ object Types {
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
+    def boundsAsPredicate(itValue: IdValue): Formula = (lowerBoundOpt, upperBoundOpt) match {
+      case (Some(lb), Some(ub)) => LogicalAnd(LessOrEq(lb, itValue), LessOrEq(itValue, ub))
+      case (Some(lb), None) => LessOrEq(lb, itValue)
+      case (None, Some(ub)) => LessOrEq(itValue, ub)
+      case (None, None) => BoolConst(true)
+    }
+    
     override def toString: String = {
       val lbDescrOpt = lowerBoundOpt.map(_.toString)
       val ((ubDescrOpt, isUbExcl), ubIsAtomic) = upperBoundOpt match {
@@ -409,7 +421,7 @@ object Types {
     case tpe => tpe
   }
 
-  extension (tpe: Type) def ignoreNullabilityShallow: Type = tpe match {
+  extension (tpe: Type) def ignoreNullabilityShallow(using GlobalValuesContext): Type = tpe match {
     case NullableType(nullatedType) => nullatedType
     case refinedType: RefinedType =>
       val RefinedType(base, pred) = refinedType.flattenedRefinement
@@ -516,7 +528,7 @@ object Types {
     RefinedType(baseType, newPredicate)
   }
 
-  extension (tpe: Type) def flattenedPredIfGenRefined: Type = tpe match {
+  extension (tpe: Type) def flattenedPredIfGenRefined(using GlobalValuesContext): Type = tpe match {
     case refinedType: RefinedType => refinedType.flattenedRefinement
     case tpe => tpe
   }
