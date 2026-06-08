@@ -5,7 +5,7 @@ import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationT
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.AnyType
 import compiler.smt.FormulasConverter.*
-import compiler.typing.contexts.DealiasingContext
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
@@ -21,10 +21,14 @@ final class FormulasConverter[IntSort <: KSort](
                                                  kCtx: KContext,
                                                  ihm: IntHandlingMode[IntSort],
                                                  dealiasingCtx: DealiasingContext,
+                                                 resolCtx: ResolutionContext,
                                                  globalValsContext: GlobalValuesContext,
                                                  proxyStore: ProxyStore,
                                                  counterExBoxOpt: Option[CounterexampleBox]
                                                ) {
+  
+  private given ResolutionContext = resolCtx
+  
   private val anySort = kCtx.mkUninterpretedSort(AnyType.toString)
 
   private var acceptPhisForInts: Boolean = false
@@ -194,12 +198,17 @@ final class FormulasConverter[IntSort <: KSort](
   }
 
   private def mkSelect[S <: KSort](owner: Formula, field: FieldResolutionTarget, sort: S): Iterable[KExpr[S]] = {
-    for {
-      ow <- convertObj(owner)
-      if field.isResolvedAndStable
-    } yield {
-      val funDecl = kCtx.mkFuncDecl(selectFuncPrefix + field.fieldId, sort, javaList(anySort))
-      kCtx.mkApp(funDecl, javaList(ow))
+    proxyStore.accessorProxyFor(field) match {
+      case Some(invkTarget) =>
+        mkFunApp(owner, invkTarget, List.empty, sort)
+      case None =>
+        for {
+          ow <- convertObj(owner)
+          if field.isResolvedAndStable
+        } yield {
+          val funDecl = kCtx.mkFuncDecl(selectFuncPrefix + field.fieldId, sort, javaList(anySort))
+          kCtx.mkApp(funDecl, javaList(ow))
+        }
     }
   }
 

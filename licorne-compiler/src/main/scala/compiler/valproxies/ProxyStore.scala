@@ -1,17 +1,19 @@
 package compiler.valproxies
 
-import compiler.irs.ssa.Formulas
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.Scope
-import Formulas.*
+import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget}
+import compiler.lang.{ClassSignature, FunctionSignature}
 import compiler.typing.Typer
-import compiler.typing.contexts.DealiasingContext
-import compiler.util.SeqSet
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
 
 import scala.collection.mutable
 
 
 final class ProxyStore {
   private val proxies = mutable.Map.empty[IdValue, Formula]
+  private val fieldAccessorProxies = mutable.Map.empty[TypeIdentifier, mutable.Set[FunOrVarId]]
   private val possiblyImpureClosures = mutable.Map.empty[IdValue, PureClosureValue]
 
   def hasProxyFor(idVal: IdValue): Boolean = proxies.contains(idVal)
@@ -27,6 +29,10 @@ final class ProxyStore {
     proxies(idVal) = proxy
   }
 
+  def saveAccessorProxy(classId: TypeIdentifier, fldId: FunOrVarId): Unit = {
+    fieldAccessorProxies.getOrElseUpdate(classId, mutable.Set.empty).addOne(fldId)
+  }
+
   def savePossiblyImpureClosure(idVal: IdValue, closure: PureClosureValue): Unit = {
     possiblyImpureClosures.put(idVal, closure)
   }
@@ -37,14 +43,37 @@ final class ProxyStore {
     }
   }
 
-  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+  def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = Option.when(fld.isResolvedAndStable) {
+    fld.getReceiverSigOpt match {
+      case Some(classSig: ClassSignature) =>
+        for {
+          fieldsSet <- fieldAccessorProxies.get(classSig.id)
+          if fieldsSet.contains(fld.fieldId)
+        } yield {
+          val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
+          val invkTarget = InvocationTarget(fld.fieldId)
+          invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedFieldTypeUnsafe)
+          invkTarget
+        }
+      case _ => None
+    }
+  }.flatten
 
-  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
-    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
+  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false)(using ResolutionContext): Option[Formula] =
+    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using expandSelectIfAccessor)
+
+  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false)(using ResolutionContext): Option[Formula] =
+    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using expandSelectIfAccessor)
+
+  def developDeepIgnoreAccessors(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using Select(_, _))
+
+  def developNearestIgnoreAccessors(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false): Option[Formula] =
+    dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using Select(_, _))
 
   // TODO memoize
-  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean): Option[Formula] = {
+  private def dev(formula: Formula, developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean)
+                 (using handleSelect: (rec: Formula, fld: FieldResolutionTarget) => Formula): Option[Formula] = {
     val stepRes: Option[Formula] = formula match {
       case idValue: (ParamIdValue | UninterpretedConstIdValue) => Some(idValue)
       case idValue: (ValIdValue | VarIdValue) if !developLocals => Some(idValue)
@@ -53,7 +82,7 @@ final class ProxyStore {
       case cst: ConstFormula => Some(cst)
       case Select(owner, field) if bypassPurityChecks || field.isResolvedAndStable => for {
         owp <- dev(owner, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
-      } yield Select(owp, field)
+      } yield handleSelect(owp, field)
       case FunCall(receiver, func, typeArgs, args) if bypassPurityChecks || func.isResolvedAndPure =>
         for {
           rcp <- dev(receiver, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
@@ -134,8 +163,13 @@ final class ProxyStore {
       }
     }
   }
+  
+  private def expandSelectIfAccessor(owp: Formula, field: FieldResolutionTarget)(using ResolutionContext): Formula = accessorProxyFor(field) match {
+    case Some(invkTarget) => FunCall(owp, invkTarget, List.empty, List.empty)
+    case None => Select(owp, field)
+  }
 
-  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean): Option[List[Formula]] = {
+  private def devAll(ls: List[Formula], developLocals: Boolean, bypassPurityChecks: Boolean, acceptPhis: Boolean, allowConjunctsOmission: Boolean)(using (rec: Formula, fld: FieldResolutionTarget) => Formula): Option[List[Formula]] = {
     ls.foldRight(Option(List.empty[Formula])) {
       case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission).map(_ :: acc)
       case _ => None
@@ -152,7 +186,7 @@ final class ProxyStore {
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
-                              (using typer: Typer, dealiasingCtx: DealiasingContext): (BranchingInfo, BranchingInfo) = {
+                              (using typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext): (BranchingInfo, BranchingInfo) = {
     val (infoIfTrueNearest, infoIfFalseNearest) =
       developNearest(cond, allowConjunctsOmission = true).map(infosFor(_)(using outerScope))
         .getOrElse((BranchingInfo.empty, BranchingInfo.empty))

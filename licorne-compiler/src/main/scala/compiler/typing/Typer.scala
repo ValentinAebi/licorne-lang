@@ -22,7 +22,7 @@ import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{SeqSet, findUnique, mapVals}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
-import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext}
+import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
 import scala.collection.immutable.SeqMap
@@ -504,20 +504,12 @@ final class Typer(
         subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field $initFldId", currScope, instantiate.getPosition)
         fld match {
           case fld: StableField =>
-            val resolTarget = FieldResolutionTarget(fld.id)
-            resolTarget.resolve(typeSig, expType)
-            val itSelect = Select(itValue, resolTarget)
+            val fldResolTarget = FieldResolutionTarget(fld.id)
+            fldResolTarget.resolve(typeSig, expType)
+            val itSelect = Select(itValue, fldResolTarget)
             returnTypePredParts.addOne(Equality(itSelect, rhsVal))
-            val assignedSelect = Select(assigned, resolTarget)
+            val assignedSelect = Select(assigned, fldResolTarget)
             solver.assertEq(assignedSelect, rhsVal, SimplifiedType.from(rhsValType))
-            typeSig match {
-              case typeSig: ClassSignature if fld.hasPublicSyntheticAccessor =>
-                val invkTarget = InvocationTarget(fld.id)
-                invkTarget.resolve(typeSig, resolutionCtx.resolveFunSig(typeSig.id, fld.id).forceGetFunSig, expType)
-                val assignedAccessorCall = FunCall(assigned, invkTarget, List.empty, List.empty)
-                solver.assertEq(assignedAccessorCall, rhsVal, SimplifiedType.from(rhsValType))
-              case _ => ()
-            }
             fieldsInitArgsSubst.put(fld.value, rhsVal)
           case _ => ()
         }
@@ -537,7 +529,8 @@ final class Typer(
     val newInstanceType =
       if returnTypePredParts.isEmpty then newInstanceTypeBase
       else {
-        val pred = returnTypePredParts.reduce(LogicalAnd(_, _))
+        val rawPred = returnTypePredParts.reduce(LogicalAnd(_, _))
+        val pred = proxyStore.developNearest(rawPred).getOrElse(rawPred)
         RefinedType(newInstanceTypeBase, pred)
       }
     newInstanceType
@@ -564,80 +557,83 @@ final class Typer(
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position], suspendReporting: Boolean = false)
                  (using typeParamsCtx: TypeParamsContext): Type = er.withReportingSuspendedIf(suspendReporting) {
-    val tpe = scope.smartcastFor(formula, saveSmartcasts = true).getOrElse(formula match {
-      case value: IdValue =>
-        val tpe = scope.detectCurrentType(value)
-        value match {
-          case UninterpretedConstIdValue(name, definingScope, uid) if tpe == NothingType =>
-            er.reportError(s"object not found: $name", posOpt)
-          case _ => ()
-        }
-        tpe
-      case IntConst(value) => IntType
-      case BoolConst(value) => BoolType
-      case StringConst(value) => StringType
-      case sel@Select(owner, field) if field.isResolved =>
-        field.getInstantiatedFieldTypeUnsafe
-      case sel@Select(owner, field) if field.isNotResolvedYet =>
-        val ownerType = typeFormula(owner, scope, posOpt)
-        val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
-        scope.smartcastFor(sel, saveSmartcasts = false).getOrElse(tpe)
-      case Select(owner, field) =>
-        assert(field.isUnresolvable)
-        NothingType
-      case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
-      case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-        val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
-        if (funTypeArgsInst.nonEmpty) {
-          irModif {
-            call.typeArgs = funTypeArgsInst
+    val tpe = scope.smartcastFor(formula, saveSmartcasts = true).getOrElse {
+      val rawType = formula match {
+        case value: IdValue =>
+          val tpe = scope.detectCurrentType(value)
+          value match {
+            case UninterpretedConstIdValue(name, definingScope, uid) if tpe == NothingType =>
+              er.reportError(s"object not found: $name", posOpt)
+            case _ => ()
           }
-        }
-        tpe
-      case FunCall(receiver, func, typeArgs, args) =>
-        assert(func.isUnresolvable)
-        NothingType
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolved => closureTypingTarget.getTypeUnsafe.result
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
-        val calleeType = typeFormula(callee, scope, posOpt)
-        val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-        typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
-      case ClosureCall(callee, closureTypingTarget, args) =>
-        assert(closureTypingTarget.isUnresolvable)
-        NothingType
-      case PureClosureValue(params, body, closureVal) =>
-        // TODO check that this is safe
-        scope.detectCurrentType(closureVal)
-      case Plus(lhs, rhs) =>
-        typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
-      case Neg(operand) =>
-        typeNumericNeg(operand, scope, posOpt)
-      case Times(lhs, rhs) =>
-        typeNumericBinop(lhs, rhs, scope, absInt.typeTimesType, Operator.Times, posOpt)
-      case DivBy(lhs, rhs) =>
-        typeNumericBinop(lhs, rhs, scope, absInt.typeDivType, Operator.Div, posOpt)
-      case Modulo(lhs, rhs) =>
-        typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType(Some(rhs)), Operator.Modulo, posOpt)
-      case LogicalAnd(lhs, rhs) =>
-        typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
-      case LogicalOr(lhs, rhs) =>
-        typeLogicalBinop(lhs, rhs, scope, Operator.Or, posOpt)
-      case LogicalNot(operand) =>
-        typeLogicalNeg(operand, scope, posOpt)
-      case LessOrEq(lhs, rhs) =>
-        typeComparisonBinop(lhs, rhs, scope, Operator.LessOrEq, posOpt)
-      case LessThan(lhs, rhs) =>
-        typeComparisonBinop(lhs, rhs, scope, Operator.LessThan, posOpt)
-      case Equality(lhs, rhs) =>
-        typeFormula(lhs, scope, posOpt)
-        typeFormula(rhs, scope, posOpt)
-        BoolType
-      case TypePredicate(subject, tpe) =>
-        checkDowncast(subject, tpe, scope, posOpt)
-        BoolType
-      case Phi(terms) =>
-        meetJoin.computeJoin(terms.map(typeFormula(_, scope, posOpt, suspendReporting)))
-    })
+          tpe
+        case IntConst(value) => IntType
+        case BoolConst(value) => BoolType
+        case StringConst(value) => StringType
+        case sel@Select(owner, field) if field.isResolved =>
+          field.getInstantiatedFieldTypeUnsafe
+        case sel@Select(owner, field) if field.isNotResolvedYet =>
+          val ownerType = typeFormula(owner, scope, posOpt)
+          val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
+          scope.smartcastFor(sel, saveSmartcasts = false).getOrElse(tpe)
+        case Select(owner, field) =>
+          assert(field.isUnresolvable)
+          NothingType
+        case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
+        case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
+          val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
+          if (funTypeArgsInst.nonEmpty) {
+            irModif {
+              call.typeArgs = funTypeArgsInst
+            }
+          }
+          tpe
+        case FunCall(receiver, func, typeArgs, args) =>
+          assert(func.isUnresolvable)
+          NothingType
+        case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolved => closureTypingTarget.getTypeUnsafe.result
+        case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
+          val calleeType = typeFormula(callee, scope, posOpt)
+          val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
+          typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
+        case ClosureCall(callee, closureTypingTarget, args) =>
+          assert(closureTypingTarget.isUnresolvable)
+          NothingType
+        case PureClosureValue(params, body, closureVal) =>
+          // TODO check that this is safe
+          scope.detectCurrentType(closureVal)
+        case Plus(lhs, rhs) =>
+          typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
+        case Neg(operand) =>
+          typeNumericNeg(operand, scope, posOpt)
+        case Times(lhs, rhs) =>
+          typeNumericBinop(lhs, rhs, scope, absInt.typeTimesType, Operator.Times, posOpt)
+        case DivBy(lhs, rhs) =>
+          typeNumericBinop(lhs, rhs, scope, absInt.typeDivType, Operator.Div, posOpt)
+        case Modulo(lhs, rhs) =>
+          typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType(Some(rhs)), Operator.Modulo, posOpt)
+        case LogicalAnd(lhs, rhs) =>
+          typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
+        case LogicalOr(lhs, rhs) =>
+          typeLogicalBinop(lhs, rhs, scope, Operator.Or, posOpt)
+        case LogicalNot(operand) =>
+          typeLogicalNeg(operand, scope, posOpt)
+        case LessOrEq(lhs, rhs) =>
+          typeComparisonBinop(lhs, rhs, scope, Operator.LessOrEq, posOpt)
+        case LessThan(lhs, rhs) =>
+          typeComparisonBinop(lhs, rhs, scope, Operator.LessThan, posOpt)
+        case Equality(lhs, rhs) =>
+          typeFormula(lhs, scope, posOpt)
+          typeFormula(rhs, scope, posOpt)
+          BoolType
+        case TypePredicate(subject, tpe) =>
+          checkDowncast(subject, tpe, scope, posOpt)
+          BoolType
+        case Phi(terms) =>
+          meetJoin.computeJoin(terms.map(typeFormula(_, scope, posOpt, suspendReporting)))
+      }
+      rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+    }
     if (formula.isPure) {
       solver.takeType(formula, tpe)
     }
@@ -1246,7 +1242,9 @@ final class Typer(
               }
               solver.assert(precondSubst)
             }
-            val instantiatedRetType = simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst))
+            val instantiatedRetType =
+              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst))
+                .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
             }
@@ -1315,9 +1313,11 @@ final class Typer(
             if (ownerSig.isInstanceOf[EncapsulatedTypeSig] && !receiverIsThisPtr(currScope, owner)) {
               er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
             }
-            // TODO check that we can indeed ignore errors here (reportErrors = false)
             val (typeSubst, instTypeArgs) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
-            val instantiatedFieldType = field.tpe.substitute(typeSubst, Map.empty).withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
+            val instantiatedFieldType =
+              field.tpe.substitute(typeSubst, Map.empty)
+                .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
+                .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
             }

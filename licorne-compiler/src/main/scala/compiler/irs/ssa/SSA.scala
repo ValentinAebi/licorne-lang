@@ -250,8 +250,8 @@ object SSA {
 
     def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
-    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit = {
-      smartcastsEGraph.merge(f1, f2)(using typeParamsCtx, proxyStore)
+    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, simplifier: Simplifier): Unit = {
+      smartcastsEGraph.merge(f1, f2)(using typeParamsCtx, resolCtx, proxyStore)
       if (persist) {
         outScopeOpt.foreach { outScope =>
           outScope.eMerge(f1, f2)
@@ -265,7 +265,9 @@ object SSA {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, tpe: Type, allowOverwrite: Boolean = false)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
+    def saveType(idVal: IdValue, rawType: Type, allowOverwrite: Boolean = false)
+                (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
+      val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
         if (!allowOverwrite && types.contains(idVal)) {

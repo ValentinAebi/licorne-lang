@@ -54,7 +54,7 @@ final class TypeHintsInserter(
         } {
           val resolCtx = ResolutionContext(program, fakeEr)
           val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
-          val lightweightTyper = LightweightTyper(typer, dealiasingCtx, funSig.sigScope, typeParamsCtx)
+          val lightweightTyper = LightweightTyper(typer, dealiasingCtx, resolCtx, funSig.sigScope, typeParamsCtx)
           traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx, tmpTypeVarsCtx, lightweightTyper)
         }
       }
@@ -243,9 +243,9 @@ final class TypeHintsInserter(
     }
   }
 
-  private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
+  private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
     def detectDealiasedTypeOf(formula: Formula): Type = {
-      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true).getOrElse(formula)
+      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true)(using resolCtx).getOrElse(formula)
       val typeRaw = typer.typeFormula(dev, funSigScope, None)(using typeParamsCtx)
       dealiasingCtx.dealiasType(typeRaw)
     }

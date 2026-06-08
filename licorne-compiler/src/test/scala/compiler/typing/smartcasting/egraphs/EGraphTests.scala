@@ -23,8 +23,19 @@ import scala.collection.mutable
 class EGraphTests {
 
   private given TypeParamsContext = TypeParamsContext.empty
-  
-  private given ProxyStore = ProxyStore()
+
+  private given CompilationStep = TypeChecking
+
+  private val er = ErrorReporter(_ => fail(), _ => fail())
+
+  private given proxyStore: ProxyStore = ProxyStore()
+
+  private val globalValuesContext = GlobalValuesContext(proxyStore)
+  private val dummyScope = Scope.root(globalValuesContext)
+  private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+  private val dealiasingCtx = DealiasingContext(Map.empty)
+
+  private given resolCtx: ResolutionContext = ResolutionContext(program, er)
 
   @Test
   def commutativityTest(): Unit = {
@@ -87,16 +98,6 @@ class EGraphTests {
     assertTrue(eg.areEqual(a.call("foo", b + 1, c - 2), x.call("foo", 1 + y, z - 2)))
     assertFalse(eg.areEqual(a.call("foo", b + 1, c - 2), x.call("foo", y + 2, z - 2)))
   }
-
-  private given CompilationStep = TypeChecking
-
-  private val er = ErrorReporter(_ => fail(), _ => fail())
-  private val proxyStore = ProxyStore()
-  private val globalValuesContext = GlobalValuesContext(proxyStore)
-  private val dummyScope = Scope.root(globalValuesContext)
-  private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
-  private val dealiasingCtx = DealiasingContext(Map.empty)
-  private val resolCtx = ResolutionContext(program, er)
 
 
   private def newValue(name: String) = ValIdValue(NormalFunOrVarId(name), dummyScope, 0, None)

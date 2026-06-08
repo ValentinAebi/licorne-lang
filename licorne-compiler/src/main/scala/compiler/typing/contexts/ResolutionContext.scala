@@ -32,6 +32,17 @@ final case class ResolutionContext(
       case Some(sig: S) => Some(sig)
       case _ => None
     }
+    
+  def resolveFunSigNoSupertypeLookup(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
+    resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
+      case None => FuncResolResult.OwnerNotFound
+      case Some(ownerSig) =>
+        ownerSig.functions.get(funId) match {
+          case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
+          case None => FuncResolResult.FuncNotFound(ownerSig)
+        }
+    }
+  }
 
   def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId)
                    (using subtypingCtx: SubtypingContext): FuncResolResult = {

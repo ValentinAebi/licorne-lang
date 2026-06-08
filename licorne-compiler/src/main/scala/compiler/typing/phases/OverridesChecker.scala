@@ -33,7 +33,8 @@ final class OverridesChecker(
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    Reasoning.usingFreshSolver(ihm, dealiasingCtx, globalValsCtx, proxyStore, counterExBoxOpt) { solver =>
+    val resolCtx = ResolutionContext(program, er)
+    Reasoning.usingFreshSolver(ihm, dealiasingCtx, resolCtx, globalValsCtx, proxyStore, counterExBoxOpt) { solver =>
       val resolutionCtx = ResolutionContext(program, er)
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)

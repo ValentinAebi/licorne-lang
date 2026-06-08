@@ -136,6 +136,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
               fldTarget.resolve(classSig, tpe)
               callTarget.resolve(classSig, accessorSig, tpe)
+              proxyStore.saveAccessorProxy(classSig.id, accessorSig.functionName)
             }
             programBuilder.saveSignature(classSig, df.getPosition)
 
@@ -673,8 +674,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
-              init <- proxyStore.developDeep(beforeLoopVal)
-              induct <- proxyStore.developDeep(bodyLastLocalVal, acceptPhis = true)
+              init <- proxyStore.developDeepIgnoreAccessors(beforeLoopVal)
+              induct <- proxyStore.developDeepIgnoreAccessors(bodyLastLocalVal, acceptPhis = true)
             } yield Recurrence(init, induct, condVal)
             bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
@@ -696,7 +697,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateSSAExpr(retVal, returnedTree, currScope)
-            proxyStore.developDeep(retVal, bypassPurityChecks = true) match {
+            proxyStore.developDeepIgnoreAccessors(retVal, bypassPurityChecks = true) match {
               case Some(retValProxy) =>
                 returnCollector.offerReturn(retValProxy)
               case None =>
@@ -775,8 +776,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     val proxyOpt = expr match {
       case Asts.UnitLit() =>
-        currScope.saveInstr(AssignVal(resultVal, currScope.valuesCtx.globalCtx.unitVal), expr)
-        None
+        val unitVal = currScope.valuesCtx.globalCtx.unitVal
+        currScope.saveInstr(AssignVal(resultVal, unitVal), expr)
+        Some(unitVal)
       case Asts.IntLit(value) =>
         currScope.saveInstr(AssignIntConst(resultVal, value), expr)
         Some(IntConst(value))
@@ -809,10 +811,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
       case Asts.ThisRef() =>
         recurseOnDesugared(Asts.VariableRef(ThisId))
-        None
       case Asts.ItRef() =>
         recurseOnDesugared(Asts.VariableRef(ItId))
-        None // TODO update if it gets reintroduced
       case Asts.ObjectRef(objectNameRaw) =>
         val objectName = importsCtx.applyImports(objectNameRaw)
         val objIdVal = currScope.valuesCtx.resolveObject(objectName)
@@ -929,9 +929,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
         // retrieve info from lowering
-        proxyStore.developDeep(thenVal) match {
+        proxyStore.developDeepIgnoreAccessors(thenVal) match {
           case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
-          case _ => proxyStore.developDeep(elseVal) match {
+          case _ => proxyStore.developDeepIgnoreAccessors(elseVal) match {
             case Some(BoolConst(false)) => Some(LogicalAnd(condVal, thenVal))
             case _ => None
           }
@@ -954,9 +954,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(SoftCast(resultVal), softcast)
         None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
-        generateSSAExpr(resultVal, ascribedExpr, currScope)
+        val proxy = generateSSAExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
-        None
+        proxy
       case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
         val closureParamsScope = Scope.nestedInside(currScope, bodyTree)
         val paramValsAndTypesB = List.newBuilder[(ParamIdValue, Type)]

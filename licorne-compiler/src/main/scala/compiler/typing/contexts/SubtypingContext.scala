@@ -34,6 +34,8 @@ final class SubtypingContext(
                             )(using CompilationStep) {
 
   private given GlobalValuesContext = globalValuesContext
+  
+  private given ResolutionContext = resolutionCtx
 
   import globalValuesContext.itValue
 

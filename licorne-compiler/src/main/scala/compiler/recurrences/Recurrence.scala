@@ -6,14 +6,14 @@ import compiler.recurrences.Recurrence.Monotonicity
 import compiler.recurrences.Recurrence.Monotonicity.*
 import compiler.smt.Solver
 import compiler.typing.Typer
-import compiler.typing.contexts.TypeParamsContext
+import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 
 
 final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) {
   private var monotonicityOpt: Option[Monotonicity] = None
 
-  def computeMonotonicity(typer: Typer, solver: Solver, scope: Scope)(using TypeParamsContext, ProxyStore): Monotonicity = monotonicityOpt match {
+  def computeMonotonicity(typer: Typer, solver: Solver, scope: Scope)(using TypeParamsContext, ResolutionContext, ProxyStore): Monotonicity = monotonicityOpt match {
     case Some(monotonicity) => monotonicity
     case None =>
       val nonIncreasing = isProvablyNonIncreasing(typer, solver, scope)
@@ -28,7 +28,7 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
   }
 
   private def isProvablyNonDecreasing(typer: Typer, solver: Solver, scope: Scope)
-                                     (using TypeParamsContext, ProxyStore): Boolean =
+                                     (using TypeParamsContext, ResolutionContext, ProxyStore): Boolean =
     solver.checkSat() && solver.onNewFrame {
       solver.acceptingPhisForInts {
         typeAllSubformulas(induct, typer, scope)
@@ -38,7 +38,7 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
     }
 
   private def isProvablyNonIncreasing(typer: Typer, solver: Solver, scope: Scope)
-                                     (using TypeParamsContext, ProxyStore): Boolean =
+                                     (using TypeParamsContext, ResolutionContext, ProxyStore): Boolean =
     solver.checkSat() && solver.onNewFrame {
       solver.acceptingPhisForInts {
         typeAllSubformulas(induct, typer, scope)
@@ -47,7 +47,7 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
       }
     }
 
-  private def typeAllSubformulas(formula: Formula, typer: Typer, scope: Scope)(using typeParamsCtx: TypeParamsContext, proxyStore: ProxyStore) = {
+  private def typeAllSubformulas(formula: Formula, typer: Typer, scope: Scope)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore) = {
     typer.typeFormula(proxyStore.developDeep(formula, acceptPhis = true).getOrElse(formula), scope, None, suspendReporting = true)
   }
 
