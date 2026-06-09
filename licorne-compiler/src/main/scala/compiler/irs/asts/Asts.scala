@@ -110,12 +110,12 @@ object Asts {
   sealed trait TypeDefTree extends TopLevelDef {
     def description: String
 
+    def functions: List[FunDef]
+
     def directSupertypes: List[NamedTypeTree]
   }
 
-  sealed trait EncapsulatedTypeDefTree extends TypeDefTree {
-    def functions: List[FunDef]
-  }
+  sealed trait EncapsulatedTypeDefTree extends TypeDefTree
 
   sealed trait UnencapsulatedTypeDefTree extends TypeDefTree
 
@@ -157,6 +157,7 @@ object Asts {
   final case class DataTypeDef(
                                 name: String,
                                 typeParams: List[TypeParamWithVariance],
+                                functions: List[FunDef],
                                 directSupertypes: List[NamedTypeTree]
                               ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"datatype $name"
@@ -168,6 +169,7 @@ object Asts {
                               name: String,
                               typeParams: List[TypeParamWithVariance],
                               fields: List[RecordParam],
+                              functions: List[FunDef],
                               directSupertypes: List[NamedTypeTree]
                             ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"record $name"

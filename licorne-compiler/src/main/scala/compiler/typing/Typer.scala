@@ -302,15 +302,21 @@ final class Typer(
 
       case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
-        val (returnType, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
+        val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
         if (instRecTypeArgs.nonEmpty) {
           irModif {
             invk.typeArgs = instFunTypeArgs
           }
         }
+        val returnType =
+          if func.isResolvedAndPure
+          then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = true)).getOrElse(returnTypeRaw)
+          else returnTypeRaw
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingHints(assigned, returnType)
-        currScope.markHasExitedIfNothing(returnType)
+        if (func.isResolved) {
+          currScope.markHasExitedIfNothing(returnType)
+        }
 
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
         val calleeType = currScope.computeCurrentType(callee, invkClosure.getPosition)
@@ -322,7 +328,7 @@ final class Typer(
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = false)) match {
+        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = true)) match {
           case Some(smartcastType) =>
             currScope.saveType(assigned, smartcastType)
           case None =>
@@ -1004,21 +1010,24 @@ final class Typer(
   }
 
   def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
-    val DatatypeSignature(id, typeParamsRaw, directSupertypesRaw, directSubtypes, sigScope, declPosOpt) = datatypeSig
+    val DatatypeSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, directSubtypes, sigScope, declPosOpt) = datatypeSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     saveReceiverType(datatypeSig, fullTypeParamsCtx)
-    val directSupertypesInst = typeSupertypesAsDatatypes(datatypeSig, resolutionCtx, fullTypeParamsCtx)
+    val functionsInst = for (funId, funSig) <- functionsRaw yield {
+      funId -> typeFunSig(funSig, fullTypeParamsCtx)
+    }
+    val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(datatypeSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      DatatypeSignature(id, typeParamsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
+      DatatypeSignature(id, typeParamsInst, functionsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
     }
   }
 
   def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
-    val RecordSignature(id, typeParamsRaw, fieldsRaw, directSupertypesRaw, sigScope, declPosOpt) = recordSig
+    val RecordSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, sigScope, declPosOpt) = recordSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -1026,9 +1035,12 @@ final class Typer(
     }
     saveReceiverType(recordSig, fullTypeParamsCtx)
     val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
-    val directSupertypesInst = typeSupertypesAsDatatypes(recordSig, resolutionCtx, fullTypeParamsCtx)
+    val functionsInst = for (funId, funSig) <- functionsRaw yield {
+      funId -> typeFunSig(funSig, fullTypeParamsCtx)
+    }
+    val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(recordSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      RecordSignature(id, typeParamsInst, fieldsInst, directSupertypesInst, sigScope, declPosOpt)
+      RecordSignature(id, typeParamsInst, fieldsInst, functionsInst, directSupertypesInst, sigScope, declPosOpt)
     }
   }
 
@@ -1310,7 +1322,7 @@ final class Typer(
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) =>
-            if (ownerSig.isInstanceOf[EncapsulatedTypeSig] && !receiverIsThisPtr(currScope, owner)) {
+            if (!receiverIsThisPtr(currScope, owner)) {
               er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
             }
             val (typeSubst, instTypeArgs) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
@@ -1396,8 +1408,8 @@ final class Typer(
   private def typeSupertypesAsInterfaces(sig: EncapsulatedTypeSig, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
     typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx, typeParamsCtx)
 
-  private def typeSupertypesAsDatatypes(sig: UnencapsulatedTypeSig, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
-    typeSupertypes[DatatypeSignature](sig, "datatype", resolutionCtx, typeParamsCtx)
+  private def typeSuperTypesAsDatatypesOrInterfaces(sig: RuntimeTypeSignature, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
+    typeSupertypes[AbstractTypeSig](sig, "datatype or interface", resolutionCtx, typeParamsCtx)
 
   private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] = {
     for (superTRaw <- sig.directSupertypes) yield {

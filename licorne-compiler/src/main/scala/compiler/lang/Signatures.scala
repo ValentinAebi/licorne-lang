@@ -165,6 +165,8 @@ final case class TypeAliasSignature(
 sealed trait RuntimeTypeSignature extends TypeSignature {
   override def params: SeqMap[FunOrVarId, (Type, IdValue)] = SeqMap.empty
 
+  def functions: Map[FunOrVarId, FunctionSignature]
+
   def directSupertypes: List[NamedType]
 }
 
@@ -186,9 +188,7 @@ sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
 
 sealed trait AbstractTypeSig extends RuntimeTypeSignature
 
-sealed trait EncapsulatedTypeSig extends RuntimeTypeSignature {
-  def functions: Map[FunOrVarId, FunctionSignature]
-}
+sealed trait EncapsulatedTypeSig extends RuntimeTypeSignature
 
 sealed trait UnencapsulatedTypeSig extends RuntimeTypeSignature {
   this: RuntimeTypeSignature =>
@@ -238,6 +238,7 @@ final case class ObjectSignature(
 final case class DatatypeSignature(
                                     id: TypeIdentifier,
                                     typeParams: List[TypeTypeParamInfo],
+                                    functions: Map[FunOrVarId, FunctionSignature],
                                     directSupertypes: List[NamedType],
                                     directSubtypes: SeqSet[TypeIdentifier],
                                     sigScope: Scope,
@@ -249,6 +250,7 @@ final case class RecordSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[TypeTypeParamInfo],
                                   fields: SeqMap[FunOrVarId, StableField],
+                                  functions: Map[FunOrVarId, FunctionSignature],
                                   directSupertypes: List[NamedType],
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]

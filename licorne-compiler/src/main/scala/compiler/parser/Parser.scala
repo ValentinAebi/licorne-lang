@@ -54,7 +54,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val literalValue: FinalTreeParser[Literal] = {
     numericLiteralValue OR nonNumericLiteralValue
   } setName "literalValue"
-  
+
   private val nullRef = kw(Null) map {
     _ => NullRef()
   } setName "nullRef"
@@ -101,7 +101,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case pkgDeclOpt ^: imports ^: defs => Source(pkgDeclOpt, imports, defs)
     }
   } setName "source"
-  
+
   private lazy val pkgDecl = kw(Package).ignored ::: repeatWithSep(lowName, dot) ::: semicolon map {
     case nameParts => PackageDecl(nameParts)
   } setName "pkgDecl"
@@ -109,10 +109,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private lazy val funIdImport = funOrVarId ::: opt(kw(As).ignored ::: funOrVarId) map {
     case funId ^: aliasOpt => (funId, aliasOpt)
   } setName "funIdImport"
-  
+
   private lazy val importStat = kw(Import).ignored ::: repeat(lowName ::: dot) ::: highName ::: (
     op(Semicolon) OR kw(As).ignored ::: highName ::: semicolon OR dot ::: (funIdImport OR openBrace ::: repeatWithSep(funIdImport, comma) ::: closeBrace OR op(Times)) ::: semicolon
-  ) map {
+    ) map {
     case prefix ^: importedName ^: Operator.Semicolon =>
       TypeImportStat(TypeIdentifier(prefix, importedName), None)
     case prefix ^: importedName ^: (alias: String) =>
@@ -151,16 +151,16 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "objectDef"
 
   private lazy val datatypeDef = {
-    kw(Datatype).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt map {
-      case id ^: typeParams ^: supertypes => DataTypeDef(id, typeParams, supertypes)
+    kw(Datatype).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
+      case id ^: typeParams ^: supertypes ^: functions => DataTypeDef(id, typeParams, functions, supertypes)
     }
   } setName "datatypeDef"
 
   private lazy val recordDef = {
     kw(Record).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth) ::: supertypesListOpt map {
-      case name ^: typeParams ^: fieldsOpt ^: supertypes =>
-        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), supertypes)
+      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
+      case name ^: typeParams ^: fieldsOpt ^: supertypes ^: functions =>
+        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes)
     }
   } setName "recordDef"
 
@@ -201,7 +201,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "funDef"
 
   private lazy val funParamTree = funOrClassParamTree OR thisParam
-  
+
   private lazy val classParamTree = funOrClassParamTree OR publicParam
 
   private lazy val funOrClassParamTree: P[FunctionParam & ClassParam] = recursive {
@@ -216,7 +216,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case tpeOpt => ThisParam(tpeOpt)
     }
   } setName "thisParam"
-  
+
   private lazy val publicParam: P[PublicParam] = {
     kw(Public).ignored ::: funOrVarId ::: colon ::: typeTree map {
       case id ^: tpe => PublicParam(id, tpe)
@@ -400,17 +400,25 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "atomicExpr"
 
   private lazy val selectOrIndexingChain = recursive {
-    atomicExpr ::: repeat(dot ::: funOrVarId) ::: opt(typeArgsListOpt ::: parenthArgsList) ::: opt(colon ::: typeTree) map {
-      case atExpr ^: selects ^: argsListOpt ^: typeAnnotOpt =>
-        val afterSelectsFolding = selects.foldLeft(atExpr)(Select(_, _))
-        val afterArgsAddition = argsListOpt match {
-          case Some(typeArgsOpt ^: args) =>
-            Call(afterSelectsFolding, typeArgsOpt.getOrElse(List.empty), args)
-          case None => afterSelectsFolding
+
+    def maybeWithTypeAnnot(typeAnnotOpt: Option[TypeTree])(afterSelectsFolding: Expr): Expr = {
+      typeAnnotOpt match {
+        case Some(tpe) => TypeAscription(afterSelectsFolding, tpe)
+        case None => afterSelectsFolding
+      }
+    }
+    
+    atomicExpr ::: (typeArgsListOpt ::: parenthArgsList OR repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(colon ::: typeTree) map {
+      case atExpr ^: (selects: List[NormalFunOrVarId ^: Option[Option[List[TypeTree]] ^: List[Expr]]]) ^: typeAnnotOpt =>
+        maybeWithTypeAnnot(typeAnnotOpt) {
+          selects.foldLeft(atExpr) {
+            case (rec, id ^: None) => Select(rec, id)
+            case (rec, id ^: Some(typeArgsOpt ^: args)) => Call(Select(rec, id), typeArgsOpt.getOrElse(List.empty), args)
+          }
         }
-        typeAnnotOpt match {
-          case Some(tpe) => TypeAscription(afterArgsAddition, tpe)
-          case None => afterArgsAddition
+      case atExpr ^: (typeArgsOpt ^: args) ^: typeAnnotOpt =>
+        maybeWithTypeAnnot(typeAnnotOpt) {
+          Call(atExpr, typeArgsOpt.getOrElse(List.empty), args)
         }
     }
   } setName "selectOrIndexingChain"
@@ -462,7 +470,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case cond ^: body => WhileLoop(cond, body)
     }
   } setName "whileLoop"
-  
+
   private lazy val forLoopHeaderWithoutParenth: P[(List[LocalDef], Expr, List[Assignment])] = {
     repeatWithSep(valDef OR varDef, comma) ::: semicolon ::: expr ::: semicolon ::: repeatWithSep(assignmentStat, comma) map {
       case initStats ^: cond ^: stepStats => (initStats, cond, stepStats)

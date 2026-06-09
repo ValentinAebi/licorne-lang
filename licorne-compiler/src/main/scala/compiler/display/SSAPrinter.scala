@@ -102,8 +102,8 @@ final class SSAPrinter(
   }
 
   private def printDatatype(datatypeSig: DatatypeSignature)
-                           (using pps: PrettyPrintString): Unit = {
-    val DatatypeSignature(id, typeParams, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
+                           (using pps: PrettyPrintString, program: Program): Unit = {
+    val DatatypeSignature(id, typeParams, functions, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
     pps.add(s"DATATYPE (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
@@ -113,18 +113,21 @@ final class SSAPrinter(
     } {
       pps.add(", ")
     }
-    pps.add(mkPosDescr(declPosOpt)).newLine()
+    pps.add(mkPosDescr(declPosOpt))
+    printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = false)
+    pps.newLine()
   }
 
   private def printRecord(recordSig: RecordSignature)
-                         (using pps: PrettyPrintString): Unit = {
-    val RecordSignature(id, typeParams, fields, directSupertypes, sigScope, declPosOpt) = recordSig
+                         (using pps: PrettyPrintString, program: Program): Unit = {
+    val RecordSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = recordSig
     pps.add(s"RECORD (scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
-      .newLine()
+    printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = false)
+    pps.newLine()
   }
 
   private def printFunctionsBlockIfNotEmpty(functions: Map[FunOrVarId, FunctionSignature], emptyLineBeforeFunc: Boolean)

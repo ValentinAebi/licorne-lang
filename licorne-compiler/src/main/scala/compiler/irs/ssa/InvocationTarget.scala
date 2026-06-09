@@ -1,11 +1,11 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.FunOrVarId
-import compiler.lang.{EncapsulatedTypeSig, FunctionSignature}
+import compiler.lang.{EncapsulatedTypeSig, FunctionSignature, RuntimeTypeSignature}
 import compiler.lang.Types.Type
 
 final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
-  private var receiverSigOpt = Option.empty[EncapsulatedTypeSig]
+  private var receiverSigOpt = Option.empty[RuntimeTypeSignature]
   private var funSigOpt = Option.empty[FunctionSignature]
   private var instantiatedReturnTypeOpt = Option.empty[Type]
   private var cannotResolveFlag = false
@@ -16,7 +16,7 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
 
   override def isUnresolvable: Boolean = cannotResolveFlag
 
-  def resolve(receiverSig: EncapsulatedTypeSig, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
+  def resolve(receiverSig: RuntimeTypeSignature, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
     if (isResolved) {
       throw AssertionError("trying to resolve an already resolved field resolution target")
     } else if (isUnresolvable) {
@@ -27,7 +27,7 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
     instantiatedReturnTypeOpt = Some(instantiatedReturnType)
   }
 
-  def getReceiverSigUnsafe: EncapsulatedTypeSig = receiverSigOpt.get
+  def getReceiverSigUnsafe: RuntimeTypeSignature = receiverSigOpt.get
 
   def getFunSigUnsafe: FunctionSignature = funSigOpt.get
 

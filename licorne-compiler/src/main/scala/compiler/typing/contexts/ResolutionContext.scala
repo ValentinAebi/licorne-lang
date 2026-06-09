@@ -34,7 +34,7 @@ final case class ResolutionContext(
     }
     
   def resolveFunSigNoSupertypeLookup(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
-    resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
+    resolveTypeSigAs[RuntimeTypeSignature](receiverId) match {
       case None => FuncResolResult.OwnerNotFound
       case Some(ownerSig) =>
         ownerSig.functions.get(funId) match {
@@ -46,7 +46,7 @@ final case class ResolutionContext(
 
   def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId)
                    (using subtypingCtx: SubtypingContext): FuncResolResult = {
-    resolveTypeSigAs[EncapsulatedTypeSig](receiverId) match {
+    resolveTypeSigAs[RuntimeTypeSignature](receiverId) match {
       case None => FuncResolResult.OwnerNotFound
       case Some(ownerSig) =>
         ownerSig.functions.get(funId) match {
@@ -85,8 +85,8 @@ object ResolutionContext {
 
   enum FuncResolResult {
     case OwnerNotFound
-    case FuncNotFound(ownerSig: EncapsulatedTypeSig)
-    case Success(ownerSig: EncapsulatedTypeSig, funSig: FunctionSignature)
+    case FuncNotFound(ownerSig: RuntimeTypeSignature)
+    case Success(ownerSig: RuntimeTypeSignature, funSig: FunctionSignature)
 
     def forceGetFunSig: FunctionSignature = this match {
       case Success(_, funSig) => funSig
