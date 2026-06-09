@@ -3,8 +3,8 @@ package checker_framework_examples;
 
 object Ex_11_5 {
 
-    fn lessThan(arr1: Array[Int], arr2: Array[Int] where arr1.length() == arr2.length()) -> Bool {
-        for (var i = 0; i < arr1.length(); i += 1) {
+    fn lessThan(arr1: Array[Int], arr2: Array[Int] where arr1.length == arr2.length) -> Bool {
+        for (var i = 0; i < arr1.length; i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
                 return true;
             } else if (arr1.at(i) > arr2.at(i)) {
@@ -17,7 +17,7 @@ object Ex_11_5 {
 }
 
 typealias Length = [0..]
-typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length]
 
 class Array[T] {
 

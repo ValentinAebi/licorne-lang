@@ -3,9 +3,9 @@ object Test {
 
    fn sum[T](table: Array[Array[T]], evalFunc: fn (T) -> [0..]) -> [0..] {
       var s = 0;
-      for (var i = 0; i < table.length(); i += 1) {
+      for (var i = 0; i < table.length; i += 1) {
          val row = table.at(i);
-         for (var j = 0; j < row.length(); j += 1) {
+         for (var j = 0; j < row.length; j += 1) {
             s += evalFunc(row.at(j));
          };
       };
@@ -14,10 +14,10 @@ object Test {
 
    fn sum_bad[T](table: Array[Array[T]], evalFunc: fn (T) -> [0..]) -> [0..] {
       var s = 0;
-      for (var i = 0; i < table.length(); i += 1) {
+      for (var i = 0; i < table.length; i += 1) {
          val row = table.at(i);
-         for (var j = 0; j <= row.length(); j += 1) {
-            s += evalFunc(row.at(j));     //> E : first argument of call to at: expected Idx[T](row), found j<loop-body-start@19:10> : [0 .. row.length()]
+         for (var j = 0; j <= row.length; j += 1) {
+            s += evalFunc(row.at(j));     //> E : first argument of call to at: expected Idx[T](row), found j<loop-body-start@19:10> : [0 .. row.length]
          };
       };
       return s;
@@ -26,7 +26,7 @@ object Test {
 }
 
 typealias Length = [0..]
-typealias Idx[T](a: Array[T]) = [0 ..< a.length()]
+typealias Idx[T](a: Array[T]) = [0 ..< a.length]
 
 interface Array[T] {
    pure fn length(this) -> Length

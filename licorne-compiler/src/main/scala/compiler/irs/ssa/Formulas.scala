@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
-import compiler.lang.{Keyword, UserInstantiableTypeSig}
+import compiler.lang.{Keyword, RuntimeTypeSignature, UserInstantiableTypeSig}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 
@@ -122,7 +122,8 @@ object Formulas {
 
     override def toString: String = {
       val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
-      s"$receiver.${func.funId}" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
+      val argsDescr = if args.isEmpty && func.getFunSigOpt.exists(!_.requiresArgsList) then "" else args.mkString("(", ",", ")")
+      s"$receiver.${func.funId}" ++ typeArgsDescr ++ argsDescr
     }
   }
 
@@ -300,7 +301,10 @@ object Formulas {
         idValue.definingScope.isNestedIn(otherValue.definingScope)
     case formula: ConstFormula => true
     case Select(owner, field) if field.isResolved =>
-      field.getReceiverSigUnsafe.fields(field.fieldId).isStable && typeCanMention(owner)
+      field.getAccessorSigOpt match {
+        case Some(accessorSig) => accessorSig.isPure && typeCanMention(owner)
+        case None => field.getReceiverSigUnsafe.fields(field.fieldId).isStable && typeCanMention(owner)
+      }
     case Select(owner, field) => false
     case FunCall(receiver, func, typeArgs, args) =>
       typeCanMention(receiver) && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(typeCanMention)
@@ -324,8 +328,10 @@ object Formulas {
 
   extension (formula: Formula) def isPure: Boolean = formula match {
     case value: IdValue => true
-    case Select(owner, field) if field.isResolved =>
-      owner.isPure && field.getReceiverSigUnsafe.fields(field.fieldId).isStable
+    case Select(owner, field) if field.isResolved => field.getAccessorSigOpt match {
+      case Some(accessorSig) => owner.isPure && accessorSig.isPure
+      case None => owner.isPure && field.getReceiverSigUnsafe.fields(field.fieldId).isStable
+    }
     case _: Select => false
     case formula: ConstFormula => true
     case FunCall(receiver, func, typeArgs, args) =>
@@ -384,11 +390,12 @@ object Formulas {
     case Phi(terms) => terms.flatMap(_.idValsDependencies)
   }
 
-  extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula)(using ownerSig: UserInstantiableTypeSig): Formula = formula match {
+  extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula)(using ownerSig: RuntimeTypeSignature): Formula = formula match {
     case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId =>
       val field = FieldResolutionTarget(id)
       ownerSig.stableFields.get(paramIdVal.id).foreach { fld =>
-        field.resolve(ownerSig, fld.tpe)
+        val accessorSigOpt = ownerSig.functions.get(paramIdVal.id).filter(_.isSynthetic)
+        field.resolve(ownerSig, fld.tpe, accessorSigOpt)
       }
       Select(owner, field)
     case value: IdValue => value

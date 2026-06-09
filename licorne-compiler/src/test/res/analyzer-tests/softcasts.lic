@@ -2,7 +2,7 @@
 object Test {
 
    fn foo(a: Int, b: [0..9]){}
-   fn bar(i: I with it.m(), a: A){}
+   fn bar(i: I with it.m(), a: A){}     //> W : no arguments list required for call to pure method m
 
    fn test1_wrong(x: Int, y: Int) {
       foo(x, y);        //> E : second argument of call to foo: expected [0..9], found y : Int
@@ -21,7 +21,7 @@ object Test {
    }
 
    fn test3_wrong(i: I) {
-      bar(i, new A());           //> E : first argument of call to bar: expected I with it.m(), found i : I
+      bar(i, new A());           //> E : first argument of call to bar: expected I with it.m, found i : I
    }
 
    fn test3_ok(i: I) {

@@ -1,11 +1,11 @@
 
 object Test {
 
-   fn m1(animal: Animal, x: [0 .. animal.hungerLevel1()]) {}   //> E : I cannot prove that upper bound of [0 .. animal.hungerLevel1()] is pure
+   fn m1(animal: Animal, x: [0 .. animal.hungerLevel1()]) {}    //> E : I cannot prove that upper bound of [0 .. animal.hungerLevel1()] is pure
 
-   fn m2(animal: Animal, x: [0 .. animal.hungerLevel2()]) {}
+   fn m2(animal: Animal, x: [0 .. animal.hungerLevel2()]) {}    //> W : no arguments list required for call to pure method hungerLevel2
 
-   fn m3(food: Food, x: [0 .. food.nutrients()]) {}
+   fn m3(food: Food, x: [0 .. food.nutrients]) {}
 
 }
 

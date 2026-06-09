@@ -334,9 +334,6 @@ final class Typer(
           case None =>
             currScope.saveType(assigned, tpe)
         }
-        if (field.isResolved && field.getReceiverSigUnsafe.fields.get(field.fieldId).exists(_.hasPublicSyntheticAccessor)) {
-          er.warn(s"field ${field.fieldId} has an accessor, hence the raw field should not be used", fr.getPosition)
-        }
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
         val ownerType = currScope.computeCurrentType(owner, fw.getPosition)
@@ -511,7 +508,7 @@ final class Typer(
         fld match {
           case fld: StableField =>
             val fldResolTarget = FieldResolutionTarget(fld.id)
-            fldResolTarget.resolve(typeSig, expType)
+            fldResolTarget.resolve(typeSig, expType, accessorSigOpt = None)
             val itSelect = Select(itValue, fldResolTarget)
             returnTypePredParts.addOne(Equality(itSelect, rhsVal))
             val assignedSelect = Select(assigned, fldResolTarget)
@@ -577,7 +574,7 @@ final class Typer(
         case BoolConst(value) => BoolType
         case StringConst(value) => StringType
         case sel@Select(owner, field) if field.isResolved =>
-          field.getInstantiatedFieldTypeUnsafe
+          field.getInstantiatedTypeUnsafe
         case sel@Select(owner, field) if field.isNotResolvedYet =>
           val ownerType = typeFormula(owner, scope, posOpt)
           val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
@@ -651,7 +648,7 @@ final class Typer(
       Some(scope.detectCurrentType(value))
     case Select(owner, field) =>
       if (field.isResolved) {
-        Some(field.getInstantiatedFieldTypeUnsafe)
+        Some(field.getInstantiatedTypeUnsafe)
       } else None
     case funCall@FunCall(receiver, func, typeArgsRaw, args) =>
       if (func.isResolved) {
@@ -1263,6 +1260,9 @@ final class Typer(
             if (isPurityRequired && !funSig.isPure) {
               er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
             }
+            if (!funSig.requiresArgsList) {
+              er.warn(s"no arguments list required for call to pure method ${invkTarget.funId}", posOpt)
+            }
             (instantiatedRetType, instRecTypeArgs, instFunTypeArgs)
           case _ => errorCase()
         }
@@ -1310,7 +1310,7 @@ final class Typer(
                                  needsWriteAccess: Boolean, posOpt: Option[Position])
                                 (using TypeParamsContext): Type = {
     def errorCase() = {
-      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type $ownerType", posOpt)
+      er.reportError(s"no field or pure accessor named ${fieldResolTarget.fieldId} found in type $ownerType", posOpt)
       irModif {
         fieldResolTarget.markUnresolvable()
       }
@@ -1321,17 +1321,14 @@ final class Typer(
     dealiasingCtx.dealiasType(owt.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType.baseType match {
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
-          case FieldResolResult.Success(ownerSig, field) =>
-            if (!receiverIsThisPtr(currScope, owner)) {
-              er.reportError(s"illegal access to encapsulated field ${field.id}", posOpt)
-            }
-            val (typeSubst, instTypeArgs) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
+          case FieldResolResult.Success(ownerSig, field) if receiverIsThisPtr(currScope, owner) =>
+            val (typeSubst, _) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
             val instantiatedFieldType =
               field.tpe.substitute(typeSubst, Map.empty)
                 .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
                 .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
-              fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
+              fieldResolTarget.resolve(ownerSig, instantiatedFieldType, accessorSigOpt = None)
             }
             if (needsWriteAccess && field.isStable) {
               er.reportError(s"illegal update of ${Keyword.Val}-field ${field.id}", posOpt)
@@ -1340,7 +1337,20 @@ final class Typer(
               er.reportError(s"illegal access to impure field ${field.id}", posOpt)
             }
             instantiatedFieldType
-          case _ => errorCase()
+          case _ =>
+            resolutionCtx.resolveFunSig(typeName, fieldResolTarget.fieldId) match {
+              case FuncResolResult.Success(ownerSig, funSig) if !funSig.requiresArgsList =>
+                val (typeSubst, _) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
+                val instantiatedRetType =
+                  funSig.retType.substitute(typeSubst, Map.empty)
+                    .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
+                    .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+                irModif {
+                  fieldResolTarget.resolve(ownerSig, instantiatedRetType, Some(funSig))
+                }
+                instantiatedRetType
+              case _ => errorCase()
+            }
         }
       case _ => errorCase()
     }

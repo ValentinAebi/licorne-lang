@@ -9,15 +9,15 @@ object Lists {
       var len = 0;
       while ls is Cons {
          len += 1;
-         ls = ls.tail();
+         ls = ls.tail;
       };
-      return ls.head();   //> E : method head not found in type Nil
+      return ls.head;   //> E : no field or pure accessor named head found in type Nil
    }
 
    fn tail[U](ls: List[U]) -> List[U] =
       // TODO can we use the predicate to deduce that ls is Cons? Note that it is a unary constraint, maybe we can do something in the Typer
       when ls is Cons
-         then ls.tail()
+         then ls.tail
          else panic "empty list"
 
 }

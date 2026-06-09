@@ -28,6 +28,8 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   }
 
   def getReceiverSigUnsafe: RuntimeTypeSignature = receiverSigOpt.get
+  
+  def getFunSigOpt: Option[FunctionSignature] = funSigOpt
 
   def getFunSigUnsafe: FunctionSignature = funSigOpt.get
 

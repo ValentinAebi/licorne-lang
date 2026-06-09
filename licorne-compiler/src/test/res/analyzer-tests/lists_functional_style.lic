@@ -16,7 +16,7 @@ object Lists {
       var len = 0;
       while ls is Cons {
          len += 1;
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return len;
    }
@@ -25,7 +25,7 @@ object Lists {
       var len = -1;
       while ls is Cons {
          len += 1;
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return len;   //> E : return value: expected lists.Length, found len<loop-body-start@26:24> : [-1..]
    }
@@ -33,8 +33,8 @@ object Lists {
    fn sum(var ls: List[[0..]]) -> [0..] {
       var s = 0;
       while ls is Cons {
-         s += ls.head();
-         ls = ls.tail();
+         s += ls.head;
+         ls = ls.tail;
       };
       return s;
    }
@@ -42,8 +42,8 @@ object Lists {
    fn sum_bad(var ls: List[[..1000]]) -> [0..] {
       var s = 0;
       while ls is Cons {    //> E : inferred incorrect type [0..] for variable s at loop body start, please provide a type annotation at variable declaration site
-         s += ls.head();
-         ls = ls.tail();
+         s += ls.head;
+         ls = ls.tail;
       };
       return s;
    }
@@ -51,8 +51,8 @@ object Lists {
    fn reverse[T](var ls: List[T]) -> List[T] {
       var reversed = new Nil();
       while ls is Cons {
-         reversed = new Cons(head = ls.head(), tail = reversed);
-         ls = ls.tail();
+         reversed = new Cons(head = ls.head, tail = reversed);
+         ls = ls.tail;
       };
       return reversed;
    }
@@ -60,10 +60,10 @@ object Lists {
    fn filterLessOrEq(a: Int, var ls: List[Int]) -> List[[..a]] {
       var filteredReversed = new Nil();
       while ls is Cons {
-         if ls.head() <= a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -71,10 +71,10 @@ object Lists {
    fn filterLessThan(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed = new Nil();
       while ls is Cons {
-         if ls.head() < a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);
+         if ls.head < a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -82,10 +82,10 @@ object Lists {
    fn filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed = new Nil();
       while ls is Cons {
-         if ls.head() <= a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@84:24>.head() : [..a]
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@84:24>.head : [..a]
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -93,10 +93,10 @@ object Lists {
    fn filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed: List[[..<a]] = new Nil();
       while ls is Cons {
-         if ls.head() <= a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@95:24>.head() : [..a]
+         if ls.head <= a {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@95:24>.head : [..a]
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -104,10 +104,10 @@ object Lists {
    fn filter[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil();
       while ls is Cons {
-         if p(ls.head()) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);
+         if p(ls.head) {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -115,10 +115,10 @@ object Lists {
    fn filter_bad[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil();
       while ls is Cons {
-         if !p(ls.head()) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls<loop-body-start@117:24>.head() : T with !p(it)
+         if !p(ls.head) {
+            filteredReversed = new Cons(head = ls.head, tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls<loop-body-start@117:24>.head : T with !p(it)
          };
-         ls = ls.tail();
+         ls = ls.tail;
       };
       return reverse(filteredReversed);
    }
@@ -130,16 +130,16 @@ object Lists {
       filter(ls, fn (x) -> x <= a)  //> E : return value: expected lists.List[[..<a]], found lists.List[[..a]]
 
    fn isSingletonList[T](ls: List[T]) -> Bool =
-      ls is Cons && ls.tail() is Nil
+      ls is Cons && ls.tail is Nil
 
    fn zip[S, T](ls1: List[S], ls2: List[T] where length(ls1) == length(ls2)) -> List[Pair[S, T]] {
       var rem1 = ls1;
       var rem2 = ls2;
       var reversedZip = new Nil();
       while rem1 is Cons && rem2 is Cons {
-         reversedZip = new Cons(head = new Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip);
-         rem1 = rem1.tail();
-         rem2 = rem2.tail();
+         reversedZip = new Cons(head = new Pair(l = rem1.head, r = rem2.head), tail = reversedZip);
+         rem1 = rem1.tail;
+         rem2 = rem2.tail;
       };
       return reverse(reversedZip);
    }
@@ -167,8 +167,8 @@ object UseLists {
    }
 
    fn instanceTests(ls: List[I], thres: Int) {
-      val filtered = filter(ls, fn (x) -> x is A && x.value() >= thres);
-      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()]
+      val filtered = filter(ls, fn (x) -> x is A && x.value >= thres);
+      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value]
    }
 
 }

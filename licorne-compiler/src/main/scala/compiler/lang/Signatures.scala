@@ -47,6 +47,8 @@ final case class FunctionSignature(
 
   def isPure: Boolean = purity == Purity.Pure
 
+  def requiresArgsList: Boolean = !isPure || typeParams.nonEmpty || paramsWithoutThis.nonEmpty
+
   def smtFunctionCode: String =
     functionName.toString ++ "$" ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("$")
 
@@ -165,14 +167,6 @@ final case class TypeAliasSignature(
 sealed trait RuntimeTypeSignature extends TypeSignature {
   override def params: SeqMap[FunOrVarId, (Type, IdValue)] = SeqMap.empty
 
-  def functions: Map[FunOrVarId, FunctionSignature]
-
-  def directSupertypes: List[NamedType]
-}
-
-sealed trait ConcreteTypeSig extends RuntimeTypeSignature
-
-sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
   def fields: SeqMap[FunOrVarId, Field]
 
   def stableFields: SeqMap[FunOrVarId, StableField] = {
@@ -184,9 +178,19 @@ sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
     }
     stableFieldsB.result()
   }
+
+  def functions: Map[FunOrVarId, FunctionSignature]
+
+  def directSupertypes: List[NamedType]
 }
 
-sealed trait AbstractTypeSig extends RuntimeTypeSignature
+sealed trait ConcreteTypeSig extends RuntimeTypeSignature
+
+sealed trait UserInstantiableTypeSig extends ConcreteTypeSig
+
+sealed trait AbstractTypeSig extends RuntimeTypeSignature {
+  override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+}
 
 sealed trait EncapsulatedTypeSig extends RuntimeTypeSignature
 
@@ -244,7 +248,9 @@ final case class DatatypeSignature(
                                     sigScope: Scope,
                                     declPosOpt: Option[Position]
                                   )
-  extends RuntimeTypeSignature, AbstractTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig
+  extends RuntimeTypeSignature, AbstractTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig {
+  override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+}
 
 final case class RecordSignature(
                                   id: TypeIdentifier,

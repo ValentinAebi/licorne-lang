@@ -3,7 +3,7 @@
 // typealias definition refers to Seq.length rather than Array.length might be the cause of the issue
 
 typealias Length = [0..]
-typealias Idx[T](array: Seq[T]) = [0 ..< array.length()]
+typealias Idx[T](array: Seq[T]) = [0 ..< array.length]
 
 interface Seq[T] {
    pure fn length(this) -> Length
@@ -23,7 +23,7 @@ class Array[T](public length: Length) : Seq[T] {
 object ArrayCopy {
 
    fn copy1[T](xs: Array[T]) -> Array[T] {
-      val length = xs.length();
+      val length = xs.length;
       val copy = new Array(length);
       for (var i = 0; i < length; i += 1) {
          val t = xs.at(i);
@@ -33,8 +33,8 @@ object ArrayCopy {
    }
 
    fn copy2[T](xs: Array[T]) -> Array[T] {
-      val copy = new Array(length = xs.length());
-      for var i = 0; i < xs.length(); i += 1 {
+      val copy = new Array(length = xs.length);
+      for var i = 0; i < xs.length; i += 1 {
          val t = xs.at(i);
          copy.set(i, t);
       };
@@ -42,8 +42,8 @@ object ArrayCopy {
    }
 
    fn copy3[T](xs: Array[T]) -> Array[T] {
-      val copy = new Array(length = xs.length());
-      for var i = 0; i < copy.length(); i += 1 {
+      val copy = new Array(length = xs.length);
+      for var i = 0; i < copy.length; i += 1 {
          val t = xs.at(i);
          copy.set(i, t);
       };
@@ -51,17 +51,17 @@ object ArrayCopy {
    }
 
    fn copyWrong[T](xs: Array[T]) -> Array[T] {
-      val copy = new Array(length = xs.length() / 2);
-      for var i = 0; i < xs.length(); i += 1 {
+      val copy = new Array(length = xs.length / 2);
+      for var i = 0; i < xs.length; i += 1 {
          val t = xs.at(i);
-         copy.set(i, t);    //> E : first argument of call to set: expected Idx[T](copy), found i<loop-body-start@55:7> : [0 ..< xs.length()]
+         copy.set(i, t);    //> E : first argument of call to set: expected Idx[T](copy), found i<loop-body-start@55:7> : [0 ..< xs.length]
       };
       return copy;
    }
 
    fn copyOversized[T](xs: Array[T]) -> Array[T] {
-      val copy = new Array(length = xs.length() + 100);
-      for (var i = 0; i < xs.length(); i += 1) {
+      val copy = new Array(length = xs.length + 100);
+      for (var i = 0; i < xs.length; i += 1) {
          val t = xs.at(i);
          copy.set(i, t);
       };

@@ -58,7 +58,7 @@ final class FormulasConverter[IntSort <: KSort](
       case IntConst(value) => Some(ihm.const(value))
       case BoolConst(value) => None
       case StringConst(value) => None
-      case Select(owner, field) if field.isResolvedAndStable =>
+      case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, ihm.iSort)
       case Select(owner, field) => None
       case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
@@ -127,7 +127,7 @@ final class FormulasConverter[IntSort <: KSort](
       case BoolConst(value) => Some(kCtx.mkBool(value))
       case StringConst(value) => None
       // TODO encode selects
-      case Select(owner, field) if field.isResolvedAndStable =>
+      case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, kCtx.mkBoolSort())
       case Select(owner, field) => None
       case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
@@ -186,7 +186,7 @@ final class FormulasConverter[IntSort <: KSort](
           case _ => base
         }
       case formula: ConstFormula => None
-      case Select(owner, field) if field.isResolvedAndStable =>
+      case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, anySort)
       case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
         mkFunApp(receiver, func, args, anySort)
@@ -204,7 +204,7 @@ final class FormulasConverter[IntSort <: KSort](
       case None =>
         for {
           ow <- convertObj(owner)
-          if field.isResolvedAndStable
+          if field.isResolvedAndPure
         } yield {
           val funDecl = kCtx.mkFuncDecl(selectFuncPrefix + field.fieldId, sort, javaList(anySort))
           kCtx.mkApp(funDecl, javaList(ow))

@@ -95,54 +95,54 @@ final class SubtypingContext(
   }
 
   // TODO memoize? But we need to take smartcasts into account
-  def isSubtype(subT: Type, superT: Type)(using TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
+  def isSubtype(subT: Type, superT: Type)(using typeParamsCtx: TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
-    case (subT, superT) => (expandIfTypeParam(_.upperBoundOpt)(subT), expandIfTypeParam(_.lowerBoundOpt)(superT)) match {
-      case (subT, superT) if subT == superT => true
-      case (NothingType, _) => true
-      case (tv: TypeVariable, superT) =>
-        if (tv.isResolved) {
-          tv.lock()
-          isSubtype(tv.substitutedIfResolved, superT)
-        } else {
-          tv.resolve(superT)
-          tv.lock()
-          true
-        }
-      case (subT, tv: TypeVariable) =>
-        if (tv.isResolved) {
-          tv.lock()
-          isSubtype(subT, tv.substitutedIfResolved)
-        } else {
-          tv.resolve(subT)
-          // do NOT lock: it's OK if the type gets widened later
-          true
-        }
-      case (_, UnitType) => true
-      case (IntersectionType(subtypes), superT) =>
-        subtypes.exists(isSubtype(_, superT))
-      case (subT, IntersectionType(supertypes)) =>
-        supertypes.forall(isSubtype(subT, _))
-      case (UnionType(subtypes), superT) =>
-        subtypes.forall(isSubtype(_, superT))
-      case (subT, UnionType(supertypes)) =>
-        supertypes.exists(isSubtype(subT, _))
-      case (subT: RefinedType, superT: RefinedType) =>
-        val RefinedType(subBaseType, subPredicate) = subT.flattenedRefinement
-        val RefinedType(superBaseType, superPredicate) = superT.flattenedRefinement
-        isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate, superPredicate)
-      case (subT: NamedType, superT: NamedType) => isSubtype(subT, superT)
-      case (subT: RefinedType, superT) => isSubtype(subT, superT.asRefinedType)
-      case (subT, superT: RefinedType) => isSubtype(subT.asRefinedType, superT)
-      case (IntRangeType(_, _), IntType) => true
-      case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
-        superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
-          && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
-      case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
-        logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
-      case (subT, AnyType) => subT != NullType
-      case _ => false
-    }
+    case (NothingType, _) => true
+    case (tv: TypeVariable, superT) =>
+      if (tv.isResolved) {
+        tv.lock()
+        isSubtype(tv.substitutedIfResolved, superT)
+      } else {
+        tv.resolve(superT)
+        tv.lock()
+        true
+      }
+    case (subT, tv: TypeVariable) =>
+      if (tv.isResolved) {
+        tv.lock()
+        isSubtype(subT, tv.substitutedIfResolved)
+      } else {
+        tv.resolve(subT)
+        // do NOT lock: it's OK if the type gets widened later
+        true
+      }
+    case (_, UnitType) => true
+    case (IntersectionType(subtypes), superT) =>
+      subtypes.exists(isSubtype(_, superT))
+    case (subT, IntersectionType(supertypes)) =>
+      supertypes.forall(isSubtype(subT, _))
+    case (UnionType(subtypes), superT) =>
+      subtypes.forall(isSubtype(_, superT))
+    case (subT, UnionType(supertypes)) =>
+      supertypes.exists(isSubtype(subT, _))
+    case (subT: RefinedType, superT: RefinedType) =>
+      val RefinedType(subBaseType, subPredicate) = subT.flattenedRefinement
+      val RefinedType(superBaseType, superPredicate) = superT.flattenedRefinement
+      isSubtype(subBaseType, superBaseType) && solver.canProveImplication(subPredicate, superPredicate)
+    case (subT: NamedType, superT: NamedType) if isSubtype(subT, superT) => true
+    case (subT: RefinedType, superT) => isSubtype(subT, superT.asRefinedType)
+    case (subT, superT: RefinedType) => isSubtype(subT.asRefinedType, superT)
+    case (IntRangeType(_, _), IntType) => true
+    case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
+      superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
+        && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
+    case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
+      logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
+    case (subT, AnyType) => subT != NullType
+    case (subT, superT) =>
+      val subTE = expandIfTypeParam(_.upperBoundOpt)(subT)
+      val superTE = expandIfTypeParam(_.lowerBoundOpt)(superT)
+      subTE != subT && isSubtype(subTE, superT) || superTE != superT && isSubtype(subT, superTE)
   }
 
   private def dealiaseAndExpandNullables(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {

@@ -3,8 +3,8 @@ class Foo {
 
    pure fn bar(this, animal: Animal) -> Unit {
       animal.hungerLevel();             //> E : illegal call to impure method hungerLevel
-      animal.hungerLevel_incorrect1();  // OK
-      animal.name();                    // OK
+      animal.hungerLevel_incorrect1();  //> W : no arguments list required for call to pure method hungerLevel_incorrect1
+      animal.name;                    // OK
    }
 
 }
@@ -13,10 +13,10 @@ class Animal(name: String, var hungerLevel: [0..]) {
 
    fn eat(this, food: Food) {
       val hungerLevelBefore = this.hungerLevel;
-      if hungerLevelBefore < food.nutrients() {
+      if hungerLevelBefore < food.nutrients {
          resetHungerLevel();
       } else {
-         this.hungerLevel = hungerLevelBefore - food.nutrients();
+         this.hungerLevel = hungerLevelBefore - food.nutrients;
       }
    }
 

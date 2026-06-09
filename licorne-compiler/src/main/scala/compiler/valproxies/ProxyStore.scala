@@ -43,21 +43,23 @@ final class ProxyStore {
     }
   }
 
-  def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = Option.when(fld.isResolvedAndStable) {
-    fld.getReceiverSigOpt match {
-      case Some(classSig: ClassSignature) =>
-        for {
-          fieldsSet <- fieldAccessorProxies.get(classSig.id)
-          if fieldsSet.contains(fld.fieldId)
-        } yield {
-          val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
-          val invkTarget = InvocationTarget(fld.fieldId)
-          invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedFieldTypeUnsafe)
-          invkTarget
-        }
-      case _ => None
-    }
-  }.flatten
+  def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = fld.asFreshInvocationTarget.orElse {
+    Option.when(fld.isResolvedAndPure) {
+      fld.getReceiverSigOpt match {
+        case Some(classSig: ClassSignature) =>
+          for {
+            fieldsSet <- fieldAccessorProxies.get(classSig.id)
+            if fieldsSet.contains(fld.fieldId)
+          } yield {
+            val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
+            val invkTarget = InvocationTarget(fld.fieldId)
+            invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedTypeUnsafe)
+            invkTarget
+          }
+        case _ => None
+      }
+    }.flatten
+  }
 
   def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false)(using ResolutionContext): Option[Formula] =
     dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using expandSelectIfAccessor)
@@ -80,7 +82,7 @@ final class ProxyStore {
       case idValue: IdValue if proxies.contains(idValue) => Some(proxies.apply(idValue))
       case idValue: IdValue => None
       case cst: ConstFormula => Some(cst)
-      case Select(owner, field) if bypassPurityChecks || field.isResolvedAndStable => for {
+      case Select(owner, field) if bypassPurityChecks || field.isResolvedAndPure => for {
         owp <- dev(owner, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
       } yield handleSelect(owp, field)
       case FunCall(receiver, func, typeArgs, args) if bypassPurityChecks || func.isResolvedAndPure =>
@@ -163,7 +165,7 @@ final class ProxyStore {
       }
     }
   }
-  
+
   private def expandSelectIfAccessor(owp: Formula, field: FieldResolutionTarget)(using ResolutionContext): Formula = accessorProxyFor(field) match {
     case Some(invkTarget) => FunCall(owp, invkTarget, List.empty, List.empty)
     case None => Select(owp, field)
