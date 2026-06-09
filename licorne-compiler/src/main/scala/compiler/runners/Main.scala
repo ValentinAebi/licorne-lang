@@ -19,9 +19,6 @@ object Main {
     val cmdLine = args.mkString(" ")
     try {
       val (action, pathStrs) = parseCmdLine(splitAtSpacesExceptBetweenBrackets(cmdLine))
-      if (pathStrs.exists(!_.endsWith("." + licorneExt))) {
-        error(s"all sources must be .$licorneExt files")
-      }
       val paths = extractAllPaths(pathStrs)
       val sourceFiles = paths.map(p => SourceFile(p.toString))
       action.run(sourceFiles)
@@ -31,27 +28,15 @@ object Main {
   }
 
   private def extractAllPaths(pathStrs: List[String]): List[Path] = {
-    pathStrs.flatMap { pathStr =>
-      getWildcardedExtIfAny(pathStr).map { wildcardedExt =>
-        val parent = Paths.get(pathStr.dropRight(("*." + wildcardedExt).length))
-        if (parent == null) {
-          error("bad source path: " + pathStr)
-        }
-        Files.walk(parent)
-          .filter(path => path.toFile.isFile && path.toString.endsWith("." + licorneExt))
-          .toArray(new Array[Path](_))
-          .toSeq
-      }.getOrElse {
-        Seq(Paths.get(pathStr))
+    pathStrs.flatMap { ps =>
+      val path = Path.of(ps)
+      val file = path.toFile
+      if (!file.exists()) {
+        error(s"file not found: $path")
       }
-    }
-  }
-
-  private def getWildcardedExtIfAny(pathStr: String): Option[String] = {
-    pathStr.replace('\\', '/').split('/').last.toList match {
-      case '*' :: '.' :: ext => Some(ext.mkString)
-      case _ => None
-    }
+      if file.isFile then List(path)
+      else Files.walk(path).toArray(new Array[Path](_))
+    }.filter(_.toString.endsWith("." + licorneExt))
   }
 
   private def splitAtSpacesExceptBetweenBrackets(cmdLine: String): List[String] = {
