@@ -12,23 +12,23 @@ class Foo {
 class Animal(name: String, var hungerLevel: [0..]) {
 
    fn eat(this, food: Food) {
-      val hungerLevelBefore = this.hungerLevel;
+      val hungerLevelBefore = hungerLevel;
       if hungerLevelBefore < food.nutrients {
          resetHungerLevel();
       } else {
-         this.hungerLevel = hungerLevelBefore - food.nutrients;
+         hungerLevel = hungerLevelBefore - food.nutrients;
       }
    }
 
    fn resetHungerLevel(this) {
-      this.hungerLevel = 0;
+      hungerLevel = 0;
    }
 
    pure fn resetHungerLevel_incorrect(this) {
-      this.hungerLevel = 0;     //> E : illegal access to impure field hungerLevel
+      hungerLevel = 0;     //> E : illegal access to impure field hungerLevel
    }
 
-   fn hungerLevel(this) -> [0..] = this.hungerLevel                    // OK
+   fn hungerLevel(this) -> [0..] = hungerLevel                          // OK
    fn hungerLevelDuplicate(this) -> [0..] = this.hungerLevel()         // OK
    pure fn hungerLevel_incorrect1(this) -> [0..] = this.hungerLevel    //> E : illegal access to impure field hungerLevel
    pure fn hungerLevel_incorrect2(this) -> [0..] = this.hungerLevel()  //> E : illegal call to impure method hungerLevel
@@ -38,7 +38,7 @@ class Animal(name: String, var hungerLevel: [0..]) {
       return this.name;
    }
    fn getName2(this) -> String {
-      return this.name;
+      return name;
    }
 
 }
