@@ -72,8 +72,8 @@ object TasksPipelines {
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(TypeHintsInserter(ihm, proxyStore, typeHintsStore, er, counterExBoxOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt, /*FIXME*/ continueIfErrors = true))
-      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt, /*FIXME*/ continueIfErrors = true))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
       .andThen((program, subtypingInfo) => program)
       .andThen(Concurrent(
         SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)

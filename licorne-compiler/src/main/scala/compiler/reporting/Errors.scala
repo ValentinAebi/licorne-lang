@@ -2,8 +2,6 @@ package compiler.reporting
 
 import compiler.pipeline.CompilationStep
 
-import java.io.PrintStream
-import scala.runtime.Nothing$
 import scala.collection.mutable
 
 object Errors {
@@ -121,14 +119,22 @@ object Errors {
 
     def getErrors: List[CompilationError] = errors.toList
 
-    def errorsCnt: Int = errors.size
+    def errorsCntInclWarnings: Int = errors.size
 
     def displayErrors(): Unit = {
+      var errorsCnt = 0
+      var warningsCnt = 0
       for error <- errors do {
         errorsConsumer(error)
         errorsConsumer("\n")
+        error match {
+          case Err(compilationStep, msg, posOpt) =>
+            errorsCnt += 1
+          case Warning(compilationStep, msg, posOpt) =>
+            warningsCnt += 1
+        }
       }
-      errorsConsumer(s"\n${errors.size} errors\n")
+      errorsConsumer(s"\n${maybePlural(errorsCnt, "error", "errors")}, ${maybePlural(warningsCnt, "warning", "warnings")}\n")
     }
 
     /**
@@ -149,9 +155,6 @@ object Errors {
         displayExitMessage()
         exit(errorsExitCode)
       }
-      else {
-        displayAndDeleteWarnings()
-      }
     }
 
     /**
@@ -164,10 +167,6 @@ object Errors {
       displayErrors()
       displayExitMessage()
       exit(fatalErrorExitCode)
-    }
-
-    def clear(): Unit = {
-      errors.clear()
     }
 
     def withReportingSuspended[T](action: => T): T = {
@@ -185,13 +184,7 @@ object Errors {
       }
     }
 
-    private def displayAndDeleteWarnings(): Unit = {
-      for errors <- errors if errors.isWarning do {
-        errorsConsumer(errors)
-        errorsConsumer("\n")
-      }
-      errors.filterInPlace(!_.isWarning)
-    }
+    private def maybePlural(cnt: Int, sing: String, plur: String): String = s"$cnt ${if cnt == 1 then sing else plur}"
 
     private def displayExitMessage(): Unit = errorsConsumer("\nLicorne compiler exiting\n")
 

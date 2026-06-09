@@ -25,7 +25,7 @@ final class TypeChecker(
                          heapVarsTypeStore: HeapVarsTypeStore,
                          er: ErrorReporter,
                          counterExBoxOpt: Option[CounterexampleBox],
-                         continueIfErrors: Boolean = false
+                         handleErrors: ErrorReporter => Unit = _.displayAndTerminateIfErrors()
                        ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeChecking
@@ -59,11 +59,7 @@ final class TypeChecker(
       )
     }
 
-    if (continueIfErrors) {
-      er.displayErrors()
-    } else {
-      er.displayAndTerminateIfErrors()
-    }
+    handleErrors(er)
     input
   }
 

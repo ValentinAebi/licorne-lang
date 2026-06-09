@@ -89,16 +89,16 @@ class AnalyzerTests(fileName: String) {
     }
 
     // error -> boolean indicating whether a matching matcher has been found
-    val errors = mutable.LinkedHashMap.empty[CompilationError, Boolean]
+    val errors = mutable.ListBuffer.empty[(CompilationError, Boolean)]
 
     val errorsConsumer: ErrorsConsumer = {
       case err: CompilationError =>
         expectedErrors.find((matcher, alrMatched) => !alrMatched && matcher.matches(err))
           .map { (matcher, _) =>
             expectedErrors(matcher) = true
-            errors.put(err, true)
+            errors.addOne(err, true)
           }.getOrElse {
-            errors.put(err, false)
+            errors.addOne(err, false)
           }
       case _: String => ()
     }
