@@ -1337,6 +1337,7 @@ final class Typer(
               er.reportError(s"illegal access to impure field ${field.id}", posOpt)
             }
             instantiatedFieldType
+          case _ if needsWriteAccess => errorCase()
           case _ =>
             resolutionCtx.resolveFunSig(typeName, fieldResolTarget.fieldId) match {
               case FuncResolResult.Success(ownerSig, funSig) if !funSig.requiresArgsList =>
