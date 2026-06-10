@@ -43,23 +43,21 @@ final class ProxyStore {
     }
   }
 
-  def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = fld.asFreshInvocationTarget.orElse {
-    Option.when(fld.isResolvedAndPure) {
-      fld.getReceiverSigOpt match {
-        case Some(classSig: ClassSignature) =>
-          for {
-            fieldsSet <- fieldAccessorProxies.get(classSig.id)
-            if fieldsSet.contains(fld.fieldId)
-          } yield {
-            val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
-            val invkTarget = InvocationTarget(fld.fieldId)
-            invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedTypeUnsafe)
-            invkTarget
-          }
-        case _ => None
-      }
-    }.flatten
-  }
+  def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = Option.when(fld.isResolvedAndPure) {
+    fld.getReceiverSigOpt match {
+      case Some(classSig: ClassSignature) =>
+        for {
+          fieldsSet <- fieldAccessorProxies.get(classSig.id)
+          if fieldsSet.contains(fld.fieldId)
+        } yield {
+          val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
+          val invkTarget = InvocationTarget(fld.fieldId)
+          invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedTypeUnsafe)
+          invkTarget
+        }
+      case _ => None
+    }
+  }.flatten
 
   def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, allowConjunctsOmission: Boolean = false)(using ResolutionContext): Option[Formula] =
     dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, allowConjunctsOmission)(using expandSelectIfAccessor)

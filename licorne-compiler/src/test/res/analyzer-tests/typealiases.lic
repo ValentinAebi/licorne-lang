@@ -5,4 +5,4 @@ interface Array[T] {
    pure fn length(this) -> [0..]
 }
 
-typealias Idx[T](array: Array[T]) = [0 ..< array.length]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length()]

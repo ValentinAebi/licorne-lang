@@ -138,7 +138,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
-              fldTarget.resolve(classSig, tpe, accessorSigOpt = None)
+              fldTarget.resolve(classSig, tpe)
               callTarget.resolve(classSig, accessorSig, tpe)
               proxyStore.saveAccessorProxy(classSig.id, accessorSig.functionName)
             }
@@ -175,7 +175,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
             val recordSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
-              fldTarget.resolve(recordSig, tpe, accessorSigOpt = None)
+              fldTarget.resolve(recordSig, tpe)
               callTarget.resolve(recordSig, accessorSig, tpe)
               proxyStore.saveAccessorProxy(recordSig.id, accessorSig.functionName)
             }

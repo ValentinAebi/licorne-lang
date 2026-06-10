@@ -1,11 +1,11 @@
 // adapted from the Java Checker framework manual: https://checkerframework.org/manual/#index-checker
 
-typealias SameLength[T](arr: Array[T]) = Array[T] with it.length == arr.length
+typealias SameLength[T](arr: Array[T]) = Array[T] with it.length() == arr.length()
 
 object Ex_11_5 {
 
     fn lessThan_v1(arr1: Array[Int], arr2: SameLength(arr1)) -> Bool {
-        for (var i = 0; i < arr1.length; i += 1) {
+        for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
                 return true;
             } else if (arr1.at(i) > arr2.at(i)) {
@@ -15,8 +15,8 @@ object Ex_11_5 {
         return false;
     }
 
-    fn lessThan_v2(arr1: Array[Int], arr2: Array[Int] with it.length == arr1.length) -> Bool {
-        for (var i = 0; i < arr1.length; i += 1) {
+    fn lessThan_v2(arr1: Array[Int], arr2: Array[Int] with it.length() == arr1.length()) -> Bool {
+        for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
                 return true;
             } else if (arr1.at(i) > arr2.at(i)) {
@@ -29,7 +29,7 @@ object Ex_11_5 {
 }
 
 typealias Length = [0..]
-typealias Idx[T](array: Array[T]) = [0 ..< array.length]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
 
 class Array[T] {
 

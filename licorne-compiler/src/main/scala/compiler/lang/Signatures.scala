@@ -47,8 +47,6 @@ final case class FunctionSignature(
 
   def isPure: Boolean = purity == Purity.Pure
 
-  def requiresArgsList: Boolean = !isPure || typeParams.nonEmpty || paramsWithoutThis.nonEmpty
-
   def smtFunctionCode: String =
     functionName.toString ++ "$" ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("$")
 
