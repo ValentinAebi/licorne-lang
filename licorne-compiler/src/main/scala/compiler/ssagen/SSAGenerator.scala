@@ -567,7 +567,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         } else rhsOpt match {
           case Some(rhs) =>
             generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope, newScopeIfBlock)
-            generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotOpt = None, rhs)
+            generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
               .withDesugaringSource(localDef), currScope, newScopeIfBlock)
           case None =>
             currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, currScope, reassigPermission, typeAnnotOpt)
