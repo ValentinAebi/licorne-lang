@@ -98,6 +98,7 @@ final class SubtypingContext(
   def isSubtype(subT: Type, superT: Type)(using typeParamsCtx: TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
+    case (_, UnionType(types)) if types.contains(AnyType) && types.contains(NullType) => true
     case (tv: TypeVariable, superT) =>
       if (tv.isResolved) {
         tv.lock()
@@ -138,7 +139,7 @@ final class SubtypingContext(
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
     case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
       logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
-    case (subT, AnyType) => subT != NullType
+    case (subT, AnyType) if subT != NullType && !typeParamsCtx.isTypeParam(subT) => true
     case (subT, superT) =>
       val subTE = expandIfTypeParam(_.upperBoundOpt)(subT)
       val superTE = expandIfTypeParam(_.lowerBoundOpt)(superT)

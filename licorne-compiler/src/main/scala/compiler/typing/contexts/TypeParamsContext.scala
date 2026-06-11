@@ -2,6 +2,7 @@ package compiler.typing.contexts
 
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.TypeParamInfo
+import compiler.lang.Types.{Type, NamedType}
 
 import scala.reflect.ClassTag
 
@@ -14,6 +15,11 @@ final case class TypeParamsContext(typeParams: Map[TypeIdentifier, TypeParamInfo
       case Some(tpInfo: T) => Some(tpInfo)
       case _ => None
     }
+  }
+  
+  def isTypeParam(tpe: Type): Boolean = tpe match {
+    case NamedType(tid, _, _) => typeParams.contains(tid)
+    case _ => false
   }
 
   def extendedWith(newTypeParam: TypeParamInfo): TypeParamsContext =
