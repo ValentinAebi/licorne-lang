@@ -37,7 +37,8 @@ object ArithIntMode extends IntHandlingMode[KIntSort] {
 
   override def div(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkArithDiv(l, r)
 
-  override def modulo(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkIntMod(l, r)
+  override def modulo(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] =
+    kCtx.mkIte(kCtx.le(kCtx.mkIntNum(0), l), kCtx.mkIntMod(l, r), kCtx.unaryMinus(kCtx.mkIntMod(kCtx.unaryMinus(l), r)))
 
   override def leq(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkArithLe(l, r)
 
@@ -59,7 +60,7 @@ object BvInt32Mode extends IntHandlingMode[KBv32Sort] {
 
   override def div(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvSignedDivExpr(l, r)
 
-  override def modulo(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvSignedModExpr(l, r)
+  override def modulo(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBv32Sort] = kCtx.mkBvSignedRemExpr(l, r)
 
   override def leq(l: KExpr[KBv32Sort], r: KExpr[KBv32Sort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkBvSignedLessOrEqualExpr(l, r)
 

@@ -107,7 +107,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(nonPositive), typeModuloType(nonPositive, strictlyNegative))
     assertEquals(Some(nonNegative), typeModuloType(nonNegative, strictlyNegative))
     assertEquals(Some(nonPositive), typeModuloType(nonPositive, strictlyPositive))
-    assertEquals(Some(IntType), typeModuloType(nonNegative, nonNegative))
+    assertEquals(Some(nonNegative), typeModuloType(nonNegative, nonNegative))
     assertEquals(Some(IntType), typeModuloType(`[a,b]`, `[1,a]`))
     solver.onNewFrame {
       solver.assertLeq(0, a)

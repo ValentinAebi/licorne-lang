@@ -143,13 +143,13 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
         else if `[a,b] >= 0` && `[c,d] < 0` then (someZero, for r <- rhsOpt.orElse(c) yield -r - 1)
         else if `[a,b] <= 0` && `[c,d] > 0` then (for r <- rhsOpt.orElse(d) yield -r + 1, someZero)
         else if `[a,b] <= 0` && `[c,d] < 0` then (for r <- rhsOpt.orElse(c) yield r + 1, someZero)
-        else (None, None)
+        else (someZero.filter(_ => `[a,b] >= 0`), someZero.filter(_ => `[a,b] <= 0`))
     }
     import compiler.irs.ssa.FormulasDsl.*
     (rawTypeOpt, rhsOpt) match {
       case (Some(rawType), Some(rhs)) =>
-        Some(simplifier.simplify(IntersectionType(rawType, IntRangeType(0, rhs - 1))))
-      case (None, Some(rhs)) => Some(IntRangeType(0, rhs - 1))
+        Some(simplifier.simplify(IntersectionType(rawType, IntRangeType(-rhs + 1, rhs - 1))))
+      case (None, Some(rhs)) => Some(IntRangeType(-rhs + 1, rhs - 1))
       case (rawTypeOpt, None) => rawTypeOpt
     }
   }
