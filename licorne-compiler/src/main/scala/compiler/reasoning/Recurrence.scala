@@ -1,10 +1,10 @@
-package compiler.recurrences
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.{Formula, IdValue}
 import compiler.irs.ssa.SSA.Scope
-import compiler.recurrences.Recurrence.Monotonicity
-import compiler.recurrences.Recurrence.Monotonicity.*
-import compiler.smt.Solver
+import compiler.reasoning.Solver
+import Recurrence.Monotonicity
+import Recurrence.Monotonicity.*
 import compiler.typing.Typer
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore

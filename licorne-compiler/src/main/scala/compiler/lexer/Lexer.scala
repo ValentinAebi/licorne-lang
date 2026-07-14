@@ -5,9 +5,8 @@ import compiler.irs.tokens.Tokens.*
 import compiler.lang.{Keyword, Operator}
 import compiler.lexer.Matchers.*
 import compiler.pipeline.{CompilationStep, CompilerStep}
-import compiler.reporting.Errors.{CompilationError, Err, ErrorReporter, Fatal}
+import compiler.reporting.Errors.{Err, ErrorReporter, Fatal}
 import compiler.reporting.Position
-import compiler.lang.Types.PrimitiveType
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success}

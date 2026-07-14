@@ -12,7 +12,7 @@ import compiler.lang.{RuntimeTypeSignature, TypeParamInfo, TypeTypeParamInfo}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{CounterexampleBox, Solver}
+import compiler.reasoning.{CounterexampleBox, Solver}
 import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}

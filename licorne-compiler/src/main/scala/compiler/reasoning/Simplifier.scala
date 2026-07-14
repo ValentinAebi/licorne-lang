@@ -1,10 +1,10 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
-import compiler.smt.Solver
+import compiler.reasoning.Solver
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext

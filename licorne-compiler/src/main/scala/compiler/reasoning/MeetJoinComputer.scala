@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas.Formula
@@ -6,7 +6,7 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
-import compiler.smt.{Simplifier, Solver}
+import compiler.reasoning.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
@@ -24,7 +24,7 @@ final class MeetJoinComputer(
                               globalValuesContext: GlobalValuesContext
                             ) {
 
-  private[smt] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
+  private[reasoning] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
 
   def computeJoin(types: Type*)(using TypeParamsContext): Type =
     computeJoin(Iterable.from(types))

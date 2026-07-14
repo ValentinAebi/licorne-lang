@@ -1,7 +1,5 @@
-package compiler.smt
+package compiler.reasoning
 
-import compiler.irs.ssa.Formulas.{BoolConst, ClosureCall, DivBy, Equality, Formula, FunCall, IdValue, IntConst, LessOrEq, LessThan, LogicalAnd, LogicalNot, LogicalOr, Modulo, Neg, Plus, PureClosureValue, Select, StringConst, Times, TypePredicate}
-import compiler.valproxies.ProxyStore
 import io.ksmt.KContext
 import io.ksmt.expr.KExpr
 import io.ksmt.sort.{KBoolSort, KBv32Sort, KIntSort, KSort}

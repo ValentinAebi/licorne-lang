@@ -2,7 +2,7 @@ package compiler.datastructures
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.reflect.{ClassTag, classTag}
+import scala.reflect.ClassTag
 import scala.util.boundary
 
 final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {

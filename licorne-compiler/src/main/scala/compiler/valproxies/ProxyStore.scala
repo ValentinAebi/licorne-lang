@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget}
-import compiler.lang.{ClassSignature, FunctionSignature}
+import compiler.lang.ClassSignature
 import compiler.typing.Typer
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
 

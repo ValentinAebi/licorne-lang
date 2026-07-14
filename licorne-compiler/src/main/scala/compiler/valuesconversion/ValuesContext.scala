@@ -1,11 +1,11 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
-import compiler.valuesconversion.ValuesContext.LocalInfo
 import compiler.lang.Types.Type
+import compiler.valuesconversion.ValuesContext.LocalInfo
 
 trait ValuesContext {
 

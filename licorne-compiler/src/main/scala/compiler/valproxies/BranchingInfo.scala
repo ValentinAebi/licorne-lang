@@ -1,18 +1,15 @@
 package compiler.valproxies
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.SSA.Scope
-import compiler.irs.ssa.Formulas.{Formula, IdValue}
-import compiler.smt.Solver
-import compiler.typing.Typer
-import compiler.util.{SeqSet, mergeCombineInOrder}
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
+import compiler.reasoning.Solver
 import compiler.typing.contexts.SubtypingContext
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*
 import compiler.typing.smartcasting.TypesReasoningCache
+import compiler.util.{SeqSet, mergeCombineInOrder}
 import compiler.valproxies.BoundMode.*
 import compiler.valproxies.BranchingInfo.SmartcastData
 

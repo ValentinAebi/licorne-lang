@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
-import compiler.lang.{Keyword, RuntimeTypeSignature, UserInstantiableTypeSig}
+import compiler.lang.{Keyword, RuntimeTypeSignature}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 

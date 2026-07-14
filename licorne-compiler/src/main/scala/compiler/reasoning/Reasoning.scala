@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.valproxies.ProxyStore

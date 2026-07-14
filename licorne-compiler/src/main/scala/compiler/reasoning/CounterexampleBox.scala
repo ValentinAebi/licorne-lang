@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.IdValue
 import io.ksmt.expr.KExpr

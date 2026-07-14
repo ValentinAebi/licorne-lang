@@ -1,7 +1,6 @@
 package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.asts.Asts.NamedTypeTree
 
 import scala.collection.immutable.SeqMap
 

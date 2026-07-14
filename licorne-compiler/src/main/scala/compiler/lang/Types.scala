@@ -5,7 +5,7 @@ import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.reporting.Position
-import compiler.smt.Simplifier
+import compiler.reasoning.Simplifier
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
@@ -520,12 +520,6 @@ object Types {
   extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
     case IntersectionType(types) => types
     case tpe => SeqSet(tpe)
-  }
-  
-  extension (tpe: Type) def refinedWith(newPredicate: Formula)(using GlobalValuesContext): RefinedType = {
-    val RefinedType(baseType, predicate) = tpe.asRefinedType
-    val mergedPredicate = if predicate == BoolConst(true) then newPredicate else LogicalAnd(predicate, newPredicate)
-    RefinedType(baseType, newPredicate)
   }
 
   extension (tpe: Type) def flattenedPredIfGenRefined(using GlobalValuesContext): Type = tpe match {

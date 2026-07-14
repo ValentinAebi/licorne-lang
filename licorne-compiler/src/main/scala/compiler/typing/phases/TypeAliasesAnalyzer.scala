@@ -3,13 +3,13 @@ package compiler.typing.phases
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas
-import compiler.lang.{TypeAliasSignature, Types}
+import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.contexts.*
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.valproxies.ProxyStore

@@ -1,8 +1,8 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.FunOrVarId
-import compiler.lang.{EncapsulatedTypeSig, FunctionSignature, RuntimeTypeSignature}
 import compiler.lang.Types.Type
+import compiler.lang.{FunctionSignature, RuntimeTypeSignature}
 
 final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   private var receiverSigOpt = Option.empty[RuntimeTypeSignature]

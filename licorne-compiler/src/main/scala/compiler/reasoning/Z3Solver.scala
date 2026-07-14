@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.*
@@ -15,7 +15,7 @@ import io.ksmt.sort.{KBoolSort, KSort}
 import scala.collection.mutable
 
 
-final class Z3Solver[IntSort <: KSort] private[smt](kCtx: KContext, kZ3Solver: KZ3Solver, ihm: IntHandlingMode[IntSort], converter: FormulasConverter[IntSort], counterExBoxOpt: Option[CounterexampleBox]) extends Solver {
+final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Solver: KZ3Solver, ihm: IntHandlingMode[IntSort], converter: FormulasConverter[IntSort], counterExBoxOpt: Option[CounterexampleBox]) extends Solver {
   import converter.{convertBool, convertInt, convertObj}
 
   private given KContext = kCtx

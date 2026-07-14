@@ -1,7 +1,7 @@
 package compiler.io
 
 import compiler.pipeline.{CompilationStep, CompilerStep}
-import compiler.reporting.Errors.{CompilationError, Err, ErrorReporter}
+import compiler.reporting.Errors.{Err, ErrorReporter}
 
 import java.io.FileWriter
 import java.nio.file.{Files, Path}

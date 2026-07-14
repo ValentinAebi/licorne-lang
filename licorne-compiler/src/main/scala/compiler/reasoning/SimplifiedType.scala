@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.lang.Types.PrimitiveType.{BoolType, IntType}
 import compiler.lang.Types.{IntRangeType, Type}

@@ -2,7 +2,7 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.{IntersectionType, Type}
-import compiler.smt.Simplifier
+import compiler.reasoning.Simplifier
 import compiler.typing.contexts.TypeParamsContext
 
 import scala.collection.mutable

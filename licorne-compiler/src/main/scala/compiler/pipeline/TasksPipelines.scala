@@ -7,7 +7,7 @@ import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.smt.{CounterexampleBox, IntHandlingMode}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*

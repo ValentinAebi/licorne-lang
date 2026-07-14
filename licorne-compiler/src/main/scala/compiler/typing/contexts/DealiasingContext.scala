@@ -41,27 +41,6 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       NullableType(dealiasType(nullatedType))
   }
 
-  /**
-   * "value type" means "a type that is not a reference"
-   */
-  def isValueType(tpe: Type): Boolean = dealiasType(tpe) match {
-    case IntType | DoubleType | CharType | BoolType | StringType | UnitType | NothingType => true
-    case NullType | AnyType => false
-    case NamedType(typeName, typeArgs, args) => false
-    case ClosureType(params, result, enforcedPure) => false
-    case tv: TypeVariable =>
-      tv.actualTypeIfResolved.exists(isValueType)
-    case UnionType(types) =>
-      types.forall(isValueType)
-    case IntersectionType(types) =>
-      types.exists(isValueType)
-    case RefinedType(baseType, predicate) =>
-      isValueType(baseType)
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
-    case NullableType(nullatedType) =>
-      isValueType(nullatedType)
-  }
-
   def eraseRefinements(tpe: Type): Type = dealiasType(tpe) match {
     case primitiveType: PrimitiveType => primitiveType
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntType

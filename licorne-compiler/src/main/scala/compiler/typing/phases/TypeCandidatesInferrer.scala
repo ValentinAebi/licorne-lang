@@ -1,18 +1,18 @@
 package compiler.typing.phases
 
 import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.{Formula, IdValue, UninterpretedConstIdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue}
 import compiler.irs.ssa.SSA
 import compiler.irs.ssa.SSA.*
 import compiler.lang.Types.*
-import compiler.lang.{ExecutionEnvironment, FunctionSignature, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
+import compiler.lang.{ExecutionEnvironment, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
-import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
+import compiler.typing.contexts.*
+import compiler.typing.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 

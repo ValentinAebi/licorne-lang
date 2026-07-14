@@ -12,10 +12,10 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
-import compiler.recurrences.Recurrence.Monotonicity.*
+import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.*
+import compiler.reasoning.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult

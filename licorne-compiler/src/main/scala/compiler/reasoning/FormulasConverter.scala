@@ -1,10 +1,10 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.AnyType
-import compiler.smt.FormulasConverter.*
+import compiler.reasoning.FormulasConverter.*
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext

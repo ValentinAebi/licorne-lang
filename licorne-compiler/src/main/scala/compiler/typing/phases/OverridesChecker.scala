@@ -8,7 +8,7 @@ import compiler.pipeline.CompilationStep.OverridesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}

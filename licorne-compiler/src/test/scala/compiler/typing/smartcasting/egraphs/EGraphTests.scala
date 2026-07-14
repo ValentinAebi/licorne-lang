@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{ArithIntMode, Reasoning, Simplifier}
+import compiler.reasoning.{ArithIntMode, Reasoning, Simplifier}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext

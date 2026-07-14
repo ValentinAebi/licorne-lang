@@ -10,10 +10,9 @@ import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep
-import compiler.recurrences.Recurrence
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.{Simplifier, Solver}
+import compiler.reasoning.{Recurrence, Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.EGraph
 import compiler.valproxies.ProxyStore

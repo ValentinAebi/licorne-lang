@@ -13,7 +13,7 @@ import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.SSAGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
-import compiler.recurrences.Recurrence
+import compiler.reasoning.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.ssagen.ImportsScanner.PackagesInfo

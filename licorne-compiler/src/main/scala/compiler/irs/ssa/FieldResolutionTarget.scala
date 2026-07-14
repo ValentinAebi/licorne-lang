@@ -1,8 +1,8 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.FunOrVarId
+import compiler.lang.RuntimeTypeSignature
 import compiler.lang.Types.Type
-import compiler.lang.{FunctionSignature, RuntimeTypeSignature}
 
 final class FieldResolutionTarget(val fieldId: FunOrVarId) {
   private var receiverSigOpt = Option.empty[RuntimeTypeSignature]

@@ -4,7 +4,7 @@ import compiler.AnalyzerTests.*
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
-import compiler.smt.{ArithIntMode, CounterexampleBox}
+import compiler.reasoning.{ArithIntMode, CounterexampleBox}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*

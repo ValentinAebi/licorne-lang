@@ -2,7 +2,6 @@ package compiler.irs.asts
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.lang.*
-import compiler.irs.ssa.Formulas.IdValue
 import compiler.lang.Types.PrimitiveType
 import compiler.reporting.Position
 

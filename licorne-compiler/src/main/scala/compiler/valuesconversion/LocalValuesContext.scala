@@ -1,18 +1,16 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId}
-import compiler.irs.asts.Asts
-import compiler.irs.ssa.Formulas.{Formula, IdValue}
+import compiler.irs.ssa.Formulas.IdValue
 import compiler.irs.ssa.SSA.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
+import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valuesconversion.LocalValuesContext.*
 import compiler.valuesconversion.ValuesContext.LocalInfo
-import compiler.lang.Types.Type
 
-import scala.annotation.tailrec
 import scala.collection.mutable
 
 final class LocalValuesContext(val nestedContext: ValuesContext, val level: Int, val exitManager: ExitManager) extends ValuesContext {

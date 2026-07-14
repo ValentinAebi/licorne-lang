@@ -1,4 +1,4 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.Formula
 import compiler.lang.Types.{IntRangeType, Type}

@@ -1,12 +1,12 @@
-package compiler.smt
+package compiler.reasoning
 
 import compiler.irs.ssa.Formulas
 import compiler.irs.ssa.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
-import compiler.smt.AbstractInterpreter.someZero
-import compiler.smt.{Simplifier, Solver}
+import compiler.reasoning.AbstractInterpreter.someZero
+import compiler.reasoning.{Simplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valuesconversion.GlobalValuesContext
 

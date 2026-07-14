@@ -9,7 +9,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.smt.*
+import compiler.reasoning.*
 import compiler.typing.*
 import compiler.typing.contexts.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}

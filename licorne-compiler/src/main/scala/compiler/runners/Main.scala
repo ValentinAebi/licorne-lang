@@ -3,7 +3,7 @@ package compiler.runners
 import compiler.gennames.FileExtensions.licorne as licorneExt
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
-import compiler.smt.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
+import compiler.reasoning.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
 
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import scala.annotation.tailrec

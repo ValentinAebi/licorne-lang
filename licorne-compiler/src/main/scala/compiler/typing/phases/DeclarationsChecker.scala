@@ -4,9 +4,9 @@ import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.smt.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
