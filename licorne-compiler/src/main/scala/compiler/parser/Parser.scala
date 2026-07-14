@@ -353,7 +353,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case expression ^: None => expression
       case expression ^: Some(As ^: (tp: TypeTree)) => Cast(expression, tp)
       case expression ^: Some(Is ^: (tp: TypeTree)) => TypeTest(expression, tp)
-      case expression ^: Some((_: Operator) ^: (_: Operator)) => SoftCast(expression)
+      case expression ^: Some((_: Operator) ^: (_: Operator)) => HybridCast(expression)
       case _ => assert(false)
     }
   } setName "binopArg"

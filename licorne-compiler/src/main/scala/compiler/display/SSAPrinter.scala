@@ -299,9 +299,9 @@ final class SSAPrinter(
         pps.add(s"PANIC ${maybeTyped(msg, scope)}")
       case SSA.Cast(inValue, target) =>
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
-      case softcast@SSA.SoftCast(inValue) =>
-        val targetDescr = if softcast.isNonNullAssertion then "non-null" else softcast.getTargetRefinement.map(_.toString).getOrElse("<unspecified>")
-        pps.add(s"SOFTCAST ${maybeTyped(inValue, scope)} to predicate $targetDescr")
+      case hybridcast@SSA.HybridCast(inValue) =>
+        val targetDescr = if hybridcast.isNonNullAssertion then "non-null" else hybridcast.getTargetRefinement.map(_.toString).getOrElse("<unspecified>")
+        pps.add(s"HYBRIDCAST ${maybeTyped(inValue, scope)} to predicate $targetDescr")
       case SSA.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)

@@ -6,7 +6,7 @@ import compiler.irs.asts.Asts
 import compiler.irs.ssa.SSA.Scope.scopeUidGen
 import compiler.lang.*
 import Formulas.*
-import compiler.irs.ssa.SSA.SoftCastMode.{AssertNonNull, AssertPredicate}
+import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep
@@ -162,10 +162,10 @@ object SSA {
   final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr
   final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr
   
-  final case class SoftCast(inValue: IdValue) extends RealInstr, PureInstr {
-    private var modeOpt = Option.empty[SoftCastMode]
+  final case class HybridCast(inValue: IdValue) extends RealInstr, PureInstr {
+    private var modeOpt = Option.empty[HybridCastMode]
     
-    def setMode(mode: SoftCastMode): Unit = {
+    def setMode(mode: HybridCastMode): Unit = {
       modeOpt = Some(mode)
     }
     
@@ -479,7 +479,7 @@ object SSA {
   
   final case class Unreachable() extends PseudoInstr, ScopeEndingInstr
 
-  enum SoftCastMode {
+  enum HybridCastMode {
     case AssertNonNull
     case AssertPredicate(newPredicate: Formula)
   }

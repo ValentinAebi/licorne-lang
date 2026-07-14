@@ -479,7 +479,7 @@ object Asts {
     override def children: List[Ast] = List(expr, tpe)
   }
   
-  final case class SoftCast(expr: Expr) extends Expr {
+  final case class HybridCast(expr: Expr) extends Expr {
     override def children: List[Ast] = List(expr)
   }
 

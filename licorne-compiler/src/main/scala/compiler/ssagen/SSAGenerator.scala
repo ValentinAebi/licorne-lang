@@ -978,9 +978,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case castTree@Asts.Cast(castExpr, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
-      case softcast@Asts.SoftCast(castExpr) =>
+      case hybridcast@Asts.HybridCast(castExpr) =>
         generateSSAExpr(resultVal, castExpr, currScope)
-        currScope.saveInstr(SoftCast(resultVal), softcast)
+        currScope.saveInstr(HybridCast(resultVal), hybridcast)
         None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
         val proxy = generateSSAExpr(resultVal, ascribedExpr, currScope)
@@ -1181,7 +1181,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
-        case Asts.SoftCast(expr) => failIllegalConstruct("dynamic weak cast")
+        case Asts.HybridCast(expr) => failIllegalConstruct("dynamic weak cast")
         case Asts.TypeTest(expr, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
           val typeName = importsCtx.applyImports(typeNameRaw)
           for {

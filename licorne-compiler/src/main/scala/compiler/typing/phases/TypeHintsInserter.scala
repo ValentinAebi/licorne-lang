@@ -167,7 +167,7 @@ final class TypeHintsInserter(
       typeHintsStore.offerHint(retVal, currEnvir.expectedResultType)
     case Panic(msg) => ()
     case Cast(inValue, target) => ()
-    case SoftCast(inValue) => ()
+    case HybridCast(inValue) => ()
     case Drop(droppedValue) => ()
     case LocalDecl(localId, tpe) => ()
     case Unreachable() => ()
