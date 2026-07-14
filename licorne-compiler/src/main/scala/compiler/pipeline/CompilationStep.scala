@@ -6,7 +6,7 @@ enum CompilationStep {
   case SSAGeneration
   case ImportsAnalysis
   case MonotonicityAnalysis
-  case TypeHintsInsertion
+  case TypeCandidatesInference
   case TypeAliasesAnalysis
   case SubtypingAnalysis
   case DeclarationsAnalysis

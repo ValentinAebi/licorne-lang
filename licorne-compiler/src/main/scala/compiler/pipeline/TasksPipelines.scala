@@ -11,7 +11,7 @@ import compiler.smt.{CounterexampleBox, IntHandlingMode}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
-import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
+import compiler.typing.{HeapVarsTypeStore, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
@@ -57,26 +57,26 @@ object TasksPipelines {
                            counterExBoxOpt: Option[CounterexampleBox]) = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
-    val typeHintsStore = TypeHintsStore()
+    val typeCandidatesStore = TypeCandidatesStore()
     val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, /* FIXME check that this check works */ srcRootsForPkgMismatchCheckOpt = None))
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = false)
+        SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = false)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program
       ))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeHintsInserter(ihm, proxyStore, typeHintsStore, er, counterExBoxOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, er, counterExBoxOpt))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
       .andThen((program, subtypingInfo) => program)
       .andThen(Concurrent(
-        SSAPrinter(proxyStore, typeHintsStore, "  ", printTypes = true)
+        SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = true)
           .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
         IdentityStep(),
         (_, program) => program

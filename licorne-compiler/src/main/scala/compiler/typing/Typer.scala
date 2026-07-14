@@ -41,7 +41,7 @@ final class Typer(
                    subtypingCtx: SubtypingContext,
                    meetJoin: MeetJoinComputer,
                    proxyStore: ProxyStore,
-                   typeHintsStore: TypeHintsStore,
+                   typeCandidatesStore: TypeCandidatesStore,
                    heapVarsTypeStore: HeapVarsTypeStore,
                    solver: Solver,
                    simplifier: Simplifier,
@@ -71,7 +71,7 @@ final class Typer(
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
-    meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
+    meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
     closuresCollectorFunc, allowWriteToIR = false)
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
@@ -159,8 +159,8 @@ final class Typer(
                 .valueOf(varId)
                 .asInstanceOf[KnownAndInitialized]
                 .declarationTypeAnnotOpt
-                .orElse(typeHintsStore.getHints(inCondVal).find { hint =>
-                  subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), hint)
+                .orElse(typeCandidatesStore.getCandidates(inCondVal).find { candidate =>
+                  subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
                 })
                 .getOrElse(currScope.detectCurrentType(beforeLoopVal).ignoreRangesShallow)
             varDefScope.saveType(inCondVal, tpe)
@@ -227,7 +227,7 @@ final class Typer(
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case assignVal@AssignVal(assigned, src) =>
-        val srcType = tryToApplyHint(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
+        val srcType = tryToApplyCandidate(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
         val assignedType = assigned match {
           case idVal: LocalIdValue =>
             currScope.getLocalValuesContextUnsafe.valueOf(idVal.id).declOpt match {
@@ -313,7 +313,7 @@ final class Typer(
           then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = true)).getOrElse(returnTypeRaw)
           else returnTypeRaw
         currScope.saveType(assigned, returnType)
-        tryToResolveTypeVarsUsingHints(assigned, returnType)
+        tryToResolveTypeVarsUsingCandidates(assigned, returnType)
         if (func.isResolved) {
           currScope.markHasExitedIfNothing(returnType)
         }
@@ -323,7 +323,7 @@ final class Typer(
         val argsValsAndTypes = args.map(arg => Some(arg) -> currScope.computeCurrentType(arg, invkClosure.getPosition))
         val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
-        tryToResolveTypeVarsUsingHints(assigned, tpe)
+        tryToResolveTypeVarsUsingCandidates(assigned, tpe)
 
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
@@ -398,7 +398,7 @@ final class Typer(
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
         }
-        val isPure = knownPureBeforeTyping || typeHintsStore.hasPureClosureHintFor(assigned)
+        val isPure = knownPureBeforeTyping || typeCandidatesStore.hasPureClosureCandidateFor(assigned)
         irModif {
           mkClosure.isPure = isPure
         }
@@ -425,7 +425,7 @@ final class Typer(
 
       case hybridCast@HybridCast(inValue) =>
         val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, hybridCast.getPosition)).withTypeVarsExpanded
-        val targetTypeOpt = typeHintsStore.getHints(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
+        val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
           case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
             er.warn(s"useless use of !! : I inferred target type $targetType, which is a supertype of the input type $preType", hybridCast.getPosition)
@@ -492,7 +492,7 @@ final class Typer(
                                   (using TypeParamsContext): Type = {
     val assigned = instantiate.assigned
     val newInstanceTypeBase = typeSig.toType(typesSubst)
-    tryToResolveTypeVarsUsingHints(assigned, newInstanceTypeBase)
+    tryToResolveTypeVarsUsingCandidates(assigned, newInstanceTypeBase)
     val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
     val returnTypePredParts = mutable.ListBuffer.empty[Formula]
     val expFieldsIter = typeSig.fields.iterator
@@ -539,22 +539,15 @@ final class Typer(
     newInstanceType
   }
 
-  private def tryToApplyHint(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
-    val appliedHints = mutable.ListBuffer.empty[Type]
-    val hintsIter = typeHintsStore.getHints(srcVal).iterator
-    while (hintsIter.hasNext) {
-      val hint = hintsIter.next()
-      if (subtypingCtx.canProveHasType(srcVal, regularType, hint, currScope)) {
-        appliedHints.addOne(hint)
-      }
-    }
-    if appliedHints.isEmpty then regularType
-    else simplifier.simplify(IntersectionType(SeqSet(regularType +: appliedHints)))
+  private def tryToApplyCandidate(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
+    val validatedCandidates = typeCandidatesStore.getCandidates(srcVal).toList.filter(subtypingCtx.canProveHasType(srcVal, regularType, _, currScope))
+    if validatedCandidates.isEmpty then regularType
+    else simplifier.simplify(IntersectionType(SeqSet(regularType +: validatedCandidates)))
   }
 
-  private def tryToResolveTypeVarsUsingHints(value: IdValue, tpe: Type)(using TypeParamsContext): Unit = {
-    for (hint <- typeHintsStore.getHints(value)) {
-      tryToResolveTypeVars(hint, tpe)(using tvResolMode = TypeVarsResolMode.ParamsAndArgs)
+  private def tryToResolveTypeVarsUsingCandidates(value: IdValue, tpe: Type)(using TypeParamsContext): Unit = {
+    for (cand <- typeCandidatesStore.getCandidates(value)) {
+      tryToResolveTypeVars(cand, tpe)(using tvResolMode = TypeVarsResolMode.ParamsAndArgs)
     }
   }
 

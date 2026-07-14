@@ -8,7 +8,7 @@ import compiler.smt.{ArithIntMode, CounterexampleBox}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
-import compiler.typing.{HeapVarsTypeStore, TypeHintsStore}
+import compiler.typing.{HeapVarsTypeStore, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 import org.junit.Assert.fail
 import org.junit.Test
@@ -115,7 +115,7 @@ class AnalyzerTests(fileName: String) {
     val ihm = ArithIntMode
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
-    val typeHintsStore = TypeHintsStore()
+    val typeCandidatesStore = TypeCandidatesStore()
     val heapVarsTypeStore = HeapVarsTypeStore()
     val er = ErrorReporter(errorsConsumer, exitCalled)
     val counterExBoxOpt = Option.empty[CounterexampleBox]
@@ -123,10 +123,10 @@ class AnalyzerTests(fileName: String) {
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeHintsInserter(ihm, proxyStore, typeHintsStore, er, counterExBoxOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeHintsStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, er, counterExBoxOpt))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
     try {
       pipeline.apply(srcFiles)

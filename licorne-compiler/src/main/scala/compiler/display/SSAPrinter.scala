@@ -9,14 +9,14 @@ import compiler.lang.*
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Position
-import compiler.typing.TypeHintsStore
+import compiler.typing.TypeCandidatesStore
 import compiler.valproxies.ProxyStore
 
 import java.util.stream.Collectors
 
 final class SSAPrinter(
                         proxyStore: ProxyStore,
-                        typeHintsStore: TypeHintsStore,
+                        typeCandidatesStore: TypeCandidatesStore,
                         indentUnit: String,
                         printTypes: Boolean,
                         commentsAlignmentGranularity: Int = 30
@@ -312,7 +312,7 @@ final class SSAPrinter(
     }
     instr match {
       case assignInstr: AssigningInstr =>
-        maybePrintHintsFor(assignInstr.assigned)
+        maybePrintCandidatesFor(assignInstr.assigned)
       case _ => ()
     }
   }
@@ -325,12 +325,12 @@ final class SSAPrinter(
     }
   }
 
-  private def maybePrintHintsFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
-    val hints = typeHintsStore.getHints(idValue)
-    if (hints.nonEmpty) {
-      pps.addAligned(s"// hints: ", alignmentGranularity = commentsAlignmentGranularity)
-      traverseIterable(hints.iterator) { hint =>
-        pps.add(hint.toString)
+  private def maybePrintCandidatesFor(idValue: IdValue)(using pps: PrettyPrintString): Unit = {
+    val candidates = typeCandidatesStore.getCandidates(idValue)
+    if (candidates.nonEmpty) {
+      pps.addAligned(s"// candidates: ", alignmentGranularity = commentsAlignmentGranularity)
+      traverseIterable(candidates.iterator) { candidate =>
+        pps.add(candidate.toString)
       } {
         pps.add(", ")
       }

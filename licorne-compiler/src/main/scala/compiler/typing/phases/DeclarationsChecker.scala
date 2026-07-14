@@ -5,7 +5,7 @@ import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
-import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -14,7 +14,7 @@ final class DeclarationsChecker(
                                  ihm: IntHandlingMode[?],
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
-                                 typeHintsStore: TypeHintsStore,
+                                 typeCandidatesStore: TypeCandidatesStore,
                                  heapVarsTypeStore: HeapVarsTypeStore,
                                  er: ErrorReporter,
                                  counterExBoxOpt: Option[CounterexampleBox]
@@ -34,7 +34,7 @@ final class DeclarationsChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
 
       val programNew = Program(globalValsCtx,
         for ((id, interfaceSig) <- programOld.interfaces) yield {

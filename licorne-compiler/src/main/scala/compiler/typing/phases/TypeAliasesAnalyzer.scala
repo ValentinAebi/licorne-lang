@@ -11,7 +11,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.contexts.*
-import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -21,7 +21,7 @@ final class TypeAliasesAnalyzer(
                                  ihm: IntHandlingMode[?],
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
-                                 typeHintsStore: TypeHintsStore,
+                                 typeCandidatesStore: TypeCandidatesStore,
                                  heapVarsTypeStore: HeapVarsTypeStore,
                                  er: ErrorReporter,
                                  counterExBoxOpt: Option[CounterexampleBox]
@@ -53,7 +53,7 @@ final class TypeAliasesAnalyzer(
         globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
       }
       
-      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
+      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
       programOld.copy(typeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig))
     }
 

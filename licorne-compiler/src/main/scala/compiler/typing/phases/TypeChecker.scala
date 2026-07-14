@@ -21,7 +21,7 @@ final class TypeChecker(
                          ihm: IntHandlingMode[?],
                          typeVarsCtx: TypeVariablesContext,
                          proxyStore: ProxyStore,
-                         typeHintsStore: TypeHintsStore,
+                         typeCandidatesStore: TypeCandidatesStore,
                          heapVarsTypeStore: HeapVarsTypeStore,
                          er: ErrorReporter,
                          counterExBoxOpt: Option[CounterexampleBox],
@@ -54,7 +54,7 @@ final class TypeChecker(
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(
-        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er),
+        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er),
         er
       )
     }
@@ -97,7 +97,7 @@ final class TypeChecker(
 
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-        proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
+        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
       val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
       val precondInfos = funSig.precondOpt match {
         case Some(precond) =>
@@ -116,7 +116,7 @@ final class TypeChecker(
       while (closuresCollector.nonEmpty) {
         val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
         val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-          proxyStore, typeHintsStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
+          proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {
             solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))

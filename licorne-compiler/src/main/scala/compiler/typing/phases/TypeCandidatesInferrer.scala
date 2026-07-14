@@ -6,27 +6,27 @@ import compiler.irs.ssa.SSA
 import compiler.irs.ssa.SSA.*
 import compiler.lang.Types.*
 import compiler.lang.{ExecutionEnvironment, FunctionSignature, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
-import compiler.pipeline.CompilationStep.TypeHintsInsertion
+import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.smt.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
-import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeHintsStore, Typer}
+import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
 
-final class TypeHintsInserter(
-                               ihm: IntHandlingMode[?],
-                               proxyStore: ProxyStore,
-                               typeHintsStore: TypeHintsStore,
-                               er: ErrorReporter,
-                               counterExBoxOpt: Option[CounterexampleBox]
-                             ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
+final class TypeCandidatesInferrer(
+                                    ihm: IntHandlingMode[?],
+                                    proxyStore: ProxyStore,
+                                    typeCandidatesStore: TypeCandidatesStore,
+                                    er: ErrorReporter,
+                                    counterExBoxOpt: Option[CounterexampleBox]
+                                  ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
-  private given CompilationStep = TypeHintsInsertion
+  private given CompilationStep = TypeCandidatesInference
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
@@ -42,10 +42,10 @@ final class TypeHintsInserter(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       val fakeEr = ErrorReporter(
-        _ => throw AssertionError("error reported during type hints insertion"),
-        _ => throw AssertionError("fatal error during type hints insertion")
+        _ => throw AssertionError("error reported during type candidates inference phase"),
+        _ => throw AssertionError("fatal error during type candidates inference phase")
       )
-      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeHintsStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
+      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
       fakeEr.withReportingSuspended {
         for {
           ((ownerId, funId), func) <- program.functions
@@ -75,28 +75,28 @@ final class TypeHintsInserter(
     case Loop(cond, condVal, body, variables) =>
       for {
         LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- variables
-        th <- typeHintsStore.getHints(condVal)
+        th <- typeCandidatesStore.getCandidates(condVal)
       } {
-        typeHintsStore.offerHint(beforeLoopVal, th)
-        typeHintsStore.offerHint(bodyLastVal, th)
+        typeCandidatesStore.offerCandidate(beforeLoopVal, th)
+        typeCandidatesStore.offerCandidate(bodyLastVal, th)
       }
       traverseScope(body, currEnvir)
       traverseScope(cond, currEnvir)
     case Disjunction(condVal, thenBr, elseBr, variables) =>
       for {
         DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables
-        th <- typeHintsStore.getHints(joinedVal)
+        th <- typeCandidatesStore.getCandidates(joinedVal)
       } {
-        typeHintsStore.offerHint(afterThenVal, th)
-        typeHintsStore.offerHint(afterElseVal, th)
+        typeCandidatesStore.offerCandidate(afterThenVal, th)
+        typeCandidatesStore.offerCandidate(afterElseVal, th)
       }
       traverseScope(thenBr, currEnvir)
       traverseScope(elseBr, currEnvir)
     case StaticTypeAssert(value, tpe) =>
-      typeHintsStore.offerHint(value, tpe)
+      typeCandidatesStore.offerCandidate(value, tpe)
     case AssignVal(assigned, src) =>
-      for (th <- typeHintsStore.getHints(assigned)) {
-        typeHintsStore.offerHint(src, th)
+      for (th <- typeCandidatesStore.getCandidates(assigned)) {
+        typeCandidatesStore.offerCandidate(src, th)
       }
     case AssignIntConst(assigned, src) => ()
     case AssignBoolConst(assigned, src) => ()
@@ -120,21 +120,21 @@ final class TypeHintsInserter(
       } {
         val typeParams = funSig.typeParams
         val typesSubst = owTypesSubst ++ createTypeParamsSubst(typeParams, typeArgs)
-        typeHintsStore.getHints(assigned).headOption.foreach { hint =>
-          unifyTypes(hint, funSig.retType.substitute(typesSubst, owValsSubst))
+        typeCandidatesStore.getCandidates(assigned).headOption.foreach { candidate =>
+          unifyTypes(candidate, funSig.retType.substitute(typesSubst, owValsSubst))
         }
         val valsSubst = mutable.Map.from(owValsSubst)
         valsSubst.put(funSig.receiverVal, receiver)
         for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zip(args)) {
           val paramTypeSubst = paramTypeRaw.substitute(typesSubst, valsSubst)
-          typeHintsStore.offerHint(argVal, paramTypeSubst)
+          typeCandidatesStore.offerCandidate(argVal, paramTypeSubst)
           valsSubst.put(paramVal, argVal)
         }
       }
     case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
       for {
-        hint <- typeHintsStore.getHints(assigned).headOption
+        candidate <- typeCandidatesStore.getCandidates(assigned).headOption   // TODO see if this line is really needed: candidate value is unused
         tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
       } {
         val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
@@ -143,7 +143,7 @@ final class TypeHintsInserter(
           fld <- tSig.fields.get(fldId)
         } {
           val expFldType = fld.tpe.substitute(subst, Map.empty)
-          typeHintsStore.offerHint(fldVal, expFldType)
+          typeCandidatesStore.offerCandidate(fldVal, expFldType)
         }
       }
     case mkClosure@MkClosure(assigned, params, body, declaredPure) =>
@@ -159,12 +159,12 @@ final class TypeHintsInserter(
         ownerTypeSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](ownerTypeId)
         field <- ownerTypeSig.fields.get(fieldResolTarget.fieldId)
       } {
-        typeHintsStore.offerHint(rhs, field.tpe.substitute(owTypesSubst, owValsSubst))
+        typeCandidatesStore.offerCandidate(rhs, field.tpe.substitute(owTypesSubst, owValsSubst))
       }
     case HeapVarRead(assigned, heapVar) => ()
     case HeapVarWrite(heapVar, newValue) => ()
     case Return(retVal) =>
-      typeHintsStore.offerHint(retVal, currEnvir.expectedResultType)
+      typeCandidatesStore.offerCandidate(retVal, currEnvir.expectedResultType)
     case Panic(msg) => ()
     case Cast(inValue, target) => ()
     case HybridCast(inValue) => ()
@@ -200,17 +200,17 @@ final class TypeHintsInserter(
     substB.result()
   }
 
-  private def unifyTypes(hint: Type, shape: Type)
+  private def unifyTypes(candidate: Type, shape: Type)
                         (using dealiasingCtx: DealiasingContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext): Unit = {
-    (dealiasingCtx.dealiasType(hint).withTypeVarsExpanded, dealiasingCtx.dealiasType(shape).withTypeVarsExpanded) match {
+    (dealiasingCtx.dealiasType(candidate).withTypeVarsExpanded, dealiasingCtx.dealiasType(shape).withTypeVarsExpanded) match {
       case (tv: TypeVariable, shape) =>
         tv.resolve(shape)
-      case (hint, tv: TypeVariable) =>
-        tv.resolve(hint)
-      case (NamedType(hintTypeId, hintTypeArgs, hintArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
+      case (cand, tv: TypeVariable) =>
+        tv.resolve(cand)
+      case (NamedType(candTypeId, candTypeArgs, candArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
         for {
-          subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, hintTypeId)
-          hintTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](hintTypeId)
+          subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, candTypeId)
+          candTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](candTypeId)   // TODO see if this line is really needed: candTSig is unused
           shapeTypeSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](shapeTypeId)
         } {
           val shapeSubst = shapeTypeSig.typeParams.map(_.tid).zip(shapeTypeArgs).toMap
@@ -221,23 +221,23 @@ final class TypeHintsInserter(
               tParam -> tArg
           }
           val upcastShapeType = shapeTypeSig.toType(composedSubst)
-          for ((h, s) <- hintTypeArgs.zip(upcastShapeType.typeArgs)) {
+          for ((h, s) <- candTypeArgs.zip(upcastShapeType.typeArgs)) {
             unifyTypes(h, s)
           }
         }
-      case (ClosureType(hintParams, hintResult, _), ClosureType(shapeParams, shapeResult, _)) =>
-        for ((ht, st) <- hintParams.zip(shapeParams)) {
+      case (ClosureType(candParams, candResult, _), ClosureType(shapeParams, shapeResult, _)) =>
+        for ((ht, st) <- candParams.zip(shapeParams)) {
           unifyTypes(ht, st)
         }
-        unifyTypes(hintResult, shapeResult)
-      case (NullableType(nullatedHint), shape) =>
-        unifyTypes(nullatedHint, shape)
-      case (hint, NullableType(nullatedShape)) =>
-        unifyTypes(hint, nullatedShape)
-      case (RefinedType(hintBase, _), shape) =>
-        unifyTypes(hintBase, shape)
-      case (hint, RefinedType(shapeBase, _)) =>
-        unifyTypes(hint, shapeBase)
+        unifyTypes(candResult, shapeResult)
+      case (NullableType(nullatedCand), shape) =>
+        unifyTypes(nullatedCand, shape)
+      case (cand, NullableType(nullatedShape)) =>
+        unifyTypes(cand, nullatedShape)
+      case (RefinedType(candBase, _), shape) =>
+        unifyTypes(candBase, shape)
+      case (cand, RefinedType(shapeBase, _)) =>
+        unifyTypes(cand, shapeBase)
       case _ => ()
       // TODO also handle IntersectionTypes and UnionTypes?
     }
