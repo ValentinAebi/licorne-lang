@@ -1,4 +1,4 @@
-// adapted from the Java Checker framework manual: https://checkerframework.org/manual/#index-checker
+// adapted from the Java Checker Framework manual: https://checkerframework.org/manual/#index-checker
 
 typealias SameLength[T](arr: Array[T]) = Array[T] with it.length() == arr.length()
 

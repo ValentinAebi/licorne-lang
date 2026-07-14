@@ -1,0 +1,39 @@
+// adapted from the Java Checker Framework manual: https://checkerframework.org/manual/#index-checker
+
+typealias ArrayOfMinLen[T](l: [0..]) = Array[T] with it.length() >= l
+typealias ArrayOfLen[T](l: [0..]) = Array[T] with it.length() == l
+
+object IC4 {
+
+    fn getThirdElement_1_correct(arr: ArrayOfMinLen[String](3)) -> String {
+        return arr.at(2);
+    }
+
+    fn getThirdElement_1_buggy(arr: ArrayOfMinLen[String](3)) -> String {
+        return arr.at(3);   //> E : first argument of call to at: expected Idx[T](arr), found 3
+    }
+
+    fn getThirdElement_2_correct(arr: ArrayOfLen[String](3)) -> String {
+        return arr.at(2);
+    }
+
+    fn getThirdElement_2_buggy(arr: ArrayOfLen[String](3)) -> String {
+        return arr.at(3);   //> E : first argument of call to at: expected Idx[T](arr), found 3
+    }
+
+}
+
+typealias Length = [0..]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
+
+class Array[T] {
+
+    pure fn length(this) -> Length {
+        panic "compile to bytecode ARRAYLENGTH";
+    }
+
+    fn at(this, i: Idx(this)) -> T {
+        panic "compile to bytecode xALOAD"
+    }
+
+}

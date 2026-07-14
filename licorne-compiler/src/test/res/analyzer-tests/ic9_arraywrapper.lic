@@ -1,0 +1,58 @@
+// adapted from the Java Checker Framework manual: https://checkerframework.org/manual/#index-checker
+
+object Client {
+
+    fn clearIndex1[T](a: ArrayWrapper[T?], i: Idx(a)) {
+        a.set(i, null);
+    }
+
+    fn clearIndex2[T](a: ArrayWrapper[T?], i: Int) {
+        if (0 <= i && i < a.size()) {
+            a.set(i, null);
+        }
+    }
+
+}
+
+class ArrayWrapper[T] (
+    public size: Length,
+    wrapped: Array[T] with it.size() == size
+) : Sized {
+
+    fn set(this, i: Idx(this), elem: T) {
+        this.wrapped.set(i, elem);
+    }
+
+    fn get(this, i: Idx(this)) -> T {
+        return this.wrapped.at(i);
+    }
+
+}
+
+object ArrayWrappers {
+
+    fn mkNew[T](size: Length) -> ArrayWrapper[T] {
+        val wrapped = new Array(size);
+        return new ArrayWrapper(size, wrapped);
+    }
+
+}
+
+interface Sized {
+    pure fn size(this) -> Length
+}
+
+typealias Length = [0..]
+typealias Idx(seq: Sized) = [0 ..< seq.size()]
+
+class Array[T](public size: Length) : Sized {
+
+    fn at(this, i: Idx(this)) -> T {
+        panic "compile to bytecode xALOAD"
+    }
+
+    fn set(this, i: Idx(this), t: T) {
+        panic "compile to bytecode xASTORE"
+    }
+
+}

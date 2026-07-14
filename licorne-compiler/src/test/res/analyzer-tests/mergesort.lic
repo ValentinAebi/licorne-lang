@@ -1,0 +1,79 @@
+// adapted from https://github.com/TheAlgorithms/Java/blob/master/src/main/java/com/thealgorithms/sorts/MergeSort.java
+
+import ArrayUtils.arrayCopy;
+
+typealias ArrayOfLen[T](len: Length) = Array[T] with it.length() == len
+
+object MergeSort {
+
+    fn sort[T](array: Array[T], lessThan: fn (T,T) -> Bool) {
+        if (array.length() == 0) {
+            return;
+        };
+        val tmpArray = new Array(length = array.length());
+        doSort(array, tmpArray, lessThan, 0, array.length() - 1);
+    }
+
+    private fn doSort[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
+                         lt: fn (T,T) -> Bool, left: Idx(array), right: Idx(array)) {
+        if (left < right) {
+            val mid = (left + right) / 2;
+            doSort(array, tmpArray, lt, left, mid);
+            doSort(array, tmpArray, lt, mid + 1, right);
+            merge(array, tmpArray, lt, left, mid, right);
+        }
+    }
+
+    private fn merge[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
+                        lt: fn (T,T) -> Bool, left: Idx(array), mid: Idx(array), right: Idx(array) & [left..]) {
+        var i = left;
+        var j = mid + 1;
+        arrayCopy(array, left, tmpArray, left, right + 1 - left);
+
+        for (var k = left; k <= right; k += 1) {
+            if (j > right) {
+                array.set(k, tmpArray.get(i!!));    // hybrid cast
+                i += 1;
+            } else if (i > mid) {
+                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
+                j -= 1;     // ERROR: should be j += 1 here
+            } else if (lt(tmpArray.get(j), tmpArray.get(i))) {  //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
+                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
+                j += 1;
+            } else {
+                array.set(k, tmpArray.get(i));
+                i += 1;
+            }
+        }
+    }
+
+}
+
+typealias Length = [0..]
+typealias Idx[T](arr: Array[T]) = [0 ..< arr.length()]
+typealias Pos[T](arr: Array[T]) = [0 .. arr.length()]
+
+class Array[T](public length: Length) {
+
+    fn get(this, i: Idx(this)) -> T {
+        panic "compile to bytecode xALOAD"
+    }
+
+    fn set(this, i: Idx(this), value: T) {
+        panic "compile to bytecode xASTORE"
+    }
+
+}
+
+object ArrayUtils {
+
+    fn arrayCopy[S, D super S](src: Array[S], srcStart: Idx(src),
+                               dst: Array[D], dstStart: Idx(dst),
+                               len: Length where srcStart + len <= src.length() && dstStart + len <= dst.length()) {
+        for (var i = 0; i < len; i += 1) {
+            val e = src.get(srcStart + i);
+            dst.set(dstStart + i, e);
+        }
+    }
+
+}

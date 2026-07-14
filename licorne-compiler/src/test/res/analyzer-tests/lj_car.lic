@@ -1,0 +1,48 @@
+// adapted from https://github.com/liquid-java/liquidjava/tree/main/liquidjava-example/src/main/java/testSuite/classes/car_correct
+
+typealias CarAcceptableYears = [1801 ..< 2050]
+
+class Car(
+    var year: CarAcceptableYears,
+    var seats: [0..]
+) {
+
+    fn setYear(this, year: CarAcceptableYears) {
+        this.year = year;
+    }
+
+    fn getYear(this) -> CarAcceptableYears = year
+
+}
+
+object Cars {
+
+    fn newCarWithDefaultValues() -> Car {
+        return new Car(year = 2026, seats = 5);
+    }
+
+}
+
+object Test {
+
+    fn getYear() -> [2021..] = 2024
+
+    fn test_correct() {
+        val a = 1998;
+        val c = Cars.newCarWithDefaultValues();
+        c.setYear(a);
+
+        val j: [1801..] = c.getYear();      // we ignore these annotations, they are needed only for testing
+        val k: [2021..] = getYear();
+    }
+
+    fn test_buggy() {
+        val a = 998;
+        val c = Cars.newCarWithDefaultValues();
+        c.setYear(a);        //> E : first argument of call to setYear: expected CarAcceptableYears, found a : [998..998]
+
+        val j: [1801..] = c.getYear();      // we ignore these annotations, they are needed only for testing
+        val k: [2021..] = getYear();
+    }
+
+}
