@@ -1,0 +1,26 @@
+
+typealias Length = [0..]
+typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
+
+class Array[T](public length: Length) {
+
+   fn reverse(this) {
+      var i = 0;
+      var j = length();     // bug
+      while (i < length() && j >= 0) {
+         val tmp = at(i);
+         set(i, at(j));     //> E : first argument of call to at: expected Idx[T](this), found j<loop-body-start@10:38> : [0 .. this.length()]
+         set(j, tmp);       //> E : first argument of call to set: expected Idx[T](this), found j<loop-body-start@10:38> : [0 .. this.length()]
+         i += 1;
+         j -= 1;
+      }
+   }
+
+   fn at(this, i: Idx(this)) -> T {
+      panic "not implemented"
+   }
+
+   fn set(this, i: Idx(this), value: T) {
+      panic "not implemented"
+   }
+}
