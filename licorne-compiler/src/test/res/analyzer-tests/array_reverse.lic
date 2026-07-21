@@ -7,10 +7,10 @@ class Array[T](public length: Length) {
    fn reverse(this) {
       var i = 0;
       var j = length();     // bug
-      while (i < length() && j >= 0) {
+      while (i < j) {
          val tmp = at(i);
-         set(i, at(j));     //> E : first argument of call to at: expected Idx[T](this), found j<loop-body-start@10:38> : [0 .. this.length()]
-         set(j, tmp);       //> E : first argument of call to set: expected Idx[T](this), found j<loop-body-start@10:38> : [0 .. this.length()]
+         set(i, at(j));     //> E : first argument of call to at: expected Idx[T](this), found j<loop-body-start@10:21> : [i<loop-body-start@10:21> + 1 .. this.length()]
+         set(j, tmp);       //> E : first argument of call to set: expected Idx[T](this), found j<loop-body-start@10:21> : [i<loop-body-start@10:21> + 1 .. this.length()]
          i += 1;
          j -= 1;
       }
