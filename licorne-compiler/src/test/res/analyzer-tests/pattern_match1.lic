@@ -4,8 +4,6 @@ record Leaf : Tree[Nothing]
 record Fork[+T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
 record Binary[+T](l: Tree[T], r: Tree[T]) : Tree[T]
 
-// TODO similar tests with loops
-
 object Trees {
 
       fn sum1(tree: Tree[Int]) -> Int {

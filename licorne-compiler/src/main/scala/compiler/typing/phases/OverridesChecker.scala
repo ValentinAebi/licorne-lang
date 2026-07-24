@@ -55,7 +55,6 @@ final class OverridesChecker(
         case (subTSig: RuntimeTypeSignature, superTSig: RuntimeTypeSignature) =>
           for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunPurity, _, superFunDeclPosOpt, isSynthetic)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
-              // TODO allow method implementation in interfaces and datatypes?
               case None if subTSig.isInstanceOf[AbstractTypeSig] => ()
               case None =>
                 er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
@@ -96,7 +95,6 @@ final class OverridesChecker(
                   }
                   val typeParamsSubst = typeTypeParamsSubst ++ funTypeParamsSubst
                   val valsSubst = mutable.Map.empty[IdValue, IdValue]
-                  // TODO do not forget to check refinements on the receiver (the base type is not checked here)
                   val superTSubst = superTSig.toType(typeParamsSubst)
                   for (((subParamVal, subParamType), (superParamVal, superParamTypeRaw)) <- subFunParams.tail zip superFunParams.tail) {
                     val superParamTypeSubst = superParamTypeRaw.substitute(typeParamsSubst, valsSubst.toMap)

@@ -30,9 +30,6 @@ import scala.collection.mutable
 import scala.reflect.ClassTag
 
 
-// FIXME relax modularity regarding methods of the same class
-//  Maybe replace simple methods with their definitions
-//  We could also accept inference of return type for private functions, but that seems less interesting
 final class Typer(
                    executionEnvirOpt: Option[ExecutionEnvironment],
                    dealiasingCtx: DealiasingContext,
@@ -148,7 +145,6 @@ final class Typer(
                 }
               }
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
-            // TODO maybe detect more precise after-loop-type in the presence of a recurrence
             varDefScope.saveType(inCondVal, inCondType) // after loop
             condScope.saveSmartcast(inCondVal, inCondType) // inside condition
             bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
@@ -667,7 +663,6 @@ final class Typer(
                               (using TypeParamsContext): Type = {
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
-    // TODO if set types get implemented, this should be updated to make use of them (op / : (Int, Int\{0}) -> Int)
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
     val mayBeDivByZero =
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
@@ -874,8 +869,7 @@ final class Typer(
     val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
     StableField(id, typeInst, value, isPublishedAsMethod)
   }
-
-  // TODO merge with typeFunTypeParam?
+  
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, currScope: Scope, posOpt: Option[Position])
                        (using typeParamsCtx: TypeParamsContext): TypeTypeParamInfo = {
     val TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt) = typeTypeParamInfo
@@ -1469,7 +1463,6 @@ final class Typer(
         argTSig <- resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](argTypeName)
         argToParamSubst <- subtypingCtx.subToSuperSubst(argTypeName, paramTypeName)
       } do {
-        // TODO account for variance?
         val paramSubst = paramTSig.typeParams.map(_.tid).zip(paramTypeArgs).toMap
         val argsSubst = argTSig.typeParams.map(_.tid).zip(argTypeArgs).toMap
         val upcastArgsSubst = argToParamSubst.map {

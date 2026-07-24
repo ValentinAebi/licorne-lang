@@ -30,7 +30,6 @@ object ValuesContext {
                                                       ){
     private var declOpt: Option[LocalDecl] = None
 
-    // TODO see if there is a less ugly way of doing this
     def declaration_=(decl: LocalDecl): Unit = {
       declOpt = Some(decl)
       declarationTypeAnnotOpt = Some(decl.tpe)

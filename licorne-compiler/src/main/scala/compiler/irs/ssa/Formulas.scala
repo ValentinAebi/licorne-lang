@@ -12,7 +12,6 @@ import java.util.Objects
 import scala.collection
 
 
-// TODO cleaner pretty-printing system
 object Formulas {
 
   sealed trait Formula {

@@ -15,7 +15,6 @@ object Lists {
    }
 
    fn tail[U](ls: List[U]) -> List[U] =
-      // TODO can we use the predicate to deduce that ls is Cons? Note that it is a unary constraint, maybe we can do something in the Typer
       when ls is Cons
          then ls.tail()
          else panic "empty list"

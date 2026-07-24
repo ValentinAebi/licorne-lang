@@ -63,8 +63,6 @@ final class TypeChecker(
     input
   }
 
-  // TODO check that user-provided assignments of type parameters match bounds
-
   private def saveTypesOfGlobalConstants(resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, simplifier: Simplifier)
                                         (using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit = {
 

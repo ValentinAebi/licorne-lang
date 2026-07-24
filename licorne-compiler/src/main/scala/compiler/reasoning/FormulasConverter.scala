@@ -46,6 +46,7 @@ final class FormulasConverter[IntSort <: KSort](
   private given DealiasingContext = dealiasingCtx
   // @formatter:on
 
+  // the current implementation handles *, /, and % which theoretically makes the predicate language undecidable
   def convertInt(formula: Formula): Iterable[KExpr[IntSort]] = savingResult(formula) {
     formula match {
       case value: IdValue =>
@@ -77,7 +78,6 @@ final class FormulasConverter[IntSort <: KSort](
         for {
           n <- convertInt(negated)
         } yield ihm.neg(n)
-      // TODO see if *,/,% should be included
       case Times(lhs, rhs) =>
         for {
           l <- convertInt(lhs)
@@ -126,7 +126,6 @@ final class FormulasConverter[IntSort <: KSort](
       case IntConst(value) => None
       case BoolConst(value) => Some(kCtx.mkBool(value))
       case StringConst(value) => None
-      // TODO encode selects
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, kCtx.mkBoolSort())
       case Select(owner, field) => None

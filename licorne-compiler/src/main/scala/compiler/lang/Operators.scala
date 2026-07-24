@@ -29,9 +29,6 @@ object Operators {
     extends OperatorSignature {
     override def toString: String = s"$leftOperandType $op $rightOperandType -> $retType"
   }
-  
-  private val nonZeroInt = IntType  // FIXME use refinements
-  // TODO also NonZeroDouble for / and % on Doubles?
 
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),
@@ -48,9 +45,9 @@ object Operators {
     DoubleType $ Minus $ DoubleType is DoubleType,
     IntType $ Times $ IntType is IntType,
     DoubleType $ Times $ DoubleType is DoubleType,
-    IntType $ Div $ nonZeroInt is IntType,
+    IntType $ Div $ IntType is IntType,
     DoubleType $ Div $ DoubleType is DoubleType,
-    IntType $ Modulo $ nonZeroInt is IntType,
+    IntType $ Modulo $ IntType is IntType,
 
     IntType $ LessThan $ IntType is BoolType,
     DoubleType $ LessThan $ DoubleType is BoolType,

@@ -29,7 +29,6 @@ import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
 
-// FIXME code following loops and disjunctions should be made a subscope of the current scope
 final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootsForPkgMismatchCheckOpt: Option[List[Path]]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
@@ -887,7 +886,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         generateBinaryWithProxy(lhsTree, rhsTree, Add(resultVal, _, _), Plus(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Minus, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Sub(resultVal, _, _), (a, b) => Plus(a, Neg(b)))
-      // TODO for *,/,% see if we keep the proxy or not: non-determinism?
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Times, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Mul(resultVal, _, _), Times(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Div, rhsTree) =>
@@ -1069,7 +1067,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val objectName = importsCtx.applyImports(objectNameRaw)
           Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
-        // TODO non-prefixed calls (implicit this)?
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
             case Asts.VariableRef(funId) if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
@@ -1154,14 +1151,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
-            // TODO check if this yield confusing error messages (desugaring producing the +1)
           } yield LessOrEq(lhsFormula + 1, rhsFormula)
         case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) =>
           import compiler.irs.ssa.FormulasDsl.*
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
-            // TODO check if this yield confusing error messages (desugaring producing the +1)
           } yield LessOrEq(rhsFormula + 1, lhsFormula)
         case Asts.BinaryOp(lhs, Operator.And, rhs) =>
           for {
@@ -1267,7 +1262,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, Field], typeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): NamedType = namedTypeTree match {
     case Asts.NamedTypeTree(rawTId@TypeIdentifier(Nil, typeName), typeParams, params) =>
       typeParamsCtx.resolve(rawTId) match {
-        // TODO use separate case class for type parameters
         case Some(tpe) => NamedType(rawTId, List.empty, List.empty)
         case None =>
           val tid = importsCtx.importedTypeFor(typeName).getOrElse(rawTId)

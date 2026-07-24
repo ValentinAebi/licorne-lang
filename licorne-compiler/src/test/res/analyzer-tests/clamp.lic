@@ -53,12 +53,13 @@ object Clamp {
 
 }
 
+// see (many) other examples for implementations of Array that use range types
 class Array[T](len: [0..]) {
    fn length(this) -> [0..] = this.len
-   fn at(this, i: Int) -> T {           // TODO restrict type of i
+   fn at(this, i: Int) -> T {
       panic "not implemented"
    }
-   fn set(this, i: Int, value: T) {     // TODO restrict type of i
+   fn set(this, i: Int, value: T) {
       panic "not implemented"
    }
 }

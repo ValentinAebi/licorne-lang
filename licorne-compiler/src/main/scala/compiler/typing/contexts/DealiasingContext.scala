@@ -10,7 +10,6 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
 
   // TODO memoize recursive multi-step dealiasing (update the signatures in the mapping)
 
-  // FIXME create another dealiasing function that also expands type variables and carefully check all uses to see which function is needed
   def dealiasType(tpe: Type): Type = tpe match {
     case primitiveType: Types.PrimitiveType => primitiveType
     case NamedType(typeName, typeArgsRaw, args) =>
