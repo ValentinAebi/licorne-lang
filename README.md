@@ -24,9 +24,9 @@ To type-check a program using the (jar of the) compiler, run `java -jar licorne-
 
 ## SMT solver integration
 
-Licorne uses [Z3](https://github.com/z3prover/z3) via the [KSMT](https://github.com/UnitTestBot/ksmt) API. KSMT bundles Z3 into the compiler jar, so there is no need for a separate install.
+Licorne uses [Z3](https://github.com/z3prover/z3) via the [KSMT](https://github.com/UnitTestBot/ksmt) API. KSMT bundles Z3 into the compiler jar, so there is no need to install it separately.
 
 
 ## Why that name?
 
-Licorne stands for "<b>L</b>anguage-level <b>I</b>nferen<b>C</b>e <b>O</b>f <b>R</b>efi<b>NE</b>ments", and means "unicorn" in French. Earlier versions of Licorne were called Rattlesnake and [Grattlesnake](https://github.com/epfl-systemf/grattlesnake-lang), the former being a very simple toy language, and the latter corresponding to my master's thesis work on gradual object capabilities. They can be found as secondary branches of this repository.
+Licorne stands for "<b>L</b>ightweight <b>I</b>nferen<b>C</b>e <b>O</b>f <b>R</b>efi<b>NE</b>ments", and means "unicorn" in French. Earlier versions of Licorne were called Rattlesnake and [Grattlesnake](https://github.com/epfl-systemf/grattlesnake-lang), the former being a very simple toy language, and the latter corresponding to my master's thesis work on gradual object capabilities. They can be found as secondary branches of this repository.
