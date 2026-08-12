@@ -254,10 +254,6 @@ final class SSAPrinter(
         pps.add(s"REM ${maybeTyped(assigned, scope)} := $lhs % $rhs")
       case LogicNeg(assigned, operand) =>
         pps.add(s"NOT ${maybeTyped(assigned, scope)} := !$operand")
-      case And(assigned, lhs, rhs) =>
-        pps.add(s"AND ${maybeTyped(assigned, scope)} := $lhs & $rhs")
-      case Or(assigned, lhs, rhs) =>
-        pps.add(s"OR ${maybeTyped(assigned, scope)} := $lhs | $rhs")
       case Equal(assigned, lhs, rhs) =>
         pps.add(s"EQ ${maybeTyped(assigned, scope)} := $lhs == $rhs")
       case Leq(assigned, lhs, rhs) =>

@@ -108,8 +108,6 @@ final class TypeCandidatesInferrer(
     case Div(assigned, lhs, rhs) => ()
     case Rem(assigned, lhs, rhs) => ()
     case LogicNeg(assigned, operand) => ()
-    case And(assigned, lhs, rhs) => ()
-    case Or(assigned, lhs, rhs) => ()
     case Equal(assigned, lhs, rhs) => ()
     case Leq(assigned, lhs, rhs) => ()
     case Lt(assigned, lhs, rhs) => ()

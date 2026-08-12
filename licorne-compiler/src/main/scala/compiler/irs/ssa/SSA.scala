@@ -136,8 +136,6 @@ object SSA {
   final case class Rem(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
 
   final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr
-  final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
-  final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
 
   final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr
   final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr

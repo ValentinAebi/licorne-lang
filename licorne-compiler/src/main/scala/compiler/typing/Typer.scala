@@ -273,14 +273,6 @@ final class Typer(
         typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(proxyStore.developDeep(rhs)), Operator.Modulo, rem.getPosition)
       }
 
-      case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-        typeLogicalBinop(lhs, rhs, currScope, Operator.And, and.getPosition)
-      }
-
-      case or@Or(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-        typeLogicalBinop(lhs, rhs, currScope, Operator.Or, or.getPosition)
-      }
-
       case neg@LogicNeg(assigned, operand) => assignTarget(assigned, currScope) {
         typeLogicalNeg(operand, currScope, neg.getPosition)
       }
