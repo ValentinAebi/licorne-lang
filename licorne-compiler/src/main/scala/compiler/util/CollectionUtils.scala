@@ -1,11 +1,12 @@
 package compiler.util
 
+import java.util
 import scala.collection
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-extension [T](iterable: Iterable[T]) def asIterableOfType[U <: T: ClassTag]: Option[Iterable[U]] = {
+extension [T](iterable: Iterable[T]) def asIterableOfType[U <: T : ClassTag]: Option[Iterable[U]] = {
   val resultB = Iterable.newBuilder[U]
   val iter = iterable.iterator
   while (iter.hasNext) {
@@ -24,14 +25,14 @@ extension [A, B](map: Map[A, B]) def mapVals[C](f: B => C): Map[A, C] =
 
 extension [A, B](map: immutable.SeqMap[A, B]) def mapVals[C](f: B => C): immutable.SeqMap[A, C] =
   map.map((a, b) => (a, f(b)))
-  
-extension[A, B](map: mutable.Map[A, B]) def mapVals[C](f: B => C): mutable.Map[A, C] =
+
+extension [A, B](map: mutable.Map[A, B]) def mapVals[C](f: B => C): mutable.Map[A, C] =
   map.map((a, b) => (a, f(b)))
-  
-extension[A, B](ls: List[(A, B)]) def mapVals[C](f: B => C): List[(A, C)] =
+
+extension [A, B](ls: List[(A, B)]) def mapVals[C](f: B => C): List[(A, C)] =
   ls.map((a, b) => (a, f(b)))
-  
-extension[T](iterable: Iterable[T]) def findUnique(cond: T => Boolean): Option[T] = {
+
+extension [T](iterable: Iterable[T]) def findUnique(cond: T => Boolean): Option[T] = {
   val filtered = iterable.filter(cond)
   Option.when(filtered.size == 1)(filtered.head)
 }
@@ -67,8 +68,14 @@ private def mergeOnlyOnConflict[B1, B2, B3 >: B1 | B2](f: (B1, B2) => B3)(left: 
 
 def javaIterToList[T](iter: java.util.Iterator[T]): List[T] = {
   val b = List.newBuilder[T]
-  while (iter.hasNext){
+  while (iter.hasNext) {
     b.addOne(iter.next())
   }
   b.result()
+}
+
+extension [T](iterable: Iterable[T]) def toJavaUtilList: java.util.List[T] = {
+  val javaList = new util.ArrayList[T]()
+  iterable.foreach(javaList.add)
+  javaList
 }

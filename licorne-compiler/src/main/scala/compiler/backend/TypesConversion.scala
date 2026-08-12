@@ -1,0 +1,98 @@
+package compiler.backend
+
+import compiler.identifiers.TypeIdentifier
+import compiler.lang.Types
+import compiler.lang.Types.PrimitiveType.*
+import compiler.lang.Types.*
+import compiler.typing.contexts.DealiasingContext
+
+import java.lang.classfile.TypeKind
+import java.lang.constant.ClassDesc
+import java.lang.constant.ConstantDescs.*
+import java.lang.classfile.TypeKind.*
+
+trait TypesConverter {
+  
+  protected val dealiasingCtx: DealiasingContext
+
+  protected val intDesc: ClassDesc
+  protected val doubleDesc: ClassDesc
+  protected val charDesc: ClassDesc
+  protected val boolDesc: ClassDesc
+
+  def descriptorFor(tpe: Type): ClassDesc = getRuntimeType(tpe) match {
+    case tpe: PrimitiveType => descriptorForPrimitive(tpe)
+    case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
+    case ClosureType(params, result, enforcedPure) => ???
+    case UnionType(types) => ???
+    case IntersectionType(types) => ???
+    case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) =>
+      typeShouldBeUnreachable(tpe)
+  }
+
+  def descriptorForPrimitive(tpe: PrimitiveType): ClassDesc = tpe match {
+    case IntType => intDesc
+    case DoubleType => doubleDesc
+    case CharType => charDesc
+    case BoolType => boolDesc
+    case StringType => CD_String
+    case NullType => CD_Void
+    case AnyType => CD_Object
+    case UnitType => CD_int
+    case NothingType => CD_void
+  }
+  
+  def descriptorFor(typeName: TypeIdentifier): ClassDesc =
+    ClassDesc.of(typeName.stringId)
+  
+  def kindFor(tpe: Type): TypeKind = getRuntimeType(tpe) match {
+    case IntType => INT
+    case DoubleType => DOUBLE
+    case CharType => CHAR
+    case BoolType => BOOLEAN
+    case StringType => REFERENCE
+    case NullType => REFERENCE
+    case AnyType => REFERENCE
+    case UnitType => INT
+    case NothingType => VOID
+    case tpe: (NamedType | UnionType | IntersectionType | ClosureType) => REFERENCE
+    case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) => typeShouldBeUnreachable(tpe)
+  }
+  
+  private def getRuntimeType(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
+    case tv: TypeVariable => getRuntimeType(tv.upperBoundOpt.getOrElse(AnyType))
+    case _: IntRangeType => IntType
+    case RefinedType(baseType, predicate) => getRuntimeType(baseType)
+    case NullableType(nullatedType) => getRuntimeType(nullatedType)
+    case tpe => tpe
+  }
+  
+  private def typeShouldBeUnreachable(tpe: Type): Nothing = {
+    throw AssertionError(s"should be unreachable: ${tpe.getClass} should be mapped to a concrete type through preprocessing")
+  }
+
+}
+
+final class BoxingTypesConverter(override protected val dealiasingCtx: DealiasingContext) extends TypesConverter {
+  override protected val intDesc: ClassDesc = CD_Integer
+  override protected val doubleDesc: ClassDesc = CD_Double
+  override protected val charDesc: ClassDesc = CD_Character
+  override protected val boolDesc: ClassDesc = CD_Boolean
+}
+
+object BoxingTypesConverter {
+  def fromAmbientDealiasingCtx(using dealiasingCtx: DealiasingContext): BoxingTypesConverter =
+    BoxingTypesConverter(dealiasingCtx)
+}
+
+final class NonBoxingTypesConverter(override protected val dealiasingCtx: DealiasingContext) extends TypesConverter {
+  override protected val intDesc: ClassDesc = CD_int
+  override protected val doubleDesc: ClassDesc = CD_double
+  override protected val charDesc: ClassDesc = CD_char
+  override protected val boolDesc: ClassDesc = CD_boolean
+}
+
+object NonBoxingTypesConverter {
+  def fromAmbientDealiasingCtx(using dealiasingCtx: DealiasingContext): NonBoxingTypesConverter =
+    NonBoxingTypesConverter(dealiasingCtx)
+}
