@@ -21,8 +21,7 @@ final case class Program(
                           datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
-                          functions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function],
-                          loops: Seq[SSA.Loop]
+                          functions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function]
                         ) {
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
@@ -48,7 +47,7 @@ object Program {
       }
     }
 
-    def build(allFunctions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function], loops: Seq[SSA.Loop]): Program = {
+    def build(allFunctions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function]): Program = {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]
@@ -73,8 +72,7 @@ object Program {
         datatypes.result(),
         recordsB.result(),
         typeAliasesB.result(),
-        allFunctions,
-        loops
+        allFunctions
       )
     }
   }

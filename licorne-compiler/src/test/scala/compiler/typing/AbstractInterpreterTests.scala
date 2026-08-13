@@ -135,7 +135,7 @@ class AbstractInterpreterTests {
 
     given CompilationStep = TypeChecking
 
-    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty)
     val er = ErrorReporter(_ => fail(), _ => fail())
 
     given ResolutionContext = ResolutionContext(program, er)
@@ -156,7 +156,7 @@ class AbstractInterpreterTests {
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())
-    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty)
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, er)
 

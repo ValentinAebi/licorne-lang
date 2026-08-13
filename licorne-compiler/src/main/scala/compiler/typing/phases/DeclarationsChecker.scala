@@ -53,8 +53,7 @@ final class DeclarationsChecker(
           id -> typer.typeRecordSig(recordSig)
         },
         programOld.typeAliases,
-        programOld.functions,
-        programOld.loops
+        programOld.functions
       )
 
       er.displayAndTerminateIfErrors()

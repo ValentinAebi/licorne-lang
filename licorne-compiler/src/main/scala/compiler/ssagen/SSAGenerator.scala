@@ -45,7 +45,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
-    val loopsCollector = mutable.ListBuffer.empty[SSA.Loop]
     for (src <- sources) {
       src.pkgDeclOpt.foreach { pkgDecl =>
         checkPackageAndPosition(pkgDecl)
@@ -75,7 +74,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             given TypeParamsContext = fullTypeParamsCtx
 
             val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty, loopsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -92,7 +91,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty, loopsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
@@ -132,7 +131,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 saveNonReassigParam(param)
             }
             val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), classSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields, loopsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
@@ -169,7 +168,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, recordSigScope, ReassigPermission.Val, Some(fieldType))
             }
             val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty, directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), recordSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields, loopsCollector)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
             val recordSig = noFunctionsSig.copy(functions = funcs)
@@ -226,13 +225,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val subtypes = SeqSet(datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
         val noFunctionsSig = DatatypeSignature(id, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
           subtypes, datatypeSigScope, df.getPosition)
-        val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty, loopsCollector)
+        val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
         val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = true)
         val datatypeSig = noFunctionsSig.copy(functions = funcs)
         programBuilder.saveSignature(datatypeSig, df.getPosition)
       }
     }
-    val program = programBuilder.build(allFunctionsB.result(), loopsCollector.toSeq)
+    val program = programBuilder.build(allFunctionsB.result())
     for (tv <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv)
     }
@@ -399,7 +398,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                 functionsProviderIncompleteSig: RuntimeTypeSignature,
                                 globalScope: Scope,
                                 allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
-                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], loopsCollector: mutable.ListBuffer[SSA.Loop], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
+                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
     for (funDef <- functionsProvider.functions) {
       if (functions.contains(funDef.id)) {
@@ -517,7 +516,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                bodyOpt: Option[Asts.Block],
                                funSigScope: Scope,
                                posOpt: Option[Position]
-                             )(using currImplicitFields: collection.Map[FunOrVarId, Field], loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): SSA.Function = bodyOpt match {
+                             )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): SSA.Function = bodyOpt match {
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
@@ -529,7 +528,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)
-                         (using currImplicitFields: collection.Map[FunOrVarId, Field], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo, loopsCollector: mutable.ListBuffer[SSA.Loop],
+                         (using currImplicitFields: collection.Map[FunOrVarId, Field], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo,
                           importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     if (currScope.getLocalValuesContextUnsafe.hasExited) {
@@ -704,7 +703,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
           val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
           currScope.saveInstr(loop, whileLoop)
-          loopsCollector.addOne(loop)
         }
 
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
@@ -750,7 +748,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                resultVal: IdValue,
                                expr: Asts.Expr,
                                currScope: Scope
-                             )(using currImplicitFields: collection.Map[FunOrVarId, Field], loopsCollector: mutable.ListBuffer[SSA.Loop], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Option[Formula] = {
+                             )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateSSAExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)

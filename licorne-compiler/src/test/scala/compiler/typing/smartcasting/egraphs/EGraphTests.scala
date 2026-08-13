@@ -32,7 +32,7 @@ class EGraphTests {
 
   private val globalValuesContext = GlobalValuesContext(proxyStore)
   private val dummyScope = Scope.root(globalValuesContext)
-  private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Seq.empty)
+  private val program = Program(globalValuesContext, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty)
   private val dealiasingCtx = DealiasingContext(Map.empty)
 
   private given resolCtx: ResolutionContext = ResolutionContext(program, er)
