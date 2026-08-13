@@ -18,7 +18,7 @@ trait CompilerStep[-In, +Out] {
 /**
  * Runs `threadPipeline` on multiple inputs
  */
-final case class MultiStep[In, Out](threadPipeline: CompilerStep[In, Out]) extends CompilerStep[List[In], List[Out]] {
+final case class MultiStep[-In, +Out](threadPipeline: CompilerStep[In, Out]) extends CompilerStep[List[In], List[Out]] {
   override def apply(input: List[In]): List[Out] = {
     input.map(threadPipeline.apply)
   }
@@ -27,7 +27,7 @@ final case class MultiStep[In, Out](threadPipeline: CompilerStep[In, Out]) exten
 /**
  * Runs `pipeline1` and then `pipeline2`, and combines their output
  */
-final case class Concurrent[In, Out1, Out2, Out](
+final case class Concurrent[-In, Out1, Out2, +Out](
                                              pipeline1: CompilerStep[In, Out1],
                                              pipeline2: CompilerStep[In, Out2],
                                              combineFunc: (Out1, Out2) => Out
@@ -46,6 +46,6 @@ final case class IdentityStep[Data]() extends CompilerStep[Data, Data] {
 /**
  * Compiler step that performs a transformation using `f`
  */
-final case class Mapper[In, Out](f: In => Out) extends CompilerStep[In, Out] {
+final case class Mapper[-In, +Out](f: In => Out) extends CompilerStep[In, Out] {
   override def apply(input: In): Out = f(input)
 }

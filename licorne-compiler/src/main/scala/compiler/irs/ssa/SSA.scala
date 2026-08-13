@@ -55,7 +55,7 @@ object SSA {
 
   trait VarData
 
-  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: IdValue, bodyLastVal: IdValue, varDefScope: Scope) extends VarData {
+  final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, condVal: VarIdValue, bodyLastVal: VarIdValue, varDefScope: Scope) extends VarData {
     var recurrenceOpt: Option[Recurrence] = None
 
     def recurDescr: String = {
@@ -111,9 +111,7 @@ object SSA {
 
   sealed trait ControlFlowInstr extends RealInstr
 
-  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
-    val invariants: mutable.Seq[Formula] = mutable.ListBuffer.empty[Formula]
-  }
+  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr
   
   final case class StaticTypeAssert(value: IdValue, var tpe: Type) extends RealInstr, PureInstr

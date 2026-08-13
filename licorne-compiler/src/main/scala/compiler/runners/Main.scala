@@ -129,10 +129,6 @@ object Main {
     Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
   }
 
-  private def getRuntimeDirArg(argsMap: MutArgsMap): Path = {
-    Paths.get(getValuedArg("runtime", argsMap, Some(".")))
-  }
-
   private def getIntHandlingModeArg(argsMap: MutArgsMap): IntHandlingMode[?] = {
     val smtIntArith = "arith"
     val smtIntBitvec = "bitvec"
@@ -182,9 +178,8 @@ object Main {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBasePath = getOutDirBaseArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
-      val runtimeDir = getRuntimeDirArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, runtimeDir, runtimeDir, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirBasePath, ihm, counterExBoxOpt)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -208,9 +203,8 @@ object Main {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBase = getOutDirBaseArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
-      val runtimeDir = getRuntimeDirArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, runtimeDir, runtimeDir, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirBase, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
       val cnt = compiler.apply(sources).size
       succeed(s"wrote $cnt file(s)")
@@ -222,8 +216,11 @@ object Main {
    */
   private case class TypeCheck(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
+      val ihm = getIntHandlingModeArg(argsMap)
+      val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val typeChecker = TasksPipelines.typeChecker(ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
-      TasksPipelines.typeChecker().apply(sources)
+      typeChecker.apply(sources)
       succeed()
     }
   }
@@ -259,13 +256,11 @@ object Main {
          | args: -out-dir=...: required, directory where to write the output file
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
-         |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
-         |       -runtime=...: optional, directory containing the runtime and agent jars (default is current dir)
          |typecheck: parse and typecheck the program
          |help: displays help (this)
          |""".stripMargin)

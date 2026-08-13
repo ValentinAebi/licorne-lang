@@ -1,17 +1,19 @@
 package compiler.pipeline
 
+import compiler.backend.Backend
 import compiler.display.SSAPrinter
 import compiler.identifiers.TypeIdentifier
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
-import compiler.reporting.Errors.{ErrorReporter, ExitCode}
+import compiler.program.Program
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode}
+import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.ssagen.{ImportsScanner, SSAGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
-import compiler.typing.{HeapVarsTypeStore, TypeCandidatesStore}
+import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.Path
@@ -21,26 +23,24 @@ import java.nio.file.Path
  */
 object TasksPipelines {
 
-  /**
-   * Pipeline for compilation (src file -> .class file)
-   */
   def compiler(
                 outputDirectoryPath: Path,
-                runtimeDirPath: Path,
-                agentDirPath: Path,
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
-    compilerImpl(outputDirectoryPath, runtimeDirPath, agentDirPath, ihm, er, counterExBoxOpt)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, Some(Path.of("./temp/out"), "ssa.txt") /* FIXME should be an option */)
+      .andThen(Backend(outputDirectoryPath))
   }
 
-  /**
-   * Pipeline for typechecker (src file -> side effects of error reporting)
-   */
-  def typeChecker(er: ErrorReporter = defaultErrorReporter,
-                  okReporter: String => Unit = println): CompilerStep[List[SourceCodeProvider], Unit] = {
-    ???
+  def typeChecker(
+                   ihm: IntHandlingMode[?],
+                   counterExBoxOpt: Option[CounterexampleBox],
+                   er: ErrorReporter = defaultErrorReporter,
+                   okReporter: String => Unit = println
+                 ): CompilerStep[List[SourceCodeProvider], Unit] = {
+    typeCheckerImpl(ihm, er, counterExBoxOpt, Some(Path.of("./temp/out"), "ssa.txt") /* FIXME should be an option */)
+      .andThen(_ => ())
   }
 
   def multiFrontEnd(er: ErrorReporter): CompilerStep[List[SourceCodeProvider], List[Asts.Source]] = MultiStep(frontend(er))
@@ -49,12 +49,12 @@ object TasksPipelines {
     new Lexer(er).andThen(new Parser(er))
   }
 
-  private def compilerImpl(outputDirectoryPath: Path,
-                           runtimeDirPath: Path,
-                           agentDirPath: Path,
-                           ihm: IntHandlingMode[?],
-                           er: ErrorReporter,
-                           counterExBoxOpt: Option[CounterexampleBox]) = {
+  private def typeCheckerImpl(
+                               ihm: IntHandlingMode[?],
+                               er: ErrorReporter,
+                               counterExBoxOpt: Option[CounterexampleBox],
+                               ssaOutputInfoOpt: Option[(Path, String)]
+                             ): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val typeCandidatesStore = TypeCandidatesStore()
@@ -62,39 +62,32 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, /* FIXME check that this check works */ srcRootsForPkgMismatchCheckOpt = None))
-      .andThen(Concurrent(
-        SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = false)
-          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
-        IdentityStep(),
-        (_, program) => program
-      ))
-      .andThen(SubtypingChecker(proxyStore, er))
+      .andThen(
+        ssaOutputInfoOpt match {
+          case Some(ssaOutDirPath, ssaFileName) => Concurrent(
+            SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = false)
+              .andThen(StringWriter(ssaOutDirPath, ssaFileName, er, _ => true)),
+            IdentityStep(),
+            (_, program) => program
+          )
+          case None => IdentityStep()
+        }
+      ).andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, er, counterExBoxOpt))
       .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
-      .andThen((program, subtypingInfo) => program)
-      .andThen(Concurrent(
-        SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = true)
-          .andThen(StringWriter(Path.of("./temp/out"), "ssa.txt", er, _ => true)),
-        IdentityStep(),
-        (_, program) => program
-      ))
-      // FIXME this implementation is temporary
-      //.andThen(??? /* compilation to bytecode */)
-      .andThen(MissingCompiler(er, printProgram = false))
-  }
-
-  private final class MissingCompiler(er: ErrorReporter, printProgram: Boolean) extends CompilerStep[Any, Nothing] {
-    override def apply(input: Any): Nothing = {
-      println("Compiler not implemented")
-      if (printProgram) {
-        println("Last representation of the program before exiting was:")
-        println(caseClassesFormat(input.toString))
-      }
-      er.displayErrorsAndTerminate()
-    }
+      .andThen(ssaOutputInfoOpt match {
+        case Some(ssaOutDirPath, ssaFileName) => Concurrent(
+          Mapper[(Program, SubtypingInfo), Program]((program, subtypingInfo) => program)
+            .andThen(SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = true))
+            .andThen(StringWriter(ssaOutDirPath, ssaFileName, er, _ => true)),
+          IdentityStep(),
+          (_, programData) => programData
+        )
+        case None => IdentityStep()
+      })
   }
 
   private def caseClassesFormat(raw: String): String = {
