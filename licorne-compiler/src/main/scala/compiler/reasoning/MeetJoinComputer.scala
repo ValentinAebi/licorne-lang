@@ -30,7 +30,7 @@ final class MeetJoinComputer(
     computeJoin(Iterable.from(types))
 
   def computeJoin(inputTypes: Iterable[Type])(using TypeParamsContext): Type = {
-    
+
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
       tpe.withTypeVarsExpanded match {
         case UnionType(unitedTypes) => unitedTypes
@@ -61,30 +61,45 @@ final class MeetJoinComputer(
             case 1 => nonNullDealiasedTypes.head
             case _ => nonNullDealiasedTypes.find(superT => nonNullDealiasedTypes.forall(subtypingCtx.isSubtype(_, superT))).getOrElse {
 
-              
               val namedTypes = mutable.ListBuffer.empty[NamedType]
               val closureTypes = mutable.ListBuffer.empty[ClosureType]
               val intRangeTypes = mutable.ListBuffer.empty[IntRangeType]
 
-              
-              var possibleKinds = TypeKind.values.toSet
               val typesIter = nonNullDealiasedTypes.iterator
+
+              def dispatch(tpe: Type): Unit = tpe match {
+                case tv: TypeVariable =>
+                  dispatch(tv.upperBoundOpt.getOrElse(AnyType))
+                case AnyType =>
+                  boundary.break(AnyType)
+                case NothingType => ()
+                case namedType: NamedType =>
+                  namedTypes.addOne(namedType)
+                case closureType: ClosureType =>
+                  closureTypes.addOne(closureType)
+                case intRangeType: IntRangeType =>
+                  intRangeTypes.addOne(intRangeType)
+                case RefinedType(baseType, predicate) =>
+                  dispatch(baseType)
+                case unionType: UnionType =>
+                  throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
+                case nullableType: NullableType =>
+                  throw AssertionError(s"unexpected nullable type: $nullableType")
+                case _ => ()
+              }
+
               while (typesIter.hasNext) {
-                typesIter.next() match {
-                  case (_: TypeVariable) | AnyType =>
-                    boundary.break(AnyType)
-                  case NothingType => ()
-                  case tpe =>
-                    val kinds = typeKindsDispatch(tpe, namedTypes, closureTypes, intRangeTypes)
-                    possibleKinds = possibleKinds.intersect(kinds)
-                }
+                dispatch(typesIter.next())
               }
               
-              val rawJoin =
-                if possibleKinds.contains(TypeKind.Named) then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-                else if possibleKinds.contains(TypeKind.IntRange) then computeJoinOfRanges(intRangeTypes.distinct)
-                else if possibleKinds.contains(TypeKind.Closure) then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+              val rawJoin = {
+                if namedTypes.isEmpty && intRangeTypes.isEmpty && closureTypes.isEmpty then NothingType
+                else if namedTypes.isEmpty && intRangeTypes.isEmpty && closureTypes.nonEmpty then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+                else if namedTypes.isEmpty && intRangeTypes.nonEmpty then computeJoinOfRanges(intRangeTypes.distinct)
+                else if namedTypes.nonEmpty then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
                 else AnyType
+              }
+              
               simplifier.simplify(rawJoin)
             }
           }
@@ -93,40 +108,6 @@ final class MeetJoinComputer(
     if nullableFlag
     then NullableType(nonNullType)
     else nonNullType
-  }
-  
-  private enum TypeKind {
-    case Named, IntRange, Closure
-  }
-  
-  private def typeKindsDispatch(tpe: Type, namedTypes: mutable.ListBuffer[NamedType], closureTypes: mutable.ListBuffer[ClosureType], intRangeTypes: mutable.ListBuffer[IntRangeType]): Set[TypeKind] = {
-    import TypeKind.*
-    tpe match {
-      case IntType =>
-        intRangeTypes.addOne(IntRangeType(None, None))
-        Set(IntRange)
-      case primitiveType: PrimitiveType => Set.empty
-      case namedType: NamedType =>
-        namedTypes.addOne(namedType)
-        Set(Named)
-      case closureType: ClosureType =>
-        closureTypes.addOne(closureType)
-        Set(Closure)
-      case unionType: UnionType =>
-        throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
-      case IntersectionType(types) =>
-        types.flatMap(typeKindsDispatch(_, namedTypes, closureTypes, intRangeTypes))
-      case RefinedType(baseType, predicate) =>
-        // TODO try to unify predicates
-        typeKindsDispatch(baseType, namedTypes, closureTypes, intRangeTypes)
-      case intRangeType: IntRangeType =>
-        intRangeTypes.addOne(intRangeType)
-        Set(IntRange)
-      case nullableType: NullableType =>
-        throw AssertionError(s"unexpected nullable type: $nullableType")
-      case tv: TypeVariable =>
-        throw AssertionError(s"unexpected type variable: $tv")
-    }
   }
 
   def computeJoinOfNamed(types: Iterable[NamedType])(using TypeParamsContext): Option[NamedType] = {
@@ -305,16 +286,10 @@ final class MeetJoinComputer(
   }
 
   def computeMeetOfRanges(types: Iterable[IntRangeType])(using TypeParamsContext): Type = {
-
-    def filterNoEmpty(bounds: Iterable[Option[Formula]], minOrMax: Iterable[Formula] => Option[Formula]): Option[Formula] = {
-      if bounds.isEmpty || bounds.forall(_.isEmpty) then None
-      else minOrMax(bounds.flatten)
-    }
-
-    val rawMeet = IntRangeType(
-      filterNoEmpty(types.map(_.lowerBoundOpt), solver.intMax),
-      filterNoEmpty(types.map(_.upperBoundOpt), solver.intMin)
-    )
+    val lowerBounds = solver.discardNonMax(types.flatMap(_.lowerBoundOpt))
+    val upperBounds = solver.discardNonMins(types.flatMap(_.upperBoundOpt))
+    val minMaxTypes = rangesFromBounds(lowerBounds, upperBounds)
+    val rawMeet = IntersectionType(minMaxTypes)
     mapUnboundedToInt {
       types.find { tpe =>
         subtypingCtx.isSubtype(tpe, rawMeet) && !subtypingCtx.isSubtype(rawMeet, tpe)
@@ -325,6 +300,12 @@ final class MeetJoinComputer(
   private def mapUnboundedToInt(tpe: Type): Type = tpe match {
     case IntRangeType(None, None) => IntType
     case tpe => tpe
+  }
+
+  private def rangesFromBounds(lowerBounds: Iterable[Formula], upperBounds: Iterable[Formula]) = {
+    lowerBounds.zip(upperBounds).map(IntRangeType(_, _))
+      ++ lowerBounds.drop(upperBounds.size).map(IntRangeType.ofLowerBound)
+      ++ upperBounds.drop(lowerBounds.size).map(IntRangeType.ofUpperBound)
   }
 
 }
