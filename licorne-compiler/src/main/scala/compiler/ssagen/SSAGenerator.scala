@@ -669,7 +669,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, defScope, _, _) =>
               val localDeclOpt = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt
-              Some(LoopVarData(varId, beforeLoopVal = value, condVal = defScope.newVar(varId, localDeclOpt, Some("loop-body-start"), bodyTree.getPosition),
+              Some(LoopVarData(varId, beforeLoopVal = value, inCondVal = defScope.newVar(varId, localDeclOpt, Some("loop-body-start"), bodyTree.getPosition),
                 bodyLastVal = bodyScope.newVar(varId, localDeclOpt, Some("loop-body-end"), bodyTree.getPosition), defScope))
             case _ => None
           }

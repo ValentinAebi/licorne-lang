@@ -1,7 +1,7 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.irs.ssa.SSA.{LocalDecl, Scope}
+import compiler.irs.ssa.SSA.{Instr, LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
 import compiler.lang.{Keyword, RuntimeTypeSignature}
@@ -10,6 +10,7 @@ import compiler.util.SeqSet
 
 import java.util.Objects
 import scala.collection
+import scala.collection.mutable
 
 
 object Formulas {
@@ -18,12 +19,14 @@ object Formulas {
     def isAtomic = false
   }
 
-  sealed trait IdValue extends Formula {
+  sealed abstract class IdValue extends Formula {
     def uid: Long
 
     def definingScope: Scope
 
     override def isAtomic: Boolean = true
+    
+    val users: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty
   }
 
   sealed trait NamedIdValue(valKindDescr: String) extends IdValue {
@@ -33,7 +36,6 @@ object Formulas {
 
     def irDescr: String =
       s"$name#$uid@${definingScope.scopeUid}$valKindDescr"
-
   }
 
   sealed trait LocalIdValue {

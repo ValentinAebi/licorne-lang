@@ -12,7 +12,7 @@ import compiler.typing.contexts.DealiasingContext
 import compiler.util.toJavaUtilList
 
 import java.lang
-import java.lang.classfile.{ClassBuilder, ClassFile, CodeBuilder, TypeKind}
+import java.lang.classfile.{ClassBuilder, ClassFile, CodeBuilder, Label, TypeKind}
 import java.lang.constant.ConstantDescs.*
 import java.lang.constant.{ClassDesc, MethodTypeDesc}
 import java.nio.file.{Files, Path}
@@ -116,7 +116,10 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       .resolve(typeId.nonPrefixedId + classExt)
   }
 
-  private def generateScope(scope: SSA.Scope, cb: CodeBuilder)(using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext): Unit = {
+  private def generateScope(scope: SSA.Scope, cb: CodeBuilder)
+                           (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext): Unit = {
+    // instruction indices are currently unused, but could help with some optimizations
+    scope.writeInstrIndices()
     for (instr <- scope.instructions) {
       funGenCtx.onNewLineNumber(instr.getPosition) { l =>
         cb.lineNumber(l)
@@ -135,7 +138,7 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       for (loopVarData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- variables) {
         val beforeLoopValTypeKind = typeKindOf(beforeLoopVal, currScope)
         val inCondValTypeKind = typeKindOf(inCondVal, currScope)
-        val bodyLastValTypeKind = typeKindOf(bodyLastVal, currScope)
+        val bodyLastValTypeKind = typeKindOf(bodyLastVal, body)
         if (inCondValTypeKind == beforeLoopValTypeKind) {
           funGenCtx.coalesce(beforeLoopVal, inCondVal)
         } else {
@@ -157,7 +160,7 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       cb.ifeq(afterLoopLabel)
       generateScope(body, cb)
       for (LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- variables) {
-        genValueMove(condVal, bodyLastVal, currScope, cb)
+        genValueMove(condVal, bodyLastVal, body, cb)
       }
       cb.goto_(beforeCondLabel)
       cb.labelBinding(afterLoopLabel)
@@ -245,6 +248,11 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     case SSA.LogicNeg(assigned, operand) => ???
 
     case SSA.Equal(assigned, lhs, rhs) => ???
+
+    case SSA.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == TypeKind.INT =>
+      genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmple(_))
+    case SSA.Lt(assigned, lhs, rhs) if typeKindOf(rhs, currScope) == TypeKind.INT =>
+      genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmplt(_))
 
     case SSA.Leq(assigned, lhs, rhs) => ???
     case SSA.Lt(assigned, lhs, rhs) => ???
@@ -375,6 +383,21 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     }, whenDouble = {
       doubleOp(cb)
     })
+    genValueStore(assigned, currScope, cb)
+  }
+
+  private def genIntCompBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder, mkCmpInstr: (ccb: CodeBuilder, trueLabel: Label) => Unit)
+                             (using FunctionGenerationContext, DealiasingContext): Unit = {
+    genValueLoad(lhs, currScope, cb)
+    genValueLoad(rhs, currScope, cb)
+    val trueLabel = cb.newLabel()
+    val endLabel = cb.newLabel()
+    mkCmpInstr(cb, trueLabel)
+    cb.iconst_0()
+    cb.goto_(endLabel)
+    cb.labelBinding(trueLabel)
+    cb.iconst_1()
+    cb.labelBinding(endLabel)
     genValueStore(assigned, currScope, cb)
   }
 

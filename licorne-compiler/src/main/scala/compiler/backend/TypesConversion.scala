@@ -12,7 +12,7 @@ import java.lang.constant.ConstantDescs.*
 import java.lang.classfile.TypeKind.*
 
 trait TypesConverter {
-  
+
   protected val dealiasingCtx: DealiasingContext
 
   protected val intDesc: ClassDesc
@@ -24,8 +24,16 @@ trait TypesConverter {
     case tpe: PrimitiveType => descriptorForPrimitive(tpe)
     case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
     case ClosureType(params, result, enforcedPure) => ???
-    case UnionType(types) => ???
-    case IntersectionType(types) => ???
+    case UnionType(types) =>
+      val descriptors = types.map(descriptorFor)
+      if descriptors.size == 1 then descriptors.head
+      else descriptorFor(AnyType)
+    case IntersectionType(types) =>
+      val descriptors = types.map(descriptorFor)
+      descriptors.find(_.isPrimitive) match {
+        case Some(primDesc) => primDesc
+        case None => descriptors.head
+      }
     case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) =>
       typeShouldBeUnreachable(tpe)
   }
@@ -41,10 +49,10 @@ trait TypesConverter {
     case UnitType => CD_int
     case NothingType => CD_void
   }
-  
+
   def descriptorFor(typeName: TypeIdentifier): ClassDesc =
     ClassDesc.of(typeName.stringId)
-  
+
   def kindFor(tpe: Type): TypeKind = getRuntimeType(tpe) match {
     case IntType => INT
     case DoubleType => DOUBLE
@@ -55,18 +63,29 @@ trait TypesConverter {
     case AnyType => REFERENCE
     case UnitType => INT
     case NothingType => VOID
-    case tpe: (NamedType | UnionType | IntersectionType | ClosureType) => REFERENCE
+    case UnionType(types) =>
+      val kinds = types.map(kindFor)
+      if kinds.size == 1 then kinds.head
+      else REFERENCE
+    case IntersectionType(types) =>
+      types.find(_.isInstanceOf[PrimitiveType]) match {
+        case Some(primType) => kindFor(primType)
+        case None => kindFor(types.head)
+      }
+    case tpe: (NamedType | ClosureType) => REFERENCE
     case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) => typeShouldBeUnreachable(tpe)
   }
-  
+
   private def getRuntimeType(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
     case tv: TypeVariable => getRuntimeType(tv.upperBoundOpt.getOrElse(AnyType))
     case _: IntRangeType => IntType
     case RefinedType(baseType, predicate) => getRuntimeType(baseType)
     case NullableType(nullatedType) => getRuntimeType(nullatedType)
+    case UnionType(types) => UnionType(types.map(getRuntimeType))
+    case IntersectionType(types) => IntersectionType(types.map(getRuntimeType))
     case tpe => tpe
   }
-  
+
   private def typeShouldBeUnreachable(tpe: Type): Nothing = {
     throw AssertionError(s"should be unreachable: ${tpe.getClass} should be mapped to a concrete type through preprocessing")
   }

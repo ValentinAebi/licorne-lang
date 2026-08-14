@@ -4,7 +4,6 @@ import compiler.irs.ssa.Formulas.IdValue
 import compiler.reporting.Position
 
 import java.lang.classfile.TypeKind
-import java.lang.constant.MethodTypeDesc
 import scala.collection.mutable
 
 
@@ -19,14 +18,14 @@ final class FunctionGenerationContext {
 
   def getSubst(target: IdValue): IdValue =
     valuesSubst.getOrElse(target, target)
-    
+
   def asIntConst(target: IdValue): Option[Int] =
     intConstSubst.get(getSubst(target))
 
   def saveSubst(target: IdValue, repl: IdValue): Unit = {
     valuesSubst(target) = getSubst(repl)
   }
-  
+
   def saveIntSubst(target: IdValue, cst: Int): Unit = {
     intConstSubst(target) = cst
   }
