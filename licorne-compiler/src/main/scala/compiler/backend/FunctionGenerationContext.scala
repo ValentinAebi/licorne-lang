@@ -12,14 +12,23 @@ import scala.collection.mutable
 final class FunctionGenerationContext {
   private val slotsAssignment = mutable.Map.empty[IdValue, Int]
   private val valuesSubst = mutable.Map.empty[IdValue, IdValue]
+  // TODO constSubst for kinds other than int
+  private val intConstSubst = mutable.Map.empty[IdValue, Int]
   private var nextFreeSlot = 0
   private var currLineNumber = 0
 
   def getSubst(target: IdValue): IdValue =
     valuesSubst.getOrElse(target, target)
+    
+  def asIntConst(target: IdValue): Option[Int] =
+    intConstSubst.get(getSubst(target))
 
   def saveSubst(target: IdValue, repl: IdValue): Unit = {
-    valuesSubst.put(target, getSubst(repl))
+    valuesSubst(target) = getSubst(repl)
+  }
+  
+  def saveIntSubst(target: IdValue, cst: Int): Unit = {
+    intConstSubst(target) = cst
   }
   
   def onNewLineNumber(posOpt: Option[Position])(action: Int => Unit): Unit = posOpt match {

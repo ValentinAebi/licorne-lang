@@ -1,7 +1,7 @@
 package compiler.backend
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas.{IdValue, NamedIdValue}
+import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
 import compiler.lang.{Field, FunctionSignature, RuntimeTypeSignature, Visibility}
@@ -199,16 +199,28 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     // FIXME collapse assignments when rhs is an IdValue or a constant
 
     case SSA.AssignVal(assigned, src) =>
-      genValueMove(assigned, src, currScope, cb)
+      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == typeKindOf(src, currScope)) {
+        funGenCtx.saveSubst(assigned, src)
+      } else {
+        genValueMove(assigned, src, currScope, cb)
+      }
 
     case SSA.AssignIntConst(assigned, src) =>
-      cb.loadConstant(src)
-      genValueStore(assigned, currScope, cb)
+      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == TypeKind.INT) {
+        funGenCtx.saveIntSubst(assigned, src)
+      } else {
+        cb.loadConstant(src)
+        genValueStore(assigned, currScope, cb)
+      }
 
     case SSA.AssignBoolConst(assigned, src) =>
       val srcAsInt = if src then 1 else 0
-      cb.loadConstant(srcAsInt)
-      genValueStore(assigned, currScope, cb)
+      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == TypeKind.INT) {
+        funGenCtx.saveIntSubst(assigned, srcAsInt)
+      } else {
+        cb.loadConstant(srcAsInt)
+        genValueStore(assigned, currScope, cb)
+      }
 
     case SSA.AssignStringConst(assigned, src) =>
       val cstEntry = cb.constantPool().stringEntry(src)
@@ -279,12 +291,18 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     }
   }
 
-  private def genValueLoad(idVal: IdValue, currScope: Scope, cb: CodeBuilder)
+  private def genValueLoad(rawIdVal: IdValue, currScope: Scope, cb: CodeBuilder)
                           (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext): Unit = {
-    val kind = typeKindOf(idVal, currScope)
-    if (kind != TypeKind.VOID) {
-      val slot = funcGenCtx.getSlot(idVal)
-      cb.loadLocal(kind, slot)
+    funcGenCtx.asIntConst(rawIdVal) match {
+      case Some(cst) =>
+        cb.loadConstant(cst)
+      case None =>
+        val substIdVal = funcGenCtx.getSubst(rawIdVal)
+        val kind = typeKindOf(substIdVal, currScope)
+        if (kind != TypeKind.VOID) {
+          val slot = funcGenCtx.getSlot(substIdVal)
+          cb.loadLocal(kind, slot)
+        }
     }
   }
 
