@@ -30,8 +30,7 @@ final class MeetJoinComputer(
     computeJoin(Iterable.from(types))
 
   def computeJoin(inputTypes: Iterable[Type])(using TypeParamsContext): Type = {
-
-    // first pass: flatten UnionTypes and NullableTypes and remove duplicates
+    
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
       tpe.withTypeVarsExpanded match {
         case UnionType(unitedTypes) => unitedTypes
@@ -62,41 +61,13 @@ final class MeetJoinComputer(
             case 1 => nonNullDealiasedTypes.head
             case _ => nonNullDealiasedTypes.find(superT => nonNullDealiasedTypes.forall(subtypingCtx.isSubtype(_, superT))).getOrElse {
 
-              // second pass: remove Nothing, shortcut if Any
-              val primitiveTypes = mutable.ListBuffer.empty[PrimitiveType]
+              
               val namedTypes = mutable.ListBuffer.empty[NamedType]
               val closureTypes = mutable.ListBuffer.empty[ClosureType]
-              val rangeTypes = mutable.ListBuffer.empty[IntRangeType]
+              val intRangeTypes = mutable.ListBuffer.empty[IntRangeType]
 
-              def categorizeType(tpe: Type): Unit = tpe match {
-                case IntType =>
-                  primitiveTypes.addOne(IntType)
-                  rangeTypes.addOne(IntRangeType(None, None))
-                case primitiveType: PrimitiveType =>
-                  primitiveTypes.addOne(primitiveType)
-                case namedType: NamedType =>
-                  namedTypes.addOne(namedType)
-                case closureType: ClosureType =>
-                  closureTypes.addOne(closureType)
-                case tv: TypeVariable =>
-                  throw AssertionError(s"unexpected type variable: $tv")
-                case nullableType: NullableType =>
-                  throw AssertionError(s"unexpected nullable type: $nullableType")
-                case unionType: UnionType =>
-                  throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
-                case IntersectionType(types) =>
-                  for (tpe <- types) {
-                    categorizeType(tpe)
-                  }
-                case RefinedType(baseType, predicate) =>
-                  // TODO try to also handle the predicate
-                  categorizeType(baseType)
-                case intRangeType: IntRangeType =>
-                  rangeTypes.addOne(intRangeType)
-              }
-
-              // third pass: categorize types
-              var retainedTypesCnt = 0
+              
+              var possibleKinds = TypeKind.values.toSet
               val typesIter = nonNullDealiasedTypes.iterator
               while (typesIter.hasNext) {
                 typesIter.next() match {
@@ -104,20 +75,15 @@ final class MeetJoinComputer(
                     boundary.break(AnyType)
                   case NothingType => ()
                   case tpe =>
-                    categorizeType(tpe)
-                    retainedTypesCnt += 1
+                    val kinds = typeKindsDispatch(tpe, namedTypes, closureTypes, intRangeTypes)
+                    possibleKinds = possibleKinds.intersect(kinds)
                 }
               }
-
-              // FIXME this is wrong
-              //  Triggering the computation of the join for a particular kind of types should depend on all
-              //  types matching that kind, not on the number of types matching it.
-              //  The current solution seems to work only when there is a single intersection type, or something like that (?)
+              
               val rawJoin =
-                if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
-                else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)
-                else if primitiveTypes.size >= retainedTypesCnt then computeJoinOfPrimitives(primitiveTypes)
-                else if closureTypes.size >= retainedTypesCnt then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
+                if possibleKinds.contains(TypeKind.Named) then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+                else if possibleKinds.contains(TypeKind.IntRange) then computeJoinOfRanges(intRangeTypes.distinct)
+                else if possibleKinds.contains(TypeKind.Closure) then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
                 else AnyType
               simplifier.simplify(rawJoin)
             }
@@ -128,14 +94,38 @@ final class MeetJoinComputer(
     then NullableType(nonNullType)
     else nonNullType
   }
-
-  def computeJoinOfPrimitives(types: Iterable[PrimitiveType]): PrimitiveType = {
-    val remTypes = mutable.LinkedHashSet.from(types)
-    remTypes.remove(NothingType)
-    remTypes.size match {
-      case 0 => NothingType
-      case 1 => remTypes.head
-      case _ => AnyType
+  
+  private enum TypeKind {
+    case Named, IntRange, Closure
+  }
+  
+  private def typeKindsDispatch(tpe: Type, namedTypes: mutable.ListBuffer[NamedType], closureTypes: mutable.ListBuffer[ClosureType], intRangeTypes: mutable.ListBuffer[IntRangeType]): Set[TypeKind] = {
+    import TypeKind.*
+    tpe match {
+      case IntType =>
+        intRangeTypes.addOne(IntRangeType(None, None))
+        Set(IntRange)
+      case primitiveType: PrimitiveType => Set.empty
+      case namedType: NamedType =>
+        namedTypes.addOne(namedType)
+        Set(Named)
+      case closureType: ClosureType =>
+        closureTypes.addOne(closureType)
+        Set(Closure)
+      case unionType: UnionType =>
+        throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
+      case IntersectionType(types) =>
+        types.flatMap(typeKindsDispatch(_, namedTypes, closureTypes, intRangeTypes))
+      case RefinedType(baseType, predicate) =>
+        // TODO try to unify predicates
+        typeKindsDispatch(baseType, namedTypes, closureTypes, intRangeTypes)
+      case intRangeType: IntRangeType =>
+        intRangeTypes.addOne(intRangeType)
+        Set(IntRange)
+      case nullableType: NullableType =>
+        throw AssertionError(s"unexpected nullable type: $nullableType")
+      case tv: TypeVariable =>
+        throw AssertionError(s"unexpected type variable: $tv")
     }
   }
 
