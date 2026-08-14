@@ -102,6 +102,11 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
 
   def intMin(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMin)
 
+  override def discardNonMins(formulas: Iterable[Formula]): Iterable[Formula] = {
+    // TODO what if some of the formulas are provably equal?
+    formulas.filterNot(cand => formulas.exists(canProveLt(_, cand)))
+  }
+
   def intMax(l: Formula, r: Formula): Option[Formula] = {
     if canProveLeq(l, r) then Some(r)
     else if canProveLeq(r, l) then Some(l)
@@ -109,6 +114,11 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
   }
 
   def intMax(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMax)
+
+  override def discardNonMax(formulas: Iterable[Formula]): Iterable[Formula] = {
+    // TODO what if some of the formulas are provably equal?
+    formulas.filterNot(cand => formulas.exists(canProveLt(cand, _)))
+  }
 
   private def findMinOrMax(formulas: Iterable[Formula], minOrMaxFunc: (Formula, Formula) => Option[Formula]): Option[Formula] =
     if formulas.isEmpty then None

@@ -23,7 +23,7 @@ final class EGraphCopier {
       classCopier.put(original, copy)
       copy.initializeWith(
         original.nodesView.iterator.map(copyOf),
-        original.getSmartcastType,
+        original.getSmartcastTypeNoSimplification,
         original.isKnownNonNull,
         original.explicitFormulasView
       )

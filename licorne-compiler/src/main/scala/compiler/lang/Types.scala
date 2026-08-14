@@ -527,7 +527,8 @@ object Types {
     case tpe => tpe
   }
 
-  private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])(using simplifier: Simplifier): Option[Formula] = boundOpt match {
+  private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
+                         (using simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Option[Formula] = boundOpt match {
     case None => None
     case sb@Some(bound) if bound.idValsDependencies.forall(assignmentTarget.typeCanMention) => sb
     case Some(bound) =>

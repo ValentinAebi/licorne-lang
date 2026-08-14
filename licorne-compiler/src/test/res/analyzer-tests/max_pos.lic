@@ -48,7 +48,7 @@ object PositiveMax {
     fn maxPos_moreComplex_buggy(a: Array[Int], start: Idx(a), incEven: [1..], incOdd: Int) -> [0..] {
         var k = start;
         var max = 0;
-        while (k < a.length()) {    //> E : inferred incorrect type [0 ..< a.length()] for variable k at loop body start, please provide a type annotation at variable declaration site
+        while (k < a.length()) {    //> E : inferred incorrect type Idx[T](a) for variable k at loop body start, please provide a type annotation at variable declaration site
             val v = a.at(k);
             if (v > 0 && v > max) {
                 max = v;

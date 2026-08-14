@@ -109,6 +109,10 @@ final class MeetJoinComputer(
                 }
               }
 
+              // FIXME this is wrong
+              //  Triggering the computation of the join for a particular kind of types should depend on all
+              //  types matching that kind, not on the number of types matching it.
+              //  The current solution seems to work only when there is a single intersection type, or something like that (?)
               val rawJoin =
                 if namedTypes.size >= retainedTypesCnt then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
                 else if rangeTypes.size >= retainedTypesCnt then computeJoinOfRanges(rangeTypes.distinct)

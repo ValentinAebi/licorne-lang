@@ -223,7 +223,7 @@ final class Typer(
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
 
       case assignVal@AssignVal(assigned, src) =>
-        val srcType = tryToApplyCandidate(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
+        val srcType = tryToApplyCandidates(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)
         val assignedType = assigned match {
           case idVal: LocalIdValue =>
             currScope.getLocalValuesContextUnsafe.valueOf(idVal.id).declOpt match {
@@ -527,10 +527,10 @@ final class Typer(
     newInstanceType
   }
 
-  private def tryToApplyCandidate(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
+  private def tryToApplyCandidates(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
     val validatedCandidates = typeCandidatesStore.getCandidates(srcVal).toList.filter(subtypingCtx.canProveHasType(srcVal, regularType, _, currScope))
     if validatedCandidates.isEmpty then regularType
-    else simplifier.simplify(IntersectionType(SeqSet(regularType +: validatedCandidates)))
+    else IntersectionType(SeqSet(regularType +: validatedCandidates))
   }
 
   private def tryToResolveTypeVarsUsingCandidates(value: IdValue, tpe: Type)(using TypeParamsContext): Unit = {
@@ -1246,13 +1246,16 @@ final class Typer(
     }
   }
 
-  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position]): Type =
+  extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])
+                                                         (using Simplifier, TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, Some(posOpt), saveSmartcastsInIR = true)
 
-  extension (scope: Scope) private def detectCurrentType(formula: Formula): Type =
+  extension (scope: Scope) private def detectCurrentType(formula: Formula)
+                                                        (using Simplifier, TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, None, saveSmartcastsInIR = false)
 
-  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean): Type = {
+  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean)
+                                  (using Simplifier, TypeParamsContext): Type = {
     val tpe = scope.getCurrentTypeOf(formula, saveSmartcastsInIR)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {

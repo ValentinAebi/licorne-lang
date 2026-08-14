@@ -40,10 +40,14 @@ trait Solver {
   def intMin(l: Formula, r: Formula): Option[Formula]
   
   def intMin(formulas: Iterable[Formula]): Option[Formula]
+
+  def discardNonMins(formulas: Iterable[Formula]): Iterable[Formula]
   
   def intMax(l: Formula, r: Formula): Option[Formula]
   
   def intMax(formulas: Iterable[Formula]): Option[Formula]
+
+  def discardNonMax(formulas: Iterable[Formula]): Iterable[Formula]
 
   def assert(formula: Formula): Unit
 

@@ -92,14 +92,14 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  def saveSmartcast(formula: Formula, tpe: Type)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit =
+  def saveSmartcast(formula: Formula, tpe: Type): Unit =
     classOf(formula).saveSmartcast(tpe)
     
   def saveNonNull(formula: Formula): Unit = {
     classOf(formula).markNonNull()
   }
 
-  def smartcastFor(formula: Formula): Option[Type] =
+  def smartcastFor(formula: Formula)(using TypeParamsContext, Simplifier): Option[Type] =
     classOf(formula).getSmartcastType
   
   def isKnownNonNull(formula: Formula): Boolean =

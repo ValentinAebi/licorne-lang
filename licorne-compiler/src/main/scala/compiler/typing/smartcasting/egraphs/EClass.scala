@@ -29,10 +29,10 @@ final class EClass(val uid: Long) {
 
   def nodesView: Iterable[ENode] = nodes
 
-  def saveSmartcast(tpe: Type)(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Unit = {
+  def saveSmartcast(tpe: Type): Unit = {
     val newSmartcast = smartcastTypeOpt match {
       case Some(oldSmartcastType) =>
-        simplifier.simplify(IntersectionType(oldSmartcastType, tpe))
+        IntersectionType(oldSmartcastType, tpe)
       case None => tpe
     }
     smartcastTypeOpt = Some(newSmartcast)
@@ -42,7 +42,10 @@ final class EClass(val uid: Long) {
     nonNullFlag = true
   }
 
-  def getSmartcastType: Option[Type] = smartcastTypeOpt
+  def getSmartcastType(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Option[Type] =
+    smartcastTypeOpt.map(simplifier.simplify)
+    
+  def getSmartcastTypeNoSimplification: Option[Type] = smartcastTypeOpt
   
   def isKnownNonNull: Boolean = nonNullFlag
 
