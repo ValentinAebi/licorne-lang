@@ -113,6 +113,13 @@ object Main {
     argsMap.remove(argName).getOrElse(optDefault).getOrElse(error(s"missing required argument: $argName"))
   }
 
+  private def getValuedArgOpt(argName: String, argsMap: MutArgsMap): Option[String] = {
+    argsMap.remove(argName).map {
+      case Some(value) => value
+      case None => error(s"missing value for argument $argName")
+    }
+  }
+
   private def getUnvalArg(argName: String, argsMap: MutArgsMap): Boolean = {
     argsMap.remove(argName) match {
       case None => false
@@ -127,6 +134,10 @@ object Main {
 
   private def getOutDirBaseArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
+  }
+  
+  private def getSSADirArg(argsMap: MutArgsMap): Option[Path] = {
+    getValuedArgOpt("ir-dir", argsMap).map(Paths.get(_))
   }
 
   private def getIntHandlingModeArg(argsMap: MutArgsMap): IntHandlingMode[?] = {
@@ -177,9 +188,10 @@ object Main {
   private case class Run(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBasePath = getOutDirBaseArg(argsMap)
+      val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirBasePath, ssaDir, ihm, counterExBoxOpt)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -202,9 +214,10 @@ object Main {
   private case class Compile(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirBase = getOutDirBaseArg(argsMap)
+      val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirBase, ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
       val cnt = compiler.apply(sources).size
       succeed(s"wrote $cnt file(s)")
@@ -216,9 +229,10 @@ object Main {
    */
   private case class TypeCheck(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
+      val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(ihm, counterExBoxOpt)
+      val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources)
       succeed()
@@ -254,11 +268,13 @@ object Main {
          |
          |run: compile and run the program
          | args: -out-dir=...: required, directory where to write the output file
+         |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
+         |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |typecheck: parse and typecheck the program

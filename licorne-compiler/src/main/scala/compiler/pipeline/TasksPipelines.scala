@@ -23,23 +23,29 @@ import java.nio.file.Path
  */
 object TasksPipelines {
 
+  private val ssaFileName = "ssa.txt"
+  private val ssaIndentUnit = "  "
+  private val ssaPrintTypes = true
+
   def compiler(
                 outputDirectoryPath: Path,
+                ssaDirectoryPathOpt: Option[Path],
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, Some(Path.of("./temp/out"), "ssa.txt") /* FIXME should be an option */)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
       .andThen(Backend(outputDirectoryPath))
   }
 
   def typeChecker(
+                   ssaDirectoryPathOpt: Option[Path],
                    ihm: IntHandlingMode[?],
                    counterExBoxOpt: Option[CounterexampleBox],
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, Some(Path.of("./temp/out"), "ssa.txt") /* FIXME should be an option */)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
       .andThen(_ => ())
   }
 
@@ -53,7 +59,7 @@ object TasksPipelines {
                                ihm: IntHandlingMode[?],
                                er: ErrorReporter,
                                counterExBoxOpt: Option[CounterexampleBox],
-                               ssaOutputInfoOpt: Option[(Path, String)]
+                               ssaDirPathOpt: Option[Path]
                              ): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
@@ -62,97 +68,17 @@ object TasksPipelines {
     multiFrontEnd(er)
       .andThen(ImportsScanner())
       .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, /* FIXME check that this check works */ srcRootsForPkgMismatchCheckOpt = None))
-      .andThen(
-        ssaOutputInfoOpt match {
-          case Some(ssaOutDirPath, ssaFileName) => Concurrent(
-            SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = false)
-              .andThen(StringWriter(ssaOutDirPath, ssaFileName, er, _ => true)),
-            IdentityStep(),
-            (_, program) => program
-          )
-          case None => IdentityStep()
-        }
-      ).andThen(SubtypingChecker(proxyStore, er))
+      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, identity, er, ssaDirPathOpt))
+      .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, er, counterExBoxOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
+      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()))
+      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
+      .andThen(DisplayAndTerminateIfErrors(er))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
-      .andThen(ssaOutputInfoOpt match {
-        case Some(ssaOutDirPath, ssaFileName) => Concurrent(
-          Mapper[(Program, SubtypingInfo), Program]((program, subtypingInfo) => program)
-            .andThen(SSAPrinter(proxyStore, typeCandidatesStore, "  ", printTypes = true))
-            .andThen(StringWriter(ssaOutDirPath, ssaFileName, er, _ => true)),
-          IdentityStep(),
-          (_, programData) => programData
-        )
-        case None => IdentityStep()
-      })
-  }
-
-  private def caseClassesFormat(raw: String): String = {
-    val sb = StringBuilder()
-    var indentLevel = 0
-
-    def mkNewLine(): Unit = {
-      sb.append("\n").append("  " * indentLevel)
-    }
-
-    def addChar(c: Char): Unit = {
-      c match {
-        case '\n' =>
-          mkNewLine()
-        case '(' =>
-          sb.append(c)
-          indentLevel += 1
-          mkNewLine()
-        case ')' =>
-          indentLevel -= 1
-          mkNewLine()
-          sb.append(c)
-        case ',' =>
-          sb.append(c)
-          mkNewLine()
-        case _ =>
-          sb.append(c)
-      }
-    }
-
-    var i = 0
-    while (i < raw.length) {
-      val c = raw.charAt(i)
-      if (c == '(') {
-        val closingParenthIdx = findClosingParenthesis(raw, i + 1, 20)
-        if (closingParenthIdx >= 0) {
-          sb.append(raw.substring(i, closingParenthIdx + 1))
-          i += closingParenthIdx - i
-        } else {
-          addChar('(')
-        }
-      } else {
-        addChar(c)
-      }
-      i += 1
-    }
-    sb.toString()
-  }
-
-  private def findClosingParenthesis(str: String, start: Int, maxLen: Int): Int = {
-    var i = start
-    var balance = 1
-    while (i < start + maxLen) {
-      val c = str.charAt(i)
-      if (c == '(') {
-        balance += 1
-      } else if (c == ')') {
-        balance -= 1
-      }
-      if (balance == 0) {
-        return i
-      }
-      i += 1
-    }
-    -1
+      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
   }
 
   private def defaultErrorReporter: ErrorReporter =
@@ -161,6 +87,30 @@ object TasksPipelines {
   private def defaultExit(exitCode: ExitCode): Nothing = {
     System.exit(exitCode)
     throw new AssertionError("cannot happen")
+  }
+
+  private final class MaybePrintSSA[T](
+                                        proxyStore: ProxyStore,
+                                        typeCandidatesStore: TypeCandidatesStore,
+                                        extractProgram: T => Program,
+                                        er: ErrorReporter,
+                                        ssaDirPathOpt: Option[Path]
+                                      ) extends CompilerStep[T, T] {
+    override def apply(input: T): T = {
+      ssaDirPathOpt.foreach { ssaDirPath =>
+        SSAPrinter(proxyStore, typeCandidatesStore, ssaIndentUnit, ssaPrintTypes)
+          .andThen(StringWriter(ssaDirPath, ssaFileName, er, overwriteFileCallback = _ => true))
+          .apply(extractProgram(input))
+      }
+      input
+    }
+  }
+
+  private final class DisplayAndTerminateIfErrors[T](er: ErrorReporter) extends CompilerStep[T, T] {
+    override def apply(input: T): T = {
+      er.displayAndTerminateIfErrors()
+      input
+    }
   }
 
 }
