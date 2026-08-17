@@ -46,7 +46,7 @@ trait TypesConverter {
     case StringType => CD_String
     case NullType => CD_Void
     case AnyType => CD_Object
-    case UnitType => CD_int
+    case UnitType => CD_void
     case NothingType => CD_void
   }
 
@@ -61,7 +61,7 @@ trait TypesConverter {
     case StringType => REFERENCE
     case NullType => REFERENCE
     case AnyType => REFERENCE
-    case UnitType => INT
+    case UnitType => VOID
     case NothingType => VOID
     case UnionType(types) =>
       val kinds = types.map(kindFor)

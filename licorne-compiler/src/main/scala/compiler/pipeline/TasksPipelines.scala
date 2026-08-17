@@ -33,7 +33,7 @@ object TasksPipelines {
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
                 er: ErrorReporter = defaultErrorReporter
-              ): CompilerStep[List[SourceCodeProvider], List[TypeIdentifier]] = {
+              ): CompilerStep[List[SourceCodeProvider], List[String]] = {
     typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
       .andThen(Backend(outputDirectoryPath))
   }

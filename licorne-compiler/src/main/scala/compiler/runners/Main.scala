@@ -132,7 +132,7 @@ object Main {
     getValuedArg("out-file", argsMap, Some(defaultOutputName))
   }
 
-  private def getOutDirBaseArg(argsMap: MutArgsMap): Path = {
+  private def getOutDirArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
   }
   
@@ -187,11 +187,11 @@ object Main {
    */
   private case class Run(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
-      val outDirBasePath = getOutDirBaseArg(argsMap)
+      val outDirPath = getOutDirArg(argsMap)
       val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBasePath, ssaDir, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources)
@@ -200,7 +200,7 @@ object Main {
       } else if (mainClasses.size >= 2) {
         error("found more than one main class")
       }
-      val process = new Runner(error, outDirBasePath).runMain(mainClasses.head, inheritIO = true, programArgs)
+      val process = new Runner(error, outDirPath).runMain(mainClasses.head, inheritIO = true, programArgs)
       val exitCode = process.waitFor()
       if (exitCode != 0) {
         System.err.println(s"Process terminated with error code $exitCode")
@@ -213,14 +213,13 @@ object Main {
    */
   private case class Compile(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
-      val outDirBase = getOutDirBaseArg(argsMap)
+      val outDirPath = getOutDirArg(argsMap)
       val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val compiler = TasksPipelines.compiler(outDirBase, ssaDir, ihm, counterExBoxOpt)
+      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
-      val cnt = compiler.apply(sources).size
-      succeed(s"wrote $cnt file(s)")
+      compiler.apply(sources)
     }
   }
 
@@ -235,7 +234,7 @@ object Main {
       val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources)
-      succeed()
+      println("typecheck: done")
     }
   }
 
@@ -251,13 +250,6 @@ object Main {
     if (argsMap.nonEmpty) {
       error(s"unknown argument(s): ${argsMap.keys.mkString(", ")}")
     }
-  }
-
-  private def succeed(msg: String = ""): Unit = {
-    if (msg.nonEmpty) {
-      println(msg)
-    }
-    println("task succeeded")
   }
 
   private def displayHelp(): Unit = {
