@@ -192,12 +192,14 @@ final class Typer(
         typeScopeInstructions(thenBr, infoIfCondTrue)
         typeScopeInstructions(elseBr, infoIfCondFalse)
         for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-          val thenType = thenBr.detectCurrentType(afterThenVal)
-          val elseType = elseBr.detectCurrentType(afterElseVal)
+          val afterThenValType = thenBr.detectCurrentType(afterThenVal)
+          val afterElseValType = elseBr.detectCurrentType(afterElseVal)
           val joinType = {
-            if elseBr.hasExited then thenType
-            else if thenBr.hasExited then elseType
-            else meetJoin.computeJoin(thenType, elseType)
+            if elseBr.hasExited then afterThenValType
+            else if thenBr.hasExited then afterElseValType
+            else typeCandidatesStore.getCandidates(joinedVal)
+              .find(candType => subtypingCtx.isSubtype(afterThenVal, afterThenValType, candType, thenBr) && subtypingCtx.isSubtype(afterElseVal, afterElseValType, candType, elseBr))
+              .getOrElse(meetJoin.computeJoin(afterThenValType, afterElseValType))
           }
           currScope.saveType(joinedVal, joinType)
         }
