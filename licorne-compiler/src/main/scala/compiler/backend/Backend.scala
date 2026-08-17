@@ -170,16 +170,19 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
         val afterThenValTypeKind = typeKindOf(afterThenVal, currScope)
         val afterElseValTypeKind = typeKindOf(afterElseVal, currScope)
         val joinedValTypeKind = typeKindOf(joinedVal, currScope)
-        if (joinedValTypeKind == afterThenValTypeKind && funGenCtx.hasSlotFor(afterThenVal)) {
+        if (!funGenCtx.hasSlotFor(joinedVal) && joinedValTypeKind == afterThenValTypeKind && funGenCtx.hasSlotFor(afterThenVal)) {
           funGenCtx.coalesce(afterThenVal, joinedVal)
-        } else if (joinedValTypeKind == afterElseValTypeKind && funGenCtx.hasSlotFor(afterElseVal)) {
+        } else if (!funGenCtx.hasSlotFor(joinedVal) && joinedValTypeKind == afterElseValTypeKind && funGenCtx.hasSlotFor(afterElseVal)) {
           funGenCtx.coalesce(afterElseVal, joinedVal)
         }
-        if (funGenCtx.hasSlotFor(joinedVal) && !funGenCtx.hasSlotFor(afterThenVal) && afterThenValTypeKind == joinedValTypeKind) {
+        allocateAndDeclareIfNew(joinedVal, currScope, cb)
+        if (!funGenCtx.hasSlotFor(afterThenVal) && afterThenValTypeKind == joinedValTypeKind) {
           funGenCtx.coalesce(joinedVal, afterThenVal)
-        } else if (funGenCtx.hasSlotFor(joinedVal) && !funGenCtx.hasSlotFor(afterElseVal) && afterElseValTypeKind == joinedValTypeKind) {
+        } else if (!funGenCtx.hasSlotFor(afterElseVal) && afterElseValTypeKind == joinedValTypeKind) {
           funGenCtx.coalesce(joinedVal, afterElseVal)
         }
+        allocateAndDeclareIfNew(afterThenVal, currScope, cb)
+        allocateAndDeclareIfNew(afterElseVal, currScope, cb)
       }
       val elseBrLabel = cb.newLabel()
       val afterDisjLabel = cb.newLabel()
@@ -202,7 +205,7 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     // FIXME collapse assignments when rhs is an IdValue or a constant
 
     case SSA.AssignVal(assigned, src) =>
-      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == typeKindOf(src, currScope)) {
+      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == typeKindOf(src, currScope) && !funGenCtx.hasSlotFor(assigned)) {
         funGenCtx.saveSubst(assigned, src)
       } else {
         genValueMove(assigned, src, currScope, cb)
