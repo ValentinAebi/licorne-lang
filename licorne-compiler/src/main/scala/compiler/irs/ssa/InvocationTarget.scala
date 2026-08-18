@@ -4,6 +4,8 @@ import compiler.identifiers.FunOrVarId
 import compiler.lang.Types.Type
 import compiler.lang.{FunctionSignature, RuntimeTypeSignature}
 
+import java.util.Objects
+
 final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   private var receiverSigOpt = Option.empty[RuntimeTypeSignature]
   private var funSigOpt = Option.empty[FunctionSignature]
@@ -28,7 +30,7 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   }
 
   def getReceiverSigUnsafe: RuntimeTypeSignature = receiverSigOpt.get
-  
+
   def getFunSigOpt: Option[FunctionSignature] = funSigOpt
 
   def getFunSigUnsafe: FunctionSignature = funSigOpt.get
@@ -38,6 +40,17 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   override def markUnresolvable(): Unit = {
     cannotResolveFlag = true
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case obj: InvocationTarget =>
+      this.receiverSigOpt == obj.receiverSigOpt &&
+        this.funSigOpt == obj.funSigOpt &&
+        this.instantiatedReturnTypeOpt == obj.instantiatedReturnTypeOpt &&
+        this.cannotResolveFlag == obj.cannotResolveFlag
+    case _ => false
+  }
+
+  override def hashCode(): Int = Objects.hash(receiverSigOpt, funSigOpt, instantiatedReturnTypeOpt, cannotResolveFlag)
 
   override def toString: String = {
     if isResolved then s"$funId<rec:${getFunSigUnsafe.ownerName};ret:$getInstantiatedReturnTypeUnsafe>"

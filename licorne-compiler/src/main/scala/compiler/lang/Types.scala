@@ -143,6 +143,16 @@ object Types {
       val (base, pred) = flattenPred(this)
       RefinedType(base, pred)
     }
+    
+    def predicateAsSetOfConjuncts: SeqSet[Formula] = {
+      
+      def splitPredicate(pred: Formula): List[Formula] = pred match {
+        case LogicalAnd(lhs, rhs) => splitPredicate(lhs) ++ splitPredicate(rhs)
+        case pred => List(pred)
+      }
+      
+      SeqSet(splitPredicate(predicate))
+    }
 
     override def toString: String = s"$baseType ${Keyword.With} $predicate"
   }
@@ -437,6 +447,12 @@ object Types {
         val predicateParts = lowerBoundOpt.map(LessOrEq(_, itValue)) ++ upperBoundOpt.map(LessOrEq(itValue, _))
         val predicate = if predicateParts.isEmpty then BoolConst(true) else predicateParts.reduce[Formula](LogicalAnd(_, _))
         RefinedType(IntType, predicate)
+      case IntersectionType(types) =>
+        val refTypes = types.map(_.asRefinedType)
+        val bases = refTypes.map(_.baseType)
+        val predicates = refTypes.flatMap(_.predicateAsSetOfConjuncts)
+        val pred = if predicates.isEmpty then BoolConst(true) else predicates.reduceLeft(LogicalAnd(_, _))
+        RefinedType(IntersectionType(bases), pred)
       case tpe => RefinedType(tpe, BoolConst(true))
     }
   }

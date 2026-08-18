@@ -1,7 +1,8 @@
 package compiler.reasoning
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas.Formula
+import compiler.irs.ssa.Formulas
+import compiler.irs.ssa.Formulas.{BoolConst, Formula, LogicalAnd}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
@@ -12,6 +13,7 @@ import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.util.boundary
 
 // TODO caching
@@ -61,15 +63,13 @@ final class MeetJoinComputer(
             case 1 => nonNullDealiasedTypes.head
             case _ => nonNullDealiasedTypes.find(superT => nonNullDealiasedTypes.forall(subtypingCtx.isSubtype(_, superT))).getOrElse {
 
-              val namedTypes = mutable.ListBuffer.empty[NamedType]
-              val closureTypes = mutable.ListBuffer.empty[ClosureType]
-              val intRangeTypes = mutable.ListBuffer.empty[IntRangeType]
+              val namedTypes = mutable.LinkedHashSet.empty[NamedType]
+              val closureTypes = mutable.LinkedHashSet.empty[ClosureType]
+              val otherTypes = mutable.LinkedHashSet.empty[Type]
 
-              val typesIter = nonNullDealiasedTypes.iterator
+              val predicates = mutable.ListBuffer.empty[SeqSet[Formula]]
 
               def dispatch(tpe: Type): Unit = tpe match {
-                case tv: TypeVariable =>
-                  dispatch(tv.upperBoundOpt.getOrElse(AnyType))
                 case AnyType =>
                   boundary.break(AnyType)
                 case NothingType => ()
@@ -77,34 +77,41 @@ final class MeetJoinComputer(
                   namedTypes.addOne(namedType)
                 case closureType: ClosureType =>
                   closureTypes.addOne(closureType)
-                case intRangeType: IntRangeType =>
-                  intRangeTypes.addOne(intRangeType)
                 case RefinedType(baseType, predicate) =>
-                  dispatch(baseType)
+                  throw AssertionError("unexpected refined type")
+                case intRangeType: IntRangeType =>
+                  throw AssertionError(s"unexpected range type")
                 case unionType: UnionType =>
                   throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
                 case nullableType: NullableType =>
                   throw AssertionError(s"unexpected nullable type: $nullableType")
-                case _ => ()
+                case tv: TypeVariable =>
+                  throw AssertionError("unexpected type variable")
+                case tpe =>
+                  otherTypes.addOne(tpe)
               }
 
-              while (typesIter.hasNext) {
-                dispatch(typesIter.next())
+              for (tpe <- nonNullDealiasedTypes) {
+                val refType = tpe.withTypeVarsExpanded.asRefinedType(using globalValuesContext)
+                dispatch(refType.baseType)
+                predicates.addOne(refType.predicateAsSetOfConjuncts)
               }
-              
-              val rawJoin = {
-                if namedTypes.isEmpty && intRangeTypes.isEmpty && closureTypes.isEmpty then NothingType
-                else if namedTypes.isEmpty && intRangeTypes.isEmpty && closureTypes.nonEmpty then computeJoinOfClosures(closureTypes.distinct).getOrElse(AnyType)
-                else if namedTypes.isEmpty && intRangeTypes.nonEmpty then computeJoinOfRanges(intRangeTypes.distinct)
-                else if namedTypes.nonEmpty then computeJoinOfNamed(namedTypes.distinct).getOrElse(AnyType)
+
+              val unrefinedJoin = {
+                if otherTypes.nonEmpty && (namedTypes.nonEmpty || closureTypes.nonEmpty) then AnyType
+                else if otherTypes.size == 1 then otherTypes.head
+                else if otherTypes.nonEmpty then AnyType
+                else if namedTypes.isEmpty && closureTypes.nonEmpty then computeJoinOfClosures(closureTypes).getOrElse(AnyType)
+                else if namedTypes.nonEmpty && closureTypes.isEmpty then computeJoinOfNamed(namedTypes).getOrElse(AnyType)
                 else AnyType
               }
-              
-              simplifier.simplify(rawJoin)
+
+              simplifier.simplify(RefinedType(unrefinedJoin, joinPredicates(predicates)))
             }
           }
       }
     }
+
     if nullableFlag
     then NullableType(nonNullType)
     else nonNullType
@@ -295,6 +302,13 @@ final class MeetJoinComputer(
         subtypingCtx.isSubtype(tpe, rawMeet) && !subtypingCtx.isSubtype(rawMeet, tpe)
       }.getOrElse(rawMeet)
     }
+  }
+
+  private def joinPredicates(predicates: collection.Seq[SeqSet[Formula]]) = {
+    predicates.flatten
+      .filter(cp => predicates.forall(_.exists(solver.canProveImplication(_, cp))))
+      .distinct
+      .foldLeft[Formula](BoolConst(true))(LogicalAnd(_, _))
   }
 
   private def mapUnboundedToInt(tpe: Type): Type = tpe match {

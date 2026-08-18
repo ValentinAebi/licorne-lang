@@ -145,9 +145,15 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
         case _ => (base3, pred3)
       }
 
-      // Finally: remove useless predicate
-      if pred4 == BoolConst(true) then base4 else RefinedType(base4, pred4)
+      // remove useless predicate
+      val rawRefRes = if pred4 == BoolConst(true) then base4 else RefinedType(base4, pred4)
 
+      // remove duplicate predicates
+      rawRefRes match {
+        case rawRefRes: RefinedType =>
+          RefinedType(rawRefRes.baseType, rawRefRes.predicateAsSetOfConjuncts.reduceLeft(LogicalAnd(_, _)))
+        case rawRefRes => rawRefRes
+      }
 
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplifyInt), upperBoundOpt.map(simplifyInt)) match {

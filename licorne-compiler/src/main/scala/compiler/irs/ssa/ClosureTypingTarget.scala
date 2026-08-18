@@ -2,6 +2,8 @@ package compiler.irs.ssa
 
 import compiler.lang.Types.ClosureType
 
+import java.util.Objects
+
 final class ClosureTypingTarget extends CallableTarget {
   private var typeOpt = Option.empty[ClosureType]
   private var unresolvableFlag = false
@@ -27,5 +29,14 @@ final class ClosureTypingTarget extends CallableTarget {
     }
     typeOpt = Some(tpe)
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case obj: ClosureTypingTarget =>
+      this.typeOpt == obj.typeOpt &&
+        this.unresolvableFlag == obj.unresolvableFlag
+    case _ => false
+  }
+
+  override def hashCode(): Int = Objects.hash(typeOpt, unresolvableFlag)
 
 }
