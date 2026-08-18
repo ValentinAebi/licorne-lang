@@ -1,0 +1,7 @@
+package licorne.closures;
+
+
+interface Closure[R] {
+    fn setArg(this, idx: [0..])
+    fn run(this) -> R
+}
