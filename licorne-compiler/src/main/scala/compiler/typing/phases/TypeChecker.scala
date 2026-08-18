@@ -1,15 +1,16 @@
 package compiler.typing.phases
 
 import compiler.irs.ssa.SSA
+import compiler.irs.ssa.SSA.AssigningInstr
 import compiler.lang.FunctionSignature
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
+import compiler.reasoning.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.reasoning.*
 import compiler.typing.*
 import compiler.typing.contexts.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -48,7 +49,7 @@ final class TypeChecker(
       for {
         ((ownerId, funId), func) <- program.functions
         funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
-        if !funSig.isSynthetic
+        if !funSig.isSyntheticAccessor
       } {
         checkFunc(funSig, func, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
       }

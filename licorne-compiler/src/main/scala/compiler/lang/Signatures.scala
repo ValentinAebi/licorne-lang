@@ -34,7 +34,7 @@ final case class FunctionSignature(
                                     purity: Purity,
                                     isMain: Boolean,
                                     declPosOpt: Option[Position],
-                                    isSynthetic: Boolean = false
+                                    isSyntheticAccessor: Boolean = false
                                   ) extends DeclSignature, ExecutionEnvironment {
 
   override def sigName: Identifier = functionName
@@ -233,8 +233,10 @@ final case class ObjectSignature(
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
-  extends RuntimeTypeSignature, AbstractTypeSig, ConcreteTypeSig, EncapsulatedTypeSig {
+  extends RuntimeTypeSignature, ConcreteTypeSig, EncapsulatedTypeSig {
   override def typeParams: List[TypeTypeParamInfo] = List.empty
+
+  override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
 }
 
 final case class DatatypeSignature(

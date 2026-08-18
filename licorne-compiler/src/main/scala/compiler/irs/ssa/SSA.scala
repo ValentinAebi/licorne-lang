@@ -470,7 +470,7 @@ object SSA {
       }
     }
 
-    def saveSmartcast(f: Formula, smartcastType: Type)(using TypeParamsContext, Simplifier): Unit = {
+    def saveSmartcast(f: Formula, smartcastType: Type): Unit = {
       smartcastsEGraph.saveSmartcast(f, smartcastType)
     }
 

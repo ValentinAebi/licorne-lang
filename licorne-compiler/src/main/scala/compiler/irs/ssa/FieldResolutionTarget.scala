@@ -1,7 +1,7 @@
 package compiler.irs.ssa
 
 import compiler.identifiers.FunOrVarId
-import compiler.lang.RuntimeTypeSignature
+import compiler.lang.{Field, RuntimeTypeSignature}
 import compiler.lang.Types.Type
 
 final class FieldResolutionTarget(val fieldId: FunOrVarId) {
@@ -32,6 +32,8 @@ final class FieldResolutionTarget(val fieldId: FunOrVarId) {
   def getReceiverSigUnsafe: RuntimeTypeSignature = receiverSigOpt.get
 
   def getInstantiatedTypeUnsafe: Type = instantiatedTypeOpt.get
+  
+  def getFieldUnsafe: Field = getReceiverSigUnsafe.fields.apply(fieldId)
 
   def markUnresolvable(): Unit = {
     cannotResolveFlag = true

@@ -1,6 +1,7 @@
 package compiler.backend
 
 import compiler.irs.ssa.Formulas.IdValue
+import compiler.lang.FunctionSignature
 import compiler.lang.Types.Type
 import compiler.reporting.Position
 
@@ -9,7 +10,7 @@ import scala.collection.mutable
 
 
 // TODO slots assignment could be optimized (using register allocation techniques...)
-final class FunctionGenerationContext(val funRetType: Type) {
+final class FunctionGenerationContext(val enclosingFunc: FunctionSignature) {
   private val slotsAssignment = mutable.Map.empty[IdValue, Int]
   private val valuesSubst = mutable.Map.empty[IdValue, IdValue]
   // TODO constSubst for kinds other than int

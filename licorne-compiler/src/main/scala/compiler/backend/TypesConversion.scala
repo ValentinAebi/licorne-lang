@@ -1,5 +1,6 @@
 package compiler.backend
 
+import compiler.backend.Boxing.boxDesc
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.*
@@ -34,8 +35,10 @@ trait TypesConverter {
         case Some(primDesc) => primDesc
         case None => descriptors.head
       }
-    case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) =>
-      typeShouldBeUnreachable(tpe)
+    case RefinedType(baseType, predicate) => descriptorFor(baseType)
+    case IntRangeType(_, _) => CD_int
+    case NullableType(nullatedType) => boxDesc(descriptorFor(nullatedType))
+    case tv: TypeVariable => descriptorFor(tv.upperBoundOpt.getOrElse(AnyType))
   }
 
   def descriptorForPrimitive(tpe: PrimitiveType): ClassDesc = tpe match {
@@ -73,7 +76,10 @@ trait TypesConverter {
         case None => kindFor(types.head)
       }
     case tpe: (NamedType | ClosureType) => REFERENCE
-    case tpe: (RefinedType | IntRangeType | NullableType | TypeVariable) => typeShouldBeUnreachable(tpe)
+    case RefinedType(baseType, predicate) => kindFor(baseType)
+    case IntRangeType(_, _) => INT
+    case NullableType(_) => REFERENCE
+    case tv: TypeVariable => kindFor(tv.upperBoundOpt.getOrElse(AnyType))
   }
 
   private def getRuntimeType(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
@@ -84,10 +90,6 @@ trait TypesConverter {
     case UnionType(types) => UnionType(types.map(getRuntimeType))
     case IntersectionType(types) => IntersectionType(types.map(getRuntimeType))
     case tpe => tpe
-  }
-
-  private def typeShouldBeUnreachable(tpe: Type): Nothing = {
-    throw AssertionError(s"should be unreachable: ${tpe.getClass} should be mapped to a concrete type through preprocessing")
   }
 
 }

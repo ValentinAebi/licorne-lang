@@ -375,7 +375,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSynthetic = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
