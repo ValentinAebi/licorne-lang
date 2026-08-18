@@ -1,0 +1,7 @@
+package licorne.collections;
+
+interface OrderedSeq[+T] : Seq[T] {
+
+    pure fn get(this, i: Idx(this)) -> T
+
+}

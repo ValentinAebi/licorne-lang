@@ -1,0 +1,4 @@
+package licorne.collections;
+
+interface MutSeq[T] : Seq[T]
+

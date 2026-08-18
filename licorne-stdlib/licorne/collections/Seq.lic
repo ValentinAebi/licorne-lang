@@ -1,0 +1,3 @@
+package licorne.collections;
+
+interface Seq[+T] : Collection[T]

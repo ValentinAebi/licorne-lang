@@ -1,0 +1,10 @@
+package licorne.core;
+
+typealias NNInt = [0..]
+typealias PInt = [1..]
+typealias NPInt = [..0]
+typealias NInt = [..-1]
+typealias NZInt = Int with it != 0
+
+typealias Cnt = NNInt
+

@@ -1,0 +1,14 @@
+package licorne.collections;
+
+class Array[T](public size: Size) : MutOrderedSeq[T] {
+
+    pure fn get(this, i: Idx(this)) -> T {
+        panic "stub, compiled to xALOAD"
+    }
+
+    fn set(this, i: Idx(this), elem: T) {
+        panic "stub, compiled to xSTORE"
+    }
+
+}
+

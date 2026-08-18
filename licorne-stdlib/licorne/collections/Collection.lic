@@ -1,0 +1,7 @@
+package licorne.collections;
+
+interface Collection[+T] {
+
+    pure fn size(this) -> Size
+
+}
