@@ -890,7 +890,7 @@ final class Typer(
   }
 
   def typeFunSig(functionSignature: FunctionSignature, ownerTypeParamsCtx: TypeParamsContext): FunctionSignature = solver.onNewFrame {
-    val FunctionSignature(ownerName, functionName, typeParamsRaw, paramsInclThisRaw, precondOpt, retTypeRaw, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = functionSignature
+    val FunctionSignature(ownerName, functionName, typeParamsRaw, paramsInclThisRaw, precondOpt, retTypeRaw, sigScope, visibility, purity, isMain, declPosOpt, isAbstract, isSynthetic) = functionSignature
 
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParamsRaw) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
@@ -918,7 +918,7 @@ final class Typer(
     val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
       FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt,
-        retTypeInst, sigScope, visibility, purity, isMain, declPosOpt, isSynthetic)
+        retTypeInst, sigScope, visibility, purity, isMain, declPosOpt, isAbstract, isSynthetic)
     }
   }
 

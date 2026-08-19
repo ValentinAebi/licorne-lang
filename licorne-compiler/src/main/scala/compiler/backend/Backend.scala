@@ -68,9 +68,13 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       ClassDesc.of(tid.stringId),
       cb => {
         val (majorVersion, minorVersion) = javaVersionCode
+        var flags = ClassFile.ACC_PUBLIC
         if (tSig.isInstanceOf[AbstractTypeSig]) {
-          cb.withFlags(ClassFile.ACC_INTERFACE)
+          flags |= ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
+        } else {
+          flags |= ClassFile.ACC_FINAL
         }
+        cb.withFlags(flags)
         cb.withVersion(majorVersion, minorVersion)
         tSig match {
           case tSig: ObjectSignature =>
@@ -192,10 +196,14 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
   }
 
   private def mkFunFlags(funSig: FunctionSignature): Int = {
-    funSig.visibility match {
+    var flags = funSig.visibility match {
       case Visibility.Private => ClassFile.ACC_PRIVATE
       case Visibility.Public => ClassFile.ACC_PUBLIC
     }
+    if (funSig.isAbstract) {
+      flags |= ClassFile.ACC_ABSTRACT
+    }
+    flags
   }
 
   private def mkPathToClass(typeId: TypeIdentifier): Path = {
@@ -290,6 +298,7 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
         genValueMove(joinedVal, afterElseVal, currScope, cb)
       }
       cb.labelBinding(afterDisjLabel)
+      cb.nop()
 
     case SSA.StaticTypeAssert(value, tpe) => ()
 

@@ -375,7 +375,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, fieldsOwner.getPosition, isAbstract = false, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
@@ -469,7 +469,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
         val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
         val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
-          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition)
+          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition, isAbstract = functionsProvider.isInstanceOf[Asts.InterfaceDef | Asts.DataTypeDef], isSyntheticAccessor = false)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig.ownerAndName -> function)
         if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {

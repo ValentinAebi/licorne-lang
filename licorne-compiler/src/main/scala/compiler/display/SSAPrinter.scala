@@ -148,7 +148,7 @@ final class SSAPrinter(
 
   private def printFunction(funSig: FunctionSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, purity, isMain, declPosOpt, isSynthetic) = funSig
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, purity, isMain, declPosOpt, isAbstract, isSynthetic) = funSig
     pps.add(if isMain then "MAIN " else "")
       .add(s"METHOD ($visibility, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
     program.functions.get(funSig.ownerAndName)

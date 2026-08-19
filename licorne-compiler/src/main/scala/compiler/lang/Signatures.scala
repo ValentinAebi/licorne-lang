@@ -34,7 +34,8 @@ final case class FunctionSignature(
                                     purity: Purity,
                                     isMain: Boolean,
                                     declPosOpt: Option[Position],
-                                    isSyntheticAccessor: Boolean = false
+                                    isAbstract: Boolean,
+                                    isSyntheticAccessor: Boolean
                                   ) extends DeclSignature, ExecutionEnvironment {
 
   override def sigName: Identifier = functionName
@@ -76,7 +77,9 @@ final case class FunctionSignature(
     visibility,
     purity,
     isMain,
-    declPosOpt
+    declPosOpt,
+    isAbstract,
+    isSyntheticAccessor
   )
 
   override def toString: String = {
