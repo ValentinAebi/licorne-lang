@@ -286,6 +286,14 @@ object SSA {
   }
 
   final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr, PureInstr {
+    private var tConvOpt: Option[Option[TypeConversion]] = None
+    
+    def resolveTypeConversion(tcOpt: Option[TypeConversion]): Unit = {
+      tConvOpt = Some(tcOpt)
+    }
+
+    def forceGetTypeConversion: Option[TypeConversion] = tConvOpt.get
+    
     override def usedVals: Set[IdValue] = Set(inValue)
 
     override def directlyUsedVals: Set[IdValue] = Set(inValue)

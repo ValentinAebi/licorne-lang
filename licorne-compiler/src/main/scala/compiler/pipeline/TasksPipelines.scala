@@ -35,7 +35,7 @@ object TasksPipelines {
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
     typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
-      .andThen(Backend(outputDirectoryPath))
+      .andThen(Backend(outputDirectoryPath, er))
   }
 
   def typeChecker(

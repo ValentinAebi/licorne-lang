@@ -12,5 +12,6 @@ enum CompilationStep {
   case DeclarationsAnalysis
   case TypeChecking
   case OverridesAnalysis
+  case CodeGen
   case StringWriting
 }

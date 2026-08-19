@@ -6,13 +6,16 @@ import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
+import compiler.lang
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType}
 import compiler.lang.Types.{NamedType, Type}
+import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
+import compiler.reporting.Errors.ErrorReporter
 import compiler.typing.SubtypingInfo
-import compiler.typing.contexts.DealiasingContext
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
 import compiler.util.toJavaUtilList
 
 import java.lang
@@ -24,7 +27,7 @@ import java.nio.file.{Files, Path}
 import scala.collection.mutable
 
 // TODO make sure that main functions have input type Array[String] (or possibly take no argument)
-final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
+final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
 
   // TODO see if lower JVM versions can be supported
   private val javaVersionCode = (ClassFile.JAVA_25_VERSION, 0)
@@ -48,18 +51,20 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
 
     given SimplifiedSubtypingContext = SimplifiedSubtypingContext(subtypingInfo.subtypingGraph)
 
-    val generatedClasses = mutable.LinkedHashSet.empty[String]
+    given ResolutionContext = ResolutionContext(program, er)(using CodeGen)
+
+    val mainClasses = mutable.LinkedHashSet.empty[String]
     for (tSig <- program.runtimeSignatures) {
       if (tSig.functions.exists(_._2.isMain)) {
-        generatedClasses.add(tSig.id.stringId)
+        mainClasses.add(tSig.id.stringId)
       }
       generateTypeDecl(tSig, program)
     }
-    generatedClasses.toList
+    mainClasses.toList
   }
 
   private def generateTypeDecl(tSig: RuntimeTypeSignature, program: Program)
-                              (using DealiasingContext, SimplifiedSubtypingContext): Unit = {
+                              (using DealiasingContext, SimplifiedSubtypingContext, ResolutionContext): Unit = {
     val tid = tSig.id
     val path = mkPathToClass(tid)
     Files.createDirectories(path.getParent)
@@ -81,8 +86,10 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
             generateInstanceFieldAndInitializer(tSig, cb)
           case _ => ()
         }
-        if (tSig.isInstanceOf[ConcreteTypeSig]) {
-          generateConstructor(tid, tSig.fields.values, cb, isPrivate = tSig.isInstanceOf[ObjectSignature])
+        tSig match {
+          case tSig: ConcreteTypeSig =>
+            generateConstructor(tSig, cb, isPrivate = tSig.isInstanceOf[ObjectSignature])
+          case _ => ()
         }
         generateFields(tid, tSig.fields.values, cb)
         generateFunctions(tid, tSig.functions.values, cb)(using program)
@@ -122,20 +129,20 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
     }
   }
 
-  private def generateConstructor(ownerId: TypeIdentifier, fields: Iterable[Field], cb: ClassBuilder, isPrivate: Boolean)(using DealiasingContext): Unit = {
+  private def generateConstructor(tSig: ConcreteTypeSig, cb: ClassBuilder, isPrivate: Boolean)(using DealiasingContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val constrDesc = MethodTypeDesc.of(CD_void, fields.map(f => tConv.descriptorFor(f.tpe)).toArray *)
+    val constrDesc = mkConstrDesc(tSig)
     val flags = if isPrivate then ClassFile.ACC_PRIVATE else ClassFile.ACC_PUBLIC
     cb.withMethod(INIT_NAME, constrDesc, flags, mb => mb.withCode(cb => {
       cb.aload(cb.receiverSlot())
       cb.dup()
       cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
       var paramSlotIdx = 1
-      for (fld <- fields) {
+      for (fld <- tSig.fields.values) {
         cb.aload(paramSlotIdx)
         val fldId = fld.id.stringId
         val fldTypeDesc = tConv.descriptorFor(fld.tpe)
-        cb.putfield(tConv.descriptorFor(ownerId), fldId, fldTypeDesc)
+        cb.putfield(tConv.descriptorFor(tSig.id), fldId, fldTypeDesc)
         cb.localVariable(paramSlotIdx, fldId, fldTypeDesc, cb.startLabel(), cb.endLabel())
         paramSlotIdx += tConv.kindFor(fld.tpe).slotSize()
       }
@@ -144,7 +151,8 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
   }
 
   private def generateFunctions(ownerId: TypeIdentifier, functions: Iterable[FunctionSignature], cb: ClassBuilder)
-                               (using program: Program, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext): Unit = {
+                               (using program: Program, dealiasingCtx: DealiasingContext,
+                                simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = {
     for (funSig <- functions) {
       val bodyOpt = program.functions.apply(ownerId, funSig.functionName).bodyOpt
       generateFunc(funSig, bodyOpt, cb)
@@ -169,7 +177,7 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
   }
 
   private def generateFunc(funSig: FunctionSignature, bodyOpt: Option[SSA.Scope], cb: ClassBuilder)
-                          (using DealiasingContext, SimplifiedSubtypingContext): Unit = {
+                          (using DealiasingContext, SimplifiedSubtypingContext, ResolutionContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val funDesc = mkFunDesc(funSig)
     cb.withMethod(funSig.functionName.stringId, funDesc, mkFunFlags(funSig), mb => {
@@ -195,6 +203,11 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       funSig.paramsWithoutThis.map((_, tpe) => tConv.descriptorFor(tpe)).toJavaUtilList)
   }
 
+  private def mkConstrDesc(tSig: ConcreteTypeSig)(using DealiasingContext): MethodTypeDesc = {
+    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+    MethodTypeDesc.of(CD_void, tSig.fields.values.map(f => tConv.descriptorFor(f.tpe)).toArray *)
+  }
+
   private def mkFunFlags(funSig: FunctionSignature): Int = {
     var flags = funSig.visibility match {
       case Visibility.Private => ClassFile.ACC_PRIVATE
@@ -213,7 +226,8 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
   }
 
   private def generateScope(scope: SSA.Scope, cb: CodeBuilder)
-                           (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext): Unit = {
+                           (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext,
+                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = {
     scope.writeInstrIndices()
     try {
       for (instr <- scope.instructions) {
@@ -228,7 +242,8 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
   }
 
   private def generateInstr(instr: SSA.Instr, cb: CodeBuilder, currScope: SSA.Scope)
-                           (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext): Unit = instr match {
+                           (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext,
+                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = instr match {
 
     case scope: SSA.Scope => generateScope(scope, cb)
 
@@ -429,7 +444,19 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
 
     case SSA.InvokeClosure(assigned, callee, closureTypingTarget, args) => ???
 
-    case SSA.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) => ???
+    case SSA.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val fieldsInitMap = fieldsInit.toMap
+      val createdObjTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName).get
+      cb.new_(tConv.descriptorFor(classOrRecordName))
+      cb.dup()
+      for (fld <- createdObjTypeSig.fields.values) {
+        val argVal = fieldsInitMap.apply(fld.id)
+        genValueLoad(argVal, currScope, cb)
+        ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
+      }
+      cb.invokespecial(tConv.descriptorFor(classOrRecordName), INIT_NAME, mkConstrDesc(createdObjTypeSig))
+      genValueStore(assigned, currScope, cb)
 
     case SSA.MkClosure(assigned, params, body, isPure) => ???
 
@@ -449,7 +476,24 @@ final class Backend(outputDirectoryPath: Path) extends CompilerStep[(Program, Su
       cb.checkcast(tConv.descriptorFor(target))
       genValueStore(inValue, currScope, cb)
 
-    case SSA.Conversion(assigned, inValue, targetType) => ???
+    case conv@SSA.Conversion(assigned, inValue, targetType) =>
+      import compiler.lang.TypeConversion.*
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      conv.forceGetTypeConversion match {
+        case None => generateInstr(AssignVal(assigned, inValue), cb, currScope)
+        case Some(conversion) =>
+          genValueLoad(inValue, currScope, cb)
+          conversion match {
+            case Int2Double => cb.i2d()
+            case Double2Int => cb.d2i()
+            case IntToChar => cb.i2c()
+            case CharToInt => ()
+            case IntToString | BoolToString | CharToString | DoubleToString =>
+              val fromDesc = tConv.descriptorFor(conversion.from)
+              cb.invokestatic(boxDesc(fromDesc), "toString", MethodTypeDesc.of(CD_String, fromDesc))
+          }
+          genValueStore(assigned, currScope, cb)
+      }
 
     case SSA.HybridCast(inValue) => ???
 

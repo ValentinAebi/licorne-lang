@@ -12,10 +12,10 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
+import compiler.reasoning.*
 import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.reasoning.*
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -441,10 +441,14 @@ final class Typer(
 
       case conv@Conversion(assigned, inValue, targetType) =>
         val inValType = requireNonNullable(currScope.computeCurrentType(inValue, conv.getPosition).ignoreRangesShallow, "converted value", conv.getPosition)
-        if (inValType == targetType || TypeConversion.conversionFor(inValType, targetType).isDefined) {
-          currScope.saveType(assigned, targetType)
-        } else {
-          er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
+        TypeConversion.conversionFor(inValType, targetType) match {
+          case _ if inValType == targetType =>
+            conv.resolveTypeConversion(None)
+          case someConv@Some(_) =>
+            currScope.saveType(assigned, targetType)
+            conv.resolveTypeConversion(someConv)
+          case _ =>
+            er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
         }
 
       case ret@Return(retVal) =>
