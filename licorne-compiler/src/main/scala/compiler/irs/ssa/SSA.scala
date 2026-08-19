@@ -233,6 +233,10 @@ object SSA {
 
   final case class LogicNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr, UnaryOp
 
+  final case class And(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
+
+  final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
+
   final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
 
   final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp

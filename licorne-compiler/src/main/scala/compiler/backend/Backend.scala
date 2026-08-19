@@ -3,7 +3,7 @@ package compiler.backend
 import compiler.backend.Boxing.boxDesc
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
+import compiler.irs.ssa.Formulas.{Formula, IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
 import compiler.lang
@@ -364,16 +364,13 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.Rem(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
 
     case SSA.LogicNeg(assigned, operand) =>
+      cb.iconst_m1()
       genValueLoad(operand, currScope, cb)
-      val returnTrueLabel = cb.newLabel()
-      val endLabel = cb.newLabel()
-      cb.ifeq(returnTrueLabel)
-      cb.iconst_0()
-      cb.goto_(endLabel)
-      cb.labelBinding(returnTrueLabel)
-      cb.iconst_1()
-      cb.labelBinding(endLabel)
+      cb.ixor()
       genValueStore(assigned, currScope, cb)
+
+    case And(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.iand(), _ => assert(false))
+    case Or(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.ior(), _ => assert(false))
 
     case SSA.Equal(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
       genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.ifeq(_))
@@ -495,7 +492,31 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
           genValueStore(assigned, currScope, cb)
       }
 
-    case SSA.HybridCast(inValue) => ???
+    case hCast@SSA.HybridCast(inValue) =>
+      val assertionErrorDesc = ClassDesc.ofInternalName(assertionErrorInternalName)
+      val skipThrowLabel = cb.newLabel()
+      hCast.getTargetRefinement match {
+        case Some(formula) =>
+          val (ssa, resVal) = FormulasCompilation.convertFormulaToSSA(formula, currScope)
+          for (instr <- ssa) {
+            generateInstr(instr, cb, currScope)
+          }
+          cb.ifne(skipThrowLabel)
+          cb.new_(assertionErrorDesc)
+          cb.dup()
+          cb.ldc(s"assertion $formula failed")
+          cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+          cb.athrow()
+        case None =>
+          genValueLoad(inValue, currScope, cb)
+          cb.ifnonnull(skipThrowLabel)
+          cb.new_(assertionErrorDesc)
+          cb.dup()
+          cb.ldc(s"non nullity assertion failed")
+          cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+          cb.athrow()
+      }
+      cb.labelBinding(skipThrowLabel)
 
     case ret@SSA.Return(retVal) =>
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx

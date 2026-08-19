@@ -279,6 +279,14 @@ final class Typer(
         typeLogicalNeg(operand, currScope, neg.getPosition)
       }
 
+      case and@And(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.And, and.getPosition)
+      }
+
+      case or@Or(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
+        typeLogicalBinop(lhs, rhs, currScope, Operator.Or, or.getPosition)
+      }
+
       case leq@Leq(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
         typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, leq.getPosition)
       }
@@ -429,7 +437,7 @@ final class Typer(
             val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
               irModif {
-                hybridCast.setMode(AssertPredicate(targetPred))
+                hybridCast.setMode(AssertPredicate(targetPred.substitute(itValue, inValue)))
               }
               currScope.saveSmartcast(inValue, targetType)
             } else {
