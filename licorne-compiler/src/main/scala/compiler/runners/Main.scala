@@ -11,6 +11,7 @@ import scala.collection.mutable
 
 object Main {
 
+  private val defaultClassOutDir = "./classes"
   private val cmdLineExitCode = -22
 
   private type MutArgsMap = mutable.Map[String, Option[String]]
@@ -133,7 +134,7 @@ object Main {
   }
 
   private def getOutDirArg(argsMap: MutArgsMap): Path = {
-    Paths.get(getValuedArg("out-dir", argsMap, Some(".")))
+    Paths.get(getValuedArg("out-dir", argsMap, Some(defaultClassOutDir)))
   }
   
   private def getSSADirArg(argsMap: MutArgsMap): Option[Path] = {
