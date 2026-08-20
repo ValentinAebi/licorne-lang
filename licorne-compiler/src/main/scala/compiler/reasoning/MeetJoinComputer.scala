@@ -128,7 +128,7 @@ final class MeetJoinComputer(
           Map.empty[TypeIdentifier, Type]
       })
     })
-    val candidatesIdsIter = computeJoinOfTypeIds(types.map(_.typeName))
+    val candidatesIdsIter = computeJoinOfTypeIds(types.map(_.typeName)).iterator
     while (candidatesIdsIter.hasNext) {
       val candidateSig = candidatesIdsIter.next()
       val candidateSubstOpt = boundary {
@@ -181,57 +181,34 @@ final class MeetJoinComputer(
     Some(ClosureType(paramTypesMeetsB.result(), resultTypeJoin, enforcedPure))
   }
 
-  def computeJoinOfTypeIds(types: Iterable[TypeIdentifier]): Iterator[RuntimeTypeSignature] = {
-    val alreadyChecked = mutable.HashSet.empty[TypeIdentifier]
+  def computeJoinOfTypeIds(types: Iterable[TypeIdentifier]): Iterable[RuntimeTypeSignature] = {
+    val superTypeSigs = mutable.ListBuffer.empty[RuntimeTypeSignature]
     val worklist = mutable.Queue.empty[TypeIdentifier]
-    worklist.enqueueAll(types)
-
-    enum State {
-      case Unknown
-      case HasNext(next: RuntimeTypeSignature)
-      case Finished
+    val alreadySeen = mutable.Set.empty[TypeIdentifier]
+    
+    def enqueue(tid: TypeIdentifier): Unit = {
+      if (!alreadySeen.contains(tid)) {
+        worklist.enqueue(tid)
+      }
     }
-
-    import State.*
-    new Iterator[RuntimeTypeSignature] {
-      private var state = Unknown
-
-      private def search(): Unit = {
-        if (state != Unknown) {
-          return
-        }
-        while (worklist.nonEmpty) {
-          val curr = worklist.dequeue()
-          val currSigOpt = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](curr)
-          val isValidSupertypeOfAll = currSigOpt.isDefined && types.forall(tpe => subtypingCtx.subToSuperSubst(tpe, curr).isDefined)
-          alreadyChecked.add(curr)
-          worklist.enqueueAll(
-            currSigOpt.toList
-              .flatMap(_.directSupertypes.map(_.typeName))
-              .filterNot(alreadyChecked.contains)
-          )
-          if (isValidSupertypeOfAll) {
-            state = HasNext(currSigOpt.get)
-            return
-          }
-        }
-        state = Finished
-      }
-
-      override def hasNext: Boolean = {
-        search()
-        state.isInstanceOf[HasNext]
-      }
-
-      override def next(): RuntimeTypeSignature = {
-        search()
-        state match {
-          case State.HasNext(next) => next
-          case _ =>
-            throw new NoSuchElementException()
+    
+    for (tid <- types) {
+      enqueue(tid)
+    }
+    while (worklist.nonEmpty) {
+      val curr = worklist.dequeue()
+      val currSigOpt = resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](curr)
+      val isValidSupertypeOfAll = currSigOpt.isDefined && types.forall(tpe => subtypingCtx.subToSuperSubst(tpe, curr).isDefined)
+      if (isValidSupertypeOfAll) {
+        superTypeSigs.addOne(currSigOpt.get)
+      } else currSigOpt.foreach { currSig =>
+        for (superT <- currSig.directSupertypes) {
+          enqueue(superT.typeName)
         }
       }
     }
+    
+    superTypeSigs.toList.distinct
   }
 
   def computeJoinOfRanges(types: Iterable[IntRangeType]): Type = {

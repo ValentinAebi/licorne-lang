@@ -1,0 +1,111 @@
+package lists;
+
+typealias Length = [0..]
+
+datatype List[+T] {
+
+   pure fn length(this) -> Length
+
+   fn isSingletonList(this) -> Bool
+
+   fn length_bad(this) -> Length {
+      var len = -1;
+      var ls = this;
+      while ls is Cons {
+         len += 1;
+         ls = ls.tail();
+      };
+      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@14:24> : [-1..]
+   }
+
+   fn reverse(this) -> List[T] {
+      var reversed = new Nil();
+      var ls = this;
+      while ls is Cons {
+         reversed = new Cons(head = ls.head(), tail = reversed);
+         ls = ls.tail();
+      };
+      return reversed;
+   }
+
+   fn filter(this, p: pure fn (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = new Nil();
+      var ls = this;
+      while ls is Cons {
+         if p(ls.head()) {
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);
+         };
+         ls = ls.tail();
+      };
+      return filteredReversed.reverse();
+   }
+
+   fn filter_bad(this, p: pure fn (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = new Nil();
+      var ls = this;
+      while ls is Cons {
+         if !p(ls.head()) {
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls<loop-body-start@46:24>.head() : T with !p(it)
+         };
+         ls = ls.tail();
+      };
+      return filteredReversed.reverse();
+   }
+
+   fn zip[S](this, other: List[S] where this.length() == other.length()) -> List[Pair[T, S]] {
+      var rem1 = this;
+      var rem2 = other;
+      var reversedZip = new Nil();
+      while rem1 is Cons && rem2 is Cons {
+         reversedZip = new Cons(head = new Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip);
+         rem1 = rem1.tail();
+         rem2 = rem2.tail();
+      };
+      return reversedZip.reverse();
+   }
+
+}
+
+record Nil : List[Nothing] {
+    pure fn length(this) -> [0..0] = 0
+    fn isSingletonList(this) -> Bool = false
+}
+
+record Cons[+T](head: T, tail: List[T]) : List[T] {
+    pure fn length(this) -> [1..] = 1 + tail.length()
+    fn isSingletonList(this) -> Bool = tail is Nil
+}
+
+record Pair[+L, +R](l: L, r: R)
+
+object UseLists {
+
+   fn useZipCorrectly1(integers: List[Int], strings: List[String] where integers.length() == strings.length()) -> List[Pair[Int, String]] {
+      return integers.zip(strings);
+   }
+
+   fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+      when integers.length() == strings.length()
+      then integers.zip(strings)
+      else new Nil()
+
+   fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+      when integers.length() != strings.length()
+      then new Nil()
+      else integers.zip(strings)
+
+   fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
+      return integers.zip(strings);     //> E : illegal call to zip: I cannot prove that its precondition integers.length() == strings.length() holds
+   }
+
+   fn instanceTests(ls: List[I], thres: Int) {
+      val filtered = ls.filter(fn (x) -> x is A && x.value() >= thres);
+      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()]
+   }
+
+}
+
+interface I
+class A : I {
+   pure fn value(this) -> Int = 42
+}

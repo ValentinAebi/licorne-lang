@@ -75,7 +75,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
             val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = true)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
@@ -92,7 +92,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
@@ -133,7 +133,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
               fldTarget.resolve(classSig, tpe)
@@ -170,7 +170,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty, directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), recordSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
             val recordSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
               fldTarget.resolve(recordSig, tpe)
@@ -226,7 +226,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val noFunctionsSig = DatatypeSignature(id, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
           subtypes, datatypeSigScope, df.getPosition)
         val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-        val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, isAbstract = true)
+        val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = true)
         val datatypeSig = noFunctionsSig.copy(functions = funcs)
         programBuilder.saveSignature(datatypeSig, df.getPosition)
       }
@@ -469,7 +469,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
         val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
         val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
-          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition, isAbstract = functionsProvider.isInstanceOf[Asts.InterfaceDef | Asts.DataTypeDef], isSyntheticAccessor = false)
+          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition, isAbstract = funDef.bodyOpt.isEmpty, isSyntheticAccessor = false)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig.ownerAndName -> function)
         if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
@@ -487,13 +487,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)],
-                                                 funPos: Option[Position], isAbstract: Boolean): Map[FunOrVarId, FunctionSignature] = {
+                                                 funPos: Option[Position], ownerIsAbstractType: Boolean): Map[FunOrVarId, FunctionSignature] = {
     val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
     for ((id, (sig, optSSA)) <- functionsMap) {
       resultB.addOne(id -> sig)
-      if (isAbstract && optSSA.bodyOpt.isDefined) {
-        reportError("methods declared in interfaces and datatypes are not allowed to have a body", funPos)
-      } else if (!isAbstract && optSSA.bodyOpt.isEmpty) {
+      if (!ownerIsAbstractType && optSSA.bodyOpt.isEmpty) {
         reportError("methods declared in classes, records, and objects must have a body", funPos)
       }
     }
@@ -627,7 +625,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         ).withDesugaringSource(stat), currScope, newScopeIfBlock)
 
       case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
-        reportError(s"in-place mutation is only allowed on local variables and selects on $ThisId", stat.getPosition)
+        reportError(s"in-place mutation is only allowed on local variables and fields of owner $ThisId", stat.getPosition)
 
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
         val condVal = currScope.newIntermediate("cond")
@@ -699,7 +697,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               induct <- proxyStore.developDeepIgnoreAccessors(bodyLastLocalVal, acceptPhis = true)
             } yield Recurrence(init, induct, condVal)
             bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
+            proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
+            proxyStore.saveLoopProxy(condVal, beforeLoopVal, bodyLastVal)
           }
           val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
           currScope.saveInstr(loop, whileLoop)
@@ -798,6 +798,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.UnitLit() =>
         val unitVal = currScope.valuesCtx.globalCtx.unitVal
         currScope.saveInstr(AssignVal(resultVal, unitVal), expr)
+        proxyStore.saveProxy(resultVal, unitVal)
         Some(unitVal)
       case Asts.IntLit(value) =>
         currScope.saveInstr(AssignIntConst(resultVal, value), expr)
@@ -813,6 +814,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case Asts.NullRef() =>
         val nullVal = currScope.valuesCtx.globalCtx.nullVal
         currScope.saveInstr(AssignVal(resultVal, nullVal), expr)
+        proxyStore.saveProxy(resultVal, nullVal)
         Some(nullVal)
       case varRefTree@Asts.VariableRef(name) =>
         (currScope.getLocalValuesContextUnsafe.valueOf(name): @unchecked) match {
@@ -833,6 +835,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             None
           case KnownAndInitialized(value, _, _, _) =>
             currScope.saveInstr(AssignVal(resultVal, value), expr)
+            proxyStore.saveProxy(resultVal, value)
             Some(value)
         }
       case Asts.ThisRef() =>
@@ -843,6 +846,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val objectName = importsCtx.applyImports(objectNameRaw)
         val objIdVal = currScope.valuesCtx.resolveObject(objectName)
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
+        proxyStore.saveProxy(resultVal, objIdVal)
         Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
         val receiverVal = currScope.newIntermediate("receiver")
@@ -940,6 +944,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val typeId = importsCtx.applyImports(typeIdRaw)
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
         currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs, argsB.result()), recordOrClassInstTree)
+        proxyStore.saveKnownType(resultVal, typeId)
         None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
         val condVal = currScope.newIntermediate("cond")

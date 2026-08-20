@@ -1427,7 +1427,9 @@ final class Typer(
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
-      er.reportError(s"$ctxDescr: wrong number of arguments (expected $nParams, was $nArgs)", posOpt)
+      val reportedNParams = if argsIncludeReceiver then nParams-1 else nParams
+      val reportedNArgs = if argsIncludeReceiver then nArgs-1 else nArgs
+      er.reportError(s"$ctxDescr: wrong number of arguments (expected $reportedNParams, was $reportedNArgs)", posOpt)
     }
 
     // first pass: try to resolve type variables

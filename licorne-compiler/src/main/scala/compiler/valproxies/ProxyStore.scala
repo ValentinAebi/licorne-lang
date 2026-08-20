@@ -5,16 +5,20 @@ import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget}
 import compiler.lang.ClassSignature
+import compiler.lang.Types.Type
 import compiler.typing.Typer
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
+import compiler.util.asIterableOfType
 
 import scala.collection.mutable
 
 
 final class ProxyStore {
   private val proxies = mutable.Map.empty[IdValue, Formula]
+  private val loopProxies = mutable.Map.empty[IdValue, (beforeLoopVal: IdValue, endOfBodyVal: IdValue)]
   private val fieldAccessorProxies = mutable.Map.empty[TypeIdentifier, mutable.Set[FunOrVarId]]
   private val possiblyImpureClosures = mutable.Map.empty[IdValue, PureClosureValue]
+  private val knownTypes = mutable.Map.empty[IdValue, TypeIdentifier]
 
   def hasProxyFor(idVal: IdValue): Boolean = proxies.contains(idVal)
 
@@ -27,6 +31,14 @@ final class ProxyStore {
       throw IllegalStateException(s"proxy already set for value $idVal")
     }
     proxies(idVal) = proxy
+  }
+
+  def saveLoopProxy(inCondVal: IdValue, beforeLoopVal: IdValue, endOfBodyVal: IdValue): Unit = {
+    loopProxies(inCondVal) = (beforeLoopVal, endOfBodyVal)
+  }
+
+  def saveKnownType(idVal: IdValue, tid: TypeIdentifier): Unit = {
+    knownTypes(idVal) = tid
   }
 
   def saveAccessorProxy(classId: TypeIdentifier, fldId: FunOrVarId): Unit = {
@@ -162,6 +174,49 @@ final class ProxyStore {
         formula
       }
     }
+  }
+
+  def findInitializationTypesOf(origin: IdValue): Option[Iterable[TypeIdentifier]] = {
+    val typeIds = mutable.HashSet.empty[TypeIdentifier]
+    val front = mutable.Queue.empty[IdValue]
+    val alreadyExplored = mutable.Set.empty[IdValue]
+
+    def enqueue(idVal: IdValue): Unit = {
+      if (alreadyExplored.add(idVal)) {
+        front.enqueue(idVal)
+      }
+    }
+
+    enqueue(origin)
+    while (front.nonEmpty) {
+      val curr = front.dequeue()
+      knownTypes.get(curr) match {
+        case Some(tid) =>
+          typeIds.add(tid)
+        case None =>
+          loopProxies.get(curr) match {
+            case Some((beforeLoopVal, endOfBodyVal)) =>
+              enqueue(beforeLoopVal)
+              enqueue(endOfBodyVal)
+            case None =>
+              proxies.get(curr) match {
+                case Some(next: IdValue) if next != curr =>
+                  enqueue(next)
+                case Some(Phi(terms)) => terms.asIterableOfType[IdValue] match {
+                  case Some(terms) =>
+                    for (term <- terms) {
+                      enqueue(term)
+                    }
+                  case None =>
+                    return None
+                }
+                case _ =>
+                  return None
+              }
+          }
+      }
+    }
+    Some(typeIds.toList)
   }
 
   private def expandSelectIfAccessor(owp: Formula, field: FieldResolutionTarget)(using ResolutionContext): Formula = accessorProxyFor(field) match {

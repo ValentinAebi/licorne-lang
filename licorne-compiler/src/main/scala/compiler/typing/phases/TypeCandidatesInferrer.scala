@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
+import compiler.reasoning.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
 import compiler.typing.contexts.*
 import compiler.typing.*
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -22,7 +22,6 @@ final class TypeCandidatesInferrer(
                                     ihm: IntHandlingMode[?],
                                     proxyStore: ProxyStore,
                                     typeCandidatesStore: TypeCandidatesStore,
-                                    er: ErrorReporter,
                                     counterExBoxOpt: Option[CounterexampleBox]
                                   ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
@@ -36,15 +35,15 @@ final class TypeCandidatesInferrer(
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
     // @formatter:on
 
+    val fakeEr = ErrorReporter(
+      _ => throw AssertionError("error reported during type candidates inference phase"),
+      _ => throw AssertionError("fatal error during type candidates inference phase")
+    )
     val dealiasingCtx = DealiasingContext(program.typeAliases)
-    val resolCtx = ResolutionContext(program, er)
+    val resolCtx = ResolutionContext(program, fakeEr)
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, fakeEr, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
-      val fakeEr = ErrorReporter(
-        _ => throw AssertionError("error reported during type candidates inference phase"),
-        _ => throw AssertionError("fatal error during type candidates inference phase")
-      )
       val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
       fakeEr.withReportingSuspended {
         for {
@@ -53,8 +52,9 @@ final class TypeCandidatesInferrer(
           body <- func.bodyOpt
         } {
           val resolCtx = ResolutionContext(program, fakeEr)
+          val meetJoinComputer = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, solver, globalValsCtx)
           val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
-          val lightweightTyper = LightweightTyper(typer, dealiasingCtx, resolCtx, funSig.sigScope, typeParamsCtx)
+          val lightweightTyper = LightweightTyper(typer, dealiasingCtx, meetJoinComputer, resolCtx, funSig.sigScope, typeParamsCtx)
           traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx, tmpTypeVarsCtx, lightweightTyper)
         }
       }
@@ -115,7 +115,17 @@ final class TypeCandidatesInferrer(
     case Lt(assigned, lhs, rhs) => ()
     case invkFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       for {
-        (receiverTypeId, owTypesSubst, owValsSubst) <- resolveReceiver(receiver, currEnvir)
+        (receiverTypeId, owTypesSubst, owValsSubst) <- resolveReceiver(receiver, currEnvir).orElse {
+          lt.findPossibleTypesFor(receiver)
+            .flatMap(tSig => tSig.functions.toList.map((_, funSig) => (tSig, funSig)))
+            .find((tSig, funSig) => funSig.functionName == func.funId)
+            .map { (tSig, funSig) =>
+              val typesSubst = tSig.typeParams.map { tp =>
+                tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, invkFunc.getPosition)
+              }.toMap
+              (tSig.id, typesSubst, Map.empty[IdValue, Formula])
+            }
+        }
         funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
       } {
         val typeParams = funSig.typeParams
@@ -124,8 +134,7 @@ final class TypeCandidatesInferrer(
           unifyTypes(candidate, funSig.retType.substitute(typesSubst, owValsSubst))
         }
         val valsSubst = mutable.Map.from(owValsSubst)
-        valsSubst.put(funSig.receiverVal, receiver)
-        for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsWithoutThis.zip(args)) {
+        for (((paramVal, paramTypeRaw), argVal) <- funSig.paramsInclThis.zip(receiver +: args)) {
           val paramTypeSubst = paramTypeRaw.substitute(typesSubst, valsSubst)
           typeCandidatesStore.offerCandidate(argVal, paramTypeSubst)
           valsSubst.put(paramVal, argVal)
@@ -134,7 +143,7 @@ final class TypeCandidatesInferrer(
     case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
     case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
       for {
-        candidate <- typeCandidatesStore.getCandidates(assigned).headOption   // TODO see if this line is really needed: candidate value is unused
+        candidate <- typeCandidatesStore.getCandidates(assigned).headOption // TODO see if this line is really needed: candidate value is unused
         tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
       } {
         val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
@@ -210,7 +219,7 @@ final class TypeCandidatesInferrer(
       case (NamedType(candTypeId, candTypeArgs, candArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
         for {
           subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, candTypeId)
-          candTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](candTypeId)   // TODO see if this line is really needed: candTSig is unused
+          candTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](candTypeId) // TODO see if this line is really needed: candTSig is unused
           shapeTypeSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](shapeTypeId)
         } {
           val shapeSubst = shapeTypeSig.typeParams.map(_.tid).zip(shapeTypeArgs).toMap
@@ -243,12 +252,20 @@ final class TypeCandidatesInferrer(
     }
   }
 
-  private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
+  private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
+
     def detectDealiasedTypeOf(formula: Formula): Type = {
       val dev = proxyStore.developDeep(formula, bypassPurityChecks = true)(using resolCtx).getOrElse(formula)
       val typeRaw = typer.typeFormula(dev, funSigScope, None)(using typeParamsCtx)
       dealiasingCtx.dealiasType(typeRaw)
     }
+
+    def findPossibleTypesFor(idValue: IdValue): Iterable[RuntimeTypeSignature] =
+      proxyStore.findInitializationTypesOf(idValue) match {
+        case Some(typesIter) =>
+          meetJoinComputer.computeJoinOfTypeIds(typesIter)
+        case None => List.empty
+      }
   }
 
 }

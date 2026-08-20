@@ -29,7 +29,7 @@ final class OverridesChecker(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (program, SubtypingInfo(subtypingGraph, flattenedSubtypingMaps)) = input
-    
+
     given globalValsCtx: GlobalValuesContext = program.globalValuesContext
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
@@ -39,7 +39,7 @@ final class OverridesChecker(
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)
     }
-    
+
     handleErrors(er)
     input
   }
@@ -53,12 +53,20 @@ final class OverridesChecker(
       val superTSig = resolutionCtx.resolveTypeSig(superT).get
       (subTSig, superTSig) match {
         case (subTSig: RuntimeTypeSignature, superTSig: RuntimeTypeSignature) =>
-          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunPurity, _, superFunDeclPosOpt, isAbstract, isSynthetic)) <- superTSig.functions) {
+          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunPurity, _, superFunDeclPosOpt, superFunIsAbstract, _)) <- superTSig.functions) {
             subTSig.functions.get(funId) match {
               case None if subTSig.isInstanceOf[AbstractTypeSig] => ()
               case None =>
-                er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
-              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunPurity, _, subFunDeclPosOpt, isAbstract, isSynthetic)) =>
+                if (!subTSupertypes.exists { (subSuperTid, _) =>
+                  resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subSuperTid).get.functions.exists((subSuperFunId, _) => subSuperFunId == funId)
+                    && flattenedSupertypesSubstitutions.get(subSuperTid).exists(_.keySet.contains(subSuperTid))
+                }) {
+                  er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
+                }
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunPurity, _, subFunDeclPosOpt, subFunIsAbstract, _)) =>
+                if (!superFunIsAbstract) {
+                  er.reportError(s"overriding non abstract method $funId defined in $funId", subFunDeclPosOpt)
+                }
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size
                 if (!typeParamsLenMatch) {
@@ -70,7 +78,7 @@ final class OverridesChecker(
                 if (typeParamsLenMatch && paramsLenMatch) {
                   val funTypeParamsSubst = mutable.Map.empty[TypeIdentifier, Type]
                   val (_, fullTypeParamsCtx) = TypeParamsContext.processTypeParamsAccumulating(TypeParamsContext(subTSig.typeParams), superFunTypeParams zip subFunTypeParams) { (superFunTp, subFunTp) =>
-                    
+
                     def mkErrorMsg(upOrLow: String): String =
                       s"$upOrLow bound of type parameter ${subFunTp.tid} of function $funId in $subT does not conform to the signature of the overridden function in $superT"
 

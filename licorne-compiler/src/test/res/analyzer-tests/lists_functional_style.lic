@@ -8,7 +8,7 @@ datatype List[+T]
 record Nil : List[Nothing]
 record Cons[+T](head: T, tail: List[T]) : List[T]
 
-record Pair[L, R](l: L, r: R)
+record Pair[+L, +R](l: L, r: R)
 
 object Lists {
 
