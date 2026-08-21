@@ -1,0 +1,58 @@
+package examples.texts;
+
+import examples.texts.InternetPages.isValidUrl;
+
+typealias Cnt = [0..]
+
+typealias PageNumber(b: Book) = [1 .. b.pagesCnt()]
+
+object Example {
+    main fn example() {
+        val book = new Book(
+            title = "Modern Graph Theory",
+            author = "Béla Bollobás",
+            pagesCnt = 394,
+            currPage = null
+        );
+        book.openAtPage(399);   //> E : first argument of call to openAtPage: expected examples.texts.PageNumber(book), found 399
+        book.openAtPage(104);
+    }
+}
+
+interface Text {
+    pure fn title(this) -> String
+}
+
+class Book(
+    public title: String,
+    public author: String,
+    public pagesCnt: Cnt,
+    var currPage: PageNumber(this)?
+) : Text {
+
+    fn openAtPage(this, p: PageNumber(this)) {
+        currPage = p
+    }
+
+    fn close(this) {
+        currPage = null
+    }
+
+    fn currentPage(this) -> PageNumber(this)? = currPage
+
+    fn isClosed(this) -> Bool =
+        currentPage() == null
+}
+
+typealias Url = String with isValidUrl(it)
+
+record InternetPage(
+    title: String,
+    url: Url
+) : Text
+
+object InternetPages {
+    pure fn isValidUrl(s: String) -> Bool {
+        panic "not implemented..."
+    }
+}
