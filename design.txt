@@ -2,9 +2,7 @@
 | Language design to-do list |
 +----------------------------+
 
-- Backend to JVM bytecode
 - Auxiliary constructors, or at least default initializers for class fields
-- Allow method implementation in interfaces
 
 - Split compilation pipeline to run separately on distinct classes/methods, for the phases where no cross-function synchronization is needed
 - Parser: redesign and add error recovery mechanisms (the current implementation can crash if an LL1 conflict is reached, although no such bug is known currently)

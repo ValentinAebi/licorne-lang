@@ -8,7 +8,7 @@ import compiler.parser.TreeParsers.*
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
-import compiler.lang.{Keyword, Operator, Operators, Purity, ReassigPermission, Types, Variance, Visibility}
+import compiler.lang.{Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, Types, Variance, Visibility}
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.{Import, *}
 import compiler.lang.Types.PrimitiveType
@@ -179,7 +179,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case _ => false
     }
 
-    opt(kw(Pure)) ::: opt(kw(Main, Private)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Pure)) ::: opt(kw(Main, Private, Open)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
       case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
@@ -192,8 +192,14 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         if (bodyOptRaw.exists(_.isInstanceOf[Expr]) && optRetType.forall(isUnitType)) {
           errorReporter.report(Err(Parsing, s"single-expression methods are not allowed to return ${PrimitiveType.UnitType}", bodyOptRaw.get.getPosition))
         }
+        val overridability = optModif match {
+          case Some(Open) => Overridability.Open
+          case _ if bodyOptDesugared.isDefined => Overridability.Final
+          case _ => Overridability.Abstract
+        }
         FunDef(funName, typeParams, params, optRetType, optPrecond, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
+          overridability,
           purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure,
           isMain = optModif.contains(Main)
         )

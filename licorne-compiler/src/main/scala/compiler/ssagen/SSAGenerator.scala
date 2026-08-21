@@ -75,7 +75,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
             val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = true)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
@@ -92,7 +92,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
@@ -133,7 +133,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
               fldTarget.resolve(classSig, tpe)
@@ -170,7 +170,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty, directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), recordSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
-            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = false)
+            val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val recordSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
               fldTarget.resolve(recordSig, tpe)
@@ -212,7 +212,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
         given collection.Map[FunOrVarId, Field] = Map.empty
 
-        val id = TypeIdentifier(pkgPrefix, datatypeName)
+        val datatypeId = TypeIdentifier(pkgPrefix, datatypeName)
         val datatypeSigScope = Scope.nestedInside(globalScope, df)
         val thisValue = datatypeSigScope.newParam(ThisId, df.getPosition)
         datatypeSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, datatypeSigScope, ReassigPermission.Val, None)
@@ -222,11 +222,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
         given TypeParamsContext = fullTypeParamsCtx
 
-        val subtypes = SeqSet(datatypeSubtypes.getOrElse(id, mutable.LinkedHashSet.empty))
-        val noFunctionsSig = DatatypeSignature(id, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
+        val subtypes = SeqSet(datatypeSubtypes.getOrElse(datatypeId, mutable.LinkedHashSet.empty))
+        val noFunctionsSig = DatatypeSignature(datatypeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
           subtypes, datatypeSigScope, df.getPosition)
         val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
-        val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, df.getPosition, ownerIsAbstractType = true)
+        val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, datatypeId, ownerIsAbstractType = true)
         val datatypeSig = noFunctionsSig.copy(functions = funcs)
         programBuilder.saveSignature(datatypeSig, df.getPosition)
       }
@@ -375,7 +375,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Purity.Pure, isMain = false, fieldsOwner.getPosition, isAbstract = false, isSyntheticAccessor = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
@@ -469,7 +469,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
         val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
         val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
-          funSigScope, funDef.visibility, funDef.purity, funDef.isMain, funDef.getPosition, isAbstract = funDef.bodyOpt.isEmpty, isSyntheticAccessor = false)
+          funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.isMain, funDef.getPosition, isSyntheticAccessor = false)
         functions(funDef.id) = (sig, function)
         allFunctionsB.addOne(sig.ownerAndName -> function)
         if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
@@ -477,7 +477,6 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
       }
     }
-    er.displayAndTerminateIfErrors()
     functions
   }
 
@@ -487,12 +486,23 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)],
-                                                 funPos: Option[Position], ownerIsAbstractType: Boolean): Map[FunOrVarId, FunctionSignature] = {
+                                                 ownerId: TypeIdentifier, ownerIsAbstractType: Boolean): Map[FunOrVarId, FunctionSignature] = {
     val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
-    for ((id, (sig, optSSA)) <- functionsMap) {
-      resultB.addOne(id -> sig)
-      if (!ownerIsAbstractType && optSSA.bodyOpt.isEmpty) {
-        reportError("methods declared in classes, records, and objects must have a body", funPos)
+    for ((funId, (sig, func)) <- functionsMap) {
+      val funPos = sig.declPosOpt
+      resultB.addOne(funId -> sig)
+      if (ownerIsAbstractType) {
+        if (sig.overridability == Overridability.Open && func.bodyOpt.isEmpty) {
+          reportError(s"${Overridability.Open} method $funId must have a body", funPos)
+        }
+      } else {
+        sig.overridability match {
+          case Overridability.Abstract =>
+            reportError(s"method $funId defined in non abstract type $ownerId must have a body", funPos)
+          case Overridability.Final => ()
+          case Overridability.Open =>
+            reportError(s"method $funId defined in non abstract type $ownerId cannot be ${Overridability.Open}", funPos)
+        }
       }
     }
     resultB.result()

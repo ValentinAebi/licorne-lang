@@ -213,8 +213,12 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       case Visibility.Private => ClassFile.ACC_PRIVATE
       case Visibility.Public => ClassFile.ACC_PUBLIC
     }
-    if (funSig.isAbstract) {
-      flags |= ClassFile.ACC_ABSTRACT
+    funSig.overridability match {
+      case Overridability.Abstract =>
+        flags |= ClassFile.ACC_ABSTRACT
+      case Overridability.Final =>
+        flags |= ClassFile.ACC_FINAL
+      case Overridability.Open => ()
     }
     flags
   }

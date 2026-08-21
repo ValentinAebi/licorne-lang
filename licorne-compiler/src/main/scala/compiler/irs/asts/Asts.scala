@@ -184,6 +184,7 @@ object Asts {
                            optPrecond: Option[Expr],
                            bodyOpt: Option[Block],
                            visibility: Visibility,
+                           overridability: Overridability,
                            purity: Purity,
                            isMain: Boolean
                          ) extends Ast {

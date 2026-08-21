@@ -1,0 +1,30 @@
+
+interface I {
+
+    // f1 is abstract
+    fn f1(this)
+
+    // f2 is final
+    fn f2(this) {}
+
+    // f3 is open
+    open fn f3(this) {}
+
+}
+
+class MinimalImplementor : I {
+    fn f1(this) {}
+}
+
+class MaximalImplementor : I {
+    fn f1(this) {}
+    fn f3(this) {}
+}
+
+class InsufficientImplementor : I   //> E : InsufficientImplementor does not implement method f1 declared in its supertype I
+
+class OverImplementor : I {
+    fn f1(this) {}
+    fn f2(this) {}  //> E : cannot override final method f2 defined in I
+    fn f3(this) {}
+}

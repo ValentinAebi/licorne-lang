@@ -1,0 +1,12 @@
+
+datatype D {
+    open fn d1(this, i: Int) -> Int     //> E : open method d1 must have a body
+    open fn d2(this, i: Int) -> Int {}  // OK
+    fn d3(this, i: Int) -> Int          // OK
+}
+
+class A {
+    open fn a1(this, i: Int) -> Int     //> E : method a1 defined in non abstract type A cannot be open
+    fn a2(this, i: Int) -> Int {}       // OK
+    fn a3(this, i: Int) -> Int          //> E : method a3 defined in non abstract type A must have a body
+}

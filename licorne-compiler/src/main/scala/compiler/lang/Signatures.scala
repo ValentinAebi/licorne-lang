@@ -31,10 +31,10 @@ final case class FunctionSignature(
                                     retType: Type,
                                     sigScope: Scope,
                                     visibility: Visibility,
+                                    overridability: Overridability,
                                     purity: Purity,
                                     isMain: Boolean,
                                     declPosOpt: Option[Position],
-                                    isAbstract: Boolean,
                                     isSyntheticAccessor: Boolean
                                   ) extends DeclSignature, ExecutionEnvironment {
 
@@ -75,10 +75,10 @@ final case class FunctionSignature(
     retType.substitute(typesSubst, Map.empty),
     sigScope,
     visibility,
+    overridability,
     purity,
     isMain,
     declPosOpt,
-    isAbstract,
     isSyntheticAccessor
   )
 
