@@ -308,7 +308,7 @@ final class Typer(
         }
         val returnType =
           if func.isResolvedAndPure
-          then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = true)).getOrElse(returnTypeRaw)
+          then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor).getOrElse(returnTypeRaw)
           else returnTypeRaw
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
@@ -326,7 +326,7 @@ final class Typer(
       case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor(_, saveSmartcasts = true)) match {
+        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor) match {
           case Some(smartcastType) =>
             currScope.saveType(assigned, smartcastType)
           case None =>
@@ -504,7 +504,7 @@ final class Typer(
       val (_, fld) = expFieldsIter.next()
       val (initFldId, rhsVal) = actFieldsIter.next()
       if (initFldId == fld.id) {
-        val rhsValType = currScope.getCurrentTypeOf(rhsVal, saveSmartcastsInIR = true)
+        val rhsValType = currScope.getCurrentTypeOf(rhsVal)
         val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
         subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field $initFldId", currScope, instantiate.getPosition)
         fld match {
@@ -555,7 +555,7 @@ final class Typer(
 
   def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position], suspendReporting: Boolean = false)
                  (using typeParamsCtx: TypeParamsContext): Type = er.withReportingSuspendedIf(suspendReporting) {
-    val tpe = scope.smartcastFor(formula, saveSmartcasts = true).getOrElse {
+    val tpe = scope.smartcastFor(formula).getOrElse {
       val rawType = formula match {
         case value: IdValue =>
           val tpe = scope.detectCurrentType(value)
@@ -573,7 +573,7 @@ final class Typer(
         case sel@Select(owner, field) if field.isNotResolvedYet =>
           val ownerType = typeFormula(owner, scope, posOpt)
           val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
-          scope.smartcastFor(sel, saveSmartcasts = false).getOrElse(tpe)
+          scope.smartcastFor(sel).getOrElse(tpe)
         case Select(owner, field) =>
           assert(field.isUnresolvable)
           NothingType
@@ -1262,15 +1262,15 @@ final class Typer(
 
   extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])
                                                          (using Simplifier, TypeParamsContext): Type =
-    doComputeCurrentType(scope, formula, Some(posOpt), saveSmartcastsInIR = true)
+    doComputeCurrentType(scope, formula, Some(posOpt))
 
   extension (scope: Scope) private def detectCurrentType(formula: Formula)
                                                         (using Simplifier, TypeParamsContext): Type =
-    doComputeCurrentType(scope, formula, None, saveSmartcastsInIR = false)
+    doComputeCurrentType(scope, formula, None)
 
-  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]], saveSmartcastsInIR: Boolean)
+  private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]])
                                   (using Simplifier, TypeParamsContext): Type = {
-    val tpe = scope.getCurrentTypeOf(formula, saveSmartcastsInIR)
+    val tpe = scope.getCurrentTypeOf(formula)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {
         case (UninterpretedConstIdValue(name, definingScope, uid), NothingType) =>

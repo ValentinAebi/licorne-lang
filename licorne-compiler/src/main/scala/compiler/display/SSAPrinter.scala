@@ -194,16 +194,6 @@ final class SSAPrinter(
 
   private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
     instr match {
-      case instr: RealInstr =>
-        for ((subject, tpe) <- instr.getSmartcasts) {
-          pps.add(s"smartcast $subject : $tpe").newLine()
-        }
-        for (subject <- instr.getNonNullSmartcasts) {
-          pps.add(s"smartcast-non-null $subject").newLine()
-        }
-      case _ => ()
-    }
-    instr match {
       case SSA.Loop(cond, condVal, body, variables) =>
         pps.add("LOOP").indentln {
           pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")

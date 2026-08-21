@@ -550,7 +550,7 @@ object Types {
     case Some(bound) =>
       currScopeAndProxyStoreOpt match {
         case Some(currScope, proxyStore) =>
-          currScope.getCurrentTypeOf(bound, saveSmartcastsInIR = false)(using proxyStore) match {
+          currScope.getCurrentTypeOf(bound)(using proxyStore) match {
             case range: IntRangeType =>
               expandBound(expansionFunc(range), assignmentTarget, expansionFunc, currScopeAndProxyStoreOpt)
             case _ => None
