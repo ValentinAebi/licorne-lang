@@ -20,7 +20,7 @@ Some features that are already supported:
 ## Code examples
 
 The following code example gives a high-level idea of what Licorne is about 
-(in a very partial way, for instance it makes little use of Licorne's type inference capabilities). 
+(only to a limited extent, for instance it makes little use of Licorne's type inference capabilities). 
 
 More code examples can be found in the [test resources directory](licorne-compiler/src/test/res/analyzer-tests).
 
