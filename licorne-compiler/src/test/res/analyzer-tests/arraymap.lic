@@ -37,9 +37,9 @@ class ArrayMap[K sub Any, V sub Any](
             var stop = false;
             // ERROR: should be < instead of <=
             for (var i = 0; i <= this.keys.size() && !stop; i += 1) {
-                if (this.keys.get(i) == null) {     //> E : first argument of call to get: expected Idx[T](this.keys), found i<loop-body-start@39:13> : [0 .. this.keys.size()]
-                    this.keys.set(i, k);            //> E : first argument of call to set: expected Idx[T](this.keys), found i<loop-body-start@39:13> : [0 .. this.keys.size()]
-                    this.values.set(i, v);          //> E : first argument of call to set: expected Idx[T](this.values), found i<loop-body-start@39:13> : [0 .. this.keys.size()]
+                if (this.keys.get(i) == null) {     //> E : first argument of call to get: expected Idx[T](this.keys), found i : [0 .. this.keys.size()]
+                    this.keys.set(i, k);            //> E : first argument of call to set: expected Idx[T](this.keys), found i : [0 .. this.keys.size()]
+                    this.values.set(i, v);          //> E : first argument of call to set: expected Idx[T](this.values), found i : [0 .. this.keys.size()]
                     stop = true;
                 }
             };

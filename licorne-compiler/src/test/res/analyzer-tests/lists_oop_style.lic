@@ -15,7 +15,7 @@ datatype List[+T] {
          len += 1;
          ls = ls.tail();
       };
-      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@14:24> : [-1..]
+      return len;   //> E : return value: expected lists.Length, found len : [-1..]
    }
 
    fn reverse(this) -> List[T] {
@@ -45,7 +45,7 @@ datatype List[+T] {
       var ls = this;
       while ls is Cons {
          if !p(ls.head()) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls<loop-body-start@46:24>.head() : T with !p(it)
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
          };
          ls = ls.tail();
       };

@@ -2,7 +2,7 @@ package compiler.display
 
 import compiler.identifiers.FunOrVarId
 import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{Formulas, SSA}
+import compiler.irs.ssa.{Formulas, IRLevelFormulaPrinter, SSA}
 import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.*
@@ -308,10 +308,11 @@ final class SSAPrinter(
   }
 
   private def maybeTyped(formula: Formula, scope: Scope): String = {
+    val formulaStr = IRLevelFormulaPrinter.prettyprint(formula)
     val typeOpt = scope.typeOfNoSmartcastIfIdVal(formula).filter(_ => printTypes)
     typeOpt match {
-      case Some(tpe) => s"$formula : $tpe"
-      case None => formula.toString
+      case Some(tpe) => s"$formulaStr : $tpe"
+      case None => formulaStr
     }
   }
 

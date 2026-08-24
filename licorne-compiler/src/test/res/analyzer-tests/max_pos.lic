@@ -19,7 +19,7 @@ object PositiveMax {
         var max = 0;
         // ERROR: should be <
         while (k <= a.length()) {
-            val v = a.at(k);        //> E : first argument of call to at: expected Idx[T](a), found k<loop-body-start@21:33> : [0 .. a.length()]
+            val v = a.at(k);        //> E : first argument of call to at: expected Idx[T](a), found k : [0 .. a.length()]
             if (v > 0 && v > max) {
                 max = v;
             };

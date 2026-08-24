@@ -4,7 +4,7 @@ import compiler.identifiers.*
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget, SSA}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, IRLevelFormulaPrinter, InvocationTarget, SSA}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -387,7 +387,7 @@ final class Typer(
 
       case mkClosure@MkClosure(assigned, params, body, knownPureBeforeTyping) =>
         val id = NormalFunOrVarId(assigned match {
-          case assigned: NamedIdValue => assigned.irDescr
+          case assigned: NamedIdValue => IRLevelFormulaPrinter.prettyprint(assigned)
           case assigned: IntermediateIdValue => assigned.toString
         })
         val resultTypeVar = typeVarsCtx.newTypeVariable(id, None, None, typeParamsCtx, body.getPosition)

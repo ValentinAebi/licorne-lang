@@ -4,7 +4,7 @@ object Test {
     fn test1(arr: Array[String]) {
         var i = arr.length();
         while i >= 0 {
-            print(arr.get(i));  //> E : first argument of call to get: expected Idx[T](arr), found i<loop-body-start@6:22> : [0 .. arr.length()]
+            print(arr.get(i));  //> E : first argument of call to get: expected Idx[T](arr), found i : [0 .. arr.length()]
             if i % 2 == 0 {
                 i -= 1;
             } else {

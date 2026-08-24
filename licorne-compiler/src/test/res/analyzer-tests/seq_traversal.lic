@@ -21,7 +21,7 @@ object SeqTraversal {
    fn sum_wrong(seq: Seq[Int]) -> Int {
       var s = 0;
       for var i = 0; i <= seq.size(); i += 1 {
-         s += seq.at(i);    //> E : first argument of call to at: expected Idx[T](seq), found i<loop-body-start@23:7> : [0 .. seq.size()]
+         s += seq.at(i);    //> E : first argument of call to at: expected Idx[T](seq), found i : [0 .. seq.size()]
       };
       return s;
    }

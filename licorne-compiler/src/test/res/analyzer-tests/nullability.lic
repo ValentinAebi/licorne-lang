@@ -18,7 +18,7 @@ object Main {
    fn m4(var obj: I?) {
       while obj != null {
          obj = obj.m(0);    // OK
-         obj.m(99);         //> E : receiver of call to m: expected I, found obj<20:10> : I?
+         obj.m(99);         //> E : receiver of call to m: expected I, found obj : I?
       }
    }
 

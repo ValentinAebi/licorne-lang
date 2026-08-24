@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.{Instr, LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
-import compiler.lang.{Keyword, RuntimeTypeSignature}
+import compiler.lang.{Keyword, Operator, RuntimeTypeSignature}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 
@@ -17,6 +17,8 @@ object Formulas {
 
   sealed trait Formula {
     def isAtomic = false
+
+    final override def toString: String = SourceLevelFormulaPrinter.prettyprint(this)
   }
 
   sealed abstract class IdValue extends Formula {
@@ -25,17 +27,14 @@ object Formulas {
     def definingScope: Scope
 
     override def isAtomic: Boolean = true
-    
+
     val users: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty
   }
 
-  sealed trait NamedIdValue(valKindDescr: String) extends IdValue {
+  sealed trait NamedIdValue(val valKindDescr: String) extends IdValue {
     def name: String
 
     def posOpt: Option[Position]
-
-    def irDescr: String =
-      s"$name#$uid@${definingScope.scopeUid}$valKindDescr"
   }
 
   sealed trait LocalIdValue {
@@ -43,60 +42,47 @@ object Formulas {
     def id: FunOrVarId
   }
 
+  sealed trait Binop(val op: Operator) {
+    formula =>
+    
+    def lhs: Formula
+
+    def rhs: Formula
+  }
+
   final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p"), LocalIdValue {
     override def name: String = id.stringId
-
-    override def toString: String = name
   }
 
   final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s"), LocalIdValue {
     override def name: String = id.stringId
-
-    override def toString: String = name
   }
 
   final case class VarIdValue(id: FunOrVarId, declOpt: Option[LocalDecl], definingScope: Scope, uid: Long, descrOpt: Option[String], posOpt: Option[Position]) extends NamedIdValue("r"), LocalIdValue {
     override def name: String = id.stringId
-
-    override def toString: String = (descrOpt, posOpt) match {
-      case (Some(descr), Some(position)) => s"$name<$descr@${position.lineColonColumn}>"
-      case (Some(descr), None) => s"$name<$descr>"
-      case (None, Some(position)) => s"$name<${position.lineColonColumn}>"
-      case (None, None) => irDescr
-    }
   }
 
   final case class HeapVarIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("h") {
     override def name: String = id.stringId
-
-    override def toString: String = s"$name<heap>"
   }
 
   final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c") {
     override def posOpt: Option[Position] = None
-
-    override def toString: String = name
   }
 
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String) extends IdValue {
-    override def toString: String = s"$nameHint${"$"}snapshot${"$"}$uid@${definingScope.scopeUid}i"
-  }
+  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String) extends IdValue
 
   sealed trait ConstFormula extends Formula {
     def value: Any
 
     override def isAtomic: Boolean = true
-
-    override def toString: String = value.toString
   }
 
   final case class IntConst(value: Int) extends ConstFormula
 
   final case class BoolConst(value: Boolean) extends ConstFormula
 
-  final case class StringConst(value: String) extends ConstFormula {
-    override def toString: String = s"\"$value\""
-  }
+  final case class StringConst(value: String) extends ConstFormula
 
   final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
 
@@ -107,8 +93,6 @@ object Formulas {
     }
 
     override def hashCode(): Int = Objects.hash(owner, field.fieldId)
-
-    override def toString: String = s"$owner.${field.fieldId}"
   }
 
   final case class FunCall(receiver: Formula, func: InvocationTarget, var typeArgs: List[Type], args: List[Formula]) extends Formula {
@@ -120,16 +104,9 @@ object Formulas {
     }
 
     override def hashCode(): Int = Objects.hash(receiver, func.funId, args)
-
-    override def toString: String = {
-      val typeArgsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
-      s"$receiver.${func.funId}" ++ typeArgsDescr ++ args.mkString("(", ",", ")")
-    }
   }
 
-  final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
-    override def toString: String = s"$callee(" ++ args.mkString(",") ++ ")"
-  }
+  final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula
 
   object ClosureCall {
     def apply(callee: Formula, target: ClosureTypingTarget, args: List[Formula]): Formula = callee match {
@@ -140,94 +117,37 @@ object Formulas {
     }
   }
 
-  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
-    override def toString: String = Keyword.Fn.str + " " + params.mkString("(", ", ", ")") + " -> " + body
-  }
+  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula
 
-  final case class Plus(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = {
-      val lhsStr = lhs.toString
-      val opAndRhsStr = rhs match {
-        case Neg(negated) => s" - $negated"
-        case IntConst(cst) if cst < 0 => s" - ${-cst}"
-        case rhs => s" + $rhs"
-      }
-      lhsStr ++ opAndRhsStr
-    }
-  }
+  final case class Plus(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Plus)
 
   final case class Neg(operand: Formula) extends Formula {
-
     override def isAtomic: Boolean = operand.isAtomic
-
-    override def toString: String = operand match {
-      case IntConst(cst) if cst < 0 => (-cst).toString
-      case _ => "-" + parenthIfNot[IdValue | ConstFormula](operand)
-    }
   }
 
-  final case class Times(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = {
-      val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIf[Plus | Neg | DivBy](rhs)
-      s"$lhsStr * $rhsStr"
-    }
-  }
+  final case class Times(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Times)
 
-  final case class DivBy(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = {
-      val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIf[Plus | Neg | Times | DivBy](rhs)
-      s"$lhsStr / $rhsStr"
-    }
-  }
+  final case class DivBy(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Div)
 
-  final case class Modulo(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = {
-      val lhsStr = parenthIf[Plus | Neg](lhs)
-      val rhsStr = parenthIf[Plus | Neg | Times | DivBy](rhs)
-      s"$lhsStr % $rhsStr"
-    }
-  }
+  final case class Modulo(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Modulo)
 
-  final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = {
-      val lhsStr = parenthIf[LogicalOr](lhs)
-      val rhsStr = parenthIf[LogicalOr](rhs)
-      s"$lhs and $rhs"
-    }
-  }
+  final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.And)
 
   final case class LogicalNot(operand: Formula) extends Formula {
-    override def toString: String = operand match {
-      case Equality(lhs, rhs) => s"$lhs != $rhs"
-      case operand => s"!${parenthIfNot[IdValue | ConstFormula | FunCall | ClosureCall](operand)}"
-    }
+    override def isAtomic: Boolean = operand.isAtomic
   }
 
-  final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = s"$lhs or $rhs"
-  }
+  final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Or)
 
-  final case class Equality(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = s"$lhs == $rhs"
-  }
+  final case class Equality(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Equality)
 
-  final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = s"$lhs <= $rhs"
-  }
+  final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessOrEq)
 
-  final case class LessThan(lhs: Formula, rhs: Formula) extends Formula {
-    override def toString: String = s"$lhs < $rhs"
-  }
+  final case class LessThan(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessThan)
 
-  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
-    override def toString: String = s"$subject is $tpe"
-  }
+  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula
 
-  final case class Phi(terms: SeqSet[Formula]) extends Formula {
-    override def toString: String = terms.mkString("phi(", ",", ")")
-  }
+  final case class Phi(terms: SeqSet[Formula]) extends Formula
 
   object Phi {
     def apply(terms: Iterable[Formula]): Phi = new Phi(SeqSet(terms))

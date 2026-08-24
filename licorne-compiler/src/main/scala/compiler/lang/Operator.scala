@@ -23,7 +23,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case And extends Operator("&&", Some(Precedence.And), isCommutative = true)
   case Or extends Operator("||", Some(Precedence.Or), isCommutative = true)
 
-  case ExclamationMark extends Operator("!", None)
+  case ExclamationMark extends Operator("!", Some(Precedence.Unary))
 
   case OpeningParenthesis extends Operator("(", None)
   case ClosingParenthesis extends Operator(")", None)
@@ -55,7 +55,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
 
 object Operator {
 
-  val operatorsByPriorityDecreasing: List[List[Operator]] = List(
+  val operatorsByDecreasingPrecedence: List[List[Operator]] = List(
     List(Times, Div, Modulo),
     List(Plus, Minus),
     List(GreaterThan, LessThan, GreaterOrEq, LessOrEq),
@@ -63,21 +63,15 @@ object Operator {
     List(And),
     List(Or)
   )
-
-  val priorities: Map[Operator, Int] = {
-    val size = operatorsByPriorityDecreasing.size
-    operatorsByPriorityDecreasing.flatten
-      .map { op =>
-        val subList = operatorsByPriorityDecreasing.find(_.contains(op)).get
-        val idx = operatorsByPriorityDecreasing.indexOf(subList)
-        val priority = size - idx
-        (op, priority)
-      }
-      .toMap
-  }
   
   enum Precedence {
-    case Mul, Add, Comparison, And, Or
+    case Atom, Unary, TypeTest, Mul, Add, Comparison, And, Or
+
+    def bindsMoreThan(other: Precedence): Boolean =
+      this.ordinal < other.ordinal
+
+    def bindsAtLeastAsMuchAs(other: Precedence): Boolean =
+      this.ordinal <= other.ordinal
   }
 
 }

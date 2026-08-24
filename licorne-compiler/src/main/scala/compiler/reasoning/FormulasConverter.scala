@@ -1,7 +1,7 @@
 package compiler.reasoning
 
 import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, InvocationTarget}
+import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, IRLevelFormulaPrinter, InvocationTarget}
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.AnyType
 import compiler.reasoning.FormulasConverter.*
@@ -50,7 +50,7 @@ final class FormulasConverter[IntSort <: KSort](
   def convertInt(formula: Formula): Iterable[KExpr[IntSort]] = savingResult(formula) {
     formula match {
       case value: IdValue =>
-        val base = Some(kCtx.mkConst(value.toString, ihm.iSort))
+        val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), ihm.iSort))
         proxyStore.developDeep(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertInt(proxy)
@@ -117,7 +117,7 @@ final class FormulasConverter[IntSort <: KSort](
   def convertBool(formula: Formula): Iterable[KExpr[KBoolSort]] = savingResult(formula) {
     formula match {
       case value: IdValue =>
-        val base = Some(kCtx.mkConst(value.toString, kCtx.mkBoolSort()))
+        val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), kCtx.mkBoolSort()))
         proxyStore.developDeep(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertBool(proxy)
@@ -178,7 +178,7 @@ final class FormulasConverter[IntSort <: KSort](
   def convertObj(formula: Formula): Iterable[KExpr[KUninterpretedSort]] = savingResult(formula) {
     formula match {
       case value: IdValue =>
-        val base = Some(kCtx.mkConst(value.toString, anySort))
+        val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), anySort))
         proxyStore.developDeep(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertObj(proxy)

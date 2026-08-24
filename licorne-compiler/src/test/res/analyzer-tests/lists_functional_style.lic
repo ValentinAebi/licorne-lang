@@ -27,7 +27,7 @@ object Lists {
          len += 1;
          ls = ls.tail();
       };
-      return len;   //> E : return value: expected lists.Length, found len<loop-body-start@26:24> : [-1..]
+      return len;   //> E : return value: expected lists.Length, found len : [-1..]
    }
 
    fn sum(var ls: List[[0..]]) -> [0..] {
@@ -83,7 +83,7 @@ object Lists {
       var filteredReversed = new Nil();
       while ls is Cons {
          if ls.head() <= a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@84:24>.head() : [..a]
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls.head() : [..a]
          };
          ls = ls.tail();
       };
@@ -94,7 +94,7 @@ object Lists {
       var filteredReversed: List[[..<a]] = new Nil();
       while ls is Cons {
          if ls.head() <= a {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls<loop-body-start@95:24>.head() : [..a]
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected [..<a], found ls.head() : [..a]
          };
          ls = ls.tail();
       };
@@ -116,7 +116,7 @@ object Lists {
       var filteredReversed = new Nil();
       while ls is Cons {
          if !p(ls.head()) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls<loop-body-start@117:24>.head() : T with !p(it)
+            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed);   //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
          };
          ls = ls.tail();
       };

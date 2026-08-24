@@ -18,7 +18,7 @@ object Test {
       while x > 10 {
          x -= 1;
       };
-      return x;     //> E : return value: expected [0..9], found x<loop-body-start@18:20> : [0..10]
+      return x;     //> E : return value: expected [0..9], found x : [0..10]
    }
 
 }

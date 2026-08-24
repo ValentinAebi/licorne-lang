@@ -35,10 +35,10 @@ object MergeSort {
                 array.set(k, tmpArray.get(i!!));    // hybrid cast
                 i += 1;
             } else if (i > mid) {
-                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
+                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j : [..right]
                 j -= 1;     // ERROR: should be j += 1 here
-            } else if (lt(tmpArray.get(j), tmpArray.get(i))) {  //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
-                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j<loop-body-start@33:9> : [..right]
+            } else if (lt(tmpArray.get(j), tmpArray.get(i))) {  //> E : first argument of call to get: expected Idx[T](tmpArray), found j : [..right]
+                array.set(k, tmpArray.get(j));      //> E : first argument of call to get: expected Idx[T](tmpArray), found j : [..right]
                 j += 1;
             } else {
                 array.set(k, tmpArray.get(i));

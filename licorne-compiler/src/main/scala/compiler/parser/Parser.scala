@@ -342,7 +342,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "expr"
 
   private lazy val simpleExpr: P[Expr] = recursive {
-    BinaryOperatorsParser.buildFrom(Operator.operatorsByPriorityDecreasing, binopArg)
+    BinaryOperatorsParser.buildFrom(Operator.operatorsByDecreasingPrecedence, binopArg)
   } setName "simpleExpr"
 
   private lazy val noBinopExpr = recursive {

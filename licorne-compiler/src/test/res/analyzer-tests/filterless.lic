@@ -18,7 +18,7 @@ object FilterLess {
         var filteredReversed = new Nil();
         while ls is Cons {
             if ls.first() <= a {  // ERROR: should be <
-                filteredReversed = new Cons(first = ls.first(), rest = filteredReversed);   //> E : initialization of field first: expected [..<a], found ls<loop-body-start@19:26>.first() : [..a]
+                filteredReversed = new Cons(first = ls.first(), rest = filteredReversed);   //> E : initialization of field first: expected [..<a], found ls.first() : [..a]
             };
             ls = ls.rest();
         };

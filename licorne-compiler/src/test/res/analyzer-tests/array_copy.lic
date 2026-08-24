@@ -54,7 +54,7 @@ object ArrayCopy {
       val copy = new Array(length = xs.length() / 2);
       for var i = 0; i < xs.length(); i += 1 {
          val t = xs.at(i);
-         copy.set(i, t);    //> E : first argument of call to set: expected Idx[T](copy), found i<loop-body-start@55:7> : [0 ..< xs.length()]
+         copy.set(i, t);    //> E : first argument of call to set: expected Idx[T](copy), found i : [0 ..< xs.length()]
       };
       return copy;
    }
