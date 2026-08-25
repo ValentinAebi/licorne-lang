@@ -24,13 +24,15 @@ class LexerTests {
       ))
 
       override def name: String = "mock"
+
+      override def isStdLib: Boolean = false
     }
 
     var line = 1
     var col = 1
 
     def newTok(token: Token): PositionedToken = {
-      val posTok = PositionedToken(token, Position(mockSourceCodeProvider, line = line, col = col))
+      val posTok = PositionedToken(token, Position(mockSourceCodeProvider.name, line = line, col = col))
       if token == EndlToken then {
         line += 1
         col = 1

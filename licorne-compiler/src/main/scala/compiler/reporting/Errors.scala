@@ -39,7 +39,8 @@ object Errors {
 
     override def toString: String = {
       val positionDescr = posOpt.map(pos => s"at $pos ").getOrElse("")
-      color ++ s"[$errorLevelDescr] " ++ positionDescr ++ s"$msg #$compilationStep" ++ resetColor
+      val maybeStdLibWarningMsg = if posOpt.exists(_.isStdLib) then " \t WARNING: this error comes from the standard library, which is not supposed to happen" else ""
+      color ++ s"[$errorLevelDescr] " ++ positionDescr ++ s"$msg #$compilationStep" ++ maybeStdLibWarningMsg ++ resetColor
     }
   }
 
@@ -154,6 +155,12 @@ object Errors {
         displayErrors()
         displayExitMessage()
         exit(errorsExitCode)
+      } else {
+        for (err <- errors if err.isWarning) {
+          errorsConsumer(err)
+          errorsConsumer("\n")
+        }
+        errors.filterInPlace(!_.isWarning)
       }
     }
 

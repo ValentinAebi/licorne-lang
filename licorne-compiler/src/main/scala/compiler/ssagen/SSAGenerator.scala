@@ -30,7 +30,7 @@ import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
 
-final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootsForPkgMismatchCheckOpt: Option[List[Path]]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
+final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootForPkgMismatchCheckOpt: Option[Path]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
@@ -47,9 +47,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
     for (src <- sources) {
-      src.pkgDeclOpt.foreach { pkgDecl =>
-        checkPackageAndPosition(pkgDecl)
-      }
+      checkPackageAndPosition(src)
       for (importStat <- src.imports) {
         checkImport(importStat, packagesInfo)
       }
@@ -252,7 +250,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val key = aliasOpt.getOrElse(imported.nonPrefixedId)
           if (typeImports.contains(key)) {
             reportError(s"$key conflicts with a previous import", importStat.getPosition)
-          } else if (typesDefInThisSource.contains(key) ) {
+          } else if (typesDefInThisSource.contains(key)) {
             reportError(s"$key conflicts with type $key defined in this file, use an import alias instead", importStat.getPosition)
           } else {
             typeImports.put(key, imported)
@@ -348,24 +346,33 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
   }
 
-  private def checkPackageAndPosition(pkgStat: Asts.PackageDecl): Unit = srcRootsForPkgMismatchCheckOpt.foreach { srcRoots =>
-    val pkgPrefix = pkgStat.nameParts.mkString(".")
-    pkgStat.getPosition match {
+  private def checkPackageAndPosition(source: Asts.Source): Unit = srcRootForPkgMismatchCheckOpt.foreach { srcRoot =>
+
+    def pathToList(p: Path, isStdLib: Boolean): List[String] = {
+      val lsb = List.newBuilder[String]
+      p.iterator().forEachRemaining(pp => lsb.addOne(pp.toString))
+      val pathLs = lsb.result()
+      if isStdLib then StdLib.stdLibPackageName :: pathLs.reverse.takeWhile(_ != StdLib.stdLibPackageName).reverse else pathLs
+    }
+
+    source.getPosition match {
+      case None if source.defs.isEmpty => ()
+      case None =>
+        warn(s"missing positioning information for source starting with definition of type ${source.defs.head.name}", None)
       case Some(pos) =>
-        val filePath = new File(pos.srcCodeProviderName).toPath
-        srcRoots.find(filePath.startsWith) match {
-          case Some(srcRootPath) =>
-            val srcRoot = javaIterToList(srcRootPath.iterator())
-            val fileLocation = javaIterToList(filePath.iterator())
-            val diff = fileLocation.drop(srcRoot.size)
-            if (diff != pkgStat.nameParts) {
-              warn("file location does not match its declared package", pkgStat.getPosition)
+        val pathAsList = pathToList(Path.of(pos.srcCodeProviderName), pos.isStdLib)
+        if (pathAsList.isEmpty) {
+          warn("source file name is empty", Some(pos))
+        } else source.pkgDeclOpt match {
+          case Some(pkgDecl) =>
+            if (pathAsList.init != pkgDecl.nameParts) {
+              warn(s"file position ${pos.srcCodeProviderName} does not match its declared package ${pkgDecl.nameParts.mkString(".")}", Some(pos))
             }
           case None =>
-            warn("file is not located in a source directory", pkgStat.getPosition)
+            if (pathAsList.size != 1) {
+              warn(s"no package declaration for a file that is not declared in the root directory", Some(pos))
+            }
         }
-      case None =>
-        warn(s"missing source file information for file in package $pkgPrefix", None)
     }
   }
 

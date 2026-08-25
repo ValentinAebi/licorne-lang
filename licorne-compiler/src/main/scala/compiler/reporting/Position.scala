@@ -12,6 +12,14 @@ final case class Position(srcCodeProviderName: String, line: Int, col: Int) exte
   require(line >= 1)
   require(col >= 1)
   
+  private var isStdLibFlag: Boolean = false
+  
+  def isStdLib: Boolean = isStdLibFlag
+  
+  def raiseStdLibFlag(): Unit = {
+    isStdLibFlag = true
+  }
+  
   def shiftedRightOf(n: Int): Position = copy(col = col + n)
 
 
@@ -32,8 +40,12 @@ final case class Position(srcCodeProviderName: String, line: Int, col: Int) exte
 
 object Position {
 
-  def apply(srcCodeProvider: SourceCodeProvider, line: Int, col: Int): Position = {
-    new Position(srcCodeProvider.name, line, col)
+  def apply(srcCodeProvider: SourceCodeProvider, line: Int, col: Int, isStdLib: Boolean): Position = {
+    val pos = new Position(srcCodeProvider.name, line, col)
+    if (isStdLib) {
+      pos.raiseStdLibFlag()
+    }
+    pos
   }
 
 }

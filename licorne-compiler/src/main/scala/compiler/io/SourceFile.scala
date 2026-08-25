@@ -4,7 +4,7 @@ import compiler.gennames.FileExtensions
 
 import scala.util.{Try, Using}
 
-final case class SourceFile(path: String) extends SourceCodeProvider {
+final case class SourceFile(path: String, isStdLib: Boolean = false) extends SourceCodeProvider {
   require(path.endsWith(FileExtensions.licorne))
 
   override def name: String = path

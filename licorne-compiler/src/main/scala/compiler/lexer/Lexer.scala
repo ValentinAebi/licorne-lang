@@ -111,7 +111,7 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
 
           case None => {
             errorReporter.report(Err(CompilationStep.Lexing,
-              s"syntax error: '${stringLengthLimited(20, rem)}'", Some(Position(srcCodeProvider, lineIdxZeroBased + 1, colZeroBased + 1))))
+              s"syntax error: '${stringLengthLimited(20, rem)}'", Some(Position(srcCodeProvider, lineIdxZeroBased + 1, colZeroBased + 1, isStdLib = false /* not necessarily correct, but that's no really a problem here... */))))
             val splitIdx = rem.indexOf(' ')
             if (splitIdx >= 0) {
               val (errTokStr, newRem) = rem.splitAt(splitIdx)
@@ -146,7 +146,7 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
         errorReporter.displayAndTerminateIfErrors()
         val positionedTokens =
           for (line, lineIdxZeroBased) <- tokenizedLines.zipWithIndex; (token, colIdx) <- line yield {
-            PositionedToken(token, Position(sourceCodeProvider, line = lineIdxZeroBased + 1, col = colIdx + 1))
+            PositionedToken(token, Position(sourceCodeProvider, line = lineIdxZeroBased + 1, col = colIdx + 1, sourceCodeProvider.isStdLib))
           }
         (positionedTokens, sourceCodeProvider.name)
       }

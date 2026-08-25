@@ -64,6 +64,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       }
       generateTypeDecl(tSig, program)
     }
+    er.displayAndTerminateIfErrors()
     mainClasses.toList
   }
 

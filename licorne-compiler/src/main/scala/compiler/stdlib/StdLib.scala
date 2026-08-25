@@ -11,7 +11,9 @@ object StdLib {
     case _ => false
   })
 
-  private val licornePkgPrefix = List("licorne")
+  val stdLibPackageName: String = "licorne"
+
+  private val licornePkgPrefix = List(stdLibPackageName)
 
   private val licorneCorePkgPrefix = licornePkgPrefix :+ "core"
   val indexedTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Indexed")

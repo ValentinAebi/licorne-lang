@@ -164,9 +164,10 @@ object Main {
     }
     indent
   }
-
-  private def getPrintAllParenthesesArg(argsMap: MutArgsMap): Boolean = {
-    getUnvalArg("all-parenth", argsMap)
+  
+  private def getPkgCheckDir(argsMap: MutArgsMap): Option[Path] = {
+    val check = !getUnvalArg("dont-check-pkg", argsMap)
+    Option.when(check)(currentWorkingDir())
   }
 
   private def getCounterExBoxArg(argsMap: MutArgsMap): Option[CounterexampleBox] = {
@@ -181,6 +182,8 @@ object Main {
     }
     if arrayStr == emptyArrStr then Array.empty else arrayStr.tail.init.split(' ')
   }
+  
+  private def currentWorkingDir(): Path = Paths.get("").toAbsolutePath
 
   // Actions, i.e. description of commands to the cmdline program -----------------------------------------------
 
@@ -198,7 +201,8 @@ object Main {
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
+      val pkgCheckRootDir = getPkgCheckDir(argsMap)
+      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources ++ stdLibSources)
@@ -225,7 +229,8 @@ object Main {
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
+      val pkgCheckRootDir = getPkgCheckDir(argsMap)
+      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       compiler.apply(sources ++ stdLibSources)
     }
@@ -240,7 +245,8 @@ object Main {
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt)
+      val pkgCheckRootDir = getPkgCheckDir(argsMap)
+      val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")
@@ -252,7 +258,7 @@ object Main {
     Files.walk(licorneRoot.resolve("licorne-stdlib"))
       .map(_.toAbsolutePath.toString)
       .filter(_.endsWith(dot(_.licorne)))
-      .map(SourceFile(_))
+      .map(SourceFile(_, isStdLib = true))
       .toArray(new Array[SourceCodeProvider](_))
       .toList
   }
@@ -284,17 +290,20 @@ object Main {
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
+         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
+         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |typecheck: parse and typecheck the program
          | args: -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
+         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |help: displays help (this)
          |""".stripMargin)
   }

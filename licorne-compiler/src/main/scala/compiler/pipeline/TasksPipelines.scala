@@ -32,9 +32,10 @@ object TasksPipelines {
                 ssaDirectoryPathOpt: Option[Path],
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
+                srcRootForPkgMismatchCheckOpt: Option[Path],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(Backend(outputDirectoryPath, er))
   }
 
@@ -42,10 +43,11 @@ object TasksPipelines {
                    ssaDirectoryPathOpt: Option[Path],
                    ihm: IntHandlingMode[?],
                    counterExBoxOpt: Option[CounterexampleBox],
+                   srcRootForPkgMismatchCheckOpt: Option[Path],
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(_ => ())
   }
 
@@ -59,7 +61,8 @@ object TasksPipelines {
                                ihm: IntHandlingMode[?],
                                er: ErrorReporter,
                                counterExBoxOpt: Option[CounterexampleBox],
-                               ssaDirPathOpt: Option[Path]
+                               ssaDirPathOpt: Option[Path],
+                               srcRootForPkgMismatchCheckOpt: Option[Path]
                              ): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
@@ -67,7 +70,7 @@ object TasksPipelines {
     val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er)
       .andThen(ImportsScanner())
-      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, /* FIXME check that this check works */ srcRootsForPkgMismatchCheckOpt = None))
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootForPkgMismatchCheckOpt))
       .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, identity, er, ssaDirPathOpt))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))

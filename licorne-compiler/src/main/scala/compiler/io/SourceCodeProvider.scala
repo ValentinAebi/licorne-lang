@@ -8,6 +8,7 @@ import scala.util.Try
 trait SourceCodeProvider {
   def lines: Try[Seq[String]]
   def name: String
+  def isStdLib: Boolean
   
   def content: Try[String] = lines.map(_.mkString("\n"))
 

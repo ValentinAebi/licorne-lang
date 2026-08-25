@@ -121,7 +121,7 @@ class AnalyzerTests(fileName: String) {
     val counterExBoxOpt = Option.empty[CounterexampleBox]
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(ImportsScanner())
-      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootsForPkgMismatchCheckOpt = None))
+      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootForPkgMismatchCheckOpt = None))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
