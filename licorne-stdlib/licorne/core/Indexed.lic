@@ -1,0 +1,5 @@
+package licorne.core;
+
+interface Indexed {
+    pure fn size(this) -> Cnt
+}

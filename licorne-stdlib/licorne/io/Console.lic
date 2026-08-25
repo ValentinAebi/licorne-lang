@@ -2,8 +2,17 @@ package licorne.io;
 
 object Console : InStream, OutStream {
 
-    fn println(s: String) {
+    fn print(o: Any) {
         panic "compiler stub"
+    }
+
+    fn println(o: Any) {
+        print(o);
+        print("\n");
+    }
+
+    fn write(s: String) {
+        print(s)
     }
 
     fn readLine() -> String {

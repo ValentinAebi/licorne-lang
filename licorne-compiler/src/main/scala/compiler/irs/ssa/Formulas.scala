@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.ssa.SSA.{Instr, LocalDecl, Scope}
 import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
-import compiler.lang.{Keyword, Operator, RuntimeTypeSignature}
+import compiler.lang.{Operator, RuntimeTypeSignature}
 import compiler.reporting.Position
 import compiler.util.SeqSet
 
@@ -17,8 +17,17 @@ object Formulas {
 
   sealed trait Formula {
     def isAtomic = false
+    
+    def children: List[Formula]
 
     final override def toString: String = SourceLevelFormulaPrinter.prettyprint(this)
+    
+    def traversePreOrder(action: Formula => Unit): Unit = {
+      action(this)
+      for (child <- children) {
+        child.traversePreOrder(action)
+      }
+    }
   }
 
   sealed abstract class IdValue extends Formula {
@@ -27,6 +36,8 @@ object Formulas {
     def definingScope: Scope
 
     override def isAtomic: Boolean = true
+
+    override def children: List[Formula] = List.empty
 
     val users: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty
   }
@@ -43,15 +54,18 @@ object Formulas {
   }
 
   sealed trait Binop(val op: Operator) {
-    formula =>
+    formula: Formula =>
     
     def lhs: Formula
 
     def rhs: Formula
+
+    override def children: List[Formula] = List(lhs, rhs)
   }
 
   final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p"), LocalIdValue {
     override def name: String = id.stringId
+    
   }
 
   final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s"), LocalIdValue {
@@ -76,6 +90,8 @@ object Formulas {
     def value: Any
 
     override def isAtomic: Boolean = true
+
+    override def children: List[Formula] = List.empty
   }
 
   final case class IntConst(value: Int) extends ConstFormula
@@ -85,6 +101,8 @@ object Formulas {
   final case class StringConst(value: String) extends ConstFormula
 
   final case class Select(owner: Formula, field: FieldResolutionTarget) extends Formula {
+
+    override def children: List[Formula] = List(owner)
 
     override def equals(that: Any): Boolean = that match {
       case Select(thatOwner, thatField) =>
@@ -97,6 +115,8 @@ object Formulas {
 
   final case class FunCall(receiver: Formula, func: InvocationTarget, var typeArgs: List[Type], args: List[Formula]) extends Formula {
 
+    override def children: List[Formula] = receiver :: args
+
     override def equals(that: Any): Boolean = that match {
       case FunCall(thatReceiver, thatFunc, _, thatArgs) =>
         this.receiver == thatReceiver && this.func.funId == thatFunc.funId && this.args == thatArgs
@@ -106,7 +126,9 @@ object Formulas {
     override def hashCode(): Int = Objects.hash(receiver, func.funId, args)
   }
 
-  final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula
+  final case class ClosureCall private(callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula]) extends Formula {
+    override def children: List[Formula] = callee :: args
+  }
 
   object ClosureCall {
     def apply(callee: Formula, target: ClosureTypingTarget, args: List[Formula]): Formula = callee match {
@@ -117,12 +139,16 @@ object Formulas {
     }
   }
 
-  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula
+  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
+    override def children: List[Formula] = params :+ body :+ closureVal
+  }
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Plus)
 
   final case class Neg(operand: Formula) extends Formula {
     override def isAtomic: Boolean = operand.isAtomic
+
+    override def children: List[Formula] = List(operand)
   }
 
   final case class Times(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Times)
@@ -135,6 +161,8 @@ object Formulas {
 
   final case class LogicalNot(operand: Formula) extends Formula {
     override def isAtomic: Boolean = operand.isAtomic
+
+    override def children: List[Formula] = List(operand)
   }
 
   final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Or)
@@ -145,9 +173,13 @@ object Formulas {
 
   final case class LessThan(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessThan)
 
-  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula
+  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
+    override def children: List[Formula] = List(subject)
+  }
 
-  final case class Phi(terms: SeqSet[Formula]) extends Formula
+  final case class Phi(terms: SeqSet[Formula]) extends Formula {
+    override def children: List[Formula] = terms.toList
+  }
 
   object Phi {
     def apply(terms: Iterable[Formula]): Phi = new Phi(SeqSet(terms))

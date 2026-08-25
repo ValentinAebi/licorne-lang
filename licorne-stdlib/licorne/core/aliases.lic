@@ -1,10 +1,7 @@
 package licorne.core;
 
-typealias NNInt = [0..]
-typealias PInt = [1..]
-typealias NPInt = [..0]
-typealias NInt = [..-1]
-typealias NZInt = Int with it != 0
+typealias NonZeroInt = Int with it != 0
 
-typealias Cnt = NNInt
+typealias Cnt = [0..]
 
+typealias Idx(indexed: Indexed) = [0 .. indexed.size()]

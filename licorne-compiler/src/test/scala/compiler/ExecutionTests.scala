@@ -55,11 +55,17 @@ class ExecutionTests(programDirName: String) {
 
     val er = ErrorReporter(System.err.println, exit = throw new ExitException)
     val srcFiles = getAllSourcesInProgram(programDirPath).map(s => SourceFile(programDirPath.resolve(s).toString))
+    val stdLibFiles =
+      Files.walk(Paths.get("../licorne-stdlib"))
+        .map(_.toAbsolutePath.toString)
+        .filter(_.endsWith(FileExtensions.dot(_.licorne)))
+        .toArray(new Array[String](_))
+        .map(SourceFile(_))
 
     val mainClasses = try {
       TasksPipelines
         .compiler(testOutSubdirPath, None, ArithIntMode, None, er)
-        .apply(srcFiles)
+        .apply(srcFiles ++ stdLibFiles)
     } catch {
       case e: Throwable =>
         er.displayErrors()

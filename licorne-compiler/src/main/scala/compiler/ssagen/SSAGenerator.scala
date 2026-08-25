@@ -2,7 +2,7 @@ package compiler.ssagen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{EncapsulatedTypeDefTree, Expr, ImportStat, ObjectDef, Source, VariableRef}
+import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, SSA}
@@ -17,6 +17,7 @@ import compiler.reasoning.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.ssagen.ImportsScanner.PackagesInfo
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
 import compiler.util.{SeqSet, javaIterToList, mapVals}
@@ -147,7 +148,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
           case df@Asts.RecordDef(_, typeParamTrees, fields, functions, directSupertypes) =>
 
-            given importsCtx: ImportsContext = createImportsCtx(src, None)
+            given importsCtx: ImportsContext = createImportsCtx(src, Some(df))
 
             val recordSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = recordSigScope.newParam(ThisId, df.getPosition)
@@ -208,7 +209,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       }
       for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, functions, directSupertypes)) <- datatypeDefs) {
 
-        given ImportsContext = createImportsCtx(src, None)
+        given ImportsContext = createImportsCtx(src, Some(df))
 
         given collection.Map[FunOrVarId, Field] = Map.empty
 
@@ -239,9 +240,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     program
   }
 
-  private def createImportsCtx(source: Source, currEncapsulatedTypeOpt: Option[EncapsulatedTypeDefTree])
+  private def createImportsCtx(source: Source, currTypeOpt: Option[TypeDefTree])
                               (using allSources: List[Source], packagesInfo: PackagesInfo): ImportsContext = {
-    val localFunctions = currEncapsulatedTypeOpt.toSet.flatMap(_.functions.map(_.id))
+    val typesDefInThisSource = source.defs.map(_.name).toSet
+    val functionsDefInThisType = currTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
     val funcImports = mutable.LinkedHashMap.empty[FunOrVarId, (TypeIdentifier, FunOrVarId)]
     for (importStat <- source.imports) {
@@ -250,6 +252,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val key = aliasOpt.getOrElse(imported.nonPrefixedId)
           if (typeImports.contains(key)) {
             reportError(s"$key conflicts with a previous import", importStat.getPosition)
+          } else if (typesDefInThisSource.contains(key) ) {
+            reportError(s"$key conflicts with type $key defined in this file, use an import alias instead", importStat.getPosition)
           } else {
             typeImports.put(key, imported)
           }
@@ -266,7 +270,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val key = aliasOpt.getOrElse(funId)
             if (funcImports.contains(key)) {
               reportError(s"$key conflicts with a previous import", importStat.getPosition)
-            } else if (!localFunctions.contains(key)) {
+            } else if (!functionsDefInThisType.contains(key)) {
               funcImports.put(key, (receiverObj, funId))
             }
           }
@@ -286,6 +290,17 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         if (!typeImports.contains(df.name)) {
           typeImports.put(df.name, TypeIdentifier(currPkgPrefix, df.name))
         }
+      }
+    }
+
+    for ((ts, tid) <- StdLib.automaticTypeImports) {
+      if (!typeImports.contains(ts) && !typesDefInThisSource.contains(ts)) {
+        typeImports.put(ts, tid)
+      }
+    }
+    for ((fs, (ownerId, funId)) <- StdLib.automaticFuncImports) {
+      if (!funcImports.contains(fs) && !functionsDefInThisType.contains(fs)) {
+        funcImports.put(fs, (ownerId, funId))
       }
     }
 

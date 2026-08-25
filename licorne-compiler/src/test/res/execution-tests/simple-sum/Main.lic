@@ -14,7 +14,4 @@ object Main {
         return s;
     }
 
-    // stub FIXME remove once intrinsics / stdlib are in place
-    fn println(a: Any){}
-
 }

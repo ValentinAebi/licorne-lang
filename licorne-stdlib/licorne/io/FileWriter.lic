@@ -2,11 +2,7 @@ package licorne.io;
 
 class FileWriter(path: String) : OutStream {
 
-    fn println(this, s: String) {
-        panic "compiler stub"
-    }
-
-    fn readLine(this) -> String {
+    fn write(this, s: String) {
         panic "compiler stub"
     }
 

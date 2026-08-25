@@ -1,9 +1,10 @@
 package compiler.runners
 
-import compiler.gennames.FileExtensions.licorne as licorneExt
+import compiler.gennames.FileExtensions.dot
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
 import compiler.reasoning.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
+import compiler.setup.EnvironmentVariables
 
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import scala.annotation.tailrec
@@ -37,7 +38,7 @@ object Main {
       }
       if file.isFile then List(path)
       else Files.walk(path).toArray(new Array[Path](_))
-    }.filter(_.toString.endsWith("." + licorneExt))
+    }.filter(_.toString.endsWith(dot(_.licorne)))
   }
 
   private def splitAtSpacesExceptBetweenBrackets(cmdLine: String): List[String] = {
@@ -110,7 +111,7 @@ object Main {
     }
   }
 
-  private def getValuedArg(argName: String, argsMap: MutArgsMap, optDefault: Option[String] = None): String = {
+  private def getValuedArg(argName: String, argsMap: MutArgsMap, optDefault: => Option[String] = None): String = {
     argsMap.remove(argName).getOrElse(optDefault).getOrElse(error(s"missing required argument: $argName"))
   }
 
@@ -136,7 +137,11 @@ object Main {
   private def getOutDirArg(argsMap: MutArgsMap): Path = {
     Paths.get(getValuedArg("out-dir", argsMap, Some(defaultClassOutDir)))
   }
-  
+
+  private def getLicorneRootDirArg(argsMap: MutArgsMap): Path = {
+    Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome()))
+  }
+
   private def getSSADirArg(argsMap: MutArgsMap): Option[Path] = {
     getValuedArgOpt("ir-dir", argsMap).map(Paths.get(_))
   }
@@ -192,10 +197,11 @@ object Main {
       val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val stdLibSources = collectStdLib(argsMap)
       val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
-      val mainClasses = compiler.apply(sources)
+      val mainClasses = compiler.apply(sources ++ stdLibSources)
       if (mainClasses.isEmpty) {
         error("no main class found")
       } else if (mainClasses.size >= 2) {
@@ -218,9 +224,10 @@ object Main {
       val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val stdLibSources = collectStdLib(argsMap)
       val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
-      compiler.apply(sources)
+      compiler.apply(sources ++ stdLibSources)
     }
   }
 
@@ -232,11 +239,22 @@ object Main {
       val ssaDir = getSSADirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
+      val stdLibSources = collectStdLib(argsMap)
       val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt)
       reportUnknownArgsIfAny(argsMap)
-      typeChecker.apply(sources)
+      typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")
     }
+  }
+  
+  private def collectStdLib(argsMap: MutArgsMap): List[SourceCodeProvider] = {
+    val licorneRoot = getLicorneRootDirArg(argsMap)
+    Files.walk(licorneRoot.resolve("licorne-stdlib"))
+      .map(_.toAbsolutePath.toString)
+      .filter(_.endsWith(dot(_.licorne)))
+      .map(SourceFile(_))
+      .toArray(new Array[SourceCodeProvider](_))
+      .toList
   }
 
   private def error(msg: String): Nothing = {
@@ -264,13 +282,19 @@ object Main {
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |typecheck: parse and typecheck the program
+         | args: -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
+         |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
+         |       -counter-ex: displays the counter-examples found by the SMT solver
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |help: displays help (this)
          |""".stripMargin)
   }

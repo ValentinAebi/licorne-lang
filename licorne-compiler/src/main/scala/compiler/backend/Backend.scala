@@ -3,7 +3,7 @@ package compiler.backend
 import compiler.backend.Boxing.boxDesc
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas.{Formula, IdValue, IntermediateIdValue, NamedIdValue}
+import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
 import compiler.lang
@@ -14,13 +14,16 @@ import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
+import compiler.stdlib.StdLib.*
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
 import compiler.util.toJavaUtilList
+import compiler.valuesconversion.GlobalValuesContext
 
 import java.lang
 import java.lang.classfile.*
 import java.lang.classfile.TypeKind.*
+import java.lang.classfile.attribute.SourceFileAttribute
 import java.lang.constant.ConstantDescs.*
 import java.lang.constant.{ClassDesc, MethodTypeDesc}
 import java.nio.file.{Files, Path}
@@ -37,10 +40,11 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
   private val unreachablePathMessage = "Licorne: UNREACHABLE PATH ERROR\n" +
     "This path has been marked unreachable by the Licorne compiler. This code should never been executed.\n" +
-    "If this message appears as an AssertionError thrown during program execution, this means that the compiler made a mistake and the code is corrupted (unless you used reflection)."
+    "If this message appears as an AssertionError thrown during program execution, this means that the compiler made an error and the code is corrupted (or that reflection has been used)."
 
   private val equalsMethodName = "equals"
   private val assertionErrorInternalName = "java/lang/AssertionError"
+  private val assertionErrorConstrDesc = MethodTypeDesc.of(CD_void, CD_Object)
 
   override def apply(input: (Program, SubtypingInfo)): List[String] = {
     val (program, subtypingInfo) = input
@@ -78,6 +82,9 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
           flags |= ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
         } else {
           flags |= ClassFile.ACC_FINAL
+        }
+        tSig.declPosOpt.foreach { declPos =>
+          cb.`with`(SourceFileAttribute.of(declPos.srcCodeProviderName))
         }
         cb.withFlags(flags)
         cb.withVersion(majorVersion, minorVersion)
@@ -137,6 +144,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       cb.aload(cb.receiverSlot())
       cb.dup()
       cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
+      cb.localVariable(0, tSig.id.nonPrefixedId, tConv.descriptorFor(tSig.id), cb.startLabel(), cb.endLabel())
       var paramSlotIdx = 1
       for (fld <- tSig.fields.values) {
         cb.aload(paramSlotIdx)
@@ -153,6 +161,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private def generateFunctions(ownerId: TypeIdentifier, functions: Iterable[FunctionSignature], cb: ClassBuilder)
                                (using program: Program, dealiasingCtx: DealiasingContext,
                                 simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = {
+    given GlobalValuesContext = program.globalValuesContext
+
     for (funSig <- functions) {
       val bodyOpt = program.functions.apply(ownerId, funSig.functionName).bodyOpt
       generateFunc(funSig, bodyOpt, cb)
@@ -177,22 +187,27 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   }
 
   private def generateFunc(funSig: FunctionSignature, bodyOpt: Option[SSA.Scope], cb: ClassBuilder)
-                          (using DealiasingContext, SimplifiedSubtypingContext, ResolutionContext): Unit = {
+                          (using DealiasingContext, SimplifiedSubtypingContext, GlobalValuesContext, ResolutionContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val funDesc = mkFunDesc(funSig)
     cb.withMethod(funSig.functionName.stringId, funDesc, mkFunFlags(funSig), mb => {
-      bodyOpt.foreach { body =>
-        mb.withCode(cb => {
-          given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(funSig)
+      StdLibFunctions.intrinsicFor(funSig) match {
+        case Some(genIntrinsicFunc) =>
+          genIntrinsicFunc(mb)
+        case None =>
+          bodyOpt.foreach { body =>
+            mb.withCode(cb => {
+              given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(funSig)
 
-          for ((idVal, tpe) <- funSig.paramsInclThis) {
-            allocateAndDeclare(idVal, cb, body)
+              for ((idVal, tpe) <- funSig.paramsInclThis) {
+                allocateAndDeclare(idVal, cb, body)
+              }
+              generateScope(body, cb)
+              if (!body.hasExited) {
+                cb.return_()
+              }
+            })
           }
-          generateScope(body, cb)
-          if (!body.hasExited) {
-            cb.return_()
-          }
-        })
       }
     })
   }
@@ -231,7 +246,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
   private def generateScope(scope: SSA.Scope, cb: CodeBuilder)
                            (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext,
-                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = {
+                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext, globalValsCtx: GlobalValuesContext): Unit = {
     scope.writeInstrIndices()
     try {
       for (instr <- scope.instructions) {
@@ -247,7 +262,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
   private def generateInstr(instr: SSA.Instr, cb: CodeBuilder, currScope: SSA.Scope)
                            (using funGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext,
-                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): Unit = instr match {
+                            simplifiedSubtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext, globalValsCtx: GlobalValuesContext): Unit = instr match {
 
     case scope: SSA.Scope => generateScope(scope, cb)
 
@@ -387,7 +402,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
     case SSA.Lt(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
 
-    // FIXME enforce a.equals(a) when redefining equals
+    // FIXME enforce a.equals(a) and purity of equals when redefining equals
     case SSA.Equal(assigned, lhs, rhs) =>
       genValueLoad(lhs, currScope, cb)
       ensureAssignable(AnyType, dealiasedTypeOf(lhs, currScope), cb)
@@ -405,7 +420,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
       val ownerDesc = tConv.descriptorFor(field.getReceiverSigUnsafe.id)
       genValueLoad(owner, currScope, cb)
-      cb.getfield(ownerDesc, field.fieldId.stringId, tConv.descriptorFor(field.getInstantiatedTypeUnsafe))
+      cb.getfield(ownerDesc, field.fieldId.stringId, tConv.descriptorFor(field.getReceiverSigUnsafe.fields.apply(field.fieldId).tpe))
       if (!(funGenCtx.enclosingFunc.isSyntheticAccessor && fr.getIdxInScopeOpt.get == 0)) {
         ensureAssignable(dealiasedTypeOf(assigned, currScope), field.getFieldUnsafe.tpe, cb)
         genValueStore(assigned, currScope, cb)
@@ -417,17 +432,23 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       genValueLoad(owner, currScope, cb)
       genValueLoad(rhs, currScope, cb)
       ensureAssignable(field.getFieldUnsafe.tpe, dealiasedTypeOf(rhs, currScope), cb)
-      cb.putfield(ownerDesc, field.fieldId.stringId, tConv.descriptorFor(field.getInstantiatedTypeUnsafe))
+      cb.putfield(ownerDesc, field.fieldId.stringId, tConv.descriptorFor(field.getReceiverSigUnsafe.fields.apply(field.fieldId).tpe))
 
-    // FIXME this is temporary, for testing purposes
-    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if func.getFunSigOpt.get.functionName.stringId == "println" =>
-      assert(args.size == 1)
-      val systemDesc = ClassDesc.of("java.lang.System")
-      val printStreamDesc = ClassDesc.of("java.io.PrintStream")
-      cb.getstatic(systemDesc, "out", printStreamDesc)
+    // Array methods
+    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
+      val elemKind = arrayElemKindOf(receiver, currScope)
+      genValueLoad(receiver, currScope, cb)
+      cb.arrayLoad(elemKind)
+      genValueStore(assigned, currScope, cb)
+    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
+      val elemKind = arrayElemKindOf(receiver, currScope)
+      genValueLoad(receiver, currScope, cb)
       genValueLoad(args.head, currScope, cb)
-      ensureAssignable(AnyType, dealiasedTypeOf(args.head, currScope), cb)
-      cb.invokevirtual(printStreamDesc, "println", MethodTypeDesc.of(CD_void, CD_Object))
+      cb.arrayStore(elemKind)
+    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayLengthFunId)(func.getFunSigUnsafe) =>
+      genValueLoad(receiver, currScope, cb)
+      cb.arraylength()
+      genValueStore(assigned, currScope, cb)
 
     case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
@@ -509,7 +530,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
           cb.new_(assertionErrorDesc)
           cb.dup()
           cb.ldc(s"assertion $formula failed")
-          cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+          cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
           cb.athrow()
         case None =>
           genValueLoad(inValue, currScope, cb)
@@ -517,7 +538,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
           cb.new_(assertionErrorDesc)
           cb.dup()
           cb.ldc(s"non nullity assertion failed")
-          cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+          cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
           cb.athrow()
       }
       cb.labelBinding(skipThrowLabel)
@@ -537,7 +558,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       cb.new_(assertionErrorDesc)
       cb.dup()
       genValueLoad(msg, currScope, cb)
-      cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+      cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
       cb.athrow()
       throw TerminateScopeSignal
 
@@ -549,13 +570,13 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       cb.new_(assertionErrorDesc)
       cb.dup()
       cb.ldc(unreachablePathMessage)
-      cb.invokespecial(assertionErrorDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+      cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
       cb.athrow()
       throw TerminateScopeSignal
   }
 
   private def genValueMove(to: IdValue, from: IdValue, currScope: Scope, cb: CodeBuilder)
-                          (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext): Unit = {
+                          (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext, globalValsCtx: GlobalValuesContext): Unit = {
     val typeDescOfTo = typeDescOf(to, currScope)
     val typeDescOfFrom = typeDescOf(from, currScope)
     if (funcGenCtx.getSlot(from) != allocateAndDeclareIfNew(to, currScope, cb) || typeDescOfFrom != typeDescOfTo) {
@@ -566,7 +587,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   }
 
   private def genValueLoad(rawIdVal: IdValue, currScope: Scope, cb: CodeBuilder)
-                          (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext): Unit = {
+                          (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = {
     funcGenCtx.asIntConst(rawIdVal) match {
       case Some(cst) =>
         cb.loadConstant(cst)
@@ -574,8 +595,15 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         val substIdVal = funcGenCtx.getSubst(rawIdVal)
         val kind = typeKindOf(substIdVal, currScope)
         if (kind != VOID) {
-          val slot = funcGenCtx.getSlot(substIdVal)
-          cb.loadLocal(kind, slot)
+          if (funcGenCtx.hasSlotFor(substIdVal)) {
+            val slot = funcGenCtx.getSlot(substIdVal)
+            cb.loadLocal(kind, slot)
+          } else {
+            val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+            val objId = globalValsCtx.getNameOfObject(substIdVal).get
+            val objDesc = tConv.descriptorFor(objId)
+            cb.getstatic(objDesc, objectInstanceFieldName, objDesc)
+          }
         }
     }
   }
@@ -634,7 +662,9 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     val kind = tConv.kindFor(tpe)
     val descr = tConv.descriptorFor(tpe)
     val slot = fungenCtx.allocateSlot(kind, idVal)
-    cb.localVariable(slot, idVal.name, descr, cb.startLabel(), cb.endLabel())
+    idVal.name.split('.').lastOption.foreach { simplifiedName =>
+      cb.localVariable(slot, simplifiedName, descr, cb.startLabel(), cb.endLabel())
+    }
     slot
   }
 
@@ -665,9 +695,19 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     }
   }
 
+  private def arrayElemKindOf(idVal: IdValue, currScope: Scope)(using DealiasingContext): TypeKind = {
+    currScope.typeOfNoSmartcast(idVal) match {
+      case Some(NamedType(tid, typeArgs, Nil)) if tid == arrayTypeId && typeArgs.size == 1 =>
+        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        tConv.kindFor(typeArgs.head)
+      case _ =>
+        throw IllegalArgumentException("not an array")
+    }
+  }
+
   private def genArithBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder,
                             intOp: CodeBuilder => Unit, doubleOp: CodeBuilder => Unit)
-                           (using FunctionGenerationContext, DealiasingContext): Unit = {
+                           (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
     genValueLoad(lhs, currScope, cb)
     genValueLoad(rhs, currScope, cb)
     dispatchArithOnVal(lhs, currScope, whenInt = {
@@ -679,7 +719,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   }
 
   private def genIntCompBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder, mkCmpInstr: (ccb: CodeBuilder, trueLabel: Label) => Unit)
-                             (using FunctionGenerationContext, DealiasingContext): Unit = {
+                             (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
     genValueLoad(lhs, currScope, cb)
     genValueLoad(rhs, currScope, cb)
     val trueLabel = cb.newLabel()

@@ -1,6 +1,6 @@
-package licorne.collections;
+package licorne.core;
 
-class Array[T](public size: Size) : MutOrderedSeq[T] {
+class Array[T](public size: Cnt) : Indexed {
 
     pure fn get(this, i: Idx(this)) -> T {
         panic "stub, compiled to xALOAD"
@@ -11,4 +11,3 @@ class Array[T](public size: Size) : MutOrderedSeq[T] {
     }
 
 }
-

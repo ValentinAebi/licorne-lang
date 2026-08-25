@@ -1,10 +1,11 @@
 package compiler.typing
 
+import compiler.backend.StdLibFunctions
 import compiler.identifiers.*
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, IRLevelFormulaPrinter, InvocationTarget, SSA}
+import compiler.irs.ssa.*
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -16,6 +17,7 @@ import compiler.reasoning.*
 import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -314,6 +316,9 @@ final class Typer(
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
         if (func.isResolved) {
           currScope.markHasExitedIfNothing(returnType)
+          if (StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)(func.getFunSigUnsafe)) {
+            er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${StdLib.sizeFunId} is not callable", invk.getPosition)
+          }
         }
 
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
@@ -437,6 +442,15 @@ final class Typer(
             val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
               irModif {
+                var indexedSizeCallFlag = false
+                targetPred.traversePreOrder {
+                  case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)) =>
+                    indexedSizeCallFlag = true
+                  case _ => ()
+                }
+                if (indexedSizeCallFlag) {
+                  er.reportError(s"implementation restriction: hybrid cast to target type $targetType is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+                }
                 hybridCast.setMode(AssertPredicate(targetPred.substitute(itValue, inValue)))
               }
               currScope.saveSmartcast(inValue, targetType)
@@ -1411,6 +1425,9 @@ final class Typer(
           }
         case superTDealiased =>
           er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)
+      }
+      if (sig.sigName != StdLib.arrayTypeId && sig.sigName != StdLib.indexableTypeId && superTInst.typeName == StdLib.indexedTypeId) {
+        er.reportError(s"implementation restriction: extending ${StdLib.indexedTypeId} is not allowed, use ${StdLib.indexableTypeId} instead", sig.declPosOpt)
       }
       superTInst
     }

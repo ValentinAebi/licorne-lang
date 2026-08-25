@@ -2,8 +2,6 @@ package licorne.io;
 
 interface OutStream {
 
-    fn println(this, s: String)
-
-    fn readLine(this) -> String
+    fn write(this, s: String)
 
 }

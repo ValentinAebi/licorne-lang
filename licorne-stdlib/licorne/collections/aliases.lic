@@ -1,7 +1,0 @@
-package licorne.collections;
-
-import licorne.core.Cnt;
-
-typealias Size = Cnt;
-
-typealias Idx[T](seq: OrderedSeq[T]) = [0 .. seq.size()]
