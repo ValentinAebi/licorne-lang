@@ -48,7 +48,8 @@ object StdLib {
 
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),
-    consolePrintlnFunId -> (consoleTypeId, consolePrintlnFunId)
+    consolePrintlnFunId -> (consoleTypeId, consolePrintlnFunId),
+    consoleReadlineFunId -> (consoleTypeId, consoleReadlineFunId)
   )
 
 }
