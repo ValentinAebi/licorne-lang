@@ -1,0 +1,25 @@
+
+typealias Nat = [0..]
+
+object Fibonacci {
+
+    fn recursive(n: Nat) -> Nat {
+        if (n <= 1) {
+            return n;
+        } else {
+            return recursive(n-1) + recursive(n-2);
+        }
+    }
+
+    fn iterative(n: Nat) -> Nat {
+        var curr = 0;
+        var next = 1;
+        for (var i = 0; i < n; i += 1) {
+            val prev = curr;
+            curr = next;
+            next = curr + prev;
+        };
+        return curr;
+    }
+
+}

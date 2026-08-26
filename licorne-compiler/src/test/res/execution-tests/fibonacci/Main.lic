@@ -1,0 +1,14 @@
+
+object Main {
+
+    main fn run() {
+        println(Fibonacci.recursive(10));
+        for (var i = 2; true; i += 1) {
+            if (Fibonacci.iterative(i) == i*i) {
+                println(i);
+                return;
+            };
+        };
+    }
+
+}

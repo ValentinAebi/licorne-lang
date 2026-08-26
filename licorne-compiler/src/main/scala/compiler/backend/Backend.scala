@@ -41,7 +41,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private val licorneCoreStringInternalName = "licorne/core/String"
 
   private val unreachablePathMessage = "Licorne: UNREACHABLE PATH ERROR\n" +
-    "This path has been marked unreachable by the Licorne compiler. This code should never been executed.\n" +
+    "This path has been marked unreachable by the Licorne compiler. This code should never be executed.\n" +
     "If this message appears as an AssertionError thrown during program execution, this means that the compiler made an error and the code is corrupted (or that reflection has been used)."
 
   private val nullUnboxingMessage = "tried to unbox null"
@@ -400,7 +400,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case Or(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.ior(), _ => assert(false))
 
     case SSA.Equal(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
-      genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.ifeq(_))
+      genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmpeq(_))
     case SSA.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT =>
       genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmple(_))
     case SSA.Lt(assigned, lhs, rhs) if typeKindOf(rhs, currScope) == INT =>
