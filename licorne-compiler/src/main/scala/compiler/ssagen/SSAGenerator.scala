@@ -1,6 +1,6 @@
 package compiler.ssagen
 
-import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ssa.Formulas.*
@@ -951,6 +951,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           Asts.BoolLit(true).withDesugaringSource(binopTree),
           Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree)
         ))
+      case binopTree@Asts.BinaryOp(lhs, Operator.PlusPlus, rhs) =>
+        recurseOnDesugared(Asts.Call(
+          Asts.Select(lhs, StdLib.stringConcatFunId).withDesugaringSource(binopTree),
+          List.empty,
+          List(rhs)
+        ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhs, operator, rhs) =>
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>

@@ -1,0 +1,11 @@
+package com.example;
+
+object Main {
+
+    main fn run() {
+        println("Enter your name:");
+        val name = "Jonas Vingegaard";
+        print("Hello " ++ name ++ "!");
+    }
+
+}

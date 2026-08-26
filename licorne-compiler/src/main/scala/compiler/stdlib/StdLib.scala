@@ -35,6 +35,7 @@ object StdLib {
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
   val stringType: NamedType = NamedType(StdLib.stringTypeId, List.empty, List.empty)
   val stringSizeFunId: FunOrVarId = NormalFunOrVarId("size")
+  val stringIsEmptyFunId: FunOrVarId = NormalFunOrVarId("isEmpty")
   val stringConcatFunId: FunOrVarId = NormalFunOrVarId("concat")
   val stringStartsWithFunId: FunOrVarId = NormalFunOrVarId("startsWith")
   val stringEndsWithFunId: FunOrVarId = NormalFunOrVarId("endsWith")

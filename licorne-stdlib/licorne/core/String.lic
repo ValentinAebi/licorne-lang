@@ -11,7 +11,9 @@ class String : Indexed {
         panic "compiler stub"
     }
 
-    pure fn isEmpty(this) -> Bool = size() > 0
+    pure fn isEmpty(this) -> Bool {
+        panic "compiler stub"
+    }
 
     pure fn concat(this, s: String) -> StringL(this.size() + s.size()) {
         panic "compiler stub"

@@ -23,6 +23,8 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case And extends Operator("&&", Some(Precedence.And), isCommutative = true)
   case Or extends Operator("||", Some(Precedence.Or), isCommutative = true)
 
+  case PlusPlus extends Operator("++", Some(Precedence.Add))
+
   case ExclamationMark extends Operator("!", Some(Precedence.Unary))
 
   case OpeningParenthesis extends Operator("(", None)
@@ -57,7 +59,7 @@ object Operator {
 
   val operatorsByDecreasingPrecedence: List[List[Operator]] = List(
     List(Times, Div, Modulo),
-    List(Plus, Minus),
+    List(Plus, Minus, PlusPlus),
     List(GreaterThan, LessThan, GreaterOrEq, LessOrEq),
     List(Equality, Inequality),
     List(And),
