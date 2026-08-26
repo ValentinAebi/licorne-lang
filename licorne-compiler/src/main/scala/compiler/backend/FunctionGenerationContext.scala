@@ -28,7 +28,7 @@ final class FunctionGenerationContext(globalValsCtx: GlobalValuesContext, val en
       else if target == globalValsCtx.falseVal || target == globalValsCtx.unitVal then Some(0)
       else None
     }
-    
+
   def isNullVal(idVal: IdValue): Boolean =
     idVal == globalValsCtx.nullVal
 

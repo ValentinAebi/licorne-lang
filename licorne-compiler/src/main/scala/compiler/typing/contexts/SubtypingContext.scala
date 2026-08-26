@@ -13,6 +13,7 @@ import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.reasoning.{CounterexampleBox, Solver}
+import compiler.stdlib.StdLib
 import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
@@ -55,7 +56,9 @@ final class SubtypingContext(
     subToSuperSubst(subId, superId).isDefined
 
   def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
-    dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
+    if targetId == StdLib.arrayTypeId
+    then CannotDowncast(s"implementation restriction: type tests against type ${StdLib.arrayTypeId} are not supported")
+    else dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>

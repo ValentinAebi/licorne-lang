@@ -1,0 +1,31 @@
+
+object Main {
+
+    main fn run() {
+        val a = genArray(315);
+        println(sum(a));
+    }
+
+    private fn sum(xs: Array[[0..]]) -> [0..] {
+        var s = 0;
+        for (var i = 0; i < xs.size(); i += 1) {
+            s += xs.get(i);
+        };
+        return s;
+    }
+
+    private fn genArray(size: Cnt) -> Array[[0..]] {
+        val array = new Array(size);
+        for (var i = 0; i < size; i += 1) {
+            array.set(i, relu(foo(i)));
+        };
+        return array;
+    }
+
+    private pure fn relu(x: Int) -> [0..] =
+        when x < 0 then 0 else x
+
+    private pure fn foo(i: Int) -> Int =
+        (2*i + 1) % 256 + (3*i*i - 4*i - 2) % 512
+
+}

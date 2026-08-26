@@ -7,6 +7,7 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.DealiasingContext
+import compiler.backend.Erasure.getRuntimeType
 
 import java.lang.classfile.TypeKind
 import java.lang.classfile.TypeKind.*
@@ -22,8 +23,10 @@ trait TypesConverter {
   protected val charDesc: ClassDesc
   protected val boolDesc: ClassDesc
 
-  def descriptorFor(tpe: Type): ClassDesc = getRuntimeType(tpe) match {
+  def descriptorFor(tpe: Type): ClassDesc = getRuntimeType(tpe)(using dealiasingCtx) match {
     case tpe: PrimitiveType => descriptorForPrimitive(tpe)
+    case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>
+      descriptorFor(elemType).arrayType()
     case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
     case ClosureType(params, result, enforcedPure) => ???
     case UnionType(types) =>
@@ -39,7 +42,7 @@ trait TypesConverter {
     case RefinedType(baseType, predicate) => descriptorFor(baseType)
     case IntRangeType(_, _) => CD_int
     case NullableType(nullatedType) => boxDesc(descriptorFor(nullatedType))
-    case tv: TypeVariable => descriptorFor(tv.upperBoundOpt.getOrElse(AnyType))
+    case tv: TypeVariable => descriptorFor(tv.upperBoundOpt.getOrElse(NullableType(AnyType)))
   }
 
   def descriptorForPrimitive(tpe: PrimitiveType): ClassDesc = tpe match {
@@ -58,7 +61,7 @@ trait TypesConverter {
     else ClassDesc.of(typeName.stringId)
   }
 
-  def kindFor(tpe: Type): TypeKind = getRuntimeType(tpe) match {
+  def kindFor(tpe: Type): TypeKind = getRuntimeType(tpe)(using dealiasingCtx) match {
     case IntType => INT
     case DoubleType => DOUBLE
     case CharType => CHAR
@@ -80,17 +83,7 @@ trait TypesConverter {
     case RefinedType(baseType, predicate) => kindFor(baseType)
     case IntRangeType(_, _) => INT
     case NullableType(_) => REFERENCE
-    case tv: TypeVariable => kindFor(tv.upperBoundOpt.getOrElse(AnyType))
-  }
-
-  private def getRuntimeType(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
-    case tv: TypeVariable => getRuntimeType(tv.upperBoundOpt.getOrElse(AnyType))
-    case _: IntRangeType => IntType
-    case RefinedType(baseType, predicate) => getRuntimeType(baseType)
-    case NullableType(nullatedType) => NullableType(getRuntimeType(nullatedType))
-    case UnionType(types) => UnionType(types.map(getRuntimeType))
-    case IntersectionType(types) => IntersectionType(types.map(getRuntimeType))
-    case tpe => tpe
+    case tv: TypeVariable => kindFor(tv.upperBoundOpt.getOrElse(NullableType(AnyType)))
   }
 
 }

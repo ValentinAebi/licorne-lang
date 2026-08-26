@@ -1,6 +1,7 @@
 package compiler.backend
 
 import compiler.backend.Boxing.boxDesc
+import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
@@ -446,14 +447,16 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
       val elemKind = arrayElemKindOf(receiver, currScope)
       genValueLoad(receiver, currScope, cb)
+      genValueLoad(args.head, currScope, cb)
       cb.arrayLoad(elemKind)
       genValueStore(assigned, currScope, cb)
     case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
       val elemKind = arrayElemKindOf(receiver, currScope)
       genValueLoad(receiver, currScope, cb)
       genValueLoad(args.head, currScope, cb)
+      genValueLoad(args(1), currScope, cb)
       cb.arrayStore(elemKind)
-    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayLengthFunId)(func.getFunSigUnsafe) =>
+    case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId)(func.getFunSigUnsafe) =>
       genValueLoad(receiver, currScope, cb)
       cb.arraylength()
       genValueStore(assigned, currScope, cb)
@@ -482,18 +485,32 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
     case SSA.InvokeClosure(assigned, callee, closureTypingTarget, args) => ???
 
+    case instantiate@SSA.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal))) =>
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType) : @unchecked
+      val elemDesc = tConv.descriptorFor(elemType)
+      genValueLoad(sizeVal, currScope, cb)
+      if (elemDesc.isPrimitive) {
+        val elemKind = tConv.kindFor(elemType)
+        cb.newarray(elemKind)
+      } else {
+        cb.anewarray(elemDesc)
+      }
+      genValueStore(assigned, currScope, cb)
+
     case SSA.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
       val fieldsInitMap = fieldsInit.toMap
       val createdObjTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName).get
-      cb.new_(tConv.descriptorFor(classOrRecordName))
+      val desc = tConv.descriptorFor(classOrRecordName)
+      cb.new_(desc)
       cb.dup()
       for (fld <- createdObjTypeSig.fields.values) {
         val argVal = fieldsInitMap.apply(fld.id)
         genValueLoad(argVal, currScope, cb)
         ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
       }
-      cb.invokespecial(tConv.descriptorFor(classOrRecordName), INIT_NAME, mkConstrDesc(createdObjTypeSig))
+      cb.invokespecial(desc, INIT_NAME, mkConstrDesc(createdObjTypeSig))
       genValueStore(assigned, currScope, cb)
 
     case SSA.MkClosure(assigned, params, body, isPure) => ???
@@ -595,7 +612,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
                           (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext, globalValsCtx: GlobalValuesContext): Unit = {
     val typeDescOfTo = typeDescOf(to, currScope)
     val typeDescOfFrom = typeDescOf(from, currScope)
-    if (!funcGenCtx.hasSlotFor(from) || funcGenCtx.getSlot(from) != allocateAndDeclareIfNew(to, currScope, cb) || typeDescOfFrom != typeDescOfTo) {
+    if (!funcGenCtx.hasSlotFor(from) || funcGenCtx.hasSlotFor(to) || funcGenCtx.getSlot(from) != allocateAndDeclareIfNew(to, currScope, cb) || typeDescOfFrom != typeDescOfTo) {
       genValueLoad(from, currScope, cb)
       ensureAssignable(dealiasedTypeOf(to, currScope), dealiasedTypeOf(from, currScope), cb)
       genValueStore(to, currScope, cb)
@@ -723,7 +740,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   }
 
   private def arrayElemKindOf(idVal: IdValue, currScope: Scope)(using DealiasingContext): TypeKind = {
-    currScope.typeOfNoSmartcast(idVal) match {
+    currScope.typeOfNoSmartcast(idVal).map(getRuntimeType) match {
       case Some(NamedType(tid, typeArgs, Nil)) if tid == arrayTypeId && typeArgs.size == 1 =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         tConv.kindFor(typeArgs.head)

@@ -1,11 +1,10 @@
 package compiler.typing
 
-import compiler.backend.StdLibFunctions
 import compiler.identifiers.*
+import compiler.irs.ssa.*
 import compiler.irs.ssa.Formulas.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
-import compiler.irs.ssa.*
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -386,6 +385,7 @@ final class Typer(
               instantiate.typeArgs = instantiatedTypeArgs
             }
             val tpe = typeInstInitializers(instantiate, typeSig, currScope, typesSubst)
+            instantiate.resolveOutType(tpe)
             currScope.saveType(assigned, tpe)
           case None =>
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
@@ -451,6 +451,11 @@ final class Typer(
                 }
                 if (indexedSizeCallFlag) {
                   er.reportError(s"implementation restriction: hybrid cast to target type $targetType is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+                }
+                targetBase match {
+                  case NamedType(StdLib.arrayTypeId, _, _) =>
+                    er.reportError(s"hybrid cast target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
+                  case _ => ()
                 }
                 hybridCast.setMode(AssertPredicate(targetPred.substitute(itValue, inValue)))
               }

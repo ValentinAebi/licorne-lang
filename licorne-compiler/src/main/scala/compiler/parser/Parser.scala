@@ -179,10 +179,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case _ => false
     }
 
-    opt(kw(Pure)) ::: opt(kw(Main, Private, Open)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Main, Private, Open)) ::: opt(kw(Pure)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
-      case optPure ^: optModif ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
+      case optModif ^: optPure ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(
             ReturnStat(Some(expr)).withDesugaringSource(expr)

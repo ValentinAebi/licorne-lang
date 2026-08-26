@@ -60,15 +60,15 @@ class String : Indexed {
     // TODO charAt and toCharArray when Chars are supported
     // TODO maybe add split (but it uses regexes, maybe it can be implemented in Licorne directly)
 
-    pure private fn javaIndexOf(this, s: String) -> [-1 ..< size()] {
+    private pure fn javaIndexOf(this, s: String) -> [-1 ..< size()] {
         panic "compiler stub"
     }
 
-    pure private fn javaLastIndexOf(this, s: String) -> [-1 ..< size()] {
+    private pure fn javaLastIndexOf(this, s: String) -> [-1 ..< size()] {
         panic "compiler stub"
     }
 
-    pure private fn sanitizeIndexOfResult(this, i: [-1 ..< size()]) -> Idx(this)? =
+    private pure fn sanitizeIndexOfResult(this, i: [-1 ..< size()]) -> Idx(this)? =
         when i == -1 then null else i
 
 }

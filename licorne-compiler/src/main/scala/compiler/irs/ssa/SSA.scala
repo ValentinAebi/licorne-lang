@@ -251,6 +251,14 @@ object SSA {
   }
 
   final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(FunOrVarId, IdValue)]) extends AssigningInstr {
+    private var outType: Option[Type] = None
+    
+    def resolveOutType(tpe: Type): Unit = {
+      outType = Some(tpe)
+    }
+    
+    def getOutType: Type = outType.get
+    
     override def usedVals: Set[IdValue] = fieldsInit.map(_._2).toSet
 
     override def directlyUsedVals: Set[IdValue] = fieldsInit.map(_._2).toSet
