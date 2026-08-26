@@ -3,7 +3,7 @@ object Test  {
 
     fn foo(choice: Bool, p: pure fn (String) -> Bool, q: pure fn (String) -> Bool, r: pure fn (String) -> Bool, s: String with p(it) && q(it), t: String with r(it) && q(it)) {
         val j = when choice then s else t;
-        j : Nothing;    //> E : type ascription: expected Nothing, found j : String with q(it)
+        j : Nothing;    //> E : type ascription: expected Nothing, found j : licorne.core.String with q(it)
     }
 
 }

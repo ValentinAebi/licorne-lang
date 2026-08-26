@@ -5,17 +5,21 @@ import compiler.lang.FunctionSignature
 import compiler.lang.Types.NamedType
 
 object StdLib {
-
-  def isFunc(recId: TypeIdentifier, funId: FunOrVarId)(sig: FunctionSignature): Boolean = sig.functionName == funId && (sig.receiverType match {
+  
+  def hasReceiver(recId: TypeIdentifier)(sig: FunctionSignature): Boolean = sig.receiverType match {
     case NamedType(tid, _, _) => tid == recId
     case _ => false
-  })
+  }
+
+  def isFunc(recId: TypeIdentifier, funId: FunOrVarId)(sig: FunctionSignature): Boolean =
+    hasReceiver(recId)(sig) && sig.functionName == funId
 
   val stdLibPackageName: String = "licorne"
 
-  private val licornePkgPrefix = List(stdLibPackageName)
+  val licornePkgPrefix: List[String] = List(stdLibPackageName)
 
-  private val licorneCorePkgPrefix = licornePkgPrefix :+ "core"
+  // licorne.core
+  val licorneCorePkgPrefix: List[String] = licornePkgPrefix :+ "core"
   val indexedTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Indexed")
   val indexableTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Indexable")
   val sizeFunId: FunOrVarId = NormalFunOrVarId("size")
@@ -27,15 +31,34 @@ object StdLib {
   val indexTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Idx")
   val nonZeroIntTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "NonZeroInt")
 
-  private val licorneIoPkgPrefix = licornePkgPrefix :+ "io"
+  // licorne.core.String
+  val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
+  val stringType: NamedType = NamedType(StdLib.stringTypeId, List.empty, List.empty)
+  val stringSizeFunId: FunOrVarId = NormalFunOrVarId("size")
+  val stringConcatFunId: FunOrVarId = NormalFunOrVarId("concat")
+  val stringStartsWithFunId: FunOrVarId = NormalFunOrVarId("startsWith")
+  val stringEndsWithFunId: FunOrVarId = NormalFunOrVarId("endsWith")
+  val stringIndentFunId: FunOrVarId = NormalFunOrVarId("indent")
+  val stringRepeatFunId: FunOrVarId = NormalFunOrVarId("repeat")
+  val stringReplaceFunId: FunOrVarId = NormalFunOrVarId("replace")
+  val stringSubstringFunId: FunOrVarId = NormalFunOrVarId("substring")
+  val stringToUpperCaseFunId: FunOrVarId = NormalFunOrVarId("toUpperCase")
+  val stringToLowerCaseFunId: FunOrVarId = NormalFunOrVarId("toLowerCase")
+  val stringJavaIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaIndexOf")
+  val stringJavaLastIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaLastIndexOf")
+
+  // licorne.io
+  val licorneIoPkgPrefix: List[String] = licornePkgPrefix :+ "io"
   val consoleTypeId: TypeIdentifier = TypeIdentifier(licorneIoPkgPrefix, "Console")
   val consolePrintFunId: FunOrVarId = NormalFunOrVarId("print")
   val consolePrintlnFunId: FunOrVarId = NormalFunOrVarId("println")
   val consoleReadlineFunId: FunOrVarId = NormalFunOrVarId("readLine")
 
-  private val licorneCollectionsPkgPrefix = licornePkgPrefix :+ "collections"
+  // licorne.collections
+  val licorneCollectionsPkgPrefix: List[String] = licornePkgPrefix :+ "collections"
 
-  private val licorneClosuresPkgPrefix = licornePkgPrefix :+ "closures"
+  // licorne.closures
+  val licorneClosuresPkgPrefix: List[String] = licornePkgPrefix :+ "closures"
   val heapVarTypeId: TypeIdentifier = TypeIdentifier(licorneClosuresPkgPrefix, "HeapVar")
   val intHeapVarTypeId: TypeIdentifier = TypeIdentifier(licorneClosuresPkgPrefix, "IntHeapVar")
 
@@ -45,7 +68,9 @@ object StdLib {
     countTypeId.nonPrefixedId -> countTypeId,
     indexTypeId.nonPrefixedId -> indexTypeId,
     arrayTypeId.nonPrefixedId -> arrayTypeId,
-    indexedTypeId.nonPrefixedId -> indexedTypeId
+    indexedTypeId.nonPrefixedId -> indexedTypeId,
+    indexableTypeId.nonPrefixedId -> indexableTypeId,
+    stringTypeId.nonPrefixedId -> stringTypeId
   )
 
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(

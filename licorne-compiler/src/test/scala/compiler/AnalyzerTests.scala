@@ -128,8 +128,9 @@ class AnalyzerTests(fileName: String) {
       .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, counterExBoxOpt))
       .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
+    val fakeStringSrc = SourceFile("./src/test/res/minimal-string/String.lic", isStdLib = true)
     try {
-      pipeline.apply(srcFiles)
+      pipeline.apply(fakeStringSrc :: srcFiles)
     } catch {
       case ExitException => ()
     }
@@ -138,7 +139,7 @@ class AnalyzerTests(fileName: String) {
     val existsUnexpectedErrors = errors.exists(!_._2)
     if (errorsAreMissing || (existsUnexpectedErrors && !ignoreAdditionalErrorsFlag.elem) || fatalErrorOccured) {
       fail(
-        if fatalErrorOccured then "A fatal error occurred\n\n" else "" +
+        if fatalErrorOccured then s"A fatal error occurred\n${errors.map(markOkOrNot).mkString("\n")}\n" else "" +
           "\nExpected errors:\n" +
           expectedErrors.map(markOkOrNot).mkString("\n") +
           "\n\nActual errors:\n" +

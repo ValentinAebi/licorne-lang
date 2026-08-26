@@ -1,5 +1,3 @@
 package licorne.collections;
 
-import licorne.core.Indexable;
-
 interface Seq[+T] : Collection[T], Indexable

@@ -16,12 +16,12 @@ object Test {
    fn m1() {
       val stack = new MutableStack();
       stack.push(42);           // OK, resolve the type variable to Int
-      stack.push("Hi");         //> E : first argument of call to push: expected Int, found "Hi" : String
+      stack.push("Hi");         //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.String
    }
 
    fn m2() {
       val stack = new MutableStack[String]();
-      stack.push(42);           //> E : first argument of call to push: expected String, found 42
+      stack.push(42);           //> E : first argument of call to push: expected licorne.core.String, found 42
       stack.push("Hi");         // OK
    }
 

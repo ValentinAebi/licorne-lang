@@ -2,11 +2,11 @@ package licorne.io;
 
 object Console : InStream, OutStream {
 
-    fn print(o: Any) {
+    fn print(o: Any?) {
         panic "compiler stub"
     }
 
-    fn println(o: Any) {
+    fn println(o: Any?) {
         print(o);
         print("\n");
     }

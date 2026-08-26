@@ -1,5 +1,13 @@
 package licorne.core;
 
+// TODO rename Indexed to NativeIndexable
+
+// TL;DR: use Indexable, not Indexed
+//
+// This interface is used only for the definition of Idx.
+// The compiler will prevent any class or interface other than Array, String, or Indexable from subtyping Indexed.
+// Also calling Indexed::size is not allowed.
+// Use Indexable instead.
 interface Indexed {
     pure fn size(this) -> Cnt
 }

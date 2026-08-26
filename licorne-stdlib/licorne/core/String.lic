@@ -1,0 +1,72 @@
+package licorne.core;
+
+// TODO maybe redefine String as String[C sub Char], to constrain the characters a String may contain?
+
+typealias StringL(len: Cnt) = String with it.size() == len
+typealias StringLMin(minLen: Cnt) = String with it.size() >= minLen
+
+class String : Indexed {
+
+    pure fn size(this) -> Cnt {
+        panic "compiler stub"
+    }
+
+    pure fn isEmpty(this) -> Bool = size() > 0
+
+    pure fn concat(this, s: String) -> StringL(this.size() + s.size()) {
+        panic "compiler stub"
+    }
+
+    pure fn startsWith(this, s: String) -> Bool {
+        panic "compiler stub"
+    }
+
+    pure fn endsWith(this, s: String) -> Bool {
+        panic "compiler stub"
+    }
+
+    pure fn indent(this, n: Cnt) -> StringL(this.size() + n) {
+        panic "compiler stub"
+    }
+
+    pure fn indexOf(this, s: String) -> Idx(this)? =
+        sanitizeIndexOfResult(javaIndexOf(s))
+
+    pure fn lastIndexOf(this, s: String) -> Idx(this)? =
+        sanitizeIndexOfResult(javaLastIndexOf(s))
+
+    pure fn repeat(this, n: Cnt) -> StringL(n * size()) {
+        panic "compiler stub"
+    }
+
+    pure fn replace(this, target: String, replacement: String) -> String {
+        panic "compiler stub"
+    }
+
+    pure fn substring(this, begin: Idx(this), end: Idx(this) where begin <= end) -> StringLMin(end - begin) {
+        panic "compiler stub"
+    }
+
+    pure fn toLowerCase(this) -> StringL(this.size()) {
+        panic "compiler stub"
+    }
+
+    pure fn toUpperCase(this) -> StringL(this.size()) {
+        panic "compiler stub"
+    }
+
+    // TODO charAt and toCharArray when Chars are supported
+    // TODO maybe add split (but it uses regexes, maybe it can be implemented in Licorne directly)
+
+    pure private fn javaIndexOf(this, s: String) -> [-1 ..< size()] {
+        panic "compiler stub"
+    }
+
+    pure private fn javaLastIndexOf(this, s: String) -> [-1 ..< size()] {
+        panic "compiler stub"
+    }
+
+    pure private fn sanitizeIndexOfResult(this, i: [-1 ..< size()]) -> Idx(this)? =
+        when i == -1 then null else i
+
+}

@@ -1,11 +1,11 @@
 package compiler.lang
 
 import compiler.identifiers.{Identifier, ItId, TypeIdentifier}
-import compiler.irs.ssa.SSA.Scope
 import compiler.irs.ssa.Formulas.*
+import compiler.irs.ssa.SSA.Scope
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
-import compiler.reporting.Position
 import compiler.reasoning.Simplifier
+import compiler.reporting.Position
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
@@ -29,7 +29,6 @@ object Types {
     case DoubleType extends PrimitiveType("Double")
     case CharType extends PrimitiveType("Char")
     case BoolType extends PrimitiveType("Bool")
-    case StringType extends PrimitiveType("String")
 
     case NullType extends PrimitiveType("Null")
     case AnyType extends PrimitiveType("Any")

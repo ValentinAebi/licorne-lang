@@ -18,7 +18,7 @@ object Test {
       var x = 0;
       ifDogOrElse(animal, "Hi", fn (dog) -> {
         x += 1;
-        return x;                           //> E : return value: expected String, found Int
+        return x;                           //> E : return value: expected licorne.core.String, found Int
       });
 
    }

@@ -1,0 +1,4 @@
+package licorne.core;
+
+// minimal definition of String class for use in AnalyzerTests (which don't have access to the standard library)
+class String

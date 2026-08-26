@@ -1,0 +1,10 @@
+
+object Main {
+
+    main fn run() {
+        val s = "This is a sentence.";
+        val i = s.indexOf("is");
+        println(i);
+    }
+
+}

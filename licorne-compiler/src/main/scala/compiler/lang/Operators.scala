@@ -3,6 +3,7 @@ package compiler.lang
 import compiler.lang.Operator.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Types.Type
+import compiler.stdlib.StdLib.stringType
 
 import scala.annotation.targetName
 
@@ -61,7 +62,7 @@ object Operators {
     BoolType $ And $ BoolType is BoolType,
     BoolType $ Or $ BoolType is BoolType,
 
-    StringType $ Plus $ StringType is StringType
+    stringType $ Plus $ stringType is stringType
   )
 
   val assigOperators: Map[Operator, Operator] = Map(

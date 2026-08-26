@@ -10,7 +10,7 @@ object Boxing {
     case CD_int => CD_Integer
     case CD_char => CD_Character
     case CD_double => CD_Double
-    case _ => assert(false)
+    case cd => cd
   }
   
 }

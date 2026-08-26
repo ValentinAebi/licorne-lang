@@ -8,12 +8,13 @@ import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
 import compiler.lang
 import compiler.lang.*
-import compiler.lang.Types.PrimitiveType.{AnyType, NothingType}
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
+import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.*
 import compiler.typing.SubtypingInfo
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
@@ -37,10 +38,13 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
   private val objectInstanceFieldName = "INSTANCE"
   private val mainFuncName = "main"
+  private val licorneCoreStringInternalName = "licorne/core/String"
 
   private val unreachablePathMessage = "Licorne: UNREACHABLE PATH ERROR\n" +
     "This path has been marked unreachable by the Licorne compiler. This code should never been executed.\n" +
     "If this message appears as an AssertionError thrown during program execution, this means that the compiler made an error and the code is corrupted (or that reflection has been used)."
+
+  private val nullUnboxingMessage = "tried to unbox null"
 
   private val equalsMethodName = "equals"
   private val assertionErrorInternalName = "java/lang/AssertionError"
@@ -190,15 +194,20 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private def generateFunc(funSig: FunctionSignature, bodyOpt: Option[SSA.Scope], cb: ClassBuilder)
                           (using DealiasingContext, SimplifiedSubtypingContext, GlobalValuesContext, ResolutionContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val funDesc = mkFunDesc(funSig)
-    cb.withMethod(funSig.functionName.stringId, funDesc, mkFunFlags(funSig), mb => {
+    val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
+    val funDesc = mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis)
+    var flags = mkFunFlags(funSig)
+    if (isStaticStringFunc) {
+      flags |= ClassFile.ACC_STATIC
+    }
+    cb.withMethod(funSig.functionName.stringId, funDesc, flags, mb => {
       StdLibFunctions.intrinsicFor(funSig) match {
         case Some(genIntrinsicFunc) =>
           genIntrinsicFunc(mb)
         case None =>
           bodyOpt.foreach { body =>
             mb.withCode(cb => {
-              given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(funSig)
+              given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(summon[GlobalValuesContext], funSig)
 
               for ((idVal, tpe) <- funSig.paramsInclThis) {
                 allocateAndDeclare(idVal, cb, body)
@@ -213,10 +222,10 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     })
   }
 
-  private def mkFunDesc(funSig: FunctionSignature)(using DealiasingContext): MethodTypeDesc = {
+  private def mkFunDesc(funSig: FunctionSignature, extractParams: FunctionSignature => Iterable[(NamedIdValue, Type)] = _.paramsWithoutThis)(using DealiasingContext): MethodTypeDesc = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     MethodTypeDesc.of(tConv.descriptorFor(funSig.retType),
-      funSig.paramsWithoutThis.map((_, tpe) => tConv.descriptorFor(tpe)).toJavaUtilList)
+      extractParams(funSig).map((_, tpe) => tConv.descriptorFor(tpe)).toJavaUtilList)
   }
 
   private def mkConstrDesc(tSig: ConcreteTypeSig)(using DealiasingContext): MethodTypeDesc = {
@@ -337,8 +346,6 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
     case SSA.StaticTypeAssert(value, tpe) => ()
 
-    // FIXME collapse assignments when rhs is an IdValue or a constant
-
     case SSA.AssignVal(assigned, src) =>
       if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == typeKindOf(src, currScope) && !funGenCtx.hasSlotFor(assigned)) {
         funGenCtx.saveSubst(assigned, src)
@@ -454,14 +461,22 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
       val funSig = func.getFunSigUnsafe
-      val receiverDesc = tConv.descriptorFor(func.getFunSigUnsafe.receiverType)
+      val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
       genValueLoad(receiver, currScope, cb)
       val paramTypes = funSig.paramsWithoutThis.map(_._2)
       for ((arg, paramType) <- args.zip(paramTypes)) {
         genValueLoad(arg, currScope, cb)
         ensureAssignable(paramType, dealiasedTypeOf(arg, currScope), cb)
       }
-      cb.invokevirtual(receiverDesc, func.funId.stringId, mkFunDesc(funSig))
+      val (targetReceiverDesc, targetFunName, targetFunDesc) = StdLibFunctions.stringFuncRedirectFor(funSig) match {
+        case Some(targetFunId, targetFunDesc) => (CD_String, targetFunId, targetFunDesc)
+        case None => (tConv.descriptorFor(func.getFunSigUnsafe.receiverType), funSig.functionName.stringId, mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis))
+      }
+      if (isStaticStringFunc) {
+        cb.invokestatic(ClassDesc.ofInternalName(licorneCoreStringInternalName), targetFunName, targetFunDesc)
+      } else {
+        cb.invokevirtual(targetReceiverDesc, targetFunName, targetFunDesc)
+      }
       ensureAssignable(dealiasedTypeOf(assigned, currScope), funSig.retType, cb)
       genValueStore(assigned, currScope, cb)
 
@@ -580,7 +595,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
                           (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, simplifiedSubtypingCtx: SimplifiedSubtypingContext, globalValsCtx: GlobalValuesContext): Unit = {
     val typeDescOfTo = typeDescOf(to, currScope)
     val typeDescOfFrom = typeDescOf(from, currScope)
-    if (funcGenCtx.getSlot(from) != allocateAndDeclareIfNew(to, currScope, cb) || typeDescOfFrom != typeDescOfTo) {
+    if (!funcGenCtx.hasSlotFor(from) || funcGenCtx.getSlot(from) != allocateAndDeclareIfNew(to, currScope, cb) || typeDescOfFrom != typeDescOfTo) {
       genValueLoad(from, currScope, cb)
       ensureAssignable(dealiasedTypeOf(to, currScope), dealiasedTypeOf(from, currScope), cb)
       genValueStore(to, currScope, cb)
@@ -592,6 +607,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     funcGenCtx.asIntConst(rawIdVal) match {
       case Some(cst) =>
         cb.loadConstant(cst)
+      case None if funcGenCtx.isNullVal(rawIdVal) =>
+        cb.aconst_null()
       case None =>
         val substIdVal = funcGenCtx.getSubst(rawIdVal)
         val kind = typeKindOf(substIdVal, currScope)
@@ -628,7 +645,16 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     val dstKind = tConv.kindFor(dstType)
     val srcDesc = tConv.descriptorFor(srcType)
     val srcKind = tConv.kindFor(srcType)
-    if (srcDesc.isPrimitive && !dstDesc.isPrimitive) {
+    if (srcType == NullType && dstDesc.isPrimitive) {
+      val assertionErrorDesc = ClassDesc.ofInternalName(assertionErrorInternalName)
+      cb.new_(assertionErrorDesc)
+      cb.dup()
+      cb.ldc(nullUnboxingMessage)
+      cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
+      cb.athrow()
+    } else if (srcType == NullType) {
+      // nothing to do
+    } else if (srcDesc.isPrimitive && !dstDesc.isPrimitive) {
       val srcBoxedDesc = boxDesc(srcDesc)
       cb.invokestatic(srcBoxedDesc, "valueOf", MethodTypeDesc.of(srcBoxedDesc, srcDesc))
     } else if (!srcDesc.isPrimitive && dstDesc.isPrimitive) {

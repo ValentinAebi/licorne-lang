@@ -18,6 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
+import compiler.stdlib.StdLib.stringType
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -250,7 +251,7 @@ final class Typer(
         saveEquality(assigned, BoolConst(src))
 
       case AssignStringConst(assigned, src) =>
-        currScope.saveType(assigned, StringType)
+        currScope.saveType(assigned, stringType)
         saveEquality(assigned, StringConst(src))
 
       case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
@@ -489,7 +490,7 @@ final class Typer(
 
       case panic@Panic(msg) =>
         val msgType = currScope.computeCurrentType(msg, panic.getPosition)
-        subtypingCtx.enforceIsSubtype(msgType, StringType, s"panic message should have type $StringType", panic.getPosition)
+        subtypingCtx.enforceIsSubtype(msgType, stringType, s"panic message should have type $stringType", panic.getPosition)
         currScope.markHasExited()
 
       case localDecl@LocalDecl(localId, tpe) =>
@@ -581,7 +582,7 @@ final class Typer(
           tpe
         case IntConst(value) => IntType
         case BoolConst(value) => BoolType
-        case StringConst(value) => StringType
+        case StringConst(value) => stringType
         case sel@Select(owner, field) if field.isResolved =>
           field.getInstantiatedTypeUnsafe
         case sel@Select(owner, field) if field.isNotResolvedYet =>
@@ -1426,7 +1427,7 @@ final class Typer(
         case superTDealiased =>
           er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
-      if (sig.sigName != StdLib.arrayTypeId && sig.sigName != StdLib.indexableTypeId && superTInst.typeName == StdLib.indexedTypeId) {
+      if (sig.sigName != StdLib.arrayTypeId && sig.id != StdLib.stringTypeId && sig.sigName != StdLib.indexableTypeId && superTInst.typeName == StdLib.indexedTypeId) {
         er.reportError(s"implementation restriction: extending ${StdLib.indexedTypeId} is not allowed, use ${StdLib.indexableTypeId} instead", sig.declPosOpt)
       }
       superTInst

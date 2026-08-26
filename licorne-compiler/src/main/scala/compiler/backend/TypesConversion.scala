@@ -3,14 +3,15 @@ package compiler.backend
 import compiler.backend.Boxing.boxDesc
 import compiler.identifiers.TypeIdentifier
 import compiler.lang.Types
-import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Types.*
+import compiler.lang.Types.PrimitiveType.*
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.DealiasingContext
 
 import java.lang.classfile.TypeKind
+import java.lang.classfile.TypeKind.*
 import java.lang.constant.ClassDesc
 import java.lang.constant.ConstantDescs.*
-import java.lang.classfile.TypeKind.*
 
 trait TypesConverter {
 
@@ -46,22 +47,22 @@ trait TypesConverter {
     case DoubleType => doubleDesc
     case CharType => charDesc
     case BoolType => boolDesc
-    case StringType => CD_String
-    case NullType => CD_Void
+    case NullType => CD_Object
     case AnyType => CD_Object
     case UnitType => CD_void
     case NothingType => CD_void
   }
 
-  def descriptorFor(typeName: TypeIdentifier): ClassDesc =
-    ClassDesc.of(typeName.stringId)
+  def descriptorFor(typeName: TypeIdentifier): ClassDesc = {
+    if typeName == StdLib.stringTypeId then CD_String
+    else ClassDesc.of(typeName.stringId)
+  }
 
   def kindFor(tpe: Type): TypeKind = getRuntimeType(tpe) match {
     case IntType => INT
     case DoubleType => DOUBLE
     case CharType => CHAR
     case BoolType => BOOLEAN
-    case StringType => REFERENCE
     case NullType => REFERENCE
     case AnyType => REFERENCE
     case UnitType => VOID
@@ -86,7 +87,7 @@ trait TypesConverter {
     case tv: TypeVariable => getRuntimeType(tv.upperBoundOpt.getOrElse(AnyType))
     case _: IntRangeType => IntType
     case RefinedType(baseType, predicate) => getRuntimeType(baseType)
-    case NullableType(nullatedType) => getRuntimeType(nullatedType)
+    case NullableType(nullatedType) => NullableType(getRuntimeType(nullatedType))
     case UnionType(types) => UnionType(types.map(getRuntimeType))
     case IntersectionType(types) => IntersectionType(types.map(getRuntimeType))
     case tpe => tpe
