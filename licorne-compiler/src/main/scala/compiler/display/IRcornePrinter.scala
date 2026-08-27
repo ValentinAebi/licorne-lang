@@ -1,9 +1,9 @@
 package compiler.display
 
 import compiler.identifiers.FunOrVarId
-import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{Formulas, IRLevelFormulaPrinter, SSA}
-import compiler.irs.ssa.Formulas.{Formula, IdValue, NamedIdValue}
+import compiler.irs.ircorne.IRcorne.*
+import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue, NamedIdValue}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.*
 import compiler.pipeline.CompilerStep
@@ -14,13 +14,13 @@ import compiler.valproxies.ProxyStore
 
 import java.util.stream.Collectors
 
-final class SSAPrinter(
-                        proxyStore: ProxyStore,
-                        typeCandidatesStore: TypeCandidatesStore,
-                        indentUnit: String,
-                        printTypes: Boolean,
-                        commentsAlignmentGranularity: Int = 30
-                      ) extends CompilerStep[Program, String] {
+final class IRcornePrinter(
+                            proxyStore: ProxyStore,
+                            typeCandidatesStore: TypeCandidatesStore,
+                            indentUnit: String,
+                            printTypes: Boolean,
+                            commentsAlignmentGranularity: Int = 30
+                          ) extends CompilerStep[Program, String] {
 
   private given ProxyStore = proxyStore
 
@@ -194,7 +194,7 @@ final class SSAPrinter(
 
   private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
     instr match {
-      case SSA.Loop(cond, condVal, body, variables) =>
+      case IRcorne.Loop(cond, condVal, body, variables) =>
         pps.add("LOOP").indentln {
           pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")
           printScope(cond)
@@ -207,7 +207,7 @@ final class SSAPrinter(
           }
         }
         pps.add("END LOOP")
-      case SSA.Disjunction(condVal, thenBr, elseBr, variables) =>
+      case IRcorne.Disjunction(condVal, thenBr, elseBr, variables) =>
         pps.add("IF [cond = ").add(maybeTyped(condVal, scope)).add("]").indentln {
           pps.add("then: ")
           printScope(thenBr)
@@ -220,7 +220,7 @@ final class SSAPrinter(
           }
         }
         pps.add("END IF")
-      case SSA.StaticTypeAssert(assertedValue, tpe) =>
+      case IRcorne.StaticTypeAssert(assertedValue, tpe) =>
         pps.add(s"TYPE-ASSERT ${maybeTyped(assertedValue, scope)} : $tpe")
       case AssignVal(assigned, src) =>
         pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
@@ -279,25 +279,25 @@ final class SSAPrinter(
         pps.add(s"TYPE-TEST ${maybeTyped(assigned, scope)} := $testedValue is $testedTypeId")
       case Conversion(assigned, inValue, targetType) =>
         pps.add(s"CONVERT ${maybeTyped(assigned, scope)} := $inValue as $targetType")
-      case SSA.FieldWrite(owner, field, rhs) =>
+      case IRcorne.FieldWrite(owner, field, rhs) =>
         pps.add(s"FIELD-WR $owner.$field := ${maybeTyped(rhs, scope)}")
-      case SSA.HeapVarWrite(heapVar, newValue) =>
+      case IRcorne.HeapVarWrite(heapVar, newValue) =>
         pps.add(s"HEAP-VAR-WR *{$heapVar} := ${maybeTyped(newValue, scope)}")
-      case SSA.Return(retVal) =>
+      case IRcorne.Return(retVal) =>
         pps.add(s"RET ${maybeTyped(retVal, scope)}")
-      case SSA.Panic(msg) =>
+      case IRcorne.Panic(msg) =>
         pps.add(s"PANIC ${maybeTyped(msg, scope)}")
-      case SSA.Cast(inValue, target) =>
+      case IRcorne.Cast(inValue, target) =>
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
-      case hybridcast@SSA.HybridCast(inValue) =>
+      case hybridcast@IRcorne.HybridCast(inValue) =>
         val targetDescr = if hybridcast.isNonNullAssertion then "non-null" else hybridcast.getTargetRefinement.map(_.toString).getOrElse("<unspecified>")
         pps.add(s"HYBRIDCAST ${maybeTyped(inValue, scope)} to predicate $targetDescr")
-      case SSA.Drop(droppedValue) =>
+      case IRcorne.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)
-      case SSA.LocalDecl(localId, tpe) =>
+      case IRcorne.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")
-      case SSA.Unreachable() =>
+      case IRcorne.Unreachable() =>
         pps.add("UNREACHABLE")
     }
     instr match {

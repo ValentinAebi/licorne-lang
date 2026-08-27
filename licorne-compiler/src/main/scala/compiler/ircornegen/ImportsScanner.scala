@@ -1,8 +1,8 @@
-package compiler.ssagen
+package compiler.ircornegen
 
 import compiler.irs.asts.Asts.{Source, TopLevelDef}
 import compiler.pipeline.CompilerStep
-import compiler.ssagen.ImportsScanner.PackagesInfo
+import compiler.ircornegen.ImportsScanner.PackagesInfo
 import compiler.util.mapVals
 
 import scala.collection.mutable

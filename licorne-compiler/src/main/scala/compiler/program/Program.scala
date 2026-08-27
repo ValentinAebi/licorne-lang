@@ -1,10 +1,10 @@
 package compiler.program
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.SSA
+import compiler.irs.ircorne.IRcorne
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType
-import compiler.pipeline.CompilationStep.SSAGeneration
+import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.reporting.Position
 import compiler.valproxies.ProxyStore
@@ -21,7 +21,7 @@ final case class Program(
                           datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
-                          functions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function]
+                          functions: SeqMap[(TypeIdentifier, FunOrVarId), IRcorne.Function]
                         ) {
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
@@ -39,15 +39,15 @@ object Program {
 
     def saveSignature(sig: TypeSignature, posOpt: Option[Position]): Unit = {
       if (PrimitiveType.values.exists(_.str == sig.id.toString)) {
-        er.report(Err(SSAGeneration, s"identifier ${sig.id} is illegal since it conflicts with a primitive type", posOpt))
+        er.report(Err(IRcorneGeneration, s"identifier ${sig.id} is illegal since it conflicts with a primitive type", posOpt))
       } else if (signatures.contains(sig.id)) {
-        er.report(Err(SSAGeneration, s"redefinition of type ${sig.id}", posOpt))
+        er.report(Err(IRcorneGeneration, s"redefinition of type ${sig.id}", posOpt))
       } else {
         signatures(sig.id) = sig
       }
     }
 
-    def build(allFunctions: SeqMap[(TypeIdentifier, FunOrVarId), SSA.Function]): Program = {
+    def build(allFunctions: SeqMap[(TypeIdentifier, FunOrVarId), IRcorne.Function]): Program = {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]

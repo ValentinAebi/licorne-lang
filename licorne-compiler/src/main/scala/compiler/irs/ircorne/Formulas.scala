@@ -1,8 +1,8 @@
-package compiler.irs.ssa
+package compiler.irs.ircorne
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.irs.ssa.SSA.{Instr, LocalDecl, Scope}
-import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
+import compiler.irs.ircorne.IRcorne.{Instr, LocalDecl, Scope}
+import compiler.irs.ircorne.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
 import compiler.lang.{Operator, RuntimeTypeSignature}
 import compiler.reporting.Position

@@ -1,8 +1,7 @@
 package compiler.pipeline
 
 import compiler.backend.Backend
-import compiler.display.SSAPrinter
-import compiler.identifiers.TypeIdentifier
+import compiler.display.IRcornePrinter
 import compiler.io.{SourceCodeProvider, StringWriter}
 import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
@@ -10,7 +9,7 @@ import compiler.parser.Parser
 import compiler.program.Program
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode}
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.ssagen.{ImportsScanner, SSAGenerator}
+import compiler.ircornegen.{ImportsScanner, IRcorneGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore}
@@ -23,31 +22,30 @@ import java.nio.file.Path
  */
 object TasksPipelines {
 
-  private val ssaFileName = "ssa.txt"
-  private val ssaIndentUnit = "  "
-  private val ssaPrintTypes = true
+  private val irIndentUnit = "  "
+  private val irPrintTypes = true
 
   def compiler(
                 outputDirectoryPath: Path,
-                ssaDirectoryPathOpt: Option[Path],
+                irDirectoryPathOpt: Option[Path],
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
                 srcRootForPkgMismatchCheckOpt: Option[Path],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(Backend(outputDirectoryPath, er))
   }
 
   def typeChecker(
-                   ssaDirectoryPathOpt: Option[Path],
+                   irDirectoryPathOpt: Option[Path],
                    ihm: IntHandlingMode[?],
                    counterExBoxOpt: Option[CounterexampleBox],
                    srcRootForPkgMismatchCheckOpt: Option[Path],
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, ssaDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, er, counterExBoxOpt, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(_ => ())
   }
 
@@ -61,7 +59,7 @@ object TasksPipelines {
                                ihm: IntHandlingMode[?],
                                er: ErrorReporter,
                                counterExBoxOpt: Option[CounterexampleBox],
-                               ssaDirPathOpt: Option[Path],
+                               irDirPathOpt: Option[Path],
                                srcRootForPkgMismatchCheckOpt: Option[Path]
                              ): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
@@ -70,18 +68,18 @@ object TasksPipelines {
     val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er)
       .andThen(ImportsScanner())
-      .andThen(SSAGenerator(typeVarsCtx, proxyStore, er, srcRootForPkgMismatchCheckOpt))
-      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, identity, er, ssaDirPathOpt))
+      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, er, srcRootForPkgMismatchCheckOpt))
+      .andThen(MaybePrintIRcorne("ir1-after-ir-gen.ircorne", proxyStore, typeCandidatesStore, identity, er, irDirPathOpt))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, counterExBoxOpt))
-      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
+      .andThen(MaybePrintIRcorne("ir2-after-candidates-inference.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
       .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()))
-      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
+      .andThen(MaybePrintIRcorne("ir3-after-typecheck.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
       .andThen(DisplayAndTerminateIfErrors(er))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
-      .andThen(MaybePrintSSA(proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, ssaDirPathOpt))
+      .andThen(MaybePrintIRcorne("ir4-after-overrides-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
   }
 
   private def defaultErrorReporter: ErrorReporter =
@@ -92,17 +90,18 @@ object TasksPipelines {
     throw new AssertionError("cannot happen")
   }
 
-  private final class MaybePrintSSA[T](
-                                        proxyStore: ProxyStore,
-                                        typeCandidatesStore: TypeCandidatesStore,
-                                        extractProgram: T => Program,
-                                        er: ErrorReporter,
-                                        ssaDirPathOpt: Option[Path]
-                                      ) extends CompilerStep[T, T] {
+  private final class MaybePrintIRcorne[T](
+                                            irFileName: String,
+                                            proxyStore: ProxyStore,
+                                            typeCandidatesStore: TypeCandidatesStore,
+                                            extractProgram: T => Program,
+                                            er: ErrorReporter,
+                                            irDirPathOpt: Option[Path]
+                                          ) extends CompilerStep[T, T] {
     override def apply(input: T): T = {
-      ssaDirPathOpt.foreach { ssaDirPath =>
-        SSAPrinter(proxyStore, typeCandidatesStore, ssaIndentUnit, ssaPrintTypes)
-          .andThen(StringWriter(ssaDirPath, ssaFileName, er, overwriteFileCallback = _ => true))
+      irDirPathOpt.foreach { irDirPath =>
+        IRcornePrinter(proxyStore, typeCandidatesStore, irIndentUnit, irPrintTypes)
+          .andThen(StringWriter(irDirPath, irFileName, er, overwriteFileCallback = _ => true))
           .apply(extractProgram(input))
       }
       input

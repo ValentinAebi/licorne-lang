@@ -2,10 +2,10 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
-import compiler.irs.ssa.Formulas.{Formula, FunCall, Select, ValIdValue}
-import compiler.irs.ssa.FormulasDsl.{autoConvertIntToIConst, *}
-import compiler.irs.ssa.{FieldResolutionTarget, InvocationTarget}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ircorne.Formulas.{Formula, FunCall, Select, ValIdValue}
+import compiler.irs.ircorne.FormulasDsl.{autoConvertIntToIConst, *}
+import compiler.irs.ircorne.{FieldResolutionTarget, InvocationTarget}
+import compiler.irs.ircorne.IRcorne.Scope
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program

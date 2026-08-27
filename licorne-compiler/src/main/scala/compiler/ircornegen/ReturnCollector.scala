@@ -1,6 +1,6 @@
-package compiler.ssagen
+package compiler.ircornegen
 
-import compiler.irs.ssa.Formulas.Formula
+import compiler.irs.ircorne.Formulas.Formula
 
 trait ReturnCollector {
   

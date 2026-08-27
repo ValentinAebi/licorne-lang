@@ -1,8 +1,8 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId}
-import compiler.irs.ssa.Formulas.IdValue
-import compiler.irs.ssa.SSA.{LocalDecl, Scope}
+import compiler.irs.ircorne.Formulas.IdValue
+import compiler.irs.ircorne.IRcorne.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
 import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep

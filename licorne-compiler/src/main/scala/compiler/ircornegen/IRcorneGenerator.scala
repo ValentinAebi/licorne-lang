@@ -1,23 +1,23 @@
-package compiler.ssagen
+package compiler.ircornegen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.Formulas.AllocMode.*
-import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, SSA}
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.Formulas.AllocMode.*
+import compiler.irs.ircorne.IRcorne.*
+import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, IRcorne}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
-import compiler.pipeline.CompilationStep.SSAGeneration
+import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reasoning.Recurrence
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.ssagen.ImportsScanner.PackagesInfo
+import compiler.ircornegen.ImportsScanner.PackagesInfo
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
@@ -30,11 +30,11 @@ import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
 
-final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootForPkgMismatchCheckOpt: Option[Path]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
+final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxyStore, er: ErrorReporter, srcRootForPkgMismatchCheckOpt: Option[Path]) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
   private type SeqMapBuilder[A, B] = mutable.Builder[(A, B), SeqMap[A, B]]
 
-  private given CompilationStep = CompilationStep.SSAGeneration
+  private given CompilationStep = CompilationStep.IRcorneGeneration
 
   override def apply(input: (List[Asts.Source], PackagesInfo)): Program = {
     val (sources, packagesInfo) = input
@@ -45,7 +45,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
-    val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
+    val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
     for (src <- sources) {
       checkPackageAndPosition(src)
       for (importStat <- src.imports) {
@@ -383,7 +383,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                              functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
                                              globalScope: Scope,
                                              thisType: Type,
-                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
+                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
                                            ): Iterable[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)] = {
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)]
     val accessorsSubst = mutable.Map.empty[IdValue, IdValue => FunCall]
@@ -399,7 +399,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
               precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
-            val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
+            val syntheticFunc = IRcorne.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret", Stack)
             val resolTarget = FieldResolutionTarget(fieldId)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
@@ -419,9 +419,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
                                 functionsProvider: Asts.TypeDefTree,
                                 functionsProviderIncompleteSig: RuntimeTypeSignature,
                                 globalScope: Scope,
-                                allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunOrVarId), SSA.Function]
-                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)] = {
-    val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, SSA.Function)]
+                                allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
+                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, IRcorne.Function)] = {
+    val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, IRcorne.Function)]
     for (funDef <- functionsProvider.functions) {
       if (functions.contains(funDef.id)) {
         reportError(s"a function named ${funDef.id} has already been declared in ${functionsProvider.description}", funDef.getPosition)
@@ -488,7 +488,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val ownerId = functionsProviderIncompleteSig.id
         val funId = funDef.id
-        val function = generateSSAFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
+        val function = generateIRFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
         val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
         val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
           funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.isMain, funDef.getPosition, isSyntheticAccessor = false)
@@ -507,7 +507,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     funOwnerSig.toType(subst)
   }
 
-  private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, SSA.Function)],
+  private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, IRcorne.Function)],
                                                  ownerId: TypeIdentifier, ownerIsAbstractType: Boolean): Map[FunOrVarId, FunctionSignature] = {
     val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
     for ((funId, (sig, func)) <- functionsMap) {
@@ -540,26 +540,26 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     FunctionTypeParamInfo(TypeIdentifier(List.empty, tParamName), upperBoundOpt.map(mkType(_, scope)), lowerBoundOpt.map(mkType(_, scope)))
   }
 
-  private def generateSSAFunc(
-                               owner: TypeIdentifier,
-                               funId: FunOrVarId,
-                               bodyOpt: Option[Asts.Block],
-                               funSigScope: Scope,
-                               posOpt: Option[Position]
-                             )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): SSA.Function = bodyOpt match {
+  private def generateIRFunc(
+                              owner: TypeIdentifier,
+                              funId: FunOrVarId,
+                              bodyOpt: Option[Asts.Block],
+                              funSigScope: Scope,
+                              posOpt: Option[Position]
+                            )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): IRcorne.Function = bodyOpt match {
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
-        generateSSA(stat, funScope, newScopeIfBlock = false)(using currImplicitFields, ReturnCollector.doNothingCollector, FunctionInfo(funSigScope))
+        generateIR(stat, funScope, newScopeIfBlock = false)(using currImplicitFields, ReturnCollector.doNothingCollector, FunctionInfo(funSigScope))
       }
-      SSA.Function(owner, funId, Some(funScope))
+      IRcorne.Function(owner, funId, Some(funScope))
     case None =>
-      SSA.Function(owner, funId, None)
+      IRcorne.Function(owner, funId, None)
   }
 
-  private def generateSSA(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)
-                         (using currImplicitFields: collection.Map[FunOrVarId, Field], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo,
-                          importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Unit = {
+  private def generateIR(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)
+                        (using currImplicitFields: collection.Map[FunOrVarId, Field], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo,
+                         importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     if (currScope.getLocalValuesContextUnsafe.hasExited) {
       currScope.saveInstr(Unreachable(), stat)
@@ -570,7 +570,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
       case expr: Asts.Expr =>
         val resultValue = currScope.newIntermediate("dummy", Stack)
-        generateSSAExpr(resultValue, expr, currScope)
+        generateIRExpr(resultValue, expr, currScope)
         currScope.saveInstr(Drop(resultValue), expr)
 
       case block@Asts.Block(stats) =>
@@ -580,7 +580,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           sc
         } else currScope
         for (stat <- stats) {
-          generateSSA(stat, blockScope, newScopeIfBlock = true)
+          generateIR(stat, blockScope, newScopeIfBlock = true)
         }
 
       case localDef@Asts.LocalDef(localName, typeAnnotTreeOpt, rhsOpt, reassigPermission) =>
@@ -594,8 +594,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           reportError(s"$localName is already defined in this scope", stat.getPosition)
         } else rhsOpt match {
           case Some(rhs) =>
-            generateSSA(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope, newScopeIfBlock)
-            generateSSA(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
+            generateIR(localDef.copy(rhsOpt = None).withDesugaringSource(localDef), currScope, newScopeIfBlock)
+            generateIR(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
               .withDesugaringSource(localDef), currScope, newScopeIfBlock)
           case None =>
             currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, currScope, reassigPermission, typeAnnotOpt)
@@ -610,7 +610,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currImplicitFields.get(lhsLocalId) match {
           case Some(_) =>
             val thisSel = Asts.Select(Asts.ThisRef().withDesugaringSource(varRefTree), lhsLocalId).withDesugaringSource(varRefTree)
-            generateSSA(Asts.VarAssig(thisSel, typeAnnotTreeOpt, rhsTree).withDesugaringSource(assig), currScope, newScopeIfBlock)
+            generateIR(Asts.VarAssig(thisSel, typeAnnotTreeOpt, rhsTree).withDesugaringSource(assig), currScope, newScopeIfBlock)
           case None =>
             reportError(s"unknown variable: $lhsLocalId", stat.getPosition)
         }
@@ -625,7 +625,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           if varIsReassignable
           then currScope.newVar(lhsLocalId, currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId).declOpt, None, assig.getPosition)
           else currScope.newVal(lhsLocalId, assig.getPosition)
-        generateSSAExpr(newValue, rhsTree, currScope)
+        generateIRExpr(newValue, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
         currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId) match {
           case KnownAndInitialized(heapVarAddr: HeapVarIdValue, defScope, reassigStatus, _) =>
@@ -636,10 +636,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
         val ownerVal = currScope.newIntermediate(s"$fieldId'owner", Stack)
-        generateSSAExpr(ownerVal, ownerTree, currScope)
+        generateIRExpr(ownerVal, ownerTree, currScope)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val rhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
-        generateSSAExpr(rhsVal, rhsTree, currScope)
+        generateIRExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget(fieldId), rhsVal), assig)
 
@@ -647,12 +647,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError("assignment target is not valid", assig.getPosition)
 
       case Asts.VarModif(lhs@Asts.VariableRef(lhsLocalId), typeAnnot, rhs, op) =>
-        generateSSA(Asts.VarAssig(lhs, typeAnnot,
+        generateIR(Asts.VarAssig(lhs, typeAnnot,
           Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
         ).withDesugaringSource(stat), currScope, newScopeIfBlock)
 
       case Asts.VarModif(lhs@Asts.Select(Asts.ThisRef(), selected), typeAnnot, rhs, op) =>
-        generateSSA(Asts.VarAssig(lhs, typeAnnot,
+        generateIR(Asts.VarAssig(lhs, typeAnnot,
           Asts.BinaryOp(lhs, op, rhs).withDesugaringSource(stat)
         ).withDesugaringSource(stat), currScope, newScopeIfBlock)
 
@@ -661,7 +661,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
         val condVal = currScope.newIntermediate("cond", Stack)
-        generateSSAExpr(condVal, condTree, currScope)
+        generateIRExpr(condVal, condTree, currScope)
         val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
         val elseBrAssignedVars = elseTreeOpt.flatMap(externalVarsAssignedIn)
         val allAssignedVars = SeqSet(thenBrAssignedVars ++ elseBrAssignedVars)
@@ -671,9 +671,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           thenScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
           elseScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
         }
-        generateSSA(thenTree, thenScope, newScopeIfBlock = false)
+        generateIR(thenTree, thenScope, newScopeIfBlock = false)
         elseTreeOpt.foreach { elseTree =>
-          generateSSA(elseTree, elseScope, newScopeIfBlock = false)
+          generateIR(elseTree, elseScope, newScopeIfBlock = false)
         }
         val variablesB = List.newBuilder[DisjunctionVarData]
         for (varId <- allAssignedVars) {
@@ -708,15 +708,15 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           condScope.getLocalValuesContextUnsafe.remap(id, condVal)
         }
         val condVal = currScope.newIntermediate("cond", Stack)
-        generateSSAExpr(condVal, condTree, condScope)
+        generateIRExpr(condVal, condTree, condScope)
         if (condScope.hasExited) {
           reportError("condition evaluation cannot terminate", condTree.getPosition)
         }
-        generateSSA(bodyTree, bodyScope, newScopeIfBlock = false)
+        generateIR(bodyTree, bodyScope, newScopeIfBlock = false)
         if (bodyScope.hasExited) {
           warn("loop body always exits, should be an if statement", whileLoop.getPosition)
           // give up and generate a disjunction instead
-          generateSSA(
+          generateIR(
             Asts.IfThenElse(condTree, bodyTree, None).withDesugaringSource(whileLoop),
             currScope,
             newScopeIfBlock
@@ -738,7 +738,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
 
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
-        generateSSA(Asts.Block(
+        generateIR(Asts.Block(
           initStats :+ Asts.WhileLoop(cond, Asts.Block(
             body.stats ++ stepStats
           ).withDesugaringSource(forLoop)).withDesugaringSource(forLoop)
@@ -748,7 +748,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val retVal = currFuncInfo.funSigScope.newIntermediate("ret", Stack)
         returnedTreeOpt match {
           case Some(returnedTree) =>
-            generateSSAExpr(retVal, returnedTree, currScope)
+            generateIRExpr(retVal, returnedTree, currScope)
             proxyStore.developDeepIgnoreAccessors(retVal, bypassPurityChecks = true) match {
               case Some(retValProxy) =>
                 returnCollector.offerReturn(retValProxy)
@@ -776,28 +776,28 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
   }
 
-  private def generateSSAExpr(
+  private def generateIRExpr(
                                resultVal: IdValue,
                                expr: Asts.Expr,
                                currScope: Scope
                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
-      generateSSAExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
+      generateIRExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
 
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
       val argsValsB = List.newBuilder[IdValue]
       for (argTree <- argsTrees) {
         val argVal = currScope.newIntermediate("arg", Stack)
         argsValsB.addOne(argVal)
-        generateSSAExpr(argVal, argTree, currScope)
+        generateIRExpr(argVal, argTree, currScope)
       }
       argsValsB.result()
     }
 
     def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
       val operandVal = currScope.newIntermediate("unaryop", Stack)
-      generateSSAExpr(operandVal, operandTree, currScope)
+      generateIRExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
       for {
         mkFormula <- mkFormulaOpt
@@ -809,9 +809,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
       var lhsVal = currScope.newIntermediate("leftop", Stack)
-      generateSSAExpr(lhsVal, lhs, currScope)
+      generateIRExpr(lhsVal, lhs, currScope)
       var rhsVal = currScope.newIntermediate("rightop", Stack)
-      generateSSAExpr(rhsVal, rhs, currScope)
+      generateIRExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
         lhsVal = rhsVal
@@ -854,7 +854,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             currImplicitFields.get(id) match {
               case Some(field) =>
                 val thisSelect = Asts.Select(Asts.ThisRef().withDesugaringSource(varRefTree), id).withDesugaringSource(varRefTree)
-                generateSSAExpr(resultVal, thisSelect, currScope)
+                generateIRExpr(resultVal, thisSelect, currScope)
               case None =>
                 reportError(s"not found: $id", varRefTree.getPosition)
                 None
@@ -882,7 +882,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
         val receiverVal = currScope.newIntermediate("receiver", Stack)
-        generateSSAExpr(receiverVal, receiverTree, currScope)
+        generateIRExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
         val invkTarget = InvocationTarget(funId)
@@ -909,7 +909,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           reportError("type arguments on closure invocation", callTree.getPosition)
         }
         val calleeVal = currScope.newIntermediate("callee", Stack)
-        generateSSAExpr(calleeVal, calleeTree, currScope)
+        generateIRExpr(calleeVal, calleeTree, currScope)
         val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
         currScope.saveInstr(InvokeClosure(resultVal, calleeVal, target, args), expr)
@@ -964,7 +964,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>
         val lhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
-        generateSSAExpr(lhsVal, lhsTree, currScope)
+        generateIRExpr(lhsVal, lhsTree, currScope)
         val unresolvedField = FieldResolutionTarget(fieldId)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, unresolvedField), selectTree)
         Some(Select(lhsVal, unresolvedField))
@@ -980,7 +980,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           val initializerRhs = rhsOf(initializer)
           // TODO maybe we can avoid using locals for constructor arguments
           val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId, Locals)
-          generateSSAExpr(rhsVal, initializerRhs, currScope)
+          generateIRExpr(rhsVal, initializerRhs, currScope)
           argsB.addOne(initializer.fieldName -> rhsVal)
         }
         val typeId = importsCtx.applyImports(typeIdRaw)
@@ -990,13 +990,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
         val condVal = currScope.newIntermediate("cond", Stack)
-        generateSSAExpr(condVal, condTree, currScope)
+        generateIRExpr(condVal, condTree, currScope)
         val thenVal = currScope.newIntermediate("then", Stack)
         val thenScope = Scope.nestedInside(currScope, thenTree)
-        generateSSAExpr(thenVal, thenTree, thenScope)
+        generateIRExpr(thenVal, thenTree, thenScope)
         val elseVal = currScope.newIntermediate("else", Stack)
         val elseScope = Scope.nestedInside(currScope, elseTree)
-        generateSSAExpr(elseVal, elseTree, elseScope)
+        generateIRExpr(elseVal, elseTree, elseScope)
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
@@ -1010,23 +1010,23 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
         val typeName = importsCtx.applyImports(typeNameRaw)
-        generateSSAExpr(resultVal, castExprTree, currScope)
+        generateIRExpr(resultVal, castExprTree, currScope)
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
         val inVal = currScope.newIntermediate("convertedval", Stack)
-        generateSSAExpr(inVal, inExprTree, currScope)
+        generateIRExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
         None
       case castTree@Asts.Cast(castExpr, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", castTree.getPosition)
         None
       case hybridcast@Asts.HybridCast(castExpr) =>
-        generateSSAExpr(resultVal, castExpr, currScope)
+        generateIRExpr(resultVal, castExpr, currScope)
         currScope.saveInstr(HybridCast(resultVal), hybridcast)
         None
       case ascriptionTree@Asts.TypeAscription(ascribedExpr, typeTree) =>
-        val proxy = generateSSAExpr(resultVal, ascribedExpr, currScope)
+        val proxy = generateIRExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
         proxy
       case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
@@ -1051,7 +1051,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
         val closureBodyScope = Scope.nestedInside(closureParamsScope, closureDefTree)
         val retValCollector = ReturnCollector.freshUniqueCollector
-        generateSSA(bodyTree, closureBodyScope, newScopeIfBlock = false)(using currImplicitFields, retValCollector, FunctionInfo(closureParamsScope))
+        generateIR(bodyTree, closureBodyScope, newScopeIfBlock = false)(using currImplicitFields, retValCollector, FunctionInfo(closureParamsScope))
         val isPure = declaredPure || isObviouslyPure(closureBodyScope)
         val paramValsAndTypes = paramValsAndTypesB.result()
         currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure), closureDefTree)
@@ -1065,13 +1065,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg", Stack)
-        generateSSAExpr(msgVal, msgTree, currScope)
+        generateIRExpr(msgVal, msgTree, currScope)
         currScope.saveInstr(Panic(msgVal), panicTree)
         currScope.getLocalValuesContextUnsafe.markHasExited()
         None
     }
     if (!proxyStore.hasProxyFor(resultVal)) {
-      // avoid resetting proxy when generateSSAExpr is called recursively
+      // avoid resetting proxy when generateIRExpr is called recursively
       proxyStore.saveProxy(resultVal, proxyOpt)
     }
     proxyOpt
@@ -1192,13 +1192,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
             rhsFormula <- generateFormula(rhs, currScope)
           } yield LessOrEq(rhsFormula, lhsFormula)
         case Asts.BinaryOp(lhs, Operator.LessThan, rhs) =>
-          import compiler.irs.ssa.FormulasDsl.*
+          import compiler.irs.ircorne.FormulasDsl.*
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
           } yield LessOrEq(lhsFormula + 1, rhsFormula)
         case Asts.BinaryOp(lhs, Operator.GreaterThan, rhs) =>
-          import compiler.irs.ssa.FormulasDsl.*
+          import compiler.irs.ircorne.FormulasDsl.*
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
@@ -1339,7 +1339,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       Asts.VariableRef(fieldName).withDesugaringSource(initializer)
   }
 
-  extension (scope: Scope) private def saveInstr(instr: SSA.Instr, node: Asts.Ast): Unit = {
+  extension (scope: Scope) private def saveInstr(instr: IRcorne.Instr, node: Asts.Ast): Unit = {
     instr match {
       case _: Scope => ()
       case _ =>
@@ -1349,11 +1349,11 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
   }
 
   private def reportError(msg: String, posOpt: Option[Position]): Unit = {
-    er.report(Err(SSAGeneration, msg, posOpt))
+    er.report(Err(IRcorneGeneration, msg, posOpt))
   }
 
   private def warn(msg: String, posOpt: Option[Position]): Unit = {
-    er.report(Warning(SSAGeneration, msg, posOpt))
+    er.report(Warning(IRcorneGeneration, msg, posOpt))
   }
 
   private case class FunctionInfo(funSigScope: Scope)

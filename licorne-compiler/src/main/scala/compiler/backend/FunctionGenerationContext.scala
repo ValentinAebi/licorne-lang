@@ -1,6 +1,6 @@
 package compiler.backend
 
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.irs.ircorne.Formulas.IdValue
 import compiler.lang.FunctionSignature
 import compiler.lang.Types.Type
 import compiler.reporting.Position

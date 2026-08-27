@@ -1,7 +1,7 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, IRLevelFormulaPrinter, InvocationTarget}
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, IRLevelFormulaPrinter, InvocationTarget}
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.AnyType
 import compiler.reasoning.FormulasConverter.*

@@ -1,4 +1,4 @@
-package compiler.ssagen
+package compiler.ircornegen
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 

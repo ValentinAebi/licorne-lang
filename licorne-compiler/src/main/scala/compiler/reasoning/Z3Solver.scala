@@ -1,7 +1,7 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas
-import compiler.irs.ssa.Formulas.*
+import compiler.irs.ircorne.Formulas
+import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.typing.contexts.DealiasingContext

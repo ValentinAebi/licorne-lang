@@ -1,8 +1,8 @@
 package compiler.lang
 
 import compiler.identifiers.{Identifier, ItId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
 import compiler.reasoning.Simplifier
 import compiler.reporting.Position

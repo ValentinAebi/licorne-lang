@@ -142,7 +142,7 @@ object Main {
     Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome()))
   }
 
-  private def getSSADirArg(argsMap: MutArgsMap): Option[Path] = {
+  private def getIRDirArg(argsMap: MutArgsMap): Option[Path] = {
     getValuedArgOpt("ir-dir", argsMap).map(Paths.get(_))
   }
 
@@ -197,12 +197,12 @@ object Main {
   private case class Run(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirPath = getOutDirArg(argsMap)
-      val ssaDir = getSSADirArg(argsMap)
+      val isDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, isDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources ++ stdLibSources)
@@ -225,12 +225,12 @@ object Main {
   private case class Compile(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val outDirPath = getOutDirArg(argsMap)
-      val ssaDir = getSSADirArg(argsMap)
+      val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       compiler.apply(sources ++ stdLibSources)
     }
@@ -241,12 +241,12 @@ object Main {
    */
   private case class TypeCheck(argsMap: MutArgsMap) extends Action {
     override def run(sources: List[SourceCodeProvider]): Unit = {
-      val ssaDir = getSSADirArg(argsMap)
+      val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibSources = collectStdLib(argsMap)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(ssaDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")

@@ -1,4 +1,4 @@
-package compiler.irs.ssa
+package compiler.irs.ircorne
 
 import compiler.identifiers.FunOrVarId
 import compiler.lang.Types.Type

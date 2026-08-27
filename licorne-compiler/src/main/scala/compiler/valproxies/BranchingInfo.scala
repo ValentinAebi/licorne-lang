@@ -1,7 +1,7 @@
 package compiler.valproxies
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas.*
+import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
@@ -27,7 +27,7 @@ final case class BranchingInfo(
   )
 
   def boundFor(subject: IdValue, boundMode: BoundMode, solver: Solver): Option[Formula] = boundary {
-    import compiler.irs.ssa.FormulasDsl.*
+    import compiler.irs.ircorne.FormulasDsl.*
     // TODO try to find best bound instead of stopping at first bound found?
     assumptions.foreach {
       case LessOrEq(lhs, rhs) if boundMode == Upper && lhs == subject =>

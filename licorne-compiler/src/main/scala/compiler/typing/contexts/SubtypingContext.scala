@@ -2,9 +2,9 @@ package compiler.typing.contexts
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas
-import compiler.irs.ssa.Formulas.{Formula, IntConst, IntermediateIdValue}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ircorne.Formulas
+import compiler.irs.ircorne.Formulas.{Formula, IntConst, IntermediateIdValue}
+import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*

@@ -1,9 +1,9 @@
 package compiler.valproxies
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.SSA.Scope
-import compiler.irs.ssa.{FieldResolutionTarget, Formulas, InvocationTarget}
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.IRcorne.Scope
+import compiler.irs.ircorne.{FieldResolutionTarget, Formulas, InvocationTarget}
 import compiler.lang.ClassSignature
 import compiler.lang.Types.Type
 import compiler.typing.Typer

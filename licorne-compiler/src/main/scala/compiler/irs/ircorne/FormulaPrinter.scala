@@ -1,6 +1,6 @@
-package compiler.irs.ssa
+package compiler.irs.ircorne
 
-import compiler.irs.ssa.Formulas.{Formula, IdValue, IntermediateIdValue, NamedIdValue}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.lang.Operator.Precedence
 import compiler.lang.{Keyword, Operator}
 

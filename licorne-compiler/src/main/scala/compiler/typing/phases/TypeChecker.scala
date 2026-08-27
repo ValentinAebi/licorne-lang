@@ -1,7 +1,7 @@
 package compiler.typing.phases
 
-import compiler.irs.ssa.SSA
-import compiler.irs.ssa.SSA.AssigningInstr
+import compiler.irs.ircorne.IRcorne
+import compiler.irs.ircorne.IRcorne.AssigningInstr
 import compiler.lang.FunctionSignature
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.Type
@@ -83,7 +83,7 @@ final class TypeChecker(
 
   private def checkFunc(
                          funSig: FunctionSignature,
-                         func: SSA.Function,
+                         func: IRcorne.Function,
                          resolCtx: ResolutionContext,
                          subtypingCtx: SubtypingContext,
                          meetJoin: MeetJoinComputer,

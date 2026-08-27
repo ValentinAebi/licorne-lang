@@ -1,8 +1,8 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.{IdValue, UninterpretedConstIdValue}
-import compiler.irs.ssa.SSA.Scope
+import compiler.irs.ircorne.Formulas.{IdValue, UninterpretedConstIdValue}
+import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.TypeVariable
 import compiler.valproxies.ProxyStore
 

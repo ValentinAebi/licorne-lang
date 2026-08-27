@@ -1,7 +1,7 @@
 package compiler.display
 
 import compiler.identifiers.Identifier
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.irs.ircorne.Formulas.IdValue
 import compiler.lang.Types.Type
 
 import scala.collection.mutable

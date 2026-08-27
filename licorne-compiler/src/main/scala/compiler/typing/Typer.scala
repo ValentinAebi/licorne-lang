@@ -1,11 +1,11 @@
 package compiler.typing
 
 import compiler.identifiers.*
-import compiler.irs.ssa.*
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.Formulas.AllocMode.Stack
-import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
+import compiler.irs.ircorne.*
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.Formulas.AllocMode.Stack
+import compiler.irs.ircorne.IRcorne.*
+import compiler.irs.ircorne.IRcorne.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.*
@@ -209,11 +209,11 @@ final class Typer(
           currScope.saveType(joinedVal, joinType)
         }
         if (elseBr.hasExited) {
-          // in that case, variables are remapped to their value in thenScope by the SSAGenerator
+          // in that case, variables are remapped to their value in thenScope by the IRc generator
           applyBranchInfo(currScope, infoIfCondTrue)
           currScope.absorbSmartcastsEGraphFrom(thenBr)
         } else if (thenBr.hasExited) {
-          // in that case, variables are remapped to their value in elseScope by the SSAGenerator
+          // in that case, variables are remapped to their value in elseScope by the IR generator
           applyBranchInfo(currScope, infoIfCondFalse)
           currScope.absorbSmartcastsEGraphFrom(elseBr)
         }
@@ -1185,7 +1185,7 @@ final class Typer(
   }
 
   private def ltToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {
-    import compiler.irs.ssa.FormulasDsl.*
+    import compiler.irs.ircorne.FormulasDsl.*
     leqToSmartcasts(lhs + 1, rhs)
   }
 

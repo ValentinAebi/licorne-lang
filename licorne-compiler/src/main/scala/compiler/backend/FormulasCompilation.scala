@@ -1,23 +1,23 @@
 package compiler.backend
 
-import compiler.irs.ssa.Formulas.AllocMode.Stack
-import compiler.irs.ssa.Formulas.{AllocMode, Formula, IdValue, IntermediateIdValue}
-import compiler.irs.ssa.SSA.*
-import compiler.irs.ssa.{Formulas, SSA}
+import compiler.irs.ircorne.Formulas.AllocMode.Stack
+import compiler.irs.ircorne.Formulas.{AllocMode, Formula, IdValue, IntermediateIdValue}
+import compiler.irs.ircorne.IRcorne.*
+import compiler.irs.ircorne.{Formulas, IRcorne}
 
 import scala.collection.mutable
 
 object FormulasCompilation {
 
-  def convertFormulaToSSA(formula: Formula, currScope: Scope): (Iterable[SSA.Instr], IdValue) = {
-    val instructions = mutable.ListBuffer.empty[SSA.Instr]
+  def convertFormulaToIR(formula: Formula, currScope: Scope): (Iterable[IRcorne.Instr], IdValue) = {
+    val instructions = mutable.ListBuffer.empty[IRcorne.Instr]
     val resVal = compileFormula(formula)(using instructions, currScope)
     (instructions.toList, resVal)
   }
 
-  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[SSA.Instr], currScope: Scope): IdValue = {
+  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.Instr], currScope: Scope): IdValue = {
 
-    def save(instr: SSA.Instr): Unit = {
+    def save(instr: IRcorne.Instr): Unit = {
       instrOut.addOne(instr)
     }
 
@@ -89,7 +89,7 @@ object FormulasCompilation {
   }
 
   private def genBinop(lhs: Formula, rhs: Formula, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => Instr)
-                   (using instructions: mutable.ListBuffer[SSA.Instr], currScope: Scope): IntermediateIdValue =
+                   (using instructions: mutable.ListBuffer[IRcorne.Instr], currScope: Scope): IntermediateIdValue =
     withIntermediateValue(Stack) { res =>
       val lhsVal = compileFormula(lhs)
       val rhsVal = compileFormula(rhs)

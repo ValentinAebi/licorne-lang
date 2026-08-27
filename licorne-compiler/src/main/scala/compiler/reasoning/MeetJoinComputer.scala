@@ -1,8 +1,8 @@
 package compiler.reasoning
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas
-import compiler.irs.ssa.Formulas.{BoolConst, Formula, LogicalAnd}
+import compiler.irs.ircorne.Formulas
+import compiler.irs.ircorne.Formulas.{BoolConst, Formula, LogicalAnd}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*

@@ -1,7 +1,7 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas
-import compiler.irs.ssa.Formulas.*
+import compiler.irs.ircorne.Formulas
+import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
@@ -132,7 +132,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
   def typeModuloType(rhsOpt: Option[Formula])(l: Type, r: Type)(using TypeParamsContext): Option[Type] = {
     val rawTypeOpt = typeArithBinopType(l, r) {
       case ((a, b), (c, d)) =>
-        import compiler.irs.ssa.FormulasDsl.*
+        import compiler.irs.ircorne.FormulasDsl.*
 
         lazy val `[a,b] >= 0` = solver.canProveGeZero(a)
         lazy val `[c,d] > 0` = solver.canProveGtZero(c)
@@ -145,7 +145,7 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
         else if `[a,b] <= 0` && `[c,d] < 0` then (for r <- rhsOpt.orElse(c) yield r + 1, someZero)
         else (someZero.filter(_ => `[a,b] >= 0`), someZero.filter(_ => `[a,b] <= 0`))
     }
-    import compiler.irs.ssa.FormulasDsl.*
+    import compiler.irs.ircorne.FormulasDsl.*
     (rawTypeOpt, rhsOpt) match {
       case (Some(rawType), Some(rhs)) =>
         Some(simplifier.simplify(IntersectionType(rawType, IntRangeType(-rhs + 1, rhs - 1))))

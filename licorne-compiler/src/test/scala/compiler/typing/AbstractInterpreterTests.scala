@@ -2,9 +2,9 @@ package compiler.typing
 
 import compiler.datastructures.Graph
 import compiler.identifiers.NormalFunOrVarId
-import compiler.irs.ssa.SSA.Scope
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.FormulasDsl.{autoConvertIntToIConst, *}
+import compiler.irs.ircorne.IRcorne.Scope
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.FormulasDsl.{autoConvertIntToIConst, *}
 import compiler.lang.Types.IntRangeType.*
 import compiler.lang.Types.PrimitiveType.IntType
 import compiler.lang.Types.IntRangeType

@@ -3,7 +3,7 @@ package compiler.pipeline
 enum CompilationStep {
   case Lexing
   case Parsing
-  case SSAGeneration
+  case IRcorneGeneration
   case ImportsAnalysis
   case MonotonicityAnalysis
   case TypeCandidatesInference

@@ -1,11 +1,11 @@
-package compiler.irs.ssa
+package compiler.irs.ircorne
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.Ast
-import compiler.irs.ssa.Formulas.*
-import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
-import compiler.irs.ssa.SSA.Scope.scopeUidGen
+import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.IRcorne.HybridCastMode.{AssertNonNull, AssertPredicate}
+import compiler.irs.ircorne.IRcorne.Scope.scopeUidGen
 import compiler.lang.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
 import scala.compiletime.uninitialized
 
-object SSA {
+object IRcorne {
 
   sealed abstract class Instr {
     private var astNodeOpt: Option[Ast] = None
@@ -84,7 +84,7 @@ object SSA {
 
     def scopesView: Iterable[Scope] = scopes
 
-    private[SSA] def addScope(scope: Scope): Unit = {
+    private[IRcorne] def addScope(scope: Scope): Unit = {
       scopes.addOne(scope)
     }
   }

@@ -1,6 +1,6 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.irs.ircorne.Formulas.IdValue
 import io.ksmt.expr.KExpr
 import io.ksmt.solver.KModel
 

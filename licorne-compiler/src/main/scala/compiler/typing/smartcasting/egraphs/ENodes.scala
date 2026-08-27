@@ -1,7 +1,7 @@
 package compiler.typing.smartcasting.egraphs
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.IdValue
+import compiler.irs.ircorne.Formulas.IdValue
 import compiler.lang.Operator
 
 import java.util.Objects

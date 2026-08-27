@@ -1,9 +1,9 @@
 package compiler.typing.phases
 
 import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
-import compiler.irs.ssa.Formulas.{Formula, IdValue}
-import compiler.irs.ssa.SSA
-import compiler.irs.ssa.SSA.*
+import compiler.irs.ircorne.Formulas.{Formula, IdValue}
+import compiler.irs.ircorne.IRcorne
+import compiler.irs.ircorne.IRcorne.*
 import compiler.lang.Types.*
 import compiler.lang.{ExecutionEnvironment, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeCandidatesInference

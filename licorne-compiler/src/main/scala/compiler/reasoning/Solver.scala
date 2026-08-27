@@ -1,6 +1,6 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas.Formula
+import compiler.irs.ircorne.Formulas.Formula
 import compiler.lang.Types.{IntRangeType, Type}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext

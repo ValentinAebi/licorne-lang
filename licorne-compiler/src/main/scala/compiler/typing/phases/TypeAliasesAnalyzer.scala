@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ssa.Formulas
+import compiler.irs.ircorne.Formulas
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis

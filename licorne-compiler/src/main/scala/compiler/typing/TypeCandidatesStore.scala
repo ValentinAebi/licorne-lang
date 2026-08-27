@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.irs.ssa.Formulas.{Formula, IdValue}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue}
 import compiler.lang.Types
 import compiler.lang.Types.Type
 

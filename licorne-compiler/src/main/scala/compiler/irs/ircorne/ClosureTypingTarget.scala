@@ -1,4 +1,4 @@
-package compiler.irs.ssa
+package compiler.irs.ircorne
 
 import compiler.lang.Types.ClosureType
 

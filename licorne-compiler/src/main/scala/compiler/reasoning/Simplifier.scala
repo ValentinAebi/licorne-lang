@@ -1,6 +1,6 @@
 package compiler.reasoning
 
-import compiler.irs.ssa.Formulas.*
+import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
@@ -246,7 +246,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
    * @return (lowerBounds, upperBounds, otherConditions)
    */
   private def searchBounds(formula: Formula): (List[Formula], List[Formula], List[Formula]) = {
-    import compiler.irs.ssa.FormulasDsl.*
+    import compiler.irs.ircorne.FormulasDsl.*
     formula match {
       case LogicalAnd(lhs, rhs) =>
         val (llb, lrb, lo) = searchBounds(lhs)
