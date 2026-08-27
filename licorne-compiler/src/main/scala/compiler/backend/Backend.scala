@@ -4,12 +4,13 @@ import compiler.backend.Boxing.boxDesc
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
+import compiler.irs.ssa.Formulas.AllocMode.*
 import compiler.irs.ssa.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{Formulas, SSA}
 import compiler.lang
 import compiler.lang.*
-import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType}
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
 import compiler.lang.Types.{NamedType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
@@ -348,28 +349,16 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.StaticTypeAssert(value, tpe) => ()
 
     case SSA.AssignVal(assigned, src) =>
-      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == typeKindOf(src, currScope) && !funGenCtx.hasSlotFor(assigned)) {
-        funGenCtx.saveSubst(assigned, src)
-      } else {
-        genValueMove(assigned, src, currScope, cb)
-      }
+      genValueMove(assigned, src, currScope, cb)
 
     case SSA.AssignIntConst(assigned, src) =>
-      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == INT) {
-        funGenCtx.saveIntSubst(assigned, src)
-      } else {
-        cb.loadConstant(src)
-        genValueStore(assigned, currScope, cb)
-      }
+      cb.loadConstant(src)
+      genValueStore(assigned, currScope, cb)
 
     case SSA.AssignBoolConst(assigned, src) =>
       val srcAsInt = if src then 1 else 0
-      if (assigned.isInstanceOf[IntermediateIdValue] && typeKindOf(assigned, currScope) == INT) {
-        funGenCtx.saveIntSubst(assigned, srcAsInt)
-      } else {
-        cb.loadConstant(srcAsInt)
-        genValueStore(assigned, currScope, cb)
-      }
+      cb.loadConstant(srcAsInt)
+      genValueStore(assigned, currScope, cb)
 
     case SSA.AssignStringConst(assigned, src) =>
       val cstEntry = cb.constantPool().stringEntry(src)
@@ -487,7 +476,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
     case instantiate@SSA.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal))) =>
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-      val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType) : @unchecked
+      val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
       val elemDesc = tConv.descriptorFor(elemType)
       genValueLoad(sizeVal, currScope, cb)
       if (elemDesc.isPrimitive) {
@@ -589,13 +578,16 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     case SSA.Panic(msg) =>
       val assertionErrorDesc = ClassDesc.ofInternalName(assertionErrorInternalName)
       cb.new_(assertionErrorDesc)
-      cb.dup()
+      cb.dup_x1()
+      cb.swap()
       genValueLoad(msg, currScope, cb)
       cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
       cb.athrow()
       throw TerminateScopeSignal
 
-    case SSA.Drop(droppedValue) => ()
+    case SSA.Drop(droppedValue) =>
+      genPop(typeKindOf(droppedValue, currScope), cb)
+
     case SSA.LocalDecl(localId, tpe) => ()
 
     case SSA.Unreachable() =>
@@ -619,23 +611,21 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     }
   }
 
-  private def genValueLoad(rawIdVal: IdValue, currScope: Scope, cb: CodeBuilder)
+  private def genValueLoad(idVal: IdValue, currScope: Scope, cb: CodeBuilder)
                           (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = {
-    funcGenCtx.asIntConst(rawIdVal) match {
-      case Some(cst) =>
-        cb.loadConstant(cst)
-      case None if funcGenCtx.isNullVal(rawIdVal) =>
+    idVal match {
+      case IntermediateIdValue(definingScope, uid, nameHint, Stack) => ()
+      case _ if funcGenCtx.isNullVal(idVal) =>
         cb.aconst_null()
-      case None =>
-        val substIdVal = funcGenCtx.getSubst(rawIdVal)
-        val kind = typeKindOf(substIdVal, currScope)
+      case _ =>
+        val kind = typeKindOf(idVal, currScope)
         if (kind != VOID) {
-          if (funcGenCtx.hasSlotFor(substIdVal)) {
-            val slot = funcGenCtx.getSlot(substIdVal)
+          if (funcGenCtx.hasSlotFor(idVal)) {
+            val slot = funcGenCtx.getSlot(idVal)
             cb.loadLocal(kind, slot)
           } else {
             val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-            val objId = globalValsCtx.getNameOfObject(substIdVal).get
+            val objId = globalValsCtx.getNameOfObject(idVal).get
             val objDesc = tConv.descriptorFor(objId)
             cb.getstatic(objDesc, objectInstanceFieldName, objDesc)
           }
@@ -645,10 +635,13 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
   private def genValueStore(idVal: IdValue, currScope: Scope, cb: CodeBuilder)
                            (using funcGenCtx: FunctionGenerationContext, dealiasingCtx: DealiasingContext): Unit = {
-    val slot = allocateAndDeclareIfNew(idVal, currScope, cb)
     val kind = typeKindOf(idVal, currScope)
-    if (kind != VOID) {
-      cb.storeLocal(kind, slot)
+    idVal match {
+      case _ if kind == VOID => ()
+      case IntermediateIdValue(definingScope, uid, nameHint, Stack) => ()
+      case _ =>
+        val slot = allocateAndDeclareIfNew(idVal, currScope, cb)
+        cb.storeLocal(kind, slot)
     }
   }
 
@@ -671,6 +664,10 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       cb.athrow()
     } else if (srcType == NullType) {
       // nothing to do
+    } else if (srcType == UnitType && dstType != UnitType) {
+      cb.iconst_0()
+    } else if (dstType == UnitType && srcType != UnitType) {
+      cb.pop()
     } else if (srcDesc.isPrimitive && !dstDesc.isPrimitive) {
       val srcBoxedDesc = boxDesc(srcDesc)
       cb.invokestatic(srcBoxedDesc, "valueOf", MethodTypeDesc.of(srcBoxedDesc, srcDesc))
@@ -681,13 +678,6 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       case (NamedType(dstTypeId, _, _), NamedType(srcTypeId, _, _)) if !simplifiedSubtypingCtx.isSubtype(srcTypeId, dstTypeId) =>
         cb.checkcast(dstDesc)
       case _ => ()
-    }
-    if (srcKind != VOID && dstKind == VOID) {
-      if (srcKind.slotSize() == 2) {
-        cb.pop2()
-      } else {
-        cb.pop()
-      }
     }
   }
 
@@ -787,6 +777,16 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       val _ = whenDouble
     case _ =>
       throw AssertionError(s"unexpected kind in arithmetic dispatcher: $kind")
+  }
+
+  private def genPop(k: TypeKind, cb: CodeBuilder): Unit = k.slotSize() match {
+    case 0 => ()
+    case 1 =>
+      cb.pop()
+    case 2 =>
+      cb.pop2()
+    case slotSize =>
+      throw AssertionError(s"pop: unexpected size $slotSize (kind is $k)")
   }
 
 }

@@ -15,6 +15,7 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.EGraph
+import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, ValuesContext}
 
@@ -28,7 +29,7 @@ object SSA {
     private var idxInScopeOpt: Option[Int] = None
     
     {
-      for (idVal <- directlyUsedVals) {
+      for (idVal <- consumedVals) {
         idVal.users.addOne(this)
       }
     }
@@ -54,13 +55,23 @@ object SSA {
     
     def getIdxInScopeOpt: Option[Int] = idxInScopeOpt
 
-    def usedVals: Set[IdValue]
+    def consumedVals: List[IdValue]
+    
+    def producedValOpt: Option[IdValue] = this match {
+      case assign: AssigningInstr => Some(assign.assigned)
+      case _ => None
+    }
 
-    def directlyUsedVals: Set[IdValue]
-
-    def definedVals: Set[IdValue]
-
-    final def freeVals: Set[IdValue] = usedVals -- definedVals
+    def freeVals: SeqSet[IdValue] = this match {
+      case mkClosure@MkClosure(assigned, params, body, isPure) =>
+        val paramsSet = params.map(_._1).toSet[IdValue]
+        body.freeVals.filter(!paramsSet.contains(_))
+      case _ =>
+        val prodOpt = producedValOpt
+        SeqSet(consumedVals.filterNot(prodOpt.contains))
+    }
+    
+    def children: List[Instr]
   }
 
   final case class Function(owner: TypeIdentifier, funId: FunOrVarId, bodyOpt: Option[Scope]) {
@@ -77,11 +88,7 @@ object SSA {
     }
   }
 
-  trait VarData {
-    def usedVals: Set[IdValue]
-
-    def producedVals: Set[IdValue]
-  }
+  trait VarData
 
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, inCondVal: VarIdValue, bodyLastVal: VarIdValue, varDefScope: Scope) extends VarData {
     var recurrenceOpt: Option[Recurrence] = None
@@ -94,10 +101,6 @@ object SSA {
       }
     }
 
-    override def usedVals: Set[IdValue] = Set(beforeLoopVal, bodyLastVal)
-
-    override def producedVals: Set[IdValue] = Set(inCondVal)
-
     override def toString: String = {
       val baseStr = s"$varId: $beforeLoopVal ; ($inCondVal) { ... $bodyLastVal }"
       baseStr ++ "  " ++ recurDescr
@@ -105,9 +108,6 @@ object SSA {
   }
 
   final case class DisjunctionVarData(varIdOpt: Option[FunOrVarId], afterThenVal: IdValue, afterElseVal: IdValue, joinedVal: IdValue) extends VarData {
-    override def usedVals: Set[IdValue] = Set(afterThenVal, afterElseVal)
-
-    override def producedVals: Set[IdValue] = Set(joinedVal)
 
     override def toString: String = {
       val varIdDescr = varIdOpt match {
@@ -128,79 +128,66 @@ object SSA {
     this: Instr =>
   }
 
-  sealed trait UsesNoValInstr {
+  sealed trait ConsumesNoVal {
     this: Instr =>
-    
-    override final def usedVals: Set[IdValue] = Set.empty
-
-    override final def directlyUsedVals: Set[IdValue] = Set.empty
+    override final def consumedVals: List[IdValue] = List.empty
+  }
+  
+  sealed trait NoChildren {
+    this: Instr =>
+    override def children: List[Instr] = List.empty
   }
 
   sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
-    override def usedVals: Set[IdValue] = cond.usedVals ++ Set(condVal) ++ body.usedVals ++ variables.flatMap(_.usedVals)
+    override def consumedVals: List[IdValue] = List(condVal)
 
-    override def directlyUsedVals: Set[IdValue] = Set(condVal) ++ variables.flatMap(_.usedVals)
-
-    override def definedVals: Set[IdValue] = cond.definedVals ++ body.definedVals ++ variables.flatMap(_.producedVals)
+    override def children: List[Instr] = List(cond, body)
   }
 
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr {
-    override def usedVals: Set[IdValue] = Set(condVal) ++ thenBr.usedVals ++ elseBr.usedVals ++ variables.flatMap(_.usedVals)
+    override def consumedVals: List[IdValue] = List(condVal)
 
-    override def directlyUsedVals: Set[IdValue] = Set(condVal) ++ variables.flatMap(_.usedVals)
-
-    override def definedVals: Set[IdValue] = thenBr.definedVals ++ elseBr.definedVals ++ variables.flatMap(_.producedVals)
+    override def children: List[Instr] = List(thenBr, elseBr)
   }
 
-  final case class StaticTypeAssert(value: IdValue, var tpe: Type) extends RealInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(value)
-
-    override def directlyUsedVals: Set[IdValue] = Set(value)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  // TODO maybe this should become a PseudoInstr?
+  final case class StaticTypeAssert(value: IdValue, var tpe: Type) extends RealInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List.empty
   }
 
   sealed trait AssigningInstr extends RealInstr {
     val assigned: IdValue
-
-    override def definedVals: Set[IdValue] = Set(assigned)
   }
 
-  sealed trait UnaryOp {
+  sealed trait UnaryOp extends NoChildren {
     this: AssigningInstr =>
 
     def operand: IdValue
 
-    override def usedVals: Set[IdValue] = Set(operand)
-
-    override def directlyUsedVals: Set[IdValue] = Set(operand)
+    override def consumedVals: List[IdValue] = List(operand)
   }
 
-  sealed trait BinaryOp {
+  sealed trait BinaryOp extends NoChildren {
     this: AssigningInstr =>
 
     def lhs: IdValue
 
     def rhs: IdValue
 
-    override def usedVals: Set[IdValue] = Set(lhs, rhs)
-
-    override def directlyUsedVals: Set[IdValue] = Set(lhs, rhs)
+    override def consumedVals: List[IdValue] = List(lhs, rhs)
   }
 
-  final case class AssignVal(assigned: IdValue, src: IdValue) extends AssigningInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(src)
-
-    override def directlyUsedVals: Set[IdValue] = Set(src)
+  final case class AssignVal(assigned: IdValue, src: IdValue) extends AssigningInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(src)
   }
 
-  final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr, PureInstr, UsesNoValInstr
+  final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
-  final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr, PureInstr, UsesNoValInstr
+  final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
-  final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr, PureInstr, UsesNoValInstr
+  final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
   final case class NumNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr, UnaryOp
 
@@ -226,31 +213,23 @@ object SSA {
 
   final case class Lt(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
 
-  final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr {
-    override def usedVals: Set[IdValue] = Set(owner)
-
-    override def directlyUsedVals: Set[IdValue] = Set(owner)
+  final case class FieldRead(assigned: IdValue, owner: IdValue, var field: FieldResolutionTarget) extends AssigningInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(owner)
   }
 
-  final case class HeapVarRead(assigned: IdValue, heapVar: HeapVarIdValue) extends AssigningInstr {
-    override def usedVals: Set[IdValue] = Set(heapVar)
-
-    override def directlyUsedVals: Set[IdValue] = Set(heapVar)
+  final case class HeapVarRead(assigned: IdValue, heapVar: HeapVarIdValue) extends AssigningInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(heapVar)
   }
 
-  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, var typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr {
-    override def usedVals: Set[IdValue] = Set(receiver) ++ args
-
-    override def directlyUsedVals: Set[IdValue] = Set(receiver) ++ args
+  final case class InvokeFunc(assigned: IdValue, receiver: IdValue, var func: InvocationTarget, var typeArgs: List[Type], args: List[IdValue]) extends AssigningInstr, NoChildren {
+    override def consumedVals: List[IdValue] = receiver :: args
   }
 
-  final case class InvokeClosure(assigned: IdValue, callee: IdValue, closureTypingTarget: ClosureTypingTarget, args: List[IdValue]) extends AssigningInstr {
-    override def usedVals: Set[IdValue] = Set(callee) ++ args
-
-    override def directlyUsedVals: Set[IdValue] = Set(callee) ++ args
+  final case class InvokeClosure(assigned: IdValue, callee: IdValue, closureTypingTarget: ClosureTypingTarget, args: List[IdValue]) extends AssigningInstr, NoChildren {
+    override def consumedVals: List[IdValue] = callee :: args
   }
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(FunOrVarId, IdValue)]) extends AssigningInstr {
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(FunOrVarId, IdValue)]) extends AssigningInstr, NoChildren {
     private var outType: Option[Type] = None
     
     def resolveOutType(tpe: Type): Unit = {
@@ -258,29 +237,21 @@ object SSA {
     }
     
     def getOutType: Type = outType.get
-    
-    override def usedVals: Set[IdValue] = fieldsInit.map(_._2).toSet
 
-    override def directlyUsedVals: Set[IdValue] = fieldsInit.map(_._2).toSet
+    override def consumedVals: List[IdValue] = fieldsInit.map(_._2)
   }
 
-  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], body: Scope, var isPure: Boolean) extends AssigningInstr {
-    override def usedVals: Set[IdValue] = body.usedVals
-
-    override def directlyUsedVals: Set[IdValue] = body.freeVals -- params.map(_._1)
-
-    override def definedVals: Set[IdValue] = Set(assigned) ++ params.map(_._1) ++ body.definedVals
+  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], body: Scope, var isPure: Boolean) extends AssigningInstr, ConsumesNoVal {
+    override def children: List[Instr] = List(body)
   }
 
-  final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr, UsesNoValInstr
+  final case class MkHeapVar(assigned: HeapVarIdValue) extends AssigningInstr, ConsumesNoVal, NoChildren
 
-  final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(testedValue)
-
-    override def directlyUsedVals: Set[IdValue] = Set(testedValue)
+  final case class TypeTest(assigned: IdValue, testedValue: IdValue, testedTypeId: TypeIdentifier) extends AssigningInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(testedValue)
   }
 
-  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr, PureInstr {
+  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr, PureInstr, NoChildren {
     private var tConvOpt: Option[Option[TypeConversion]] = None
     
     def resolveTypeConversion(tcOpt: Option[TypeConversion]): Unit = {
@@ -288,53 +259,31 @@ object SSA {
     }
 
     def forceGetTypeConversion: Option[TypeConversion] = tConvOpt.get
-    
-    override def usedVals: Set[IdValue] = Set(inValue)
 
-    override def directlyUsedVals: Set[IdValue] = Set(inValue)
+    override def consumedVals: List[IdValue] = List(inValue)
   }
 
-  final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends RealInstr {
-    override def usedVals: Set[IdValue] = Set(owner, rhs)
-
-    override def directlyUsedVals: Set[IdValue] = Set(owner, rhs)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class FieldWrite(owner: IdValue, var field: FieldResolutionTarget, rhs: IdValue) extends RealInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(owner, rhs)
   }
 
-  final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends RealInstr {
-    override def usedVals: Set[IdValue] = Set(heapVar, newValue)
-
-    override def directlyUsedVals: Set[IdValue] = Set(heapVar, newValue)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class HeapVarWrite(heapVar: HeapVarIdValue, newValue: IdValue) extends RealInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(heapVar, newValue)
   }
 
-  final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(retVal)
-
-    override def directlyUsedVals: Set[IdValue] = Set(retVal)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class Return(retVal: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(retVal)
   }
 
-  final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(msg)
-
-    override def directlyUsedVals: Set[IdValue] = Set(msg)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class Panic(msg: IdValue) extends RealInstr, ScopeEndingInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(msg)
   }
 
-  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(inValue)
-
-    override def directlyUsedVals: Set[IdValue] = Set(inValue)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class Cast(inValue: IdValue, target: TypeIdentifier) extends RealInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(inValue)
   }
 
-  final case class HybridCast(inValue: IdValue) extends RealInstr, PureInstr {
+  final case class HybridCast(inValue: IdValue) extends RealInstr, PureInstr, NoChildren {
     private var modeOpt = Option.empty[HybridCastMode]
 
     def setMode(mode: HybridCastMode): Unit = {
@@ -348,24 +297,14 @@ object SSA {
       case AssertPredicate(newPredicate) => Some(newPredicate)
     }
 
-    override def usedVals: Set[IdValue] = Set(inValue)
-
-    override def directlyUsedVals: Set[IdValue] = Set(inValue)
-
-    override def definedVals: Set[IdValue] = Set.empty
+    override def consumedVals: List[IdValue] = List.empty
   }
 
-  final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr {
-    override def usedVals: Set[IdValue] = Set(droppedValue)
-
-    override def directlyUsedVals: Set[IdValue] = Set(droppedValue)
-
-    override def definedVals: Set[IdValue] = Set.empty
+  final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = List(droppedValue)
   }
 
-  final case class LocalDecl(localId: FunOrVarId, var tpe: Type) extends RealInstr, UsesNoValInstr {
-    override def definedVals: Set[IdValue] = Set.empty
-  }
+  final case class LocalDecl(localId: FunOrVarId, var tpe: Type) extends RealInstr, ConsumesNoVal, NoChildren
 
   final class Scope private(
                              val outScopeOpt: Option[Scope],
@@ -385,6 +324,8 @@ object SSA {
     export valuesCtx.globalCtx as globalValuesCtx
 
     val instructions: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty[Instr]
+
+    override def children: List[Instr] = instructions.toList
 
     val depth: Int = outScopeOpt match {
       case Some(outScope) => outScope.depth + 1
@@ -560,11 +501,7 @@ object SSA {
       getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, posOpt)
     }
 
-    override def usedVals: Set[IdValue] = instructions.flatMap(_.usedVals).toSet
-
-    override def directlyUsedVals: Set[IdValue] = Set.empty
-
-    override def definedVals: Set[IdValue] = instructions.flatMap(_.definedVals).toSet
+    override def consumedVals: List[IdValue] = List.empty
     
     def writeInstrIndices(): Unit = {
       for ((instr, idx) <- instructions.zipWithIndex) {
@@ -588,8 +525,8 @@ object SSA {
       HeapVarIdValue(srcId, this, _, posOpt)
     }
 
-    def newIntermediate(nameHint: String): IntermediateIdValue = newValue {
-      IntermediateIdValue(this, _, nameHint)
+    def newIntermediate(nameHint: String, allocMode: AllocMode): IntermediateIdValue = newValue {
+      IntermediateIdValue(this, _, nameHint, allocMode)
     }
 
     def newUninterpretedConst(name: String): UninterpretedConstIdValue = newValue {
@@ -656,9 +593,7 @@ object SSA {
 
   sealed trait PseudoInstr extends Instr
 
-  final case class Unreachable() extends PseudoInstr, ScopeEndingInstr, UsesNoValInstr {
-    override def definedVals: Set[IdValue] = Set.empty
-  }
+  final case class Unreachable() extends PseudoInstr, ScopeEndingInstr, ConsumesNoVal, NoChildren
 
   enum HybridCastMode {
     case AssertNonNull

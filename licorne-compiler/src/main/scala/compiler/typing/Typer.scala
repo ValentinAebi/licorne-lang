@@ -3,6 +3,7 @@ package compiler.typing
 import compiler.identifiers.*
 import compiler.irs.ssa.*
 import compiler.irs.ssa.Formulas.*
+import compiler.irs.ssa.Formulas.AllocMode.Stack
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.SSA.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang
@@ -106,6 +107,8 @@ final class Typer(
         solver.assertEq(f1, f2, SimplifiedType.from(currScope.detectCurrentType(f1)))
       }
     }
+
+    instr.consumedVals.foreach(checkUsagesAllocConsistency)
 
     instr match {
 
@@ -1538,6 +1541,12 @@ final class Typer(
     if (allowWriteToIR) {
       val _ = action
     }
+  }
+
+  private def checkUsagesAllocConsistency(idVal: IdValue): Unit = idVal match {
+    case value: NamedIdValue => ()
+    case IntermediateIdValue(definingScope, uid, nameHint, allocMode) =>
+      assert(allocMode != Stack || idVal.users.size <= 1, s"stack allocated value $idVal has more than one usage")
   }
 
 }

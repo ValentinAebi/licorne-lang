@@ -7,10 +7,13 @@ import compiler.lang.{Keyword, Operator}
 trait FormulaPrinter {
 
   protected def printIdVal(value: NamedIdValue): String
+  
+  protected def inclAllocMode: Boolean
 
   def prettyprint(formula: Formula): String = formula match {
-    case IntermediateIdValue(definingScope, uid, nameHint) =>
-      s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i"
+    case IntermediateIdValue(definingScope, uid, nameHint, allocMode) =>
+      val allocModeDescr = if inclAllocMode then s"#$allocMode" else ""
+      s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i" ++ allocModeDescr
     case value: NamedIdValue => printIdVal(value)
     case Formulas.IntConst(value) => value.toString
     case Formulas.BoolConst(value) => value.toString
@@ -86,6 +89,7 @@ trait FormulaPrinter {
 
 object SourceLevelFormulaPrinter extends FormulaPrinter {
   override protected def printIdVal(value: NamedIdValue): String = value.name
+  override protected def inclAllocMode: Boolean = false
 }
 
 object IRLevelFormulaPrinter extends FormulaPrinter {
@@ -105,4 +109,5 @@ object IRLevelFormulaPrinter extends FormulaPrinter {
     case Formulas.UninterpretedConstIdValue(name, definingScope, uid) => name
   }
 
+  override protected def inclAllocMode: Boolean = true
 }

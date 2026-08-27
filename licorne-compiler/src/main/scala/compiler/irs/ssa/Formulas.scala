@@ -84,7 +84,12 @@ object Formulas {
     override def posOpt: Option[Position] = None
   }
 
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String) extends IdValue
+  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String, allocMode: AllocMode) extends IdValue
+  
+  enum AllocMode(override val toString: String) {
+    case Stack extends AllocMode("st")
+    case Locals extends AllocMode("lc")
+  }
 
   sealed trait ConstFormula extends Formula {
     def value: Any

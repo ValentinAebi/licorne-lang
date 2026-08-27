@@ -4,6 +4,7 @@ import compiler.identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId, TypeIde
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ssa.Formulas.*
+import compiler.irs.ssa.Formulas.AllocMode.*
 import compiler.irs.ssa.SSA.*
 import compiler.irs.ssa.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, SSA}
 import compiler.lang.*
@@ -400,7 +401,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
               precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = SSA.Function(classId, fld.id, Some(syntheticFuncBody))
-            val retVal = syntheticFunSigScope.newIntermediate("ret")
+            val retVal = syntheticFunSigScope.newIntermediate("ret", Stack)
             val resolTarget = FieldResolutionTarget(fieldId)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
             syntheticFuncBody.instructions.addOne(Return(retVal))
@@ -569,7 +570,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     stat match {
 
       case expr: Asts.Expr =>
-        val resultValue = currScope.newIntermediate("dummy")
+        val resultValue = currScope.newIntermediate("dummy", Stack)
         generateSSAExpr(resultValue, expr, currScope)
         currScope.saveInstr(Drop(resultValue), expr)
 
@@ -635,10 +636,10 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         }
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
-        val ownerVal = currScope.newIntermediate(s"$fieldId'owner")
+        val ownerVal = currScope.newIntermediate(s"$fieldId'owner", Stack)
         generateSSAExpr(ownerVal, ownerTree, currScope)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
-        val rhsVal = currScope.newIntermediate(fieldId.stringId)
+        val rhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
         generateSSAExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget(fieldId), rhsVal), assig)
@@ -660,7 +661,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         reportError(s"in-place mutation is only allowed on local variables and fields of owner $ThisId", stat.getPosition)
 
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
-        val condVal = currScope.newIntermediate("cond")
+        val condVal = currScope.newIntermediate("cond", Stack)
         generateSSAExpr(condVal, condTree, currScope)
         val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
         val elseBrAssignedVars = elseTreeOpt.flatMap(externalVarsAssignedIn)
@@ -707,7 +708,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         for (LoopVarData(id, beforeLoopVal, condVal, _, _) <- loopUpdatedVars) {
           condScope.getLocalValuesContextUnsafe.remap(id, condVal)
         }
-        val condVal = currScope.newIntermediate("cond")
+        val condVal = currScope.newIntermediate("cond", Stack)
         generateSSAExpr(condVal, condTree, condScope)
         if (condScope.hasExited) {
           reportError("condition evaluation cannot terminate", condTree.getPosition)
@@ -745,7 +746,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
 
       case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
-        val retVal = currFuncInfo.funSigScope.newIntermediate("ret")
+        val retVal = currFuncInfo.funSigScope.newIntermediate("ret", Stack)
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateSSAExpr(retVal, returnedTree, currScope)
@@ -788,7 +789,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
       val argsValsB = List.newBuilder[IdValue]
       for (argTree <- argsTrees) {
-        val argVal = currScope.newIntermediate("arg")
+        val argVal = currScope.newIntermediate("arg", Stack)
         argsValsB.addOne(argVal)
         generateSSAExpr(argVal, argTree, currScope)
       }
@@ -796,7 +797,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
     }
 
     def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
-      val operandVal = currScope.newIntermediate("unaryop")
+      val operandVal = currScope.newIntermediate("unaryop", Stack)
       generateSSAExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
       for {
@@ -808,9 +809,9 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       generateUnary(operandTree, mkInstr, Some(mkFormula))
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
-      var lhsVal = currScope.newIntermediate("leftop")
+      var lhsVal = currScope.newIntermediate("leftop", Stack)
       generateSSAExpr(lhsVal, lhs, currScope)
-      var rhsVal = currScope.newIntermediate("rightop")
+      var rhsVal = currScope.newIntermediate("rightop", Stack)
       generateSSAExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
@@ -881,7 +882,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         proxyStore.saveProxy(resultVal, objIdVal)
         Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
-        val receiverVal = currScope.newIntermediate("receiver")
+        val receiverVal = currScope.newIntermediate("receiver", Stack)
         generateSSAExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
@@ -892,10 +893,13 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         if !currScope.getLocalValuesContextUnsafe.knows(rawFunId) =>
         findImplicitReceiverInImports(rawFunId, currScope) match {
           case Some(receiverVal, targetFunId) =>
+            val intermReceiverVal = currScope.newIntermediate("objalias", Stack)
+            currScope.saveInstr(AssignVal(intermReceiverVal, receiverVal), expr)
+            proxyStore.saveProxy(intermReceiverVal, receiverVal)
             val typeArgs = typeArgTrees.map(mkType(_, currScope))
             val argVals = generateArgsList(argTrees)
             val invkTarget = InvocationTarget(targetFunId)
-            currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
+            currScope.saveInstr(InvokeFunc(resultVal, intermReceiverVal, invkTarget, typeArgs, argVals), expr)
             Some(FunCall(receiverVal, invkTarget, typeArgs, argVals))
           case None =>
             reportError(s"no receiver found for call to $rawFunId", callTree.getPosition)
@@ -905,7 +909,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
         }
-        val calleeVal = currScope.newIntermediate("callee")
+        val calleeVal = currScope.newIntermediate("callee", Stack)
         generateSSAExpr(calleeVal, calleeTree, currScope)
         val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
@@ -960,7 +964,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
       case binopTree@Asts.BinaryOp(lhs, operator, rhs) =>
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>
-        val lhsVal = currScope.newIntermediate(fieldId.stringId)
+        val lhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
         generateSSAExpr(lhsVal, lhsTree, currScope)
         val unresolvedField = FieldResolutionTarget(fieldId)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, unresolvedField), selectTree)
@@ -975,7 +979,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val argsB = List.newBuilder[(FunOrVarId, IdValue)]
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
-          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId)
+          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId, Stack)
           generateSSAExpr(rhsVal, initializerRhs, currScope)
           argsB.addOne(initializer.fieldName -> rhsVal)
         }
@@ -985,12 +989,12 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         proxyStore.saveKnownType(resultVal, typeId)
         None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
-        val condVal = currScope.newIntermediate("cond")
+        val condVal = currScope.newIntermediate("cond", Stack)
         generateSSAExpr(condVal, condTree, currScope)
-        val thenVal = currScope.newIntermediate("then")
+        val thenVal = currScope.newIntermediate("then", Stack)
         val thenScope = Scope.nestedInside(currScope, thenTree)
         generateSSAExpr(thenVal, thenTree, thenScope)
-        val elseVal = currScope.newIntermediate("else")
+        val elseVal = currScope.newIntermediate("else", Stack)
         val elseScope = Scope.nestedInside(currScope, elseTree)
         generateSSAExpr(elseVal, elseTree, elseScope)
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
@@ -1010,7 +1014,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
-        val inVal = currScope.newIntermediate("convertedval")
+        val inVal = currScope.newIntermediate("convertedval", Stack)
         generateSSAExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
         None
@@ -1060,7 +1064,7 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
           }
         }
       case panicTree@Asts.PanicExpr(msgTree) =>
-        val msgVal = currScope.newIntermediate("msg")
+        val msgVal = currScope.newIntermediate("msg", Stack)
         generateSSAExpr(msgVal, msgTree, currScope)
         currScope.saveInstr(Panic(msgVal), panicTree)
         currScope.getLocalValuesContextUnsafe.markHasExited()
