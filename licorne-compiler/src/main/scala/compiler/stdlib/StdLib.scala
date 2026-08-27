@@ -61,7 +61,8 @@ object StdLib {
   // licorne.closures
   val licorneClosuresPkgPrefix: List[String] = licornePkgPrefix :+ "closures"
   val heapVarTypeId: TypeIdentifier = TypeIdentifier(licorneClosuresPkgPrefix, "HeapVar")
-  val intHeapVarTypeId: TypeIdentifier = TypeIdentifier(licorneClosuresPkgPrefix, "IntHeapVar")
+  val heapVarGetFunId: FunOrVarId = NormalFunOrVarId("get")
+  val heapVarSetFunId: FunOrVarId = NormalFunOrVarId("set")
 
   val automaticTypeImports: Iterable[(String, TypeIdentifier)] = List(
     // TODO add all type aliases from licorne.core

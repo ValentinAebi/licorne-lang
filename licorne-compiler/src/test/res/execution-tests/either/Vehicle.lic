@@ -1,0 +1,8 @@
+
+interface Vehicle {
+    fn maxPassengers(this) -> Cnt
+}
+
+class Car : Vehicle {
+    fn maxPassengers(this) -> Cnt = 6
+}

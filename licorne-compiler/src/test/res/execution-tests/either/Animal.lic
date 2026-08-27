@@ -1,0 +1,8 @@
+
+interface Animal {
+    fn speak(this) -> String
+}
+
+class Dog : Animal {
+    fn speak(this) -> String = "woof"
+}

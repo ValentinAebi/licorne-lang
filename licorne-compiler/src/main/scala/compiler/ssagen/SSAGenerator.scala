@@ -1,6 +1,6 @@
 package compiler.ssagen
 
-import compiler.identifiers.{FunOrVarId, ItId, NormalFunOrVarId, ThisId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ssa.Formulas.*
@@ -21,12 +21,11 @@ import compiler.ssagen.ImportsScanner.PackagesInfo
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
-import compiler.util.{SeqSet, javaIterToList, mapVals}
+import compiler.util.{SeqSet, mapVals}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
-import java.io.File
 import java.nio.file.Path
 import scala.collection.{SeqMap, mutable}
 
@@ -979,7 +978,8 @@ final class SSAGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: ProxySto
         val argsB = List.newBuilder[(FunOrVarId, IdValue)]
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
-          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId, Stack)
+          // TODO maybe we can avoid using locals for constructor arguments
+          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId, Locals)
           generateSSAExpr(rhsVal, initializerRhs, currScope)
           argsB.addOne(initializer.fieldName -> rhsVal)
         }

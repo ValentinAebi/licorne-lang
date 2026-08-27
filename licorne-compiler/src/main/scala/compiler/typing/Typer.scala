@@ -306,10 +306,8 @@ final class Typer(
       case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
         val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
-        if (instRecTypeArgs.nonEmpty) {
-          irModif {
-            invk.typeArgs = instFunTypeArgs
-          }
+        irModif {
+          invk.typeArgs = instFunTypeArgs
         }
         val returnType =
           if func.isResolvedAndPure
@@ -1388,7 +1386,9 @@ final class Typer(
       instTypesB.addOne(tArgInst)
     }
     for (tp <- typeParams.drop(typeArgs.size)) {
-      substBuilder.addOne(tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, posOpt))
+      val tv = typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, posOpt)
+      substBuilder.addOne(tp.tid -> tv)
+      instTypesB.addOne(tv)
     }
     if (typeArgs.size > typeParams.size) {
       ctxDescrForReportingOpt.foreach { ctxDescr =>

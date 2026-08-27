@@ -12,16 +12,4 @@ class HeapVar(var value: Any?) {
 
 }
 
-class IntHeapVar(var value: Int) {
-
-    fn get(this) -> Int {
-        return value;
-    }
-
-    fn set(this, newVal: Int) {
-        this.value = newVal;
-    }
-
-}
-
-// TODO DoubleHeapVar
+// TODO specialized versions for primitive types?

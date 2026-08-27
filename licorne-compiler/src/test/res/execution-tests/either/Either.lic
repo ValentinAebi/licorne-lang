@@ -1,0 +1,9 @@
+
+datatype Either[+L, +R]
+record Left[+L](l: L) : Either[L, Nothing]
+record Right[+R](r: R) : Either[Nothing, R]
+
+object Eithers {
+    fn left[L](l: L) -> Either[L, Nothing] = new Left(l)
+    fn right[R](r: R) -> Either[Nothing, R] = new Right(r)
+}

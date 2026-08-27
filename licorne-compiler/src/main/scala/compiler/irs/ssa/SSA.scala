@@ -21,6 +21,7 @@ import compiler.valuesconversion.{GlobalValuesContext, LocalValuesContext, Value
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
+import scala.compiletime.uninitialized
 
 object SSA {
 

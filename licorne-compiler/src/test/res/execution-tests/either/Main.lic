@@ -1,0 +1,20 @@
+import Eithers.*;
+
+object Main {
+
+    main fn run() {
+        val x = left(new Dog());
+        val y = right(new Car());
+        display(x);
+        display(y);
+    }
+
+    private fn display(e: Either[Animal, Car]) {
+        if (e is Left) {
+            println(e.l().speak().toUpperCase());
+        } else {
+            println(e.r().maxPassengers());
+        }
+    }
+
+}

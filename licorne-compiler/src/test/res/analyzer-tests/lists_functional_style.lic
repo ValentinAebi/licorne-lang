@@ -163,7 +163,7 @@ object UseLists {
       else zip(integers, strings)
 
    fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
-      return zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length(integers) == lists.Lists.length(strings) holds
+      return zip(integers, strings);     //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length[S](integers) == lists.Lists.length[T](strings) holds
    }
 
    fn instanceTests(ls: List[I], thres: Int) {

@@ -1,7 +1,5 @@
 package licorne.closures;
 
-
 interface Closure[R] {
-    fn setArg(this, idx: [0..])
-    fn run(this) -> R
+    fn run(this, args: Array[Any?]) -> R
 }
