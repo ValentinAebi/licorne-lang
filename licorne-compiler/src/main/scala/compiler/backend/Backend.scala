@@ -4,7 +4,6 @@ import compiler.backend.Boxing.boxDesc
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ircorne.Formulas.AllocMode.*
 import compiler.irs.ircorne.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
@@ -454,6 +453,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       // Array methods
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
         val elemKind = arrayElemKindOf(receiver, currScope)
+        genValueLoad(receiver, currScope, cb)
+        genValueLoad(args.head, currScope, cb)
         cb.arrayLoad(elemKind)
         genValueStore(assigned, currScope, cb)
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
@@ -613,15 +614,11 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
       case IRcorne.Panic(msg) =>
         cb.new_(assertionErrorDesc)
-        cb.dup_x1()
-        cb.swap()
+        cb.dup()
         genValueLoad(msg, currScope, cb)
         cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
         cb.athrow()
         throw TerminateScopeSignal
-
-      case IRcorne.Drop(droppedValue) =>
-        genPop(typeKindOf(droppedValue, currScope), cb)
 
       case IRcorne.LocalDecl(localId, tpe) => ()
 
@@ -653,7 +650,6 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     given TypeParamsContext = funcGenCtx.typeParamsCtx
 
     idVal match {
-      case IntermediateIdValue(definingScope, uid, nameHint, Stack) => ()
       case _ if funcGenCtx.isNullVal(idVal) =>
         cb.aconst_null()
       case _ =>
@@ -679,7 +675,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     val kind = typeKindOf(idVal, currScope)
     idVal match {
       case _ if kind == VOID => ()
-      case IntermediateIdValue(definingScope, uid, nameHint, Stack) => ()
+      case idVal: IntermediateIdValue if idVal.users.isEmpty =>
+        genPop(kind, cb)
       case _ =>
         val slot = allocateAndDeclareIfNew(idVal, currScope, cb)
         cb.storeLocal(kind, slot)

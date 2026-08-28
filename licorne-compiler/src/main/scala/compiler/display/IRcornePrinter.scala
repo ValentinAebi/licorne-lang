@@ -297,8 +297,6 @@ final class IRcornePrinter(
           case None => "<unspecified>"
         }
         pps.add(s"HYBRIDCAST ${maybeTyped(inValue, scope)}: $targetDescr")
-      case IRcorne.Drop(droppedValue) =>
-        pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)
       case IRcorne.LocalDecl(localId, tpe) =>
         pps.add(s"DECL-LOCAL $localId : $tpe")

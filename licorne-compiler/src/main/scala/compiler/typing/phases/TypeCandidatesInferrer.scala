@@ -177,7 +177,6 @@ final class TypeCandidatesInferrer(
     case Panic(msg) => ()
     case Cast(inValue, target) => ()
     case HybridCast(inValue) => ()
-    case Drop(droppedValue) => ()
     case LocalDecl(localId, tpe) => ()
     case Unreachable() => ()
     case scope: Scope =>

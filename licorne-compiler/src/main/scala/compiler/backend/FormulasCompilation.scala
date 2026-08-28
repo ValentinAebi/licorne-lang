@@ -1,7 +1,6 @@
 package compiler.backend
 
-import compiler.irs.ircorne.Formulas.AllocMode.Stack
-import compiler.irs.ircorne.Formulas.{AllocMode, Formula, IdValue, IntermediateIdValue}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne}
 
@@ -25,30 +24,30 @@ object FormulasCompilation {
 
       case value: Formulas.IdValue => value
 
-      case Formulas.IntConst(value) => withIntermediateValue(Stack) { res =>
+      case Formulas.IntConst(value) => withIntermediateValue { res =>
         save(AssignIntConst(res, value))
       }
 
-      case Formulas.BoolConst(value) => withIntermediateValue(Stack) { res =>
+      case Formulas.BoolConst(value) => withIntermediateValue { res =>
         save(AssignBoolConst(res, value))
       }
 
-      case Formulas.StringConst(value) => withIntermediateValue(Stack) { res =>
+      case Formulas.StringConst(value) => withIntermediateValue { res =>
         save(AssignStringConst(res, value))
       }
 
-      case Formulas.Select(owner, field) => withIntermediateValue(Stack) { res =>
+      case Formulas.Select(owner, field) => withIntermediateValue { res =>
         val ownerVal = compileFormula(owner)
         save(FieldRead(res, ownerVal, field))
       }
 
-      case Formulas.FunCall(receiver, func, typeArgs, args) => withIntermediateValue(Stack) { res =>
+      case Formulas.FunCall(receiver, func, typeArgs, args) => withIntermediateValue { res =>
         val recVal = compileFormula(receiver)
         val argVals = args.map(compileFormula)
         save(InvokeFunc(res, recVal, func, typeArgs, argVals))
       }
 
-      case Formulas.ClosureCall(callee, closureTypingTarget, args) => withIntermediateValue(Stack) { res =>
+      case Formulas.ClosureCall(callee, closureTypingTarget, args) => withIntermediateValue { res =>
         val calleeVal = compileFormula(callee)
         val argVals = args.map(compileFormula)
         save(InvokeClosure(res, calleeVal, closureTypingTarget, argVals))
@@ -61,12 +60,12 @@ object FormulasCompilation {
       case Formulas.DivBy(lhs, rhs) => genBinop(lhs, rhs, Div(_, _, _))
       case Formulas.Modulo(lhs, rhs) => genBinop(lhs, rhs, Rem(_, _, _))
 
-      case Formulas.Neg(operand) => withIntermediateValue(Stack) { res =>
+      case Formulas.Neg(operand) => withIntermediateValue { res =>
         val operandVal = compileFormula(operand)
         save(NumNeg(res, operandVal))
       }
 
-      case Formulas.LogicalNot(operand) => withIntermediateValue(Stack) { res =>
+      case Formulas.LogicalNot(operand) => withIntermediateValue { res =>
         val operandVal = compileFormula(operand)
         save(LogicNeg(res, operandVal))
       }
@@ -78,7 +77,7 @@ object FormulasCompilation {
       case Formulas.LessOrEq(lhs, rhs) => genBinop(lhs, rhs, Leq(_, _, _))
       case Formulas.LessThan(lhs, rhs) => genBinop(lhs, rhs, Lt(_, _, _))
 
-      case Formulas.TypePredicate(subject, tpe) => withIntermediateValue(Stack) { res =>
+      case Formulas.TypePredicate(subject, tpe) => withIntermediateValue { res =>
         val subjVal = compileFormula(subject)
         save(TypeTest(res, subjVal, tpe))
       }
@@ -90,15 +89,15 @@ object FormulasCompilation {
 
   private def genBinop(lhs: Formula, rhs: Formula, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => RealInstr)
                    (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope): IntermediateIdValue =
-    withIntermediateValue(Stack) { res =>
+    withIntermediateValue { res =>
       val lhsVal = compileFormula(lhs)
       val rhsVal = compileFormula(rhs)
       val instr = mkInstr(res, lhsVal, rhsVal)
       instructions.addOne(instr)
     }
 
-  private def withIntermediateValue(allocMode: AllocMode)(action: IntermediateIdValue => Unit, idHint: String = "f_interm")(using currScope: Scope): IntermediateIdValue = {
-    val interm = currScope.newIntermediate(idHint, allocMode)
+  private def withIntermediateValue(action: IntermediateIdValue => Unit, idHint: String = "f_interm")(using currScope: Scope): IntermediateIdValue = {
+    val interm = currScope.newIntermediate(idHint)
     action(interm)
     interm
   }

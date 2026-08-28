@@ -11,9 +11,8 @@ trait FormulaPrinter {
   protected def inclAllocMode: Boolean
 
   def prettyprint(formula: Formula): String = formula match {
-    case IntermediateIdValue(definingScope, uid, nameHint, allocMode) =>
-      val allocModeDescr = if inclAllocMode then s"#$allocMode" else ""
-      s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i" ++ allocModeDescr
+    case IntermediateIdValue(definingScope, uid, nameHint) =>
+      s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i"
     case value: NamedIdValue => printIdVal(value)
     case Formulas.IntConst(value) => value.toString
     case Formulas.BoolConst(value) => value.toString

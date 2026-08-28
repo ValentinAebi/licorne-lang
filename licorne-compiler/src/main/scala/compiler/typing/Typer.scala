@@ -82,9 +82,7 @@ final class Typer(
         var stop = false
         while (instrIter.hasNext && !stop) {
           val instr = instrIter.next()
-          if (!instr.isInstanceOf[Drop]) {
-            scope.reportHasExitedIfNeeded(er, instr.getPosition)
-          }
+          scope.reportHasExitedIfNeeded(er, instr.getPosition)
           if (scope.hasExited) {
             stop = true
           } else {
@@ -505,8 +503,6 @@ final class Typer(
         irModif {
           localDecl.tpe = instantiateType(tpe, None, currScope, localDecl.getPosition)
         }
-
-      case Drop(droppedValue) => ()
 
       case scope: Scope =>
         typeScopeInstructions(scope, BranchingInfo.empty)

@@ -142,13 +142,13 @@ object IRcorne {
   sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
-    override def consumedVals: List[IdValue] = List(condVal)
+    override def consumedVals: List[IdValue] = condVal :: variables.flatMap(vd => List(vd.beforeLoopVal, vd.bodyLastVal))
 
     override def children: List[Instr] = List(cond, body)
   }
 
   final case class Disjunction(condVal: IdValue, thenBr: Scope, elseBr: Scope, variables: List[DisjunctionVarData]) extends ControlFlowInstr {
-    override def consumedVals: List[IdValue] = List(condVal)
+    override def consumedVals: List[IdValue] = condVal :: variables.flatMap(vd => List(vd.afterThenVal, vd.afterElseVal))
 
     override def children: List[Instr] = List(thenBr, elseBr)
   }
@@ -289,6 +289,11 @@ object IRcorne {
 
     def setMode(mode: HybridCastMode): Unit = {
       modeOpt = Some(mode)
+      mode match {
+        case HybridCastMode.AssertNonNull => ()
+        case HybridCastMode.AssertPredicate(predicate, compiledPredicate, resultValue) =>
+          resultValue.users.addOne(this)
+      }
     }
 
     def isNonNullAssertion: Boolean = modeOpt.contains(AssertNonNull)
@@ -298,10 +303,6 @@ object IRcorne {
     def getModeUnsafe: HybridCastMode = getModeOpt.get
 
     override def consumedVals: List[IdValue] = List.empty
-  }
-
-  final case class Drop(droppedValue: IdValue) extends RealInstr, PureInstr, NoChildren {
-    override def consumedVals: List[IdValue] = List(droppedValue)
   }
 
   final case class LocalDecl(localId: FunOrVarId, var tpe: Type) extends RealInstr, ConsumesNoVal, NoChildren
@@ -525,8 +526,8 @@ object IRcorne {
       HeapVarIdValue(srcId, this, _, posOpt)
     }
 
-    def newIntermediate(nameHint: String, allocMode: AllocMode): IntermediateIdValue = newValue {
-      IntermediateIdValue(this, _, nameHint, allocMode)
+    def newIntermediate(nameHint: String): IntermediateIdValue = newValue {
+      IntermediateIdValue(this, _, nameHint)
     }
 
     def newUninterpretedConst(name: String): UninterpretedConstIdValue = newValue {

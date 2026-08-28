@@ -4,7 +4,6 @@ import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ircorne.Formulas.*
-import compiler.irs.ircorne.Formulas.AllocMode.*
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, IRcorne}
 import compiler.lang.*
@@ -400,7 +399,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
               precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = IRcorne.Function(classId, fld.id, Some(syntheticFuncBody))
-            val retVal = syntheticFunSigScope.newIntermediate("ret", Stack)
+            val retVal = syntheticFunSigScope.newIntermediate("ret")
             val resolTarget = FieldResolutionTarget(fieldId)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
             syntheticFuncBody.instructions.addOne(Return(retVal))
@@ -569,9 +568,8 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
     stat match {
 
       case expr: Asts.Expr =>
-        val resultValue = currScope.newIntermediate("dummy", Stack)
+        val resultValue = currScope.newIntermediate("dummy")
         generateIRExpr(resultValue, expr, currScope)
-        currScope.saveInstr(Drop(resultValue), expr)
 
       case block@Asts.Block(stats) =>
         val blockScope = if (newScopeIfBlock) {
@@ -635,10 +633,10 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         }
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
-        val ownerVal = currScope.newIntermediate(s"$fieldId'owner", Stack)
+        val ownerVal = currScope.newIntermediate(s"$fieldId'owner")
         generateIRExpr(ownerVal, ownerTree, currScope)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
-        val rhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
+        val rhsVal = currScope.newIntermediate(fieldId.stringId)
         generateIRExpr(rhsVal, rhsTree, currScope)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget(fieldId), rhsVal), assig)
@@ -660,7 +658,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         reportError(s"in-place mutation is only allowed on local variables and fields of owner $ThisId", stat.getPosition)
 
       case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
-        val condVal = currScope.newIntermediate("cond", Stack)
+        val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, currScope)
         val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
         val elseBrAssignedVars = elseTreeOpt.flatMap(externalVarsAssignedIn)
@@ -707,7 +705,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         for (LoopVarData(id, beforeLoopVal, condVal, _, _) <- loopUpdatedVars) {
           condScope.getLocalValuesContextUnsafe.remap(id, condVal)
         }
-        val condVal = currScope.newIntermediate("cond", Stack)
+        val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, condScope)
         if (condScope.hasExited) {
           reportError("condition evaluation cannot terminate", condTree.getPosition)
@@ -745,7 +743,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
 
       case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
-        val retVal = currFuncInfo.funSigScope.newIntermediate("ret", Stack)
+        val retVal = currFuncInfo.funSigScope.newIntermediate("ret")
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateIRExpr(retVal, returnedTree, currScope)
@@ -788,7 +786,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
       val argsValsB = List.newBuilder[IdValue]
       for (argTree <- argsTrees) {
-        val argVal = currScope.newIntermediate("arg", Stack)
+        val argVal = currScope.newIntermediate("arg")
         argsValsB.addOne(argVal)
         generateIRExpr(argVal, argTree, currScope)
       }
@@ -796,7 +794,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
     }
 
     def generateUnary(operandTree: Asts.Expr, mkInstr: (operand: IdValue) => Instr, mkFormulaOpt: Option[Formula => Formula] = None): Option[Formula] = {
-      val operandVal = currScope.newIntermediate("unaryop", Stack)
+      val operandVal = currScope.newIntermediate("unaryop")
       generateIRExpr(operandVal, operandTree, currScope)
       currScope.saveInstr(mkInstr(operandVal), expr)
       for {
@@ -808,9 +806,9 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
       generateUnary(operandTree, mkInstr, Some(mkFormula))
 
     def generateBinary(lhs: Asts.Expr, rhs: Asts.Expr, mkInstr: (lhs: IdValue, rhs: IdValue) => Instr, mkFormulaOpt: Option[(Formula, Formula) => Formula] = None, swapOperands: Boolean = false): Option[Formula] = {
-      var lhsVal = currScope.newIntermediate("leftop", Stack)
+      var lhsVal = currScope.newIntermediate("leftop")
       generateIRExpr(lhsVal, lhs, currScope)
-      var rhsVal = currScope.newIntermediate("rightop", Stack)
+      var rhsVal = currScope.newIntermediate("rightop")
       generateIRExpr(rhsVal, rhs, currScope)
       if (swapOperands) {
         val lhsBefore = lhsVal
@@ -881,7 +879,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         proxyStore.saveProxy(resultVal, objIdVal)
         Some(objIdVal)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
-        val receiverVal = currScope.newIntermediate("receiver", Stack)
+        val receiverVal = currScope.newIntermediate("receiver")
         generateIRExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
         val argVals = generateArgsList(argTrees)
@@ -892,7 +890,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         if !currScope.getLocalValuesContextUnsafe.knows(rawFunId) =>
         findImplicitReceiverInImports(rawFunId, currScope) match {
           case Some(receiverVal, targetFunId) =>
-            val intermReceiverVal = currScope.newIntermediate("objalias", Stack)
+            val intermReceiverVal = currScope.newIntermediate("objalias")
             currScope.saveInstr(AssignVal(intermReceiverVal, receiverVal), expr)
             proxyStore.saveProxy(intermReceiverVal, receiverVal)
             val typeArgs = typeArgTrees.map(mkType(_, currScope))
@@ -908,7 +906,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         if (typeArgTrees.nonEmpty) {
           reportError("type arguments on closure invocation", callTree.getPosition)
         }
-        val calleeVal = currScope.newIntermediate("callee", Stack)
+        val calleeVal = currScope.newIntermediate("callee")
         generateIRExpr(calleeVal, calleeTree, currScope)
         val target = ClosureTypingTarget()
         val args = generateArgsList(argTrees)
@@ -963,7 +961,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
       case binopTree@Asts.BinaryOp(lhs, operator, rhs) =>
         throw AssertionError(s"unexpected $operator as binary operator")
       case selectTree@Asts.Select(lhsTree, fieldId) =>
-        val lhsVal = currScope.newIntermediate(fieldId.stringId, Stack)
+        val lhsVal = currScope.newIntermediate(fieldId.stringId)
         generateIRExpr(lhsVal, lhsTree, currScope)
         val unresolvedField = FieldResolutionTarget(fieldId)
         currScope.saveInstr(FieldRead(resultVal, lhsVal, unresolvedField), selectTree)
@@ -979,7 +977,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         for (initializer <- initializers) {
           val initializerRhs = rhsOf(initializer)
           // TODO maybe we can avoid using locals for constructor arguments
-          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId, Locals)
+          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId)
           generateIRExpr(rhsVal, initializerRhs, currScope)
           argsB.addOne(initializer.fieldName -> rhsVal)
         }
@@ -989,12 +987,12 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         proxyStore.saveKnownType(resultVal, typeId)
         None
       case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
-        val condVal = currScope.newIntermediate("cond", Stack)
+        val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, currScope)
-        val thenVal = currScope.newIntermediate("then", Stack)
+        val thenVal = currScope.newIntermediate("then")
         val thenScope = Scope.nestedInside(currScope, thenTree)
         generateIRExpr(thenVal, thenTree, thenScope)
-        val elseVal = currScope.newIntermediate("else", Stack)
+        val elseVal = currScope.newIntermediate("else")
         val elseScope = Scope.nestedInside(currScope, elseTree)
         generateIRExpr(elseVal, elseTree, elseScope)
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
@@ -1014,7 +1012,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
         currScope.saveInstr(Cast(resultVal, typeName), castTree)
         None
       case conversionTree@Asts.Cast(inExprTree, targetTypeTree: Asts.PrimitiveTypeTree) =>
-        val inVal = currScope.newIntermediate("convertedval", Stack)
+        val inVal = currScope.newIntermediate("convertedval")
         generateIRExpr(inVal, inExprTree, currScope)
         currScope.saveInstr(Conversion(resultVal, inVal, targetTypeTree.primitiveType), conversionTree)
         None
@@ -1064,7 +1062,7 @@ final class IRcorneGenerator(typeVarsCtx: TypeVariablesContext, proxyStore: Prox
           }
         }
       case panicTree@Asts.PanicExpr(msgTree) =>
-        val msgVal = currScope.newIntermediate("msg", Stack)
+        val msgVal = currScope.newIntermediate("msg")
         generateIRExpr(msgVal, msgTree, currScope)
         currScope.saveInstr(Panic(msgVal), panicTree)
         currScope.getLocalValuesContextUnsafe.markHasExited()
