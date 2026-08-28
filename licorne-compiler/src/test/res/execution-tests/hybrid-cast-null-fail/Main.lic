@@ -1,0 +1,19 @@
+import licorne.io.Console;
+
+object Main {
+
+    main fn run() {
+        val obj = null;
+        foo(obj);       //>STACKTRACE
+    }
+
+    private fn foo(x: String?) {
+        val s = x!!;    //>STACKTRACE
+        println(s);
+    }
+
+    private fn println(s: String) {
+        Console.println(s);
+    }
+
+}

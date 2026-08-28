@@ -4,4 +4,4 @@ typealias NonZeroInt = Int with it != 0
 
 typealias Cnt = [0..]
 
-typealias Idx(indexed: Indexed) = [0 .. indexed.size()]
+typealias Idx(indexed: Indexed) = [0 ..< indexed.size()]

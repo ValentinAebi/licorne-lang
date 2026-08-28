@@ -29,8 +29,10 @@ object Formulas {
       }
     }
   }
+  
+  sealed trait AtomicValue extends Formula
 
-  sealed abstract class IdValue extends Formula {
+  sealed abstract class IdValue extends AtomicValue {
     def uid: Long
 
     def definingScope: Scope
@@ -91,7 +93,7 @@ object Formulas {
     case Locals extends AllocMode("lc")
   }
 
-  sealed trait ConstFormula extends Formula {
+  sealed trait ConstFormula extends AtomicValue {
     def value: Any
 
     override def isAtomic: Boolean = true

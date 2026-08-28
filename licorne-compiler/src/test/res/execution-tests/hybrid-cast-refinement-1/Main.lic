@@ -1,0 +1,14 @@
+
+object Main {
+
+    main fn run() {
+        val z = 7 + 9;
+        val t = z - 1;
+        foo(t, z!!);    //>STACKTRACE
+    }
+    
+    private fn foo(x: [0..], y: [0..x]) -> [0..] {
+        return x - y;
+    }
+
+}

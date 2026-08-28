@@ -1,0 +1,20 @@
+
+object Main {
+
+    main fn run() {
+        val s1 = mkString(true)!!;      // OK
+        foo(s1, 2!!);                   // OK
+        val s2 = mkString(false)!!;     // OK
+        foo(s2, 10!!);                  //>STACKTRACE
+    }
+
+    private fn mkString(b: Bool) -> String? = "Hello"
+
+    private fn mkInt() -> Int = 2
+
+    private fn foo(s: String, i: Idx(s)) {
+        println(s);
+        println(i);
+    }
+
+}

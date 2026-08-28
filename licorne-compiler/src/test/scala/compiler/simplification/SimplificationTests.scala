@@ -51,6 +51,10 @@ final class SimplificationTests {
     assertEquals(`[a,b]`, simplifier.simplify(`[a,b]`))
   }
 
+  @Test def simplifyMinusOneTest(): Unit = usingFreshSimplifier { (simplifier, _) =>
+    assertEquals(IntConst(-1), simplifier.simplifyInt(Neg(IntConst(1))))
+  }
+
   @Test def simplifyLinearFormulaTest1(): Unit = usingFreshSimplifier { (simplifier, _) =>
     // @formatter:off
     assertEquals(6*a + 5*b + 24, simplifier.simplifyInt(a + 5*b - 3*a - 2 + 25 + 8*a + 1))

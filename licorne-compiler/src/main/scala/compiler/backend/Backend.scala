@@ -7,7 +7,7 @@ import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.AllocMode.*
 import compiler.irs.ircorne.Formulas.{IdValue, IntermediateIdValue, NamedIdValue}
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{Formulas, IRcorne}
+import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
@@ -393,11 +393,11 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         })
         genValueStore(assigned, currScope, cb)
 
-      case IRcorne.Add(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.iadd(), _.dadd())
-      case IRcorne.Sub(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.isub(), _.dsub())
-      case IRcorne.Mul(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.imul(), _.dmul())
-      case IRcorne.Div(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.idiv(), _.ddiv())
-      case IRcorne.Rem(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
+      case IRcorne.Add(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iadd(), _.dadd())
+      case IRcorne.Sub(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.isub(), _.dsub())
+      case IRcorne.Mul(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.imul(), _.dmul())
+      case IRcorne.Div(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.idiv(), _.ddiv())
+      case IRcorne.Rem(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
 
       case IRcorne.LogicNeg(assigned, operand) =>
         cb.iconst_m1()
@@ -405,8 +405,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         cb.ixor()
         genValueStore(assigned, currScope, cb)
 
-      case And(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.iand(), _ => assert(false))
-      case Or(assigned, lhs, rhs) => genArithBinop(assigned, lhs, rhs, currScope, cb, _.ior(), _ => assert(false))
+      case And(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iand(), _ => assert(false))
+      case Or(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.ior(), _ => assert(false))
 
       case IRcorne.Equal(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
         genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmpeq(_))
@@ -454,8 +454,6 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       // Array methods
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
         val elemKind = arrayElemKindOf(receiver, currScope)
-        genValueLoad(receiver, currScope, cb)
-        genValueLoad(args.head, currScope, cb)
         cb.arrayLoad(elemKind)
         genValueStore(assigned, currScope, cb)
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
@@ -474,7 +472,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         val funSig = func.getFunSigUnsafe
         val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
         genValueLoad(receiver, currScope, cb)
-        val NamedType(receiverTypeId, receiverTypeArgs, _) = funSig.receiverType : @unchecked
+        val NamedType(receiverTypeId, receiverTypeArgs, _) = funSig.receiverType: @unchecked
         val recTypeSig = resolCtx.resolveTypeSigAs[RuntimeTypeSignature](receiverTypeId).get
         val typeArgsSubst = Map.from(recTypeSig.typeParams.map(_.tid).zip(receiverTypeArgs) ++ funSig.typeParams.map(_.tid).zip(typeArgs))
         val paramTypes = funSig.paramsWithoutThis.map(_._2.substitute(typeArgsSubst, Map.empty))
@@ -580,19 +578,19 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
       case hCast@IRcorne.HybridCast(inValue) =>
         val skipThrowLabel = cb.newLabel()
-        hCast.getTargetRefinement match {
-          case Some(formula) =>
-            val (ir, resVal) = FormulasCompilation.convertFormulaToIR(formula, currScope)
-            for (instr <- ir) {
+        hCast.getModeUnsafe match {
+          case HybridCastMode.AssertPredicate(predicate, compiledPredicate, resultValue) =>
+            for (instr <- compiledPredicate) {
               generateInstr(instr, cb, currScope)
             }
+            genValueLoad(resultValue, currScope, cb)
             cb.ifne(skipThrowLabel)
             cb.new_(assertionErrorDesc)
             cb.dup()
-            cb.ldc(s"assertion $formula failed")
+            cb.ldc(s"assertion ${SourceLevelFormulaPrinter.prettyprint(predicate)} failed")
             cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
             cb.athrow()
-          case None =>
+          case HybridCastMode.AssertNonNull =>
             genValueLoad(inValue, currScope, cb)
             cb.ifnonnull(skipThrowLabel)
             cb.new_(assertionErrorDesc)
@@ -785,9 +783,9 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     }
   }
 
-  private def genArithBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder,
-                            intOp: CodeBuilder => Unit, doubleOp: CodeBuilder => Unit)
-                           (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
+  private def genArithKindBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder,
+                                intOp: CodeBuilder => Unit, doubleOp: CodeBuilder => Unit)
+                               (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
     given TypeParamsContext = summon[FunctionGenerationContext].typeParamsCtx
 
     genValueLoad(lhs, currScope, cb)
@@ -819,7 +817,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     dispatchArithOnKind(typeKindOf(idVal, currScope), whenInt, whenDouble)
 
   private def dispatchArithOnKind(kind: TypeKind, whenInt: => Unit, whenDouble: => Unit): Unit = kind match {
-    case INT =>
+    case INT | BOOLEAN =>
       val _ = whenInt
     case DOUBLE =>
       val _ = whenDouble

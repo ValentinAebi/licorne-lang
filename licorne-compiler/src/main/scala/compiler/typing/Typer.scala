@@ -1,9 +1,9 @@
 package compiler.typing
 
+import compiler.backend.FormulasCompilation
 import compiler.identifiers.*
 import compiler.irs.ircorne.*
 import compiler.irs.ircorne.Formulas.*
-import compiler.irs.ircorne.Formulas.AllocMode.Stack
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.IRcorne.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang
@@ -85,7 +85,7 @@ final class Typer(
           if (!instr.isInstanceOf[Drop]) {
             scope.reportHasExitedIfNeeded(er, instr.getPosition)
           }
-          if (scope.hasExited){
+          if (scope.hasExited) {
             stop = true
           } else {
             typeInstr(instr, scope, branchInfo)
@@ -107,8 +107,6 @@ final class Typer(
         solver.assertEq(f1, f2, SimplifiedType.from(currScope.detectCurrentType(f1)))
       }
     }
-
-    instr.consumedVals.foreach(checkUsagesAllocConsistency)
 
     instr match {
 
@@ -303,7 +301,7 @@ final class Typer(
       case Equal(assigned, lhs, rhs) =>
         currScope.saveType(assigned, BoolType)
 
-      case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) if func.isNotResolvedYet =>
+      case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
         val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
         irModif {
@@ -322,14 +320,14 @@ final class Typer(
           }
         }
 
-      case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
+      case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) =>
         val calleeType = currScope.computeCurrentType(callee, invkClosure.getPosition)
         val argsValsAndTypes = args.map(arg => Some(arg) -> currScope.computeCurrentType(arg, invkClosure.getPosition))
         val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
         tryToResolveTypeVarsUsingCandidates(assigned, tpe)
 
-      case fr@FieldRead(assigned, owner, field) if field.isNotResolvedYet =>
+      case fr@FieldRead(assigned, owner, field) =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
         proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor) match {
@@ -339,7 +337,7 @@ final class Typer(
             currScope.saveType(assigned, tpe)
         }
 
-      case fw@FieldWrite(owner, fieldResolTarget, rhs) if fieldResolTarget.isNotResolvedYet =>
+      case fw@FieldWrite(owner, fieldResolTarget, rhs) =>
         val ownerType = currScope.computeCurrentType(owner, fw.getPosition)
         val fieldTypeRaw = resolveFieldAccess(owner, ownerType, fieldResolTarget, currScope, needsWriteAccess = true, fw.getPosition)
         val fieldTypeSubst = fieldResolTarget.getReceiverSigOpt match {
@@ -349,9 +347,6 @@ final class Typer(
         val rhsType = currScope.computeCurrentType(rhs, fw.getPosition)
         tryToResolveTypeVars(fieldTypeSubst, rhsType)
         subtypingCtx.enforceIsSubtypeExpAct(rhs, rhsType, fieldTypeSubst, s"assignment to field ${fieldResolTarget.fieldId}", currScope, fw.getPosition)
-
-      case instr: (InvokeFunc | InvokeClosure | FieldRead | FieldWrite) =>
-        throw AssertionError("typing phase run more than once on the same piece of code: " + instr.getClass.getSimpleName)
 
       case heapVarRd@HeapVarRead(assigned, heapVar) =>
         val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
@@ -433,7 +428,7 @@ final class Typer(
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
           case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
-            er.warn(s"useless use of !! : I inferred target type $targetType, which is a supertype of the input type $preType", hybridCast.getPosition)
+            er.warn(s"useless use of !!: I did not find any predicate to enforce", hybridCast.getPosition)
           case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
             irModif {
               hybridCast.setMode(AssertNonNull)
@@ -442,23 +437,30 @@ final class Typer(
           case (preType, Some(targetType)) =>
             val RefinedType(inBase, inPred) = preType.asRefinedType.flattenedRefinement
             val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
+            // TODO maybe check if assertion provably succeeds / fails
+            val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPred.substitute(itValue, inValue)).get)
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
-              irModif {
-                var indexedSizeCallFlag = false
-                targetPred.traversePreOrder {
-                  case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)) =>
-                    indexedSizeCallFlag = true
-                  case _ => ()
-                }
-                if (indexedSizeCallFlag) {
-                  er.reportError(s"implementation restriction: hybrid cast to target type $targetType is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
-                }
+              val (irAssertion, resultVal) = FormulasCompilation.convertFormulaToIR(assertion, currScope)
+              for (instr <- irAssertion) {
+                typeInstr(instr, currScope, branchInfo)
+              }
+              var indexedSizeCallFlag = false
+              assertion.traversePreOrder {
+                case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)) =>
+                  indexedSizeCallFlag = true
+                case _ => ()
+              }
+              if (indexedSizeCallFlag) {
+                er.reportError(s"implementation restriction: hybrid cast is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+              } else {
                 targetBase match {
                   case NamedType(StdLib.arrayTypeId, _, _) =>
                     er.reportError(s"hybrid cast target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
                   case _ => ()
                 }
-                hybridCast.setMode(AssertPredicate(targetPred.substitute(itValue, inValue)))
+                irModif {
+                  hybridCast.setMode(AssertPredicate(assertion, irAssertion, resultVal))
+                }
               }
               currScope.saveSmartcast(inValue, targetType)
             } else {
@@ -896,7 +898,7 @@ final class Typer(
     val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
     StableField(id, typeInst, value, isPublishedAsMethod)
   }
-  
+
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, currScope: Scope, posOpt: Option[Position])
                        (using typeParamsCtx: TypeParamsContext): TypeTypeParamInfo = {
     val TypeTypeParamInfo(tid, variance, upperBoundOpt, lowerBoundOpt) = typeTypeParamInfo
@@ -1453,8 +1455,8 @@ final class Typer(
     val nParams = params.size
     val nArgs = args.size
     if (nParams != nArgs) {
-      val reportedNParams = if argsIncludeReceiver then nParams-1 else nParams
-      val reportedNArgs = if argsIncludeReceiver then nArgs-1 else nArgs
+      val reportedNParams = if argsIncludeReceiver then nParams - 1 else nParams
+      val reportedNArgs = if argsIncludeReceiver then nArgs - 1 else nArgs
       er.reportError(s"$ctxDescr: wrong number of arguments (expected $reportedNParams, was $reportedNArgs)", posOpt)
     }
 
@@ -1541,12 +1543,6 @@ final class Typer(
     if (allowWriteToIR) {
       val _ = action
     }
-  }
-
-  private def checkUsagesAllocConsistency(idVal: IdValue): Unit = idVal match {
-    case value: NamedIdValue => ()
-    case IntermediateIdValue(definingScope, uid, nameHint, allocMode) =>
-      assert(allocMode != Stack || idVal.users.size <= 1, s"stack allocated value $idVal has more than one usage")
   }
 
 }

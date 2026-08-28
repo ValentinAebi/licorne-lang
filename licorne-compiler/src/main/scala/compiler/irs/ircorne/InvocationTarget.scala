@@ -19,9 +19,7 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   override def isUnresolvable: Boolean = cannotResolveFlag
 
   def resolve(receiverSig: RuntimeTypeSignature, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
-    if (isResolved) {
-      throw AssertionError("trying to resolve an already resolved field resolution target")
-    } else if (isUnresolvable) {
+    if (isUnresolvable) {
       throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
     }
     receiverSigOpt = Some(receiverSig)

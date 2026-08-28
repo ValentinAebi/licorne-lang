@@ -193,11 +193,15 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case LessOrEq(lhs, rhs) =>
       (simplifyInt(lhs), simplifyInt(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l <= r)
+        case (lhs, Plus(pLhs, IntConst(-1))) => LessThan(lhs, pLhs)
+        case (Plus(pLhs, IntConst(1)), rhs) => LessThan(pLhs, rhs)
         case (lhs, rhs) => LessOrEq(lhs, rhs)
       }
     case LessThan(lhs, rhs) =>
       (simplifyInt(lhs), simplifyInt(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l < r)
+        case (Plus(pLhs, IntConst(-1)), rhs) => LessOrEq(pLhs, rhs)
+        case (lhs, Plus(pLhs, IntConst(1))) => LessOrEq(lhs, pLhs)
         case (lhs, rhs) => LessThan(lhs, rhs)
       }
     case formula => formula

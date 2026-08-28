@@ -9,15 +9,15 @@ import scala.collection.mutable
 
 object FormulasCompilation {
 
-  def convertFormulaToIR(formula: Formula, currScope: Scope): (Iterable[IRcorne.Instr], IdValue) = {
-    val instructions = mutable.ListBuffer.empty[IRcorne.Instr]
+  def convertFormulaToIR(formula: Formula, currScope: Scope): (Iterable[IRcorne.RealInstr], IdValue) = {
+    val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
     val resVal = compileFormula(formula)(using instructions, currScope)
     (instructions.toList, resVal)
   }
 
-  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.Instr], currScope: Scope): IdValue = {
+  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope): IdValue = {
 
-    def save(instr: IRcorne.Instr): Unit = {
+    def save(instr: IRcorne.RealInstr): Unit = {
       instrOut.addOne(instr)
     }
 
@@ -88,8 +88,8 @@ object FormulasCompilation {
     }
   }
 
-  private def genBinop(lhs: Formula, rhs: Formula, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => Instr)
-                   (using instructions: mutable.ListBuffer[IRcorne.Instr], currScope: Scope): IntermediateIdValue =
+  private def genBinop(lhs: Formula, rhs: Formula, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => RealInstr)
+                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope): IntermediateIdValue =
     withIntermediateValue(Stack) { res =>
       val lhsVal = compileFormula(lhs)
       val rhsVal = compileFormula(rhs)

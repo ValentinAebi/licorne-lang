@@ -292,11 +292,10 @@ object IRcorne {
     }
 
     def isNonNullAssertion: Boolean = modeOpt.contains(AssertNonNull)
+    
+    def getModeOpt: Option[HybridCastMode] = modeOpt
 
-    def getTargetRefinement: Option[Formula] = modeOpt.flatMap {
-      case AssertNonNull => None
-      case AssertPredicate(newPredicate) => Some(newPredicate)
-    }
+    def getModeUnsafe: HybridCastMode = getModeOpt.get
 
     override def consumedVals: List[IdValue] = List.empty
   }
@@ -598,7 +597,7 @@ object IRcorne {
 
   enum HybridCastMode {
     case AssertNonNull
-    case AssertPredicate(newPredicate: Formula)
+    case AssertPredicate(predicate: Formula, compiledPredicate: Iterable[RealInstr], resultValue: IdValue)
   }
 
 }

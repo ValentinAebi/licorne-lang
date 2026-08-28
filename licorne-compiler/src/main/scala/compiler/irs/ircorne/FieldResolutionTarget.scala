@@ -18,9 +18,7 @@ final class FieldResolutionTarget(val fieldId: FunOrVarId) {
   def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
 
   def resolve(receiverSig: RuntimeTypeSignature, instantiatedType: Type): Unit = {
-    if (isResolved) {
-      throw AssertionError("trying to resolve an already resolved field resolution target")
-    } else if (isUnresolvable) {
+    if (isUnresolvable) {
       throw AssertionError("trying to resolve a field resolution target marked as unresolvable")
     }
     receiverSigOpt = Some(receiverSig)

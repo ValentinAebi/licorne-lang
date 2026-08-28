@@ -290,8 +290,13 @@ final class IRcornePrinter(
       case IRcorne.Cast(inValue, target) =>
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
       case hybridcast@IRcorne.HybridCast(inValue) =>
-        val targetDescr = if hybridcast.isNonNullAssertion then "non-null" else hybridcast.getTargetRefinement.map(_.toString).getOrElse("<unspecified>")
-        pps.add(s"HYBRIDCAST ${maybeTyped(inValue, scope)} to predicate $targetDescr")
+        val targetDescr = hybridcast.getModeOpt match {
+          case Some(HybridCastMode.AssertNonNull) => "non-null"
+          case Some(HybridCastMode.AssertPredicate(pred, _, _)) =>
+            s"predicate ${IRLevelFormulaPrinter.prettyprint(pred)}"
+          case None => "<unspecified>"
+        }
+        pps.add(s"HYBRIDCAST ${maybeTyped(inValue, scope)}: $targetDescr")
       case IRcorne.Drop(droppedValue) =>
         pps.add(s"DROP ${maybeTyped(droppedValue, scope)}")
       case scope: Scope => printScope(scope)
