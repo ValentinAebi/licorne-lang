@@ -14,6 +14,11 @@ final class TypeCandidatesStore {
   def offerCandidate(idVal: IdValue, tpe: Type): Unit = {
     tpe.withTypeVarsSubstituted.foreach { tpe =>
       candidates.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty).add(tpe)
+      tpe match {
+        case Types.RefinedType(baseType, predicate) =>
+          candidates.apply(idVal).add(baseType)
+        case _ => ()
+      }
     }
     tpe match {
       case Types.ClosureType(params, result, enforcedPure) if enforcedPure =>

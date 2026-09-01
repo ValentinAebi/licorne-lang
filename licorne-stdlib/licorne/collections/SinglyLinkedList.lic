@@ -29,8 +29,7 @@ record Nil : SinglyLinkedList[Nothing] {
 object SinglyLinkedLists {
 
     fn listFromArray[T](a: Array[T]) -> SinglyLinkedList[T] with it.size() == a.size() {
-        // FIXME (debug)
-        var ls: SinglyLinkedList[T] = new Nil();
+        var ls = new Nil();
         for (var i = a.size() - 1; i >= 0; i -= 1) {
             ls = new Cons(head = a.get(i), tail = ls);
         };
