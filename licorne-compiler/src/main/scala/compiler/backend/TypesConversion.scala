@@ -27,7 +27,8 @@ trait TypesConverter {
     getRuntimeType(tpe)(using tpCtx, dealiasingCtx) match {
       case tpe: PrimitiveType => descriptorForPrimitive(tpe)
       case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>
-        descriptorFor(elemType).arrayType()
+        val elemTypeDesc = descriptorFor(elemType)
+        (if elemTypeDesc.isPrimitive then CD_Object else elemTypeDesc).arrayType()
       case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
       case ClosureType(params, result, enforcedPure) => ???
       case UnionType(types) =>
@@ -59,6 +60,7 @@ trait TypesConverter {
 
   def descriptorFor(typeName: TypeIdentifier): ClassDesc = {
     if typeName == StdLib.stringTypeId then CD_String
+    else if typeName == StdLib.arrayTypeId then CD_Object.arrayType()
     else ClassDesc.of(typeName.stringId)
   }
 

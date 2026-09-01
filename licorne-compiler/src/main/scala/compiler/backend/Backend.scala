@@ -470,14 +470,20 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         val elemKind = arrayElemKindOf(receiver, currScope)
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
-        cb.arrayLoad(elemKind)
+        cb.aaload()
+        if (elemKind != TypeKind.REFERENCE) {
+          ensureAssignable(dealiasedTypeOf(assigned, currScope), AnyType, cb)
+        }
         genValueStore(assigned, currScope, cb)
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
         val elemKind = arrayElemKindOf(receiver, currScope)
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         genValueLoad(args(1), currScope, cb)
-        cb.arrayStore(elemKind)
+        if (elemKind != TypeKind.REFERENCE) {
+          ensureAssignable(AnyType, dealiasedTypeOf(args(1), currScope), cb)
+        }
+        cb.aastore()
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         cb.arraylength()
@@ -517,12 +523,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
         val elemDesc = tConv.descriptorFor(elemType)
         genValueLoad(sizeVal, currScope, cb)
-        if (elemDesc.isPrimitive) {
-          val elemKind = tConv.kindFor(elemType)
-          cb.newarray(elemKind)
-        } else {
-          cb.anewarray(elemDesc)
-        }
+        cb.anewarray(if elemDesc.isPrimitive then CD_Object else elemDesc)
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
@@ -725,7 +726,10 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       cb.invokestatic(srcBoxedDesc, "valueOf", MethodTypeDesc.of(srcBoxedDesc, srcDesc))
     } else if (!srcDesc.isPrimitive && dstDesc.isPrimitive) {
       val dstBoxedDesc = boxDesc(dstDesc)
-      cb.invokevirtual(dstBoxedDesc, unboxingFunc(srcDesc), MethodTypeDesc.of(dstDesc, dstBoxedDesc))
+      if (srcDesc != dstBoxedDesc) {
+        cb.checkcast(dstBoxedDesc)
+      }
+      cb.invokevirtual(dstBoxedDesc, unboxingFunc(dstBoxedDesc), MethodTypeDesc.of(dstDesc))
     } else (getRuntimeType(dstType), getRuntimeType(srcType)) match {
       case (NamedType(dstTypeId, _, _), NamedType(srcTypeId, _, _)) if !simplifiedSubtypingCtx.isSubtype(srcTypeId, dstTypeId) =>
         cb.checkcast(dstDesc)
