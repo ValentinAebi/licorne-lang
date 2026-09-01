@@ -2,6 +2,7 @@ package compiler.typing.phases
 
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.IdValue
+import compiler.lang.Overridability.Abstract
 import compiler.lang.Types.{NamedType, Type}
 import compiler.lang.{AbstractTypeSig, FunctionSignature, Overridability, RuntimeTypeSignature}
 import compiler.pipeline.CompilationStep.OverridesAnalysis
@@ -58,8 +59,8 @@ final class OverridesChecker(
               case None if subTSig.isInstanceOf[AbstractTypeSig] => ()
               case None =>
                 if (superFunOverridability == Overridability.Abstract && !subTSupertypes.exists { (subSuperTid, _) =>
-                  resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subSuperTid).get.functions.exists((subSuperFunId, _) => subSuperFunId == funId)
-                    && flattenedSupertypesSubstitutions.get(subSuperTid).exists(_.keySet.contains(subSuperTid))
+                  resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subSuperTid).get.functions.exists((subSuperFunId, subSuperFunSig) => subSuperFunId == funId && subSuperFunSig.overridability != Abstract)
+                    && flattenedSupertypesSubstitutions.get(subSuperTid).exists(_.keySet.contains(superT))
                 }) {
                   er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
                 }
