@@ -130,7 +130,7 @@ sealed trait TypeSignature extends DeclSignature {
 
   def sigScope: Scope
 
-  override def sigName: Identifier = id
+  override def sigName: TypeIdentifier = id
 
   override def typeVarsWithDescr: SeqSet[(TypeVariable, String)] = SeqSet(
     typeParams.flatMap { tp =>

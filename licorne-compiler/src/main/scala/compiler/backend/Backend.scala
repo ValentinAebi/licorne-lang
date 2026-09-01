@@ -22,13 +22,14 @@ import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParam
 import compiler.util.toJavaUtilList
 import compiler.valuesconversion.GlobalValuesContext
 
-import java.lang
 import java.lang.classfile.*
+import java.lang.classfile.ClassFile.ClassHierarchyResolverOption
 import java.lang.classfile.TypeKind.*
 import java.lang.classfile.attribute.SourceFileAttribute
 import java.lang.constant.ConstantDescs.*
 import java.lang.constant.{ClassDesc, MethodTypeDesc}
 import java.nio.file.{Files, Path}
+import java.{lang, util}
 import scala.collection.mutable
 
 // TODO make sure that main functions have input type Array[String] (or possibly take no argument)
@@ -64,23 +65,24 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
 
     given ResolutionContext = ResolutionContext(program, er)(using CodeGen)
 
+    val classHierarchyResolver = mkClassHierarchyResolver(subtypingInfo)
     val mainClasses = mutable.LinkedHashSet.empty[String]
     for (tSig <- program.runtimeSignatures) {
       if (tSig.functions.exists(_._2.isMain)) {
         mainClasses.add(tSig.id.stringId)
       }
-      generateTypeDecl(tSig, program)
+      generateTypeDecl(tSig, program, classHierarchyResolver)
     }
     er.displayAndTerminateIfErrors()
     mainClasses.toList
   }
 
-  private def generateTypeDecl(tSig: RuntimeTypeSignature, program: Program)
+  private def generateTypeDecl(tSig: RuntimeTypeSignature, program: Program, classHierarchyResolver: ClassHierarchyResolver)
                               (using DealiasingContext, SimplifiedSubtypingContext, ResolutionContext): Unit = {
     val tid = tSig.id
     val path = mkPathToClass(tid)
     Files.createDirectories(path.getParent)
-    ClassFile.of().buildTo(
+    ClassFile.of(ClassHierarchyResolverOption.of(classHierarchyResolver)).buildTo(
       path,
       ClassDesc.of(tid.stringId),
       cb => {
@@ -114,6 +116,25 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         generateInterfacesList(tSig.directSupertypes.map(_.typeName), cb)
       }
     )
+  }
+
+  private def mkClassHierarchyResolver(subtypingInfo: SubtypingInfo)(using dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext): ClassHierarchyResolver = {
+    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+    val interfaces = util.ArrayList[ClassDesc]()
+    val superClasses = util.HashMap[ClassDesc, ClassDesc]()
+    for ((tid, superClassesMap) <- subtypingInfo.flattenedSupertypesSubstitutions) {
+      val tDesc = tConv.descriptorFor(tid)
+      val tSig = resolCtx.resolveTypeSigAs[RuntimeTypeSignature](tid).get
+      if (tSig.isInstanceOf[AbstractTypeSig]) {
+        interfaces.add(tDesc)
+      }
+      for ((superTid, _) <- superClassesMap) {
+        superClasses.put(tDesc, tConv.descriptorFor(superTid))
+      }
+    }
+    ClassHierarchyResolver.of(interfaces, superClasses)
+      .orElse(ClassHierarchyResolver.defaultResolver())
+      .cached()
   }
 
   private def generateInstanceFieldAndInitializer(objSig: ObjectSignature, cb: ClassBuilder)(using DealiasingContext): Unit = {
