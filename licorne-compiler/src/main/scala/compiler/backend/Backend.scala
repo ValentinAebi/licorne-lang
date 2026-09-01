@@ -183,7 +183,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     val functions = ownerTypeSig.functions.values
     for (funSig <- functions) {
       val bodyOpt = program.functions.apply(ownerId, funSig.functionName).bodyOpt
-      generateFunc(funSig, bodyOpt, ownerTypeSig.typeParams, cb)
+      generateFunc(funSig, bodyOpt, ownerTypeSig, cb)
       if (funSig.isMain) {
         generateMainFunc(ownerId, funSig, cb)
       }
@@ -205,14 +205,20 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
     }))
   }
 
-  private def generateFunc(funSig: FunctionSignature, bodyOpt: Option[IRcorne.Scope], ownerTypeParams: List[TypeTypeParamInfo], cb: ClassBuilder)
+  private def generateFunc(funSig: FunctionSignature, bodyOpt: Option[IRcorne.Scope], ownerSig: TypeSignature, cb: ClassBuilder)
                           (using DealiasingContext, SimplifiedSubtypingContext, GlobalValuesContext, ResolutionContext): Unit = {
-    given tpCtx: TypeParamsContext = TypeParamsContext(ownerTypeParams ++ funSig.typeParams)
+    given tpCtx: TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
 
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
     val funDesc = mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis)
-    var flags = mkFunFlags(funSig)
+    var flags = funSig.visibility match {
+      case Visibility.Private => ClassFile.ACC_PRIVATE
+      case Visibility.Public => ClassFile.ACC_PUBLIC
+    }
+    if (funSig.overridability == Overridability.Abstract) {
+      flags |= ClassFile.ACC_ABSTRACT
+    }
     if (isStaticStringFunc) {
       flags |= ClassFile.ACC_STATIC
     }
@@ -251,21 +257,6 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private def mkConstrDesc(tSig: ConcreteTypeSig)(using DealiasingContext): MethodTypeDesc = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     MethodTypeDesc.of(CD_void, tSig.fields.values.map(f => tConv.descriptorFor(f.tpe)(using TypeParamsContext(tSig.typeParams))).toArray *)
-  }
-
-  private def mkFunFlags(funSig: FunctionSignature): Int = {
-    var flags = funSig.visibility match {
-      case Visibility.Private => ClassFile.ACC_PRIVATE
-      case Visibility.Public => ClassFile.ACC_PUBLIC
-    }
-    funSig.overridability match {
-      case Overridability.Abstract =>
-        flags |= ClassFile.ACC_ABSTRACT
-      case Overridability.Final =>
-        flags |= ClassFile.ACC_FINAL
-      case Overridability.Open => ()
-    }
-    flags
   }
 
   private def mkPathToClass(typeId: TypeIdentifier): Path = {
