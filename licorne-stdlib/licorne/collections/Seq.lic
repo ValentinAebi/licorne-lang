@@ -1,3 +1,5 @@
 package licorne.collections;
 
-interface Seq[+T] : Collection[T], Indexable
+interface Seq[+T] : Collection[T], Indexable {
+    pure fn get(this, i: Idx(this)) -> T
+}

@@ -1,0 +1,40 @@
+package licorne.collections;
+
+
+datatype SinglyLinkedList[+T] : Seq[T] {
+
+    pure fn get(this, i: Idx(this)) -> T {
+        var j = i;
+        for (var ls = this; ls is Cons; ls = ls.tail()) {
+            if (j == 0) {
+                return ls.head();
+            };
+            j -= 1;
+        };
+        // unreachable
+        panic "out of bounds";
+    }
+
+}
+
+record Cons[+T](head: T, tail: SinglyLinkedList[T]) : SinglyLinkedList[T] {
+    pure fn size(this) -> Cnt = tail.size() + 1
+}
+
+record Nil : SinglyLinkedList[Nothing] {
+    pure fn size(this) -> Cnt = 0
+}
+
+
+object SinglyLinkedLists {
+
+    fn listFromArray[T](a: Array[T]) -> SinglyLinkedList[T] with it.size() == a.size() {
+        // FIXME (debug)
+        var ls: SinglyLinkedList[T] = new Nil();
+        for (var i = a.size() - 1; i >= 0; i -= 1) {
+            ls = new Cons(head = a.get(i), tail = ls);
+        };
+        return ls!!;
+    }
+    
+}
