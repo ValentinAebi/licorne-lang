@@ -151,19 +151,22 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private def generateConstructor(tSig: ConcreteTypeSig, cb: ClassBuilder, isPrivate: Boolean)
                                  (using TypeParamsContext, DealiasingContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+    val tDesc = tConv.descriptorFor(tSig.id)
     val constrDesc = mkConstrDesc(tSig)
     val flags = if isPrivate then ClassFile.ACC_PRIVATE else ClassFile.ACC_PUBLIC
     cb.withMethod(INIT_NAME, constrDesc, flags, mb => mb.withCode(cb => {
       cb.aload(cb.receiverSlot())
       cb.dup()
       cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
-      cb.localVariable(0, tSig.id.nonPrefixedId, tConv.descriptorFor(tSig.id), cb.startLabel(), cb.endLabel())
+      cb.astore(0)
+      cb.localVariable(0, tSig.id.nonPrefixedId, tDesc, cb.startLabel(), cb.endLabel())
       var paramSlotIdx = 1
       for (fld <- tSig.fields.values) {
+        cb.aload(0)
         cb.aload(paramSlotIdx)
         val fldId = fld.id.stringId
         val fldTypeDesc = tConv.descriptorFor(fld.tpe)
-        cb.putfield(tConv.descriptorFor(tSig.id), fldId, fldTypeDesc)
+        cb.putfield(tDesc, fldId, fldTypeDesc)
         cb.localVariable(paramSlotIdx, fldId, fldTypeDesc, cb.startLabel(), cb.endLabel())
         paramSlotIdx += tConv.kindFor(fld.tpe).slotSize()
       }
