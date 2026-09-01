@@ -426,7 +426,7 @@ final class Typer(
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
           case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
-            er.warn(s"useless use of !!: I did not find any predicate to enforce", hybridCast.getPosition)
+            er.reportError(s"illegal use of !!: I did not find any predicate to enforce", hybridCast.getPosition)
           case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
             irModif {
               hybridCast.setMode(AssertNonNull)
