@@ -23,12 +23,13 @@ trait TypesConverter {
   protected val charDesc: ClassDesc
   protected val boolDesc: ClassDesc
 
+  protected def boxingConverter: BoxingTypesConverter
+
   def descriptorFor(tpe: Type)(using tpCtx: TypeParamsContext): ClassDesc =
     getRuntimeType(tpe)(using tpCtx, dealiasingCtx) match {
       case tpe: PrimitiveType => descriptorForPrimitive(tpe)
       case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>
-        val elemTypeDesc = descriptorFor(elemType)
-        (if elemTypeDesc.isPrimitive then CD_Object else elemTypeDesc).arrayType()
+        boxingConverter.descriptorFor(elemType).arrayType()
       case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
       case ClosureType(params, result, enforcedPure) => ???
       case UnionType(types) =>
@@ -96,6 +97,8 @@ final class BoxingTypesConverter(override protected val dealiasingCtx: Dealiasin
   override protected val doubleDesc: ClassDesc = CD_Double
   override protected val charDesc: ClassDesc = CD_Character
   override protected val boolDesc: ClassDesc = CD_Boolean
+
+  override protected def boxingConverter: BoxingTypesConverter = this
 }
 
 object BoxingTypesConverter {
@@ -108,6 +111,8 @@ final class NonBoxingTypesConverter(override protected val dealiasingCtx: Dealia
   override protected val doubleDesc: ClassDesc = CD_double
   override protected val charDesc: ClassDesc = CD_char
   override protected val boolDesc: ClassDesc = CD_boolean
+
+  override protected val boxingConverter: BoxingTypesConverter = BoxingTypesConverter(dealiasingCtx)
 }
 
 object NonBoxingTypesConverter {

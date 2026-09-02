@@ -1,6 +1,6 @@
 package compiler.backend
 
-import compiler.backend.Boxing.boxDesc
+import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
 import compiler.identifiers.TypeIdentifier
@@ -472,7 +472,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         genValueLoad(args.head, currScope, cb)
         cb.aaload()
         if (elemKind != TypeKind.REFERENCE) {
-          ensureAssignable(dealiasedTypeOf(assigned, currScope), AnyType, cb)
+          val elemTypeDescBoxed = typeDescOf(receiver, currScope).componentType()
+          cb.invokevirtual(elemTypeDescBoxed, unboxingFunc(elemTypeDescBoxed), MethodTypeDesc.of(unboxDesc(elemTypeDescBoxed)))
         }
         genValueStore(assigned, currScope, cb)
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
@@ -481,7 +482,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         genValueLoad(args.head, currScope, cb)
         genValueLoad(args(1), currScope, cb)
         if (elemKind != TypeKind.REFERENCE) {
-          ensureAssignable(AnyType, dealiasedTypeOf(args(1), currScope), cb)
+          val elemTypeDescBoxed = typeDescOf(receiver, currScope).componentType()
+          cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, unboxDesc(elemTypeDescBoxed)))
         }
         cb.aastore()
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId)(func.getFunSigUnsafe) =>
@@ -523,7 +525,7 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
         val elemDesc = tConv.descriptorFor(elemType)
         genValueLoad(sizeVal, currScope, cb)
-        cb.anewarray(if elemDesc.isPrimitive then CD_Object else elemDesc)
+        cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>

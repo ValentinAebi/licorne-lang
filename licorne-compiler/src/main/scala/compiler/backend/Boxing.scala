@@ -13,4 +13,12 @@ object Boxing {
     case cd => cd
   }
   
+  def unboxDesc(cd: ClassDesc): ClassDesc = cd match {
+    case CD_Boolean => CD_boolean
+    case CD_Integer => CD_int
+    case CD_Character => CD_char
+    case CD_Double => CD_double
+    case cd => cd
+  }
+  
 }
