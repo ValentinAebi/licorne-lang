@@ -33,7 +33,7 @@ import java.{lang, util}
 import scala.collection.mutable
 
 // TODO make sure that main functions have input type Array[String] (or possibly take no argument)
-final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
+final class Backend(outputDirectoryPath: Path, disableOverflowChecks: Boolean, er: ErrorReporter) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
 
   // TODO see if lower JVM versions can be supported
   private val javaVersionCode = (ClassFile.JAVA_25_VERSION, 0)
@@ -53,6 +53,8 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
   private val assertionErrorConstrDesc = MethodTypeDesc.of(CD_void, CD_Object)
   private val heapVarDesc = ClassDesc.of(heapVarTypeId.stringId)
   private val assertionErrorDesc = ClassDesc.ofInternalName(assertionErrorInternalName)
+
+  private val javaLangMathDesc = ClassDesc.ofInternalName("java/lang/Math")
 
   override def apply(input: (Program, SubtypingInfo)): List[String] = {
     val (program, subtypingInfo) = input
@@ -407,10 +409,14 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
         })
         genValueStore(assigned, currScope, cb)
 
-      case IRcorne.Add(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iadd(), _.dadd())
-      case IRcorne.Sub(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.isub(), _.dsub())
-      case IRcorne.Mul(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.imul(), _.dmul())
-      case IRcorne.Div(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.idiv(), _.ddiv())
+      case IRcorne.Add(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iadd(), _.dadd())
+      case IRcorne.Sub(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.isub(), _.dsub())
+      case IRcorne.Mul(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.imul(), _.dmul())
+      case IRcorne.Div(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.idiv(), _.ddiv())
+      case IRcorne.Add(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "addExact")
+      case IRcorne.Sub(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "subtractExact")
+      case IRcorne.Mul(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "multiplyExact")
+      case IRcorne.Div(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "divideExact")
       case IRcorne.Rem(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
 
       case IRcorne.LogicNeg(assigned, operand) =>
@@ -799,6 +805,14 @@ final class Backend(outputDirectoryPath: Path, er: ErrorReporter) extends Compil
       case _ =>
         throw IllegalArgumentException("not an array")
     }
+  }
+
+  private def genArithExactBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder, jvmMethodName: String)
+                                (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
+    genArithKindBinop(assigned, lhs, rhs, currScope, cb,
+      _.invokestatic(javaLangMathDesc, jvmMethodName, MethodTypeDesc.of(CD_int, CD_int, CD_int)),
+      _ => ??? // TODO implement for Doubles
+    )
   }
 
   private def genArithKindBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder,

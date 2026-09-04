@@ -1,0 +1,16 @@
+
+object Main {
+
+    main fn run() {
+        var t = 0;
+        for (var i = 0; i < 1000000000; i += 500000) {
+            t += foo(i-2, 2*i + 25) % 100;  //> STACKTRACE
+        };
+        println(t);
+    }
+
+    private fn foo(i: Int, j: Int) -> Int {
+        return 2*i + 3*j;   //>STACKTRACE
+    }
+
+}

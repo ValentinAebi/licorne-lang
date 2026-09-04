@@ -3,13 +3,13 @@ package compiler.pipeline
 import compiler.backend.Backend
 import compiler.display.IRcornePrinter
 import compiler.io.{SourceCodeProvider, StringWriter}
+import compiler.ircornegen.{IRcorneGenerator, ImportsScanner}
 import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.program.Program
-import compiler.reasoning.{CounterexampleBox, IntHandlingMode}
+import compiler.reasoning.{BvInt32Mode, CounterexampleBox, IntHandlingMode}
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
-import compiler.ircornegen.{ImportsScanner, IRcorneGenerator}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore}
@@ -34,7 +34,7 @@ object TasksPipelines {
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
     typeCheckerImpl(ihm, er, counterExBoxOpt, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
-      .andThen(Backend(outputDirectoryPath, er))
+      .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], er))
   }
 
   def typeChecker(
