@@ -159,6 +159,7 @@ final class Typer(
                 .orElse(typeCandidatesStore.getCandidates(inCondVal).find { candidate =>
                   subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
                 })
+                .filter(tpe => tpe != AnyType && tpe != NullableType(AnyType))
                 .getOrElse(currScope.detectCurrentType(beforeLoopVal).ignoreRangesShallow)
             varDefScope.saveType(inCondVal, tpe)
             Some(())
