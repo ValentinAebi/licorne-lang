@@ -499,23 +499,26 @@ final class Backend(
 
       // Array methods
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
-        val elemKind = arrayElemKindOf(receiver, currScope)
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         cb.aaload()
-        if (elemKind != TypeKind.REFERENCE) {
-          val elemTypeDescBoxed = typeDescOf(receiver, currScope).componentType()
+        if (typeKindOf(assigned, currScope) != TypeKind.REFERENCE) {
+          val elemTypeDescUnboxed = typeDescOf(assigned, currScope)
+          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
+          if (typeDescOf(receiver, currScope).componentType() == CD_Object) {
+            cb.checkcast(elemTypeDescBoxed)
+          }
           cb.invokevirtual(elemTypeDescBoxed, unboxingFunc(elemTypeDescBoxed), MethodTypeDesc.of(unboxDesc(elemTypeDescBoxed)))
         }
         genValueStore(assigned, currScope, cb)
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
-        val elemKind = arrayElemKindOf(receiver, currScope)
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         genValueLoad(args(1), currScope, cb)
-        if (elemKind != TypeKind.REFERENCE) {
-          val elemTypeDescBoxed = typeDescOf(receiver, currScope).componentType()
-          cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, unboxDesc(elemTypeDescBoxed)))
+        if (typeKindOf(args(1), currScope) != TypeKind.REFERENCE) {
+          val elemTypeDescUnboxed = typeDescOf(args(1), currScope)
+          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
+          cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, elemTypeDescUnboxed))
         }
         cb.aastore()
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId)(func.getFunSigUnsafe) =>
@@ -972,16 +975,6 @@ final class Backend(
     rawTypeOf(idVal, currScope) match {
       case Some(tpe) => tConv.kindFor(tpe)
       case None => VOID
-    }
-  }
-
-  private def arrayElemKindOf(idVal: IdValue, currScope: Scope)(using TypeParamsContext, DealiasingContext): TypeKind = {
-    rawTypeOf(idVal, currScope).map(getRuntimeType) match {
-      case Some(NamedType(tid, typeArgs, Nil)) if tid == arrayTypeId && typeArgs.size == 1 =>
-        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        tConv.kindFor(typeArgs.head)
-      case _ =>
-        throw IllegalArgumentException("not an array")
     }
   }
 
