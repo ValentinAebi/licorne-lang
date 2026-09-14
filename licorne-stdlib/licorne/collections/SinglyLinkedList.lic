@@ -15,10 +15,36 @@ datatype SinglyLinkedList[+T] : Seq[T] {
         panic "out of bounds";
     }
 
+    fn map[U](this, f: fn (T) -> U) -> SinglyLinkedList[U] {
+        var rev = new Nil();
+        for (var ls = this; ls is Cons; ls = ls.tail()) {
+            rev = new Cons(head = f(ls.head()), tail = rev);
+        };
+        return rev.reverse();
+    }
+
+    fn filter(this, pred: pure fn (T) -> Bool) -> SinglyLinkedList[T with pred(it)] {
+        var rev = new Nil();
+        for (var ls = this; ls is Cons; ls = ls.tail()) {
+            if (pred(ls.head())) {
+                rev = new Cons(head = ls.head(), tail = rev);
+            }
+        };
+        return rev.reverse();
+    }
+
     fn foreach(this, action: fn (T) -> Unit) {
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             action(ls.head());
         }
+    }
+
+    pure fn reverse(this) -> SinglyLinkedList[T] {
+        var res = new Nil();
+        for (var ls = this; ls is Cons; ls = ls.tail()) {
+            res = new Cons(head = ls.head(), tail = res);
+        };
+        return res;
     }
 
 }

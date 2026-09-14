@@ -322,7 +322,7 @@ final class Typer(
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) =>
         val calleeType = currScope.computeCurrentType(callee, invkClosure.getPosition)
         val argsValsAndTypes = args.map(arg => Some(arg) -> currScope.computeCurrentType(arg, invkClosure.getPosition))
-        val tpe = typeClosureCall(calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
+        val tpe = typeClosureCall(callee, calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
         tryToResolveTypeVarsUsingCandidates(assigned, tpe)
 
@@ -618,7 +618,7 @@ final class Typer(
         case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
           val calleeType = typeFormula(callee, scope, posOpt)
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-          typeClosureCall(calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
+          typeClosureCall(callee, calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
         case ClosureCall(callee, closureTypingTarget, args) =>
           assert(closureTypingTarget.isUnresolvable)
           NothingType
@@ -729,8 +729,8 @@ final class Typer(
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
     val expectedOperandType = lhsType.ignoreRangesShallow match {
       case tpe@(IntType | DoubleType) => tpe
-      // TODO be careful when compiling this, maybe we need to enforce that both types are equal
-      case _ => UnionType(IntType, DoubleType)
+      // TODO handle Doubles as well
+      case _ => IntType
     }
     subtypingCtx.enforceIsSubtypeExpAct(lhsType, expectedOperandType, s"operand of $op", posOpt)
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
@@ -1257,6 +1257,21 @@ final class Typer(
             val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
             val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
+            val composedTypeSubstEnhanced = composedTypeSubst ++ (funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg).getOrElse(arg))).flatMap {
+              case ((_, ClosureType(closureParams, closureResultType@NamedType(closureResultTypeId, Nil, Nil), _)), PureClosureValue(params, body, _))
+                if composedTypeSubst.get(closureResultTypeId).exists(_.isInstanceOf[TypeVariable])
+                  && funSig.retType.mentionsType(closureResultType)
+                  && funSig.paramsWithoutThis.count((_, tpe) => tpe.mentionsType(closureResultType)) == 1
+              =>
+                val absIntAssumptions = params.zip(closureParams.map(_.substitute(composedTypeSubst, Map.empty))).toMap
+                absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
+                  case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
+                    typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
+                    Some(closureResultTypeId -> absIntResult)
+                  case _ => None
+                }
+              case _ => None
+            })
             val paramTypesInclThis = funSig.paramsInclThis.map { (paramVal, tpe) =>
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
             }
@@ -1270,7 +1285,7 @@ final class Typer(
               solver.assert(precondSubst)
             }
             val instantiatedRetType =
-              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst))
+              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubstEnhanced, argsSubst))
                 .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
@@ -1306,10 +1321,10 @@ final class Typer(
     tpe.withTypeVarsExpanded
   }
 
-  private def typeClosureCall(calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
+  private def typeClosureCall(callee: Formula, calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
                              (using TypeParamsContext): Type = {
     requireNonNullable(calleeType.withTypeVarsExpanded, "closure", posOpt) match {
-      case calleeType@ClosureType(paramTypes, resultType, enforcedPure) =>
+      case calleeType@ClosureType(paramTypes, rawResultType, enforcedPure) =>
         irModif {
           closureTypingTarget.resolve(calleeType)
         }
@@ -1317,7 +1332,14 @@ final class Typer(
         if (!enforcedPure) {
           forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
         }
-        resultType
+        if (enforcedPure) {
+          proxyStore.developDeep(callee).getOrElse(callee) match {
+            case PureClosureValue(params, body, closureVal) =>
+              val absIntAssumptions = params.zip(argsAndTypes.map(_._2)).toMap
+              absInt.interpretUnderAssumptions(body, absIntAssumptions, None).getOrElse(rawResultType)
+            case _ => rawResultType
+          }
+        } else rawResultType
       case calleeType =>
         er.reportError(s"$calleeType is not callable", posOpt)
         NothingType

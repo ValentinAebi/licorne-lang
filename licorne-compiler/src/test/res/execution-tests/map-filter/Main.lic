@@ -1,0 +1,20 @@
+import licorne.collections.SinglyLinkedList;
+import licorne.collections.SinglyLinkedLists.listFromArray;
+
+
+object Main {
+
+    main fn run() {
+        val array = new Array[[0..]](size = 10);
+        for (var i = 0; i < 10; i += 1) {
+            array.set(i, 2*i);
+        };
+        val ls = listFromArray(array);
+        ls.map(fn (i) -> i + 1)
+          .filter(fn (i) -> i < array.size())
+          .foreach(fn (i) -> {
+            println(array.get(i))
+          });
+    }
+
+}

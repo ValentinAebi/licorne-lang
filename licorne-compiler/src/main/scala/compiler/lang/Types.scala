@@ -532,6 +532,18 @@ object Types {
     case tv: TypeVariable => tv
   }
   
+  extension (tpe: Type) def mentionsType(target: Type): Boolean = target == tpe || (tpe match {
+    case primitiveType: PrimitiveType => false
+    case NamedType(typeName, typeArgs, args) => typeArgs.exists(_.mentionsType(target))
+    case ClosureType(params, result, enforcedPure) => params.exists(_.mentionsType(target)) || result.mentionsType(target)
+    case UnionType(types) => types.exists(_.mentionsType(target))
+    case IntersectionType(types) => types.exists(_.mentionsType(target))
+    case RefinedType(baseType, predicate) => baseType.mentionsType(target)
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => false
+    case NullableType(nullatedType) => nullatedType.mentionsType(target)
+    case tv: TypeVariable => tv.actualTypeIfResolved.exists(_.mentionsType(target))
+  })
+  
   extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
     case IntersectionType(types) => types
     case tpe => SeqSet(tpe)

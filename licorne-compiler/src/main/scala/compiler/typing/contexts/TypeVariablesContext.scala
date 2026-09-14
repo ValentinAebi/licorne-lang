@@ -38,5 +38,9 @@ final class TypeVariablesContext {
       }
     }
   }
+  
+  def forgetTypeVar(tv: TypeVariable): Unit = {
+    allTypeVariables.filterInPlace(_ != tv)
+  }
 
 }

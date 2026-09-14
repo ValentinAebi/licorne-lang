@@ -2,4 +2,6 @@ package licorne.collections;
 
 interface Seq[+T] : Collection[T], Indexable {
     pure fn get(this, i: Idx(this)) -> T
+
+    pure fn reverse(this) -> Seq[T]
 }

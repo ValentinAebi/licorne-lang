@@ -1,8 +1,0 @@
-package licorne.collections;
-
-interface MutOrderedSeq[T] : MutSeq[T], OrderedSeq[T] {
-
-    fn set(this, i: Idx(this), elem: T)
-
-}
-

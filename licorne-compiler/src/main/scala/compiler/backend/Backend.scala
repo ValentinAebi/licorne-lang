@@ -365,8 +365,8 @@ final class Backend(
 
       case IRcorne.Disjunction(condEvalResultVal, thenBr, elseBr, variables) =>
         for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-          val afterThenValTypeKind = typeKindOf(afterThenVal, currScope)
-          val afterElseValTypeKind = typeKindOf(afterElseVal, currScope)
+          val afterThenValTypeKind = typeKindOf(afterThenVal, thenBr)
+          val afterElseValTypeKind = typeKindOf(afterElseVal, elseBr)
           val joinedValTypeKind = typeKindOf(joinedVal, currScope)
           if (!funGenCtx.hasSlotFor(joinedVal) && joinedValTypeKind == afterThenValTypeKind && funGenCtx.hasSlotFor(afterThenVal)) {
             funGenCtx.coalesce(afterThenVal, joinedVal)
@@ -379,8 +379,8 @@ final class Backend(
           } else if (!funGenCtx.hasSlotFor(afterElseVal) && afterElseValTypeKind == joinedValTypeKind) {
             funGenCtx.coalesce(joinedVal, afterElseVal)
           }
-          allocateAndDeclareIfNew(afterThenVal, currScope, cb)
-          allocateAndDeclareIfNew(afterElseVal, currScope, cb)
+          allocateAndDeclareIfNew(afterThenVal, thenBr, cb)
+          allocateAndDeclareIfNew(afterElseVal, elseBr, cb)
         }
         val elseBrLabel = cb.newLabel()
         val afterDisjLabel = cb.newLabel()
@@ -388,13 +388,13 @@ final class Backend(
         cb.ifeq(elseBrLabel)
         generateScope(thenBr, cb)
         for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-          genValueMove(joinedVal, afterThenVal, currScope, cb)
+          genValueMove(joinedVal, afterThenVal, thenBr, cb)
         }
         cb.goto_(afterDisjLabel)
         cb.labelBinding(elseBrLabel)
         generateScope(elseBr, cb)
         for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
-          genValueMove(joinedVal, afterElseVal, currScope, cb)
+          genValueMove(joinedVal, afterElseVal, elseBr, cb)
         }
         cb.labelBinding(afterDisjLabel)
         cb.nop()
