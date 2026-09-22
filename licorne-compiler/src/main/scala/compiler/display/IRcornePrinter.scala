@@ -148,9 +148,8 @@ final class IRcornePrinter(
 
   private def printFunction(funSig: FunctionSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, overridability, purity, isMain, declPosOpt, isSynthetic) = funSig
-    pps.add(if isMain then "MAIN " else "")
-      .add(s"METHOD ($visibility, $overridability, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
+    val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, overridability, purity, declPosOpt, isSynthetic) = funSig
+    pps.add(s"METHOD ($visibility, $overridability, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
     program.functions.get(funSig.ownerAndDescr)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>

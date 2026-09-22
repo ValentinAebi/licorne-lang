@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val r = foo(fn (x) -> 2*x*x + 9*x + 1);
         println(r);
     }

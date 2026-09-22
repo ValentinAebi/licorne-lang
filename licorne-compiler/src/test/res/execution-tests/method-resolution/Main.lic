@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val a = new A();
         a.foo(new Dog());       // invokes the method in A
         a.foo(new Dog(), 0);    // falls back to the method in I

@@ -54,7 +54,7 @@ final class OverridesChecker(
       val superTSig = resolutionCtx.resolveTypeSig(superT).get
       (subTSig, superTSig) match {
         case (subTSig: RuntimeTypeSignature, superTSig: RuntimeTypeSignature) =>
-          for ((funDescr, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunOverridability, superFunPurity, _, superFunDeclPosOpt, _)) <- superTSig.functions) {
+          for ((funDescr, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunOverridability, superFunPurity, superFunDeclPosOpt, _)) <- superTSig.functions) {
             subTSig.functions.get(funDescr) match {
               case None if subTSig.isInstanceOf[AbstractTypeSig] => ()
               case None =>
@@ -64,7 +64,7 @@ final class OverridesChecker(
                 }) {
                   er.reportError(s"$subT does not implement method $funDescr declared in its supertype $superT", subTSig.declPosOpt)
                 }
-              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunOverridability, subFunPurity, _, subFunDeclPosOpt, _)) =>
+              case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunOverridability, subFunPurity, subFunDeclPosOpt, _)) =>
                 if (superFunOverridability == Overridability.Final) {
                   er.reportError(s"cannot override final method $funDescr defined in $superT", subFunDeclPosOpt)
                 }

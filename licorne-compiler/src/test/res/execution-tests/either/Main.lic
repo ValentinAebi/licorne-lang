@@ -2,7 +2,7 @@ import Eithers.*;
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val x = left(new Dog());
         val y = right(new Car());
         display(x);

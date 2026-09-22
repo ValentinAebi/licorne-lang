@@ -185,8 +185,7 @@ object Asts {
                            bodyOpt: Option[Block],
                            visibility: Visibility,
                            overridability: Overridability,
-                           purity: Purity,
-                           isMain: Boolean
+                           purity: Purity
                          ) extends Ast {
     override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }

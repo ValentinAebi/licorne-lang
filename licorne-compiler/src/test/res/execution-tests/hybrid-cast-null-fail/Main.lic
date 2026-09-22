@@ -2,7 +2,7 @@ import licorne.io.Console;
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val obj = null;
         foo(obj);       //>STACKTRACE
     }

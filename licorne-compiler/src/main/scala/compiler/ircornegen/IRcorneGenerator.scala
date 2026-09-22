@@ -403,7 +403,7 @@ final class IRcorneGenerator(
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, isMain = false, fieldsOwner.getPosition, isSyntheticAccessor = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = IRcorne.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
@@ -491,7 +491,7 @@ final class IRcorneGenerator(
       val function = generateIRFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
       val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
       val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
-        funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.isMain, funDef.getPosition, isSyntheticAccessor = false)
+        funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.getPosition, isSyntheticAccessor = false)
       val funDescr = sig.descriptor
       val paramsCnt = funDescr.paramsCnt
       functionOverloads.get(funId, paramsCnt) match {
@@ -503,11 +503,19 @@ final class IRcorneGenerator(
           allFunctionsB.addOne(sig.ownerAndDescr -> function)
           functionOverloads.put((funId, paramsCnt), sig)
       }
-      if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
+      if (sig.isMain && !isValidParamsListForMain(sig.paramsWithoutThis.map(_._2).toList)) {
+        reportError(s"bad signature for main method: expected an empty parameter list or an array of ${StdLib.stringTypeId}", sig.declPosOpt)
+      }
+      if (sig.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
         reportError("main methods are only allowed in objects", funDef.getPosition)
       }
     }
     functions
+  }
+
+  private def isValidParamsListForMain(paramsListWithoutRec: List[Type]): Boolean = paramsListWithoutRec match {
+    case Nil | List(NamedType(StdLib.arrayTypeId, List(NamedType(StdLib.stringTypeId, Nil, Nil)), Nil)) => true
+    case _ => false
   }
 
   private def computeThisType(funOwnerSig: TypeSignature) = {

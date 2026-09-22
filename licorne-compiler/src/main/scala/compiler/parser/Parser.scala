@@ -179,7 +179,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case _ => false
     }
 
-    opt(kw(Main, Private, Open)) ::: opt(kw(Pure)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Private, Open)) ::: opt(kw(Pure)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: expr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: expr) map {
       case optModif ^: optPure ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
@@ -200,8 +200,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         FunDef(funName, typeParams, params, optRetType, optPrecond, bodyOptDesugared,
           visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
           overridability,
-          purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure,
-          isMain = optModif.contains(Main)
+          purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure
         )
     }
   } setName "funDef"

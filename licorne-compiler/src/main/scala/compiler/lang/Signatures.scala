@@ -33,7 +33,6 @@ final case class FunctionSignature(
                                     visibility: Visibility,
                                     overridability: Overridability,
                                     purity: Purity,
-                                    isMain: Boolean,
                                     declPosOpt: Option[Position],
                                     isSyntheticAccessor: Boolean
                                   ) extends DeclSignature, ExecutionEnvironment {
@@ -52,6 +51,8 @@ final case class FunctionSignature(
 
   def smtFunctionCode: String =
     functionName.toString ++ "$" ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("$")
+    
+  def isMain: Boolean = functionName.stringId == "main"
 
   override def expectedResultType: Type = retType
 
@@ -79,7 +80,6 @@ final case class FunctionSignature(
     visibility,
     overridability,
     purity,
-    isMain,
     declPosOpt,
     isSyntheticAccessor
   )
@@ -88,9 +88,6 @@ final case class FunctionSignature(
     val sb = StringBuilder()
     if (isPure) {
       sb.append(Purity.Pure).append(" ")
-    }
-    if (isMain) {
-      sb.append(Keyword.Main).append(" ")
     }
     sb.append(visibility).append(" ").append(ownerName).append(".").append(functionName)
     printListIfNonEmpty(typeParams, "[", "]", sb)

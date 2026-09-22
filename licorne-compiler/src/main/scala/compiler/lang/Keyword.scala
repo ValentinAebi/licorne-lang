@@ -12,7 +12,6 @@ enum Keyword(val str: String) {
   case Import extends Keyword("import")
   case Interface extends Keyword("interface")
   case Is extends Keyword("is")
-  case Main extends Keyword("main")
   case New extends Keyword("new")
   case Null extends Keyword("null")
   case Object extends Keyword("object")

@@ -17,7 +17,7 @@ class Insect
 
 object Main {
 
-   main fn run() {
+   fn main() {
       feed1(new Glasworm(), new Insect());
       feed2(new Glasworm(), new Insect());
    }

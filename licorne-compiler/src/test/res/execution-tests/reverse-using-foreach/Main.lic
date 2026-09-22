@@ -4,7 +4,7 @@ import licorne.collections.Nil;
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val ls = reverse(new Cons(head = 1, tail = new Cons(head = 2, tail = new Nil())));
         println((ls as Cons).head());
     }

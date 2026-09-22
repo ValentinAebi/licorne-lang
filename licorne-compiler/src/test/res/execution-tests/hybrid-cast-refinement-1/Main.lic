@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val z = 7 + 9;
         val t = z - 1;
         foo(t, z!!);    //>STACKTRACE

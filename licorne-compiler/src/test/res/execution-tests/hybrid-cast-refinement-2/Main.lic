@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val s1 = mkString(true)!!;      // OK
         foo(s1, 2!!);                   // OK
         val s2 = mkString(false)!!;     // OK

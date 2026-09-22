@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val a = genArray(315);
         println(sum(a));
     }

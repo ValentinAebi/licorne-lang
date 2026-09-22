@@ -3,7 +3,7 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
@@ -237,9 +237,9 @@ final class Backend(
       cb.getstatic(ownerTypeDesc, objectInstanceFieldName, ownerTypeDesc)
       if (mainFunSig.paramsWithoutThis.nonEmpty) {
         // this has to be an array of Strings
-        cb.aload(1)
+        cb.aload(0)
       }
-      cb.invokevirtual(ownerTypeDesc, mainFunSig.functionName.stringId, mkFunDesc(mainFunSig)(using TypeParamsContext.empty))
+      cb.invokevirtual(ownerTypeDesc, "$" + mainFunSig.functionName.stringId, mkFunDesc(mainFunSig)(using TypeParamsContext.empty))
       cb.return_()
     }))
   }
@@ -261,7 +261,8 @@ final class Backend(
     if (isStaticStringFunc) {
       flags |= ClassFile.ACC_STATIC
     }
-    cb.withMethod(funSig.functionName.stringId, funDesc, flags, mb => {
+    val funName = if funSig.isMain then "$" + funSig.functionName.stringId else funSig.functionName.stringId
+    cb.withMethod(funName, funDesc, flags, mb => {
       StdLibFunctions.intrinsicFor(funSig) match {
         case Some(genIntrinsicFunc) =>
           genIntrinsicFunc(mb)
@@ -283,6 +284,7 @@ final class Backend(
       }
     })
   }
+
 
   private def mkFunDesc(funSig: FunctionSignature, extractParams: FunctionSignature => Iterable[(NamedIdValue, Type)] = _.paramsWithoutThis)
                        (using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, dealiasingCtx: DealiasingContext): MethodTypeDesc = {

@@ -1,7 +1,7 @@
 
 object Main {
 
-    main fn run() {
+    fn main() {
         val sum = sumUpTo(10);
         println(sum);
     }

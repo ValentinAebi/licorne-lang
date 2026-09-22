@@ -7,7 +7,7 @@ typealias Cnt = [0..]
 typealias PageNumber(b: Book) = [1 .. b.pagesCnt()]
 
 object Example {
-    main fn example() {
+    fn main() {
         val book = new Book(
             title = "Modern Graph Theory",
             author = "Béla Bollobás",
