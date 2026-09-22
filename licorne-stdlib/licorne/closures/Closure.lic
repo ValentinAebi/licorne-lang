@@ -1,5 +1,5 @@
 package licorne.closures;
 
 interface Closure[R] {
-    fn run(this, args: Array[Any?]) -> R
+    fn run(args: Array[Any?]) -> R
 }

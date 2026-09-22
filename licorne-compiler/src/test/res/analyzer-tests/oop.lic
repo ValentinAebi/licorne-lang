@@ -1,6 +1,6 @@
 
 interface Animal[Food] {
-   fn eat(this, food: Food)
+   fn eat(food: Food)
 }
 
 interface Reptile[Food] : Animal[Food]
@@ -8,7 +8,7 @@ interface ReptileEatingInsects : Reptile[List[Insect]]
 interface Lizard : ReptileEatingInsects
 
 class Glasworm : Lizard {
-   fn eat(this, insects: List[Insect]){
+   fn eat(insects: List[Insect]){
       // ...
    }
 }

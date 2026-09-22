@@ -2,7 +2,7 @@ package licorne.io;
 
 class FileWriter(path: String) : OutStream {
 
-    fn write(this, s: String) {
+    fn write(s: String) {
         panic "compiler stub"
     }
 

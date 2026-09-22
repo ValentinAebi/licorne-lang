@@ -7,7 +7,7 @@ typealias DayOfMonth(year: Year, month: Month) = [1..nDaysInMonth(year, month)]
 
 record Date(year: Year, month: Month, day: DayOfMonth(year, month)) {
 
-    pure fn nextDay(this) -> Date {
+    pure fn nextDay() -> Date {
         if (this.day() < nDaysInMonth(this.year(), this.month())) {
             return new Date(year = this.year(), month = this.month(), day = this.day() + 1);
         } else if (this.month() < 12) {
@@ -17,7 +17,7 @@ record Date(year: Year, month: Month, day: DayOfMonth(year, month)) {
         }
     }
 
-    pure fn previousDay(this) -> Date {
+    pure fn previousDay() -> Date {
         if (this.day() > 1) {
             return new Date(year = this.year(), month = this.month(), day = this.day() - 1);
         } else if (this.month() > 1) {
@@ -56,7 +56,7 @@ typealias Seconds = [0..59]
 
 record Time(hours: Hours, minutes: Minutes, seconds: Seconds) {
 
-    fn deltaTime(this, h: Int, min: Int, sec: Int) -> Time {
+    fn deltaTime(h: Int, min: Int, sec: Int) -> Time {
         val sSum = seconds() + sec;
         val seconds = (sSum % 60 + 60) % 60;
         val mSum = minutes() + min + (sSum - seconds) / 60;
@@ -66,11 +66,11 @@ record Time(hours: Hours, minutes: Minutes, seconds: Seconds) {
         return new Time(hours, minutes, seconds);
     }
 
-    fn deltaHours(this, h: Int) -> Time = deltaTime(h, 0, 0)
+    fn deltaHours(h: Int) -> Time = deltaTime(h, 0, 0)
 
-    fn deltaMinutes(this, m: Int) -> Time = deltaTime(0, m, 0)
+    fn deltaMinutes(m: Int) -> Time = deltaTime(0, m, 0)
 
-    fn deltaSeconds(this, s: Int) -> Time = deltaTime(0, 0, s)
+    fn deltaSeconds(s: Int) -> Time = deltaTime(0, 0, s)
 
 }
 
@@ -81,7 +81,7 @@ class MutTime(
     var seconds: Seconds
 ) {
 
-    fn moveBy(this, h: Int, m: Int, s: Int) {
+    fn moveBy(h: Int, m: Int, s: Int) {
         val sSum = this.seconds + s;
         this.seconds = (sSum % 60 + 60) % 60;
         val mSum = this.minutes + m + (sSum / 60);
@@ -91,15 +91,15 @@ class MutTime(
         this.hours = (hSum % 60 + 60) % 60;     //> E : assignment to field hours: expected Hours, found (hSum % 60 + 60) % 60 : [0..59]
     }
 
-    fn moveByHours(this, h: Int) {
+    fn moveByHours(h: Int) {
         moveBy(h, 0, 0);
     }
 
-    fn moveByMinutes(this, m: Int) {
+    fn moveByMinutes(m: Int) {
         moveBy(0, m, 0);
     }
 
-    fn moveBySeconds(this, s: Int) {
+    fn moveBySeconds(s: Int) {
         moveBy(0, 0, s);
     }
 

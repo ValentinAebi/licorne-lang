@@ -4,11 +4,11 @@ typealias Length = [0..]
 
 datatype List[+T] {
 
-   pure fn length(this) -> Length
+   pure fn length() -> Length
 
-   fn isSingletonList(this) -> Bool
+   fn isSingletonList(this) -> Bool     //> W : receiver parameter can be omitted
 
-   fn length_bad(this) -> Length {
+   fn length_bad() -> Length {
       var len = -1;
       var ls = this;
       while ls is Cons {
@@ -18,7 +18,7 @@ datatype List[+T] {
       return len;   //> E : return value: expected lists.Length, found len : [-1..]
    }
 
-   fn reverse(this) -> List[T] {
+   fn reverse() -> List[T] {
       var reversed = new Nil();
       var ls = this;
       while ls is Cons {
@@ -28,7 +28,7 @@ datatype List[+T] {
       return reversed;
    }
 
-   fn filter(this, p: pure fn (T) -> Bool) -> List[T with p(it)] {
+   fn filter(p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil();
       var ls = this;
       while ls is Cons {
@@ -40,7 +40,7 @@ datatype List[+T] {
       return filteredReversed.reverse();
    }
 
-   fn filter_bad(this, p: pure fn (T) -> Bool) -> List[T with p(it)] {
+   fn filter_bad(p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil();
       var ls = this;
       while ls is Cons {
@@ -52,7 +52,7 @@ datatype List[+T] {
       return filteredReversed.reverse();
    }
 
-   fn zip[S](this, other: List[S] where this.length() == other.length()) -> List[Pair[T, S]] {
+   fn zip[S](other: List[S] where this.length() == other.length()) -> List[Pair[T, S]] {
       var rem1 = this;
       var rem2 = other;
       var reversedZip = new Nil();
@@ -67,13 +67,13 @@ datatype List[+T] {
 }
 
 record Nil : List[Nothing] {
-    pure fn length(this) -> [0..0] = 0
-    fn isSingletonList(this) -> Bool = false
+    pure fn length() -> [0..0] = 0
+    fn isSingletonList() -> Bool = false
 }
 
 record Cons[+T](head: T, tail: List[T]) : List[T] {
-    pure fn length(this) -> [1..] = 1 + tail.length()
-    fn isSingletonList(this) -> Bool = tail is Nil
+    pure fn length() -> [1..] = 1 + tail.length()
+    fn isSingletonList() -> Bool = tail is Nil
 }
 
 record Pair[+L, +R](l: L, r: R)
@@ -107,5 +107,5 @@ object UseLists {
 
 interface I
 class A : I {
-   pure fn value(this) -> Int = 42
+   pure fn value() -> Int = 42
 }

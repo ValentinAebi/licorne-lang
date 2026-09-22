@@ -1,11 +1,11 @@
 
 class MutableStack[T] {
 
-   fn push(this, t: T) {
+   fn push(t: T) {
       panic "not implemented"
    }
 
-   fn pop(this) -> T {
+   fn pop() -> T {
       panic "not implemented"
    }
 

@@ -20,7 +20,7 @@ object Example {
 }
 
 interface Text {
-    pure fn title(this) -> String
+    pure fn title() -> String
 }
 
 class Book(
@@ -30,17 +30,17 @@ class Book(
     var currPage: PageNumber(this)?
 ) : Text {
 
-    fn openAtPage(this, p: PageNumber(this)) {
+    fn openAtPage(p: PageNumber(this)) {
         currPage = p
     }
 
-    fn close(this) {
+    fn close() {
         currPage = null
     }
 
-    fn currentPage(this) -> PageNumber(this)? = currPage
+    fn currentPage() -> PageNumber(this)? = currPage
 
-    fn isClosed(this) -> Bool =
+    fn isClosed() -> Bool =
         currentPage() == null
 }
 

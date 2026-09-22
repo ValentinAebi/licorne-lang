@@ -2,9 +2,9 @@
 
 interface Map[K, V] {
 
-    fn get(this, k: K) -> V?
+    fn get(k: K) -> V?
 
-    fn put(this, k: K, v: V)
+    fn put(k: K, v: V)
 
 }
 
@@ -15,13 +15,13 @@ class ArrayMap[K sub Any, V sub Any](
     var currSize: [0 .. capacity()]
 ) : Map[K, V] {
 
-    pure fn capacity(this) -> Length =
+    pure fn capacity() -> Length =
         this.keys.size()
 
-    fn currentSize(this) -> [0 .. capacity()] =
+    fn currentSize() -> [0 .. capacity()] =
         this.currSize
 
-    fn get(this, k: K) -> V? {
+    fn get(k: K) -> V? {
         val idx = this.keys.indexOf(k);
         if (idx == null) {
             return null;
@@ -30,7 +30,7 @@ class ArrayMap[K sub Any, V sub Any](
         }
     }
 
-    fn put(this, k: K, v: V) -> Bool {
+    fn put(k: K, v: V) -> Bool {
         val preSize = currentSize();
         val canAdd = preSize < capacity();
         if canAdd {
@@ -48,7 +48,7 @@ class ArrayMap[K sub Any, V sub Any](
         return canAdd;
     }
 
-    fn remove(this, k: K) -> Bool {
+    fn remove(k: K) -> Bool {
         val preSize = currentSize();
         if (preSize > 0) {
             val idx = this.keys.indexOf(k);
@@ -74,23 +74,23 @@ object ArrayMaps {
 
 interface OrderedCollection[T] {
 
-    pure fn size(this) -> Length
+    pure fn size() -> Length
 
-    fn get(this, i: Idx(this)) -> T
+    fn get(i: Idx(this)) -> T
 
 }
 
 class Array[T](public size: Length) : OrderedCollection[T] {
 
-    fn get(this, i: Idx(this)) -> T {
+    fn get(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(this, i: Idx(this), value: T) {
+    fn set(i: Idx(this), value: T) {
         panic "compile to bytecode xASTORE"
     }
 
-    fn indexOf(this, t: T) -> Idx(this)? {
+    fn indexOf(t: T) -> Idx(this)? {
         for (var i = 0; i < size(); i += 1) {
             if (get(i) == t) {
                 return i;

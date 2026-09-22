@@ -1,12 +1,12 @@
 package licorne.collections;
 
 interface Collection[+T] {
-    pure fn size(this) -> Cnt
+    pure fn size() -> Cnt
 
-    fn map[U](this, f: fn (T) -> U) -> Collection[U]
+    fn map[U](f: fn (T) -> U) -> Collection[U]
 
-    fn filter(this, pred: pure fn (T) -> Bool) -> Collection[T with pred(it)]
+    fn filter(pred: pure fn (T) -> Bool) -> Collection[T with pred(it)]
 
-    fn foreach(this, f: fn (T) -> Unit)
+    fn foreach(f: fn (T) -> Unit)
 
 }

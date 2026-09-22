@@ -445,16 +445,12 @@ final class IRcorneGenerator(
           (funSigScope.newParam(ThisId, functionsProvider.getPosition), funSigScope)
       }
       val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
-      val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
       if (thisParamIsOmitted) {
         val thisType = computeThisType(functionsProviderIncompleteSig)
         paramsInclThis(thisVal) = thisType
         funSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisVal, thisScope, ReassigPermission.Val, Some(thisType))
-      }
-      if (thisParamIsOmitted && !isObject) {
-        reportError(s"parameters list of ${funDef.id} should start with the receiver parameter (syntax: 'this : Type')", funDef.getPosition)
-      } else if (!thisParamIsOmitted && isObject) {
-        warn("receiver parameter can be omitted inside objects", funDef.getPosition)
+      } else {
+        warn("receiver parameter can be omitted", funDef.getPosition)
       }
       var isFirst = true
       for (paramTree <- funDef.params) {

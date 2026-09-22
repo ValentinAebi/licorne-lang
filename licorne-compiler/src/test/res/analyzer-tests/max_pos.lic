@@ -70,7 +70,7 @@ typealias Idx[T](arr: Array[T]) = [0 ..< arr.length()]
 
 class Array[T](public length: Length) {
 
-    fn at(this, i: Idx(this)) -> T {
+    fn at(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 

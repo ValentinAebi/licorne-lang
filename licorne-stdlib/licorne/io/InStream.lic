@@ -2,6 +2,6 @@ package licorne.io;
 
 interface InStream {
 
-    fn readLine(this) -> String
+    fn readLine() -> String
 
 }

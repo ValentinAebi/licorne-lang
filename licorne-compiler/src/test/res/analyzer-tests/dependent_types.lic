@@ -28,6 +28,6 @@ typealias Length = AtLeast(0)
 typealias Idx[T](ls: List[T]) = [0 ..< ls.size()]
 
 interface List[T] {
-   pure fn size(this) -> Length
-   pure fn indexOf(this, elem: T) -> Idx(this)
+   pure fn size() -> Length
+   pure fn indexOf(elem: T) -> Idx(this)
 }

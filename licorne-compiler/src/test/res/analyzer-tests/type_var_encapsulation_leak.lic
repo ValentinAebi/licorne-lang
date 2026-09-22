@@ -1,6 +1,6 @@
 
 interface Foo[T] {
-   fn get(this) -> T
+   fn get() -> T
 }
 
 object Test {

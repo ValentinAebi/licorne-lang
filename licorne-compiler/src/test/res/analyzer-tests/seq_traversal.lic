@@ -3,9 +3,9 @@ typealias Length = [0..]
 typealias Idx[T](seq: Seq[T]) = [0 ..< seq.size()]
 
 interface Seq[T] {
-   pure fn size(this) -> Length
+   pure fn size() -> Length
 
-   fn at(this, i: Idx(this)) -> T
+   fn at(i: Idx(this)) -> T
 }
 
 object SeqTraversal {

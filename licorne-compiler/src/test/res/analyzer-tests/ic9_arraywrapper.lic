@@ -19,11 +19,11 @@ class ArrayWrapper[T] (
     wrapped: Array[T] with it.size() == size
 ) : Sized {
 
-    fn set(this, i: Idx(this), elem: T) {
+    fn set(i: Idx(this), elem: T) {
         this.wrapped.set(i, elem);
     }
 
-    fn get(this, i: Idx(this)) -> T {
+    fn get(i: Idx(this)) -> T {
         return this.wrapped.at(i);
     }
 
@@ -39,7 +39,7 @@ object ArrayWrappers {
 }
 
 interface Sized {
-    pure fn size(this) -> Length
+    pure fn size() -> Length
 }
 
 typealias Length = [0..]
@@ -47,11 +47,11 @@ typealias Idx(seq: Sized) = [0 ..< seq.size()]
 
 class Array[T](public size: Length) : Sized {
 
-    fn at(this, i: Idx(this)) -> T {
+    fn at(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(this, i: Idx(this), t: T) {
+    fn set(i: Idx(this), t: T) {
         panic "compile to bytecode xASTORE"
     }
 

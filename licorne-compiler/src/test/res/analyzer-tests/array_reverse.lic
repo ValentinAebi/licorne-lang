@@ -4,7 +4,7 @@ typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
 
 class Array[T](public length: Length) {
 
-   fn reverse(this) {
+   fn reverse() {
       var i = 0;
       var j = length();     // bug
       while (i < j) {
@@ -16,11 +16,11 @@ class Array[T](public length: Length) {
       }
    }
 
-   fn at(this, i: Idx(this)) -> T {
+   fn at(i: Idx(this)) -> T {
       panic "not implemented"
    }
 
-   fn set(this, i: Idx(this), value: T) {
+   fn set(i: Idx(this), value: T) {
       panic "not implemented"
    }
 }

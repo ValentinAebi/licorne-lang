@@ -11,22 +11,22 @@ object Main {
 }
 
 interface I {
-    open fn foo(this, d: Dog) {
+    open fn foo(d: Dog) {
         println("I.foo(#1)")
     }
-    open fn foo(this, d: Dog, i: Int) {
+    open fn foo(d: Dog, i: Int) {
         println("I.foo(#2)")
     }
-    open fn bar(this, i: [0..10]) {
+    open fn bar(i: [0..10]) {
         println("I.bar(#1)")
     }
 }
 
 class A : I {
-    fn foo(this, d: Dog) {
+    fn foo(d: Dog) {
         println("A.foo(#1)")
     }
-    fn bar(this, i: Int) {
+    fn bar(i: Int) {
         println("A.bar(#1)")
     }
 }

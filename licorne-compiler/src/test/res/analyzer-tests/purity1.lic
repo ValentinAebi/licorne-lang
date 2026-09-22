@@ -1,16 +1,16 @@
 
 interface I {
-   pure fn foo(this, i: Int) -> String
-   fn bar(this, s: String) -> Int
+   pure fn foo(i: Int) -> String
+   fn bar(s: String) -> Int
 }
 
 class A : I {
 
-   pure fn foo(this, i: Int) -> String {
+   pure fn foo(i: Int) -> String {
       panic "not implemented"
    }
 
-   fn bar(this, s: String) -> Int {
+   fn bar(s: String) -> Int {
       panic "not implemented"
    }
 

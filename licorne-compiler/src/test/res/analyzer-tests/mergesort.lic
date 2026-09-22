@@ -55,11 +55,11 @@ typealias Pos[T](arr: Array[T]) = [0 .. arr.length()]
 
 class Array[T](public length: Length) {
 
-    fn get(this, i: Idx(this)) -> T {
+    fn get(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(this, i: Idx(this), value: T) {
+    fn set(i: Idx(this), value: T) {
         panic "compile to bytecode xASTORE"
     }
 

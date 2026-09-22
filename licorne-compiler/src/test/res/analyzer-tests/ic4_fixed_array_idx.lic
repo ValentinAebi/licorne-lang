@@ -28,11 +28,11 @@ typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
 
 class Array[T] {
 
-    pure fn length(this) -> Length {
+    pure fn length() -> Length {
         panic "compile to bytecode ARRAYLENGTH";
     }
 
-    fn at(this, i: Idx(this)) -> T {
+    fn at(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 

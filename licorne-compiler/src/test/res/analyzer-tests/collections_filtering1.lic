@@ -1,6 +1,6 @@
 
 interface Seq[+T] {
-   fn filter(this, pred: pure fn (T) -> Bool) -> Seq[T with pred(it)]
+   fn filter(pred: pure fn (T) -> Bool) -> Seq[T with pred(it)]
 }
 
 object Test {

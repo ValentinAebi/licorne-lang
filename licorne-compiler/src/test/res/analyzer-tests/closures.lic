@@ -40,14 +40,14 @@ interface Animal
 
 class Dog : Animal {
 
-   fn woof(this) {}
+   fn woof() {}
 
-   fn isHungry(this) -> Bool {
+   fn isHungry() -> Bool {
       return true
    }
 
    // returns true iff not hungry anymore
-   fn eat(this, food: Food) -> Bool {
+   fn eat(food: Food) -> Bool {
       // ...
       return false
    }

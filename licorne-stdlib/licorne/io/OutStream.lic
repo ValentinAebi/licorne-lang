@@ -2,6 +2,6 @@ package licorne.io;
 
 interface OutStream {
 
-    fn write(this, s: String)
+    fn write(s: String)
 
 }

@@ -31,9 +31,9 @@ object Test {
 }
 
 interface I {
-   pure fn m(this) -> Bool
+   pure fn m() -> Bool
 }
 
 class A : I {
-   pure fn m(this) -> Bool = false
+   pure fn m() -> Bool = false
 }

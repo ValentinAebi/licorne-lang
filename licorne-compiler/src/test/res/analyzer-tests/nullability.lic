@@ -42,7 +42,7 @@ object Main {
 }
 
 interface I {
-   fn m(this, i: Int) -> I?
+   fn m(i: Int) -> I?
 }
 
 record Box[T](value: T)

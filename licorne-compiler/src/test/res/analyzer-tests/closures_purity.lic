@@ -1,7 +1,7 @@
 
 interface Collection[T] {
-   fn map[U](this, f: pure fn (T) -> U) -> Collection[U]
-   fn foreach(this, f: fn (T) -> Unit)
+   fn map[U](f: pure fn (T) -> U) -> Collection[U]
+   fn foreach(f: fn (T) -> Unit)
 }
 
 object Test {
@@ -47,7 +47,7 @@ object Test {
 }
 
 class Container[T](var value: T) {
-   fn set(this, newVal: T) {
+   fn set(newVal: T) {
       this.value = newVal;
    }
 }

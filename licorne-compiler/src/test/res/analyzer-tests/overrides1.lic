@@ -1,17 +1,17 @@
 
 interface Producer[+T, -A] {
-   fn produce(this, arg: A) -> T
+   fn produce(arg: A) -> T
 }
 
 class DogProducer : Producer[Animal, Int] {
-    fn produce(this, name: String) -> Dog {      //> E : type mismatch on parameter name of method produce(#1): erased type is licorne.core.String but should be Int since the method overrides produce(#1) in Producer[Animal,Int]
+    fn produce(name: String) -> Dog {      //> E : type mismatch on parameter name of method produce(#1): erased type is licorne.core.String but should be Int since the method overrides produce(#1) in Producer[Animal,Int]
         return new Dog(name);
     }
 }
 
 interface Animal
 class Dog(name: String) : Animal {
-   fn name(this) -> String {
+   fn name() -> String {
       return this.name;
    }
 }

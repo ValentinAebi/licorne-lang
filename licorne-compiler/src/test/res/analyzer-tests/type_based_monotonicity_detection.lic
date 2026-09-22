@@ -13,6 +13,6 @@ typealias Length = [0..]
 typealias Idx[T](a: Array[T]) = [0 ..< a.length()]
 
 interface Array[T] {
-    pure fn length(this) -> Length
-    fn at(this, i: Idx(this)) -> T
+    pure fn length() -> Length
+    fn at(i: Idx(this)) -> T
 }

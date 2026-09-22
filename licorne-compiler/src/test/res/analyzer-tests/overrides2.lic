@@ -12,13 +12,13 @@ interface Plant
 class Flower : Plant
 
 interface AnimalMaker {
-   fn mkAnimals(this) -> Seq[Animal]
-   fn mkAnimalsFood1(this) -> Plants
-   fn mkAnimalsFood2(this) -> Plants
+   fn mkAnimals() -> Seq[Animal]
+   fn mkAnimalsFood1() -> Plants
+   fn mkAnimalsFood2() -> Plants
 }
 
 interface DogMaker : AnimalMaker {
-    fn mkAnimals(this) -> MutList[Dog]
-    fn mkAnimalsFood1(this) -> List[Animal]    //> E : return type of method mkAnimalsFood1(#0) that overrides mkAnimalsFood1(#0) in AnimalMaker: expected Plants, found List[Animal]
-    fn mkAnimalsFood2(this) -> List[Flower]
+    fn mkAnimals() -> MutList[Dog]
+    fn mkAnimalsFood1() -> List[Animal]    //> E : return type of method mkAnimalsFood1(#0) that overrides mkAnimalsFood1(#0) in AnimalMaker: expected Plants, found List[Animal]
+    fn mkAnimalsFood2() -> List[Flower]
 }

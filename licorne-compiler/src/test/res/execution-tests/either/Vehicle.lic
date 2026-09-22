@@ -1,8 +1,8 @@
 
 interface Vehicle {
-    fn maxPassengers(this) -> Cnt
+    fn maxPassengers() -> Cnt
 }
 
 class Car : Vehicle {
-    fn maxPassengers(this) -> Cnt = 6
+    fn maxPassengers() -> Cnt = 6
 }

@@ -36,7 +36,7 @@ typealias Idx[T](a: Array[T]) = [0 ..< a.length()]
 
 class Array[T](public length: [0..]) {
 
-    fn get(this, i: Idx(this)) {
+    fn get(i: Idx(this)) {
         panic "compile to bytecode xALOAD";
     }
 

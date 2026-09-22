@@ -7,11 +7,11 @@ class Car(
     var seats: [0..]
 ) {
 
-    fn setYear(this, year: CarAcceptableYears) {
+    fn setYear(year: CarAcceptableYears) {
         this.year = year;
     }
 
-    fn getYear(this) -> CarAcceptableYears = year
+    fn getYear() -> CarAcceptableYears = year
 
 }
 

@@ -9,5 +9,5 @@ package licorne.core;
 // Also calling Indexed::size is not allowed.
 // Use Indexable instead.
 interface Indexed {
-    pure fn size(this) -> Cnt
+    pure fn size() -> Cnt
 }
