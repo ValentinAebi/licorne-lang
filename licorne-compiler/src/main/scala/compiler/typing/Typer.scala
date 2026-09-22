@@ -1249,7 +1249,8 @@ final class Typer(
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
     dealiasingCtx.dealiasType(receiverType.withTypeVarsExpanded).withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
-        resolutionCtx.resolveFunSig(typeName, invkTarget.funId) match {
+        val targetDesc = FunctionDescriptor(invkTarget.funId, typedCallArgs.size)
+        resolutionCtx.resolveFunSig(typeName, targetDesc) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
             if (funSig.visibility == Visibility.Private && !receiverIsThisPtr(scope, receiver)) {
               er.reportError(s"illegal access to ${Visibility.Private} method ${funSig.functionName}", posOpt)
@@ -1392,7 +1393,8 @@ final class Typer(
     }
   }
 
-  private def receiverIsThisPtr(currScope: Scope, receiver: Formula): Boolean = {
+  private def receiverIsThisPtr(currScope: Scope, receiver: Formula)
+                               (using TypeParamsContext, ResolutionContext, SubtypingContext): Boolean = {
     currScope.getLocalValuesContextUnsafe.getThisValue.exists { thisVal =>
       receiver == thisVal || proxyStore.developDeep(receiver).contains(thisVal)
     }
@@ -1508,7 +1510,8 @@ final class Typer(
     subst
   }
 
-  private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula]): Unit = {
+  private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula])
+                               (using TypeParamsContext, ResolutionContext, SubtypingContext): Unit = {
     argOpt.foreach { rawArg =>
       val repl = proxyStore.developNearest(rawArg).getOrElse(rawArg)
       subst.put(paramVal, repl)

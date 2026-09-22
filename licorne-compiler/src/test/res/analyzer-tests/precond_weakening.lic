@@ -16,13 +16,13 @@ class B : I {
 }
 
 class C : I {
-   fn foo(this, i: Int, j: Int where Math.abs(i) < 8) -> Int {           //> E : foo in C overrides foo in I but I cannot prove that the precondition of the overridden method is respected
+   fn foo(this, i: Int, j: Int where Math.abs(i) < 8) -> Int {           //> E : foo(#2) in C overrides foo(#2) in I but I cannot prove that the precondition of the overridden method is respected
       panic "not implemented"
    }
 }
 
 class D : I {
-   fn foo(this, i: Int, j: [-i..i]) -> [0..] {                           //> E : type mismatch on parameter j of method foo: declared type [-i..i] is not a supertype of the type [0..i] of the corresponding parameter in the overridden method foo in I
+   fn foo(this, i: Int, j: [-i..i]) -> [0..] {                           //> E : type mismatch on parameter j of method foo(#2): declared type [-i..i] is not a supertype of the type [0..i] of the corresponding parameter in the overridden method foo(#2) in I
       panic "not implemented"
    }
 }

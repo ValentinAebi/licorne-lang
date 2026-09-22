@@ -18,7 +18,7 @@ class A : I {
 
 object B : I {
 
-   fn foo(i: Int) -> String {   //> E : foo in B overrides foo in I but violates its declared purity
+   fn foo(i: Int) -> String {   //> E : foo(#1) in B overrides foo(#1) in I but violates its declared purity
       panic "not implemented"
    }
 

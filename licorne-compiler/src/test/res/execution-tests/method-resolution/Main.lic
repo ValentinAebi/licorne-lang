@@ -1,0 +1,35 @@
+
+object Main {
+
+    main fn run() {
+        val a = new A();
+        a.foo(new Dog());       // invokes the method in A
+        a.foo(new Dog(), 0);    // falls back to the method in I
+        a.bar(42);              // invokes the method in A: do not resolve to the more precise (refinement) type in the supertype method
+    }
+
+}
+
+interface I {
+    open fn foo(this, d: Dog) {
+        println("I.foo(#1)")
+    }
+    open fn foo(this, d: Dog, i: Int) {
+        println("I.foo(#2)")
+    }
+    open fn bar(this, i: [0..10]) {
+        println("I.bar(#1)")
+    }
+}
+
+class A : I {
+    fn foo(this, d: Dog) {
+        println("A.foo(#1)")
+    }
+    fn bar(this, i: Int) {
+        println("A.bar(#1)")
+    }
+}
+
+interface Animal
+class Dog : Animal

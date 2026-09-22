@@ -54,34 +54,34 @@ final class OverridesChecker(
       val superTSig = resolutionCtx.resolveTypeSig(superT).get
       (subTSig, superTSig) match {
         case (subTSig: RuntimeTypeSignature, superTSig: RuntimeTypeSignature) =>
-          for ((funId, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunOverridability, superFunPurity, _, superFunDeclPosOpt, _)) <- superTSig.functions) {
-            subTSig.functions.get(funId) match {
+          for ((funDescr, superFunSig@FunctionSignature(_, _, superFunTypeParams, superFunParams, superFunPrecondOpt, superFunRetType, _, superFunVisibility, superFunOverridability, superFunPurity, _, superFunDeclPosOpt, _)) <- superTSig.functions) {
+            subTSig.functions.get(funDescr) match {
               case None if subTSig.isInstanceOf[AbstractTypeSig] => ()
               case None =>
                 if (superFunOverridability == Overridability.Abstract && !subTSupertypes.exists { (subSuperTid, _) =>
-                  resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subSuperTid).get.functions.exists((subSuperFunId, subSuperFunSig) => subSuperFunId == funId && subSuperFunSig.overridability != Abstract)
+                  resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](subSuperTid).get.functions.exists((subSuperFunDescr, subSuperFunSig) => subSuperFunDescr == funDescr && subSuperFunSig.overridability != Abstract)
                     && flattenedSupertypesSubstitutions.get(subSuperTid).exists(_.keySet.contains(superT))
                 }) {
-                  er.reportError(s"$subT does not implement method $funId declared in its supertype $superT", subTSig.declPosOpt)
+                  er.reportError(s"$subT does not implement method $funDescr declared in its supertype $superT", subTSig.declPosOpt)
                 }
               case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunOverridability, subFunPurity, _, subFunDeclPosOpt, _)) =>
                 if (superFunOverridability == Overridability.Final) {
-                  er.reportError(s"cannot override final method $funId defined in $superT", subFunDeclPosOpt)
+                  er.reportError(s"cannot override final method $funDescr defined in $superT", subFunDeclPosOpt)
                 }
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size
                 if (!typeParamsLenMatch) {
-                  er.reportError(s"length of type parameters list in method $funId in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
+                  er.reportError(s"length of type parameters list in method $funDescr in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
                 }
                 if (!paramsLenMatch) {
-                  er.reportError(s"length of parameters list in method $funId in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
+                  er.reportError(s"length of parameters list in method $funDescr in $subT does not match its length in its supertype $superT", subFunDeclPosOpt)
                 }
                 if (typeParamsLenMatch && paramsLenMatch) {
                   val funTypeParamsSubst = mutable.Map.empty[TypeIdentifier, Type]
                   val (_, fullTypeParamsCtx) = TypeParamsContext.processTypeParamsAccumulating(TypeParamsContext(subTSig.typeParams), superFunTypeParams zip subFunTypeParams) { (superFunTp, subFunTp) =>
 
                     def mkErrorMsg(upOrLow: String): String =
-                      s"$upOrLow bound of type parameter ${subFunTp.tid} of function $funId in $subT does not conform to the signature of the overridden function in $superT"
+                      s"$upOrLow bound of type parameter ${subFunTp.tid} of function $funDescr in $subT does not conform to the signature of the overridden function in $superT"
 
                     subFunTp.upperBoundOpt.foreach { subFunUpperBound =>
                       superFunTp.upperBoundOpt match {
@@ -110,26 +110,26 @@ final class OverridesChecker(
                     val subParamTypeErased = dealiasingCtx.eraseRefinements(subParamType)
                     val superParamTypeErased = dealiasingCtx.eraseRefinements(superParamTypeSubst)
                     if (subParamTypeErased != superParamTypeErased) {
-                      er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funId: " +
-                        s"erased type is $subParamTypeErased but should be $superParamTypeErased since the method overrides $funId in $superTSubst", subFunDeclPosOpt)
+                      er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funDescr: " +
+                        s"erased type is $subParamTypeErased but should be $superParamTypeErased since the method overrides $funDescr in $superTSubst", subFunDeclPosOpt)
                     } else if (!subtypingCtx.isSubtype(superParamTypeSubst, subParamType)(using fullTypeParamsCtx)) {
-                      er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funId: " +
-                        s"declared type $subParamType is not a supertype of the type $superParamTypeSubst of the corresponding parameter in the overridden method $funId in $superT", subFunDeclPosOpt)
+                      er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funDescr: " +
+                        s"declared type $subParamType is not a supertype of the type $superParamTypeSubst of the corresponding parameter in the overridden method $funDescr in $superT", subFunDeclPosOpt)
                     }
                     valsSubst(superParamVal) = subParamVal
                   }
                   val expectedRetType = superFunRetType.substitute(typeParamsSubst, valsSubst.toMap)
-                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, expectedRetType, s"return type of method $funId that overrides $funId in $superT", subFunDeclPosOpt)(using fullTypeParamsCtx)
+                  subtypingCtx.enforceIsSubtypeExpAct(subFunRetType, expectedRetType, s"return type of method $funDescr that overrides $funDescr in $superT", subFunDeclPosOpt)(using fullTypeParamsCtx)
                   val precondOverrideIsValid = subFunPrecondOpt.forall(subFunPrecond => superFunPrecondOpt.exists(superFunPrecond => solver.canProveImplication(superFunPrecond.substitute(valsSubst), subFunPrecond)))
                   if (!precondOverrideIsValid) {
-                    er.reportError(s"$funId in $subT overrides $funId in $superT but I cannot prove that the precondition of the overridden method is respected", subFunDeclPosOpt)
+                    er.reportError(s"$funDescr in $subT overrides $funDescr in $superT but I cannot prove that the precondition of the overridden method is respected", subFunDeclPosOpt)
                   }
                 }
                 if (!subFunVisibility.atLeastAsPermissiveAs(superFunVisibility)) {
-                  er.reportError(s"$funId in $subT overrides $funId in $superT but has a more restricted visibility", subFunDeclPosOpt)
+                  er.reportError(s"$funDescr in $subT overrides $funDescr in $superT but has a more restricted visibility", subFunDeclPosOpt)
                 }
                 if (!subFunPurity.conformsTo(superFunPurity)) {
-                  er.reportError(s"$funId in $subT overrides $funId in $superT but violates its declared purity", subFunDeclPosOpt)
+                  er.reportError(s"$funDescr in $subT overrides $funDescr in $superT but violates its declared purity", subFunDeclPosOpt)
                 }
             }
           }

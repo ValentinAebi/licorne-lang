@@ -20,7 +20,7 @@ datatype List[+T] : Sequence[T] {
 
 record Nil : List[Nothing] {
     // TODO try to find a way to encode Nil == List with it.size() == 0, and let the compiler figure out that no definition of at is needed here
-    fn at(this, i: Int) -> Nothing {    //> E : at in Nil overrides at in List but violates its declared purity
+    fn at(this, i: Int) -> Nothing {    //> E : at(#1) in Nil overrides at(#1) in List but violates its declared purity
         panic "out of bounds"
     }
     pure fn size(this) -> Length = 0

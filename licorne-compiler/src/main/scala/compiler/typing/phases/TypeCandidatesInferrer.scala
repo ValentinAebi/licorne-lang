@@ -5,7 +5,7 @@ import compiler.irs.ircorne.Formulas.{Formula, IdValue}
 import compiler.irs.ircorne.IRcorne
 import compiler.irs.ircorne.IRcorne.*
 import compiler.lang.Types.*
-import compiler.lang.{ExecutionEnvironment, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
+import compiler.lang.{ExecutionEnvironment, FunctionDescriptor, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -47,8 +47,8 @@ final class TypeCandidatesInferrer(
       val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
       fakeEr.withReportingSuspended {
         for {
-          ((ownerId, funId), func) <- program.functions
-          funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
+          ((ownerId, funDescr), func) <- program.functions
+          funSig <- Some(resolCtx.forceGetFunction(ownerId, funDescr))
           body <- func.bodyOpt
         } {
           val resolCtx = ResolutionContext(program, fakeEr)
@@ -126,7 +126,7 @@ final class TypeCandidatesInferrer(
               (tSig.id, typesSubst, Map.empty[IdValue, Formula])
             }
         }
-        funSig <- resolutionCtx.resolveFunSig(receiverTypeId, func.funId).asOption
+        funSig <- resolutionCtx.resolveFunSig(receiverTypeId, FunctionDescriptor(func.funId, args.size)).asOption
       } {
         val typeParams = funSig.typeParams
         val typesSubst = owTypesSubst ++ createTypeParamsSubst(typeParams, typeArgs)

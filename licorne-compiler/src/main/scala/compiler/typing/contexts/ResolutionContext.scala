@@ -2,6 +2,7 @@ package compiler.typing.contexts
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.lang.*
+import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
@@ -15,6 +16,7 @@ final case class ResolutionContext(
                                     program: Program,
                                     er: ErrorReporter
                                   )(using CompilationStep) {
+
   import program.*
 
   val typesReasoningCache: TypesReasoningCache = TypesReasoningCache(this)
@@ -32,35 +34,27 @@ final case class ResolutionContext(
       case Some(sig: S) => Some(sig)
       case _ => None
     }
-    
-  def resolveFunSigNoSupertypeLookup(receiverId: TypeIdentifier, funId: FunOrVarId): FuncResolResult = {
-    resolveTypeSigAs[RuntimeTypeSignature](receiverId) match {
-      case None => FuncResolResult.OwnerNotFound
-      case Some(ownerSig) =>
-        ownerSig.functions.get(funId) match {
-          case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
-          case None => FuncResolResult.FuncNotFound(ownerSig)
-        }
-    }
-  }
 
-  def resolveFunSig(receiverId: TypeIdentifier, funId: FunOrVarId)
-                   (using subtypingCtx: SubtypingContext): FuncResolResult = {
+  def forceGetFunction(receiverId: TypeIdentifier, descr: FunctionDescriptor): FunctionSignature =
+    resolveTypeSigAs[RuntimeTypeSignature](receiverId).get.functions.apply(descr)
+
+  def resolveFunSig(receiverId: TypeIdentifier, descr: FunctionDescriptor)
+                   (using tpCtx: TypeParamsContext, subtypingCtx: SubtypingContext): FuncResolResult = {
     resolveTypeSigAs[RuntimeTypeSignature](receiverId) match {
       case None => FuncResolResult.OwnerNotFound
       case Some(ownerSig) =>
-        ownerSig.functions.get(funId) match {
+        ownerSig.functions.get(descr) match {
           case Some(funSig) => FuncResolResult.Success(ownerSig, funSig)
           case None =>
             ownerSig.directSupertypes.iterator.map { superT =>
-              resolveFunSig(superT.typeName, funId) match {
-                case FuncResolResult.Success(superOwnerSig, superFunSig) =>
-                  val subst = subtypingCtx.subToSuperSubst(receiverId, superT.typeName).get
-                  FuncResolResult.Success(ownerSig, superFunSig.substitute(receiverId, subst))
-                case failure => failure
-              }
-            }.find(_.isInstanceOf[FuncResolResult.Success])
-            .getOrElse(FuncResolResult.FuncNotFound(ownerSig))
+                resolveFunSig(superT.typeName, descr) match {
+                  case FuncResolResult.Success(superOwnerSig, superFunSig) =>
+                    val subst = subtypingCtx.subToSuperSubst(receiverId, superT.typeName).get
+                    FuncResolResult.Success(ownerSig, superFunSig.substitute(receiverId, subst))
+                  case failure => failure
+                }
+              }.find(_.isInstanceOf[FuncResolResult.Success])
+              .getOrElse(FuncResolResult.FuncNotFound(ownerSig))
         }
     }
   }
@@ -92,7 +86,7 @@ object ResolutionContext {
       case Success(_, funSig) => funSig
       case _ => throw UnsupportedOperationException("function resolution failed")
     }
-    
+
     def asOption: Option[FunctionSignature] = this match {
       case Success(ownerSig, funSig) => Some(funSig)
       case _ => None

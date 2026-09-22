@@ -1,0 +1,9 @@
+
+interface I {
+    fn func(this, i: Int)
+    fn func(this, i: Int, j: Int)
+}
+
+class A : I {   //> E : A does not implement method func(#1) declared in its supertype I
+    fn func(this, i: Int, j: Int){}
+}

@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.irs.ircorne.IRcorne
 import compiler.irs.ircorne.IRcorne.AssigningInstr
-import compiler.lang.FunctionSignature
+import compiler.lang.{FunctionSignature, RuntimeTypeSignature}
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep.TypeChecking
@@ -47,11 +47,12 @@ final class TypeChecker(
       saveTypesOfGlobalConstants(resolCtx, proxyStore, solver, simplifier)
 
       for {
-        ((ownerId, funId), func) <- program.functions
-        funSig <- resolCtx.resolveFunSig(ownerId, funId)(using subtypingCtx).asOption
-        if !funSig.isSyntheticAccessor
+        ((ownerId, funDescr), func) <- program.functions
       } {
-        checkFunc(funSig, func, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
+        val funSig = resolCtx.forceGetFunction(ownerId, funDescr)
+        if (!funSig.isSyntheticAccessor) {
+          checkFunc(funSig, func, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)
+        }
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(

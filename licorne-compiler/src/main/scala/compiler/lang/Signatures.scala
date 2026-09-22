@@ -42,7 +42,9 @@ final case class FunctionSignature(
 
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
 
-  def ownerAndName: (TypeIdentifier, FunOrVarId) = (ownerName, functionName)
+  def ownerAndDescr: (TypeIdentifier, FunctionDescriptor) = (ownerName, descriptor)
+  
+  def descriptor: FunctionDescriptor = FunctionDescriptor(functionName, paramsWithoutThis.size)
 
   def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
 
@@ -180,7 +182,7 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
     stableFieldsB.result()
   }
 
-  def functions: Map[FunOrVarId, FunctionSignature]
+  val functions: Map[FunctionDescriptor, FunctionSignature]
 
   def directSupertypes: List[NamedType]
 }
@@ -209,7 +211,7 @@ sealed trait TypeParametricTypeSig extends RuntimeTypeSignature {
 final case class InterfaceSignature(
                                      id: TypeIdentifier,
                                      typeParams: List[TypeTypeParamInfo],
-                                     functions: Map[FunOrVarId, FunctionSignature],
+                                     functions: Map[FunctionDescriptor, FunctionSignature],
                                      directSupertypes: List[NamedType],
                                      sigScope: Scope,
                                      declPosOpt: Option[Position]
@@ -220,7 +222,7 @@ final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[TypeTypeParamInfo],
                                  fields: SeqMap[FunOrVarId, Field],
-                                 functions: Map[FunOrVarId, FunctionSignature],
+                                 functions: Map[FunctionDescriptor, FunctionSignature],
                                  directSupertypes: List[NamedType],
                                  sigScope: Scope,
                                  declPosOpt: Option[Position]
@@ -231,7 +233,7 @@ final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
 final case class ObjectSignature(
                                   id: TypeIdentifier,
-                                  functions: Map[FunOrVarId, FunctionSignature],
+                                  functions: Map[FunctionDescriptor, FunctionSignature],
                                   directSupertypes: List[NamedType],
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]
@@ -245,7 +247,7 @@ final case class ObjectSignature(
 final case class DatatypeSignature(
                                     id: TypeIdentifier,
                                     typeParams: List[TypeTypeParamInfo],
-                                    functions: Map[FunOrVarId, FunctionSignature],
+                                    functions: Map[FunctionDescriptor, FunctionSignature],
                                     directSupertypes: List[NamedType],
                                     directSubtypes: SeqSet[TypeIdentifier],
                                     sigScope: Scope,
@@ -259,7 +261,7 @@ final case class RecordSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[TypeTypeParamInfo],
                                   fields: SeqMap[FunOrVarId, StableField],
-                                  functions: Map[FunOrVarId, FunctionSignature],
+                                  functions: Map[FunctionDescriptor, FunctionSignature],
                                   directSupertypes: List[NamedType],
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]

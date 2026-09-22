@@ -130,7 +130,7 @@ final class IRcornePrinter(
     pps.newLine()
   }
 
-  private def printFunctionsBlockIfNotEmpty(functions: Map[FunOrVarId, FunctionSignature], emptyLineBeforeFunc: Boolean)
+  private def printFunctionsBlockIfNotEmpty(functions: Map[FunctionDescriptor, FunctionSignature], emptyLineBeforeFunc: Boolean)
                                            (using pps: PrettyPrintString, program: Program): Unit = {
     if (functions.nonEmpty) {
       pps.addSpace().block {
@@ -151,7 +151,7 @@ final class IRcornePrinter(
     val FunctionSignature(ownerName, functionName, typeParams, paramsInclThis, precondOpt, retType, funSigScope, visibility, overridability, purity, isMain, declPosOpt, isSynthetic) = funSig
     pps.add(if isMain then "MAIN " else "")
       .add(s"METHOD ($visibility, $overridability, $purity, scope ${funSigScope.scopeUid}) $ownerName::$functionName${mkTypeParamsDescr(typeParams)}${mkFunctionParamsDescr(paramsInclThis, precondOpt)} -> $retType${mkPosDescr(declPosOpt)}")
-    program.functions.get(funSig.ownerAndName)
+    program.functions.get(funSig.ownerAndDescr)
       .flatMap(_.bodyOpt)
       .foreach { funBody =>
         pps.addSpace()

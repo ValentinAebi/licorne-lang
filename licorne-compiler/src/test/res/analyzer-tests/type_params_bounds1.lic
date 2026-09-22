@@ -12,8 +12,8 @@ interface I {
 
 class C : I {
 
-   fn foo[T sub Mammal super Dog](this, t: T) -> Unit {}   //> E : upper bound of type parameter T of function foo in C does not conform to the signature of the overridden function in I
+   fn foo[T sub Mammal super Dog](this, t: T) -> Unit {}   //> E : upper bound of type parameter T of function foo(#1) in C does not conform to the signature of the overridden function in I
 
-   fn bar[T sub Animal super Mammal](this, t: T) -> Unit {}  //> E : lower bound of type parameter T of function bar in C does not conform to the signature of the overridden function in I
+   fn bar[T sub Animal super Mammal](this, t: T) -> Unit {}  //> E : lower bound of type parameter T of function bar(#1) in C does not conform to the signature of the overridden function in I
 
 }

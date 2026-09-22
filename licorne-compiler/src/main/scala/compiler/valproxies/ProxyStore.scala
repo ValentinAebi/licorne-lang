@@ -4,10 +4,10 @@ import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.irs.ircorne.{FieldResolutionTarget, Formulas, InvocationTarget}
-import compiler.lang.ClassSignature
+import compiler.lang.{ClassSignature, FunctionDescriptor}
 import compiler.lang.Types.Type
 import compiler.typing.Typer
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.asIterableOfType
 
 import scala.collection.mutable
@@ -62,7 +62,7 @@ final class ProxyStore {
           fieldsSet <- fieldAccessorProxies.get(classSig.id)
           if fieldsSet.contains(fld.fieldId)
         } yield {
-          val accessorSig = resolCtx.resolveFunSigNoSupertypeLookup(classSig.id, fld.fieldId).forceGetFunSig
+          val accessorSig = resolCtx.forceGetFunction(classSig.id, FunctionDescriptor(fld.fieldId, 0))
           val invkTarget = InvocationTarget(fld.fieldId)
           invkTarget.resolve(classSig, accessorSig, fld.getInstantiatedTypeUnsafe)
           invkTarget
@@ -241,7 +241,7 @@ final class ProxyStore {
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
-                              (using typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext): (BranchingInfo, BranchingInfo) = {
+                              (using tpCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, subtypingCtx: SubtypingContext): (BranchingInfo, BranchingInfo) = {
     val (infoIfTrueNearest, infoIfFalseNearest) =
       developNearest(cond, allowConjunctsOmission = true).map(infosFor(_)(using outerScope))
         .getOrElse((BranchingInfo.empty, BranchingInfo.empty))

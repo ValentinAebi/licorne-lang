@@ -50,7 +50,7 @@ final class IRcorneGenerator(
 
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
-    val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
+    val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
     for (src <- sources) {
       checkPackageAndPosition(src)
       for (importStat <- src.imports) {
@@ -385,18 +385,19 @@ final class IRcorneGenerator(
                                              classId: TypeIdentifier,
                                              fieldsOwner: Asts.TypeDefTree,
                                              fields: Iterable[(FunOrVarId, Field)],
-                                             functionsMap: mutable.SeqMap[FunOrVarId, (FunctionSignature, Function)],
+                                             functionsMap: mutable.SeqMap[FunctionDescriptor, (FunctionSignature, Function)],
                                              globalScope: Scope,
                                              thisType: Type,
-                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
+                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
                                            ): Iterable[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)] = {
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)]
     val accessorsSubst = mutable.Map.empty[IdValue, IdValue => FunCall]
     fields.foreach {
       case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod)) if isPublishedAsMethod =>
-        functionsMap.get(fieldId) match {
+        val accessorDescr = FunctionDescriptor(fieldId, 0)
+        functionsMap.get(accessorDescr) match {
           case Some(funSig, funScope) =>
-            er.reportError(s"method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
+            er.reportError(s"parameterless method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
             val syntheticFunSigScope = Scope.nestedInside(globalScope, fieldsOwner)
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
@@ -409,8 +410,8 @@ final class IRcorneGenerator(
             val resolTarget = FieldResolutionTarget(fieldId)
             syntheticFuncBody.instructions.addOne(FieldRead(retVal, thisValue, resolTarget))
             syntheticFuncBody.instructions.addOne(Return(retVal))
-            functionsMap.put(fld.id, (syntheticFunSig, syntheticFunc))
-            allFunctionsCollector.addOne(syntheticFunSig.ownerAndName -> syntheticFunc)
+            functionsMap.put(accessorDescr, (syntheticFunSig, syntheticFunc))
+            allFunctionsCollector.addOne(syntheticFunSig.ownerAndDescr -> syntheticFunc)
             val accessorInvkTarget = InvocationTarget(fld.id)
             accessorsSubst.put(fld.value, (thisVal: IdValue) => FunCall(thisVal, accessorInvkTarget, List.empty, List.empty))
             targetsToResolve.addOne(resolTarget, accessorInvkTarget, syntheticFunSig, accessorRetType)
@@ -424,84 +425,90 @@ final class IRcorneGenerator(
                                 functionsProvider: Asts.TypeDefTree,
                                 functionsProviderIncompleteSig: RuntimeTypeSignature,
                                 globalScope: Scope,
-                                allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunOrVarId), IRcorne.Function]
-                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunOrVarId, (FunctionSignature, IRcorne.Function)] = {
-    val functions = mutable.LinkedHashMap.empty[FunOrVarId, (FunctionSignature, IRcorne.Function)]
+                                allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
+                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunctionDescriptor, (FunctionSignature, IRcorne.Function)] = {
+    val functions = mutable.LinkedHashMap.empty[FunctionDescriptor, (FunctionSignature, IRcorne.Function)]
+    val functionOverloads = mutable.Map.empty[(FunOrVarId, Int), FunctionSignature]
     for (funDef <- functionsProvider.functions) {
-      if (functions.contains(funDef.id)) {
-        reportError(s"a function named ${funDef.id} has already been declared in ${functionsProvider.description}", funDef.getPosition)
-      } else {
-        val funSigScope = Scope.nestedInside(globalScope, funDef)
-        val (convertedTypeParams, fullTypeParamsCtx) = processTypeParamsAccumulating(outerTypeParamsCtx, funDef.typeParams) {
-          convertFunTypeParam(_, funSigScope)
-        }
+      val funSigScope = Scope.nestedInside(globalScope, funDef)
+      val (convertedTypeParams, fullTypeParamsCtx) = processTypeParamsAccumulating(outerTypeParamsCtx, funDef.typeParams) {
+        convertFunTypeParam(_, funSigScope)
+      }
 
-        given TypeParamsContext = fullTypeParamsCtx
+      given TypeParamsContext = fullTypeParamsCtx
 
-        val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
-        val (thisVal, thisScope) = functionsProvider match {
-          case Asts.ObjectDef(_, functions, directSupertypes) =>
-            (funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id), globalScope)
-          case _ =>
-            (funSigScope.newParam(ThisId, functionsProvider.getPosition), funSigScope)
-        }
-        val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
-        val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
-        if (thisParamIsOmitted) {
-          val thisType = computeThisType(functionsProviderIncompleteSig)
-          paramsInclThis(thisVal) = thisType
-          funSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisVal, thisScope, ReassigPermission.Val, Some(thisType))
-        }
-        if (thisParamIsOmitted && !isObject) {
-          reportError(s"parameters list of ${funDef.id} should start with the receiver parameter (syntax: 'this : Type')", funDef.getPosition)
-        } else if (!thisParamIsOmitted && isObject) {
-          warn("receiver parameter can be omitted inside objects", funDef.getPosition)
-        }
-        var isFirst = true
-        for (paramTree <- funDef.params) {
-          if (funSigScope.getLocalValuesContextUnsafe.knows(paramTree.paramId)) {
-            reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
-          } else {
-            val paramValue = funSigScope.newParam(paramTree.paramId, paramTree.getPosition)
-            val paramType = paramTree match {
-              case Asts.ThisParam(paramTypeTreeOpt) =>
-                if (!isFirst) {
-                  reportError("receiver parameter should always be at the beginning of the parameters list", funDef.getPosition)
+      val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
+      val (thisVal, thisScope) = functionsProvider match {
+        case Asts.ObjectDef(_, functions, directSupertypes) =>
+          (funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id), globalScope)
+        case _ =>
+          (funSigScope.newParam(ThisId, functionsProvider.getPosition), funSigScope)
+      }
+      val thisParamIsOmitted = funDef.params.headOption.forall(_.paramId != ThisId)
+      val isObject = functionsProvider.isInstanceOf[Asts.ObjectDef]
+      if (thisParamIsOmitted) {
+        val thisType = computeThisType(functionsProviderIncompleteSig)
+        paramsInclThis(thisVal) = thisType
+        funSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisVal, thisScope, ReassigPermission.Val, Some(thisType))
+      }
+      if (thisParamIsOmitted && !isObject) {
+        reportError(s"parameters list of ${funDef.id} should start with the receiver parameter (syntax: 'this : Type')", funDef.getPosition)
+      } else if (!thisParamIsOmitted && isObject) {
+        warn("receiver parameter can be omitted inside objects", funDef.getPosition)
+      }
+      var isFirst = true
+      for (paramTree <- funDef.params) {
+        if (funSigScope.getLocalValuesContextUnsafe.knows(paramTree.paramId)) {
+          reportError(s"redefinition of parameter ${paramTree.paramId}", paramTree.getPosition)
+        } else {
+          val paramValue = funSigScope.newParam(paramTree.paramId, paramTree.getPosition)
+          val paramType = paramTree match {
+            case Asts.ThisParam(paramTypeTreeOpt) =>
+              if (!isFirst) {
+                reportError("receiver parameter should always be at the beginning of the parameters list", funDef.getPosition)
+              }
+              val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty)
+              paramTypeTreeOpt.map { paramTypeTree =>
+                val actualThisType = mkType(paramTypeTree, funSigScope)
+                // TODO see if we allow refined types on receiver
+                if (actualThisType != expectedThisType) {
+                  reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", funDef.getPosition)
                 }
-                val expectedThisType = functionsProviderIncompleteSig.toType(Map.empty)
-                paramTypeTreeOpt.map { paramTypeTree =>
-                  val actualThisType = mkType(paramTypeTree, funSigScope)
-                  // TODO see if we allow refined types on receiver
-                  if (actualThisType != expectedThisType) {
-                    reportError(s"unexpected type for receiver parameter; expected was $expectedThisType (note that it may be omitted)", funDef.getPosition)
-                  }
-                  actualThisType
-                }.getOrElse(expectedThisType)
-              case paramTree: Asts.NonThisFunctionParam =>
-                mkType(paramTree.paramTypeTree, funSigScope)
-            }
-            mustNotBeUnit(paramType, paramTree.getPosition)
-            paramsInclThis(paramValue) = paramType
-            val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
-            funSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramTree.paramId, paramValue, funSigScope, reassigPermission, Some(paramType))
+                actualThisType
+              }.getOrElse(expectedThisType)
+            case paramTree: Asts.NonThisFunctionParam =>
+              mkType(paramTree.paramTypeTree, funSigScope)
           }
-          isFirst = false
+          mustNotBeUnit(paramType, paramTree.getPosition)
+          paramsInclThis(paramValue) = paramType
+          val reassigPermission = if paramTree.isInstanceOf[Asts.VarParam] then ReassigPermission.Var else ReassigPermission.Val
+          funSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramTree.paramId, paramValue, funSigScope, reassigPermission, Some(paramType))
         }
-        val retType = funDef.optRetType match {
-          case Some(retTypeTree) => mkType(retTypeTree, funSigScope)
-          case None => PrimitiveType.UnitType
-        }
-        val ownerId = functionsProviderIncompleteSig.id
-        val funId = funDef.id
-        val function = generateIRFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
-        val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
-        val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
-          funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.isMain, funDef.getPosition, isSyntheticAccessor = false)
-        functions(funDef.id) = (sig, function)
-        allFunctionsB.addOne(sig.ownerAndName -> function)
-        if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
-          reportError("main methods are only allowed in objects", funDef.getPosition)
-        }
+        isFirst = false
+      }
+      val retType = funDef.optRetType match {
+        case Some(retTypeTree) => mkType(retTypeTree, funSigScope)
+        case None => PrimitiveType.UnitType
+      }
+      val ownerId = functionsProviderIncompleteSig.id
+      val funId = funDef.id
+      val function = generateIRFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
+      val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
+      val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
+        funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.isMain, funDef.getPosition, isSyntheticAccessor = false)
+      val funDescr = sig.descriptor
+      val paramsCnt = funDescr.paramsCnt
+      functionOverloads.get(funId, paramsCnt) match {
+        case Some(conflictingSig) =>
+          val positionalInfo = conflictingSig.declPosOpt.map(" declared at " + _).getOrElse("")
+          reportError(s"a function $funId with $paramsCnt parameters has already been declared in ${functionsProvider.description}: $conflictingSig" ++ positionalInfo, funDef.getPosition)
+        case None =>
+          functions(funDescr) = (sig, function)
+          allFunctionsB.addOne(sig.ownerAndDescr -> function)
+          functionOverloads.put((funId, paramsCnt), sig)
+      }
+      if (funDef.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
+        reportError("main methods are only allowed in objects", funDef.getPosition)
       }
     }
     functions
@@ -512,23 +519,23 @@ final class IRcorneGenerator(
     funOwnerSig.toType(subst)
   }
 
-  private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunOrVarId, (FunctionSignature, IRcorne.Function)],
-                                                 ownerId: TypeIdentifier, ownerIsAbstractType: Boolean): Map[FunOrVarId, FunctionSignature] = {
-    val resultB = Map.newBuilder[FunOrVarId, FunctionSignature]
-    for ((funId, (sig, func)) <- functionsMap) {
+  private def createIdToSigMapAndCheckBodyExists(functionsMap: SeqMap[FunctionDescriptor, (FunctionSignature, IRcorne.Function)],
+                                                 ownerId: TypeIdentifier, ownerIsAbstractType: Boolean): Map[FunctionDescriptor, FunctionSignature] = {
+    val resultB = Map.newBuilder[FunctionDescriptor, FunctionSignature]
+    for ((funDescr, (sig, func)) <- functionsMap) {
       val funPos = sig.declPosOpt
-      resultB.addOne(funId -> sig)
+      resultB.addOne(sig.descriptor -> sig)
       if (ownerIsAbstractType) {
         if (sig.overridability == Overridability.Open && func.bodyOpt.isEmpty) {
-          reportError(s"${Overridability.Open} method $funId must have a body", funPos)
+          reportError(s"${Overridability.Open} method ${funDescr.funId} must have a body", funPos)
         }
       } else {
         sig.overridability match {
           case Overridability.Abstract =>
-            reportError(s"method $funId defined in non abstract type $ownerId must have a body", funPos)
+            reportError(s"method ${funDescr.funId} defined in non abstract type $ownerId must have a body", funPos)
           case Overridability.Final => ()
           case Overridability.Open =>
-            reportError(s"method $funId defined in non abstract type $ownerId cannot be ${Overridability.Open}", funPos)
+            reportError(s"method ${funDescr.funId} defined in non abstract type $ownerId cannot be ${Overridability.Open}", funPos)
         }
       }
     }

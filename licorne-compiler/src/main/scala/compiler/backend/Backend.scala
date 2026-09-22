@@ -221,7 +221,7 @@ final class Backend(
     val ownerId = ownerTypeSig.id
     val functions = ownerTypeSig.functions.values
     for (funSig <- functions) {
-      val bodyOpt = program.functions.apply(ownerId, funSig.functionName).bodyOpt
+      val bodyOpt = program.functions.apply(ownerId, funSig.descriptor).bodyOpt
       generateFunc(funSig, bodyOpt, ownerTypeSig, cb)
       if (funSig.isMain) {
         generateMainFunc(ownerId, funSig, cb)
