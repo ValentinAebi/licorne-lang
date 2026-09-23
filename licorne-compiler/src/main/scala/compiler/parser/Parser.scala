@@ -83,7 +83,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val ampersand = op(Ampersand).ignored
 
   private val unaryOperator = op(Minus, ExclamationMark)
-  private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, Assig)
+  private val assignmentOperator = op(PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, PlusPlusEq, Assig)
 
   // ---------- Syntax description -----------------------------------------------------------------------
 

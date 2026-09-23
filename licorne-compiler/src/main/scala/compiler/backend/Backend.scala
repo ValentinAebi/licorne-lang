@@ -500,7 +500,7 @@ final class Backend(
         genValueStore(assigned, currScope, cb)
 
       // Array methods
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId)(func.getFunSigUnsafe) =>
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId, 1)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         cb.aaload()
@@ -513,7 +513,7 @@ final class Backend(
           cb.invokevirtual(elemTypeDescBoxed, unboxingFunc(elemTypeDescBoxed), MethodTypeDesc.of(unboxDesc(elemTypeDescBoxed)))
         }
         genValueStore(assigned, currScope, cb)
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId)(func.getFunSigUnsafe) =>
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId, 2)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         genValueLoad(args(1), currScope, cb)
@@ -523,7 +523,7 @@ final class Backend(
           cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, elemTypeDescUnboxed))
         }
         cb.aastore()
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId)(func.getFunSigUnsafe) =>
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId, 0)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         cb.arraylength()
         genValueStore(assigned, currScope, cb)

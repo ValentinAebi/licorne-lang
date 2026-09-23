@@ -49,6 +49,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case TimesEq extends Operator("*=", None)
   case DivEq extends Operator("/=", None)
   case ModuloEq extends Operator("%=", None)
+  case PlusPlusEq extends Operator("++=", None)
   
   def isNamedOperator: Boolean = str.forall(_.isLetter)
 

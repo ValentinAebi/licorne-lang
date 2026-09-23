@@ -15,7 +15,7 @@ object Main {
    }
 
    fn bar() {
-      foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found "Hello" : licorne.core.String
+      foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found "Hello" : licorne.core.StringL(5)
    }
 
    fn abc(ls: List[Bool]) {

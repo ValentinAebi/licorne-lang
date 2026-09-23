@@ -5,6 +5,8 @@ import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.reasoning.Solver
+import compiler.stdlib.StdLib
+import compiler.stdlib.StdLib.*
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valuesconversion.GlobalValuesContext
@@ -24,7 +26,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   def simplify(tpe: Type)(using TypeParamsContext): Type = tpe.withTypeVarsExpanded match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
-      NamedType(typeName, typeArgs.map(simplify), args)
+      NamedType(typeName, typeArgs.map(simplify), args.map(simplifyInt))
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplify), simplify(result), enforcedPure)
     case variable: TypeVariable => variable
 
@@ -130,7 +132,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       val pred3 = mkSimplifiedConjunct(pred3Parts)
 
       // Step 3: Int with it >= 0  --->  [0,]
-      val RefinedType(b, p) = base3.asRefinedType
+      val RefinedType(b, _) = base3.asRefinedType
       val (base4, pred4) = b.withTypeVarsExpanded match {
         case IntType =>
           val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3)
@@ -142,6 +144,12 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
               pred4PartsBeforeReadd
           (if lbOpt.isEmpty && ubOpt.isEmpty then IntType else IntRangeType(lbOpt, ubOpt),
             mkSimplifiedConjunct(pred4PartsAfterReadd))
+        case StdLib.stringType => pred3 match {
+          // String with it.size() == sz  ---> StringL(sz)
+          case Equality(FunCall(globalValuesContext.itValue, invkTarget, Nil, Nil), sizeFormula) if invkTarget.getFunSigOpt.exists(isFunc(stringTypeId, sizeFunId, 0)) =>
+            (NamedType(stringLTypeId, List.empty, List(sizeFormula)), BoolConst(true))
+          case _ => (base3, pred3)
+        }
         case _ => (base3, pred3)
       }
 
@@ -297,6 +305,11 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case value: IdValue => None
     case formula: ConstFormula => Some(formula)
     case Select(owner, field) => None
+    case FunCall(receiver, func, typeArgs, args) if func.getFunSigOpt.exists(isFunc(stringTypeId, sizeFunId, 0)) =>
+      eval(receiver) match {
+        case Some(StringConst(stringLit)) => Some(IntConst(stringLit.length))
+        case _ => None
+      }
     case FunCall(receiver, func, typeArgs, args) => None
     case ClosureCall(callee, target, args) => None
     case PureClosureValue(params, body, closureVal) => None

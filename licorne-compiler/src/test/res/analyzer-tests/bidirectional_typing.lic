@@ -16,7 +16,7 @@ object Test {
    fn m1() {
       val stack = new MutableStack();
       stack.push(42);           // OK, resolve the type variable to Int
-      stack.push("Hi");         //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.String
+      stack.push("Hi");         //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.StringL(2)
    }
 
    fn m2() {

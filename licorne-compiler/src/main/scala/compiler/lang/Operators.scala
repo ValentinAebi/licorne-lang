@@ -70,7 +70,8 @@ object Operators {
     MinusEq -> Minus,
     TimesEq -> Times,
     DivEq -> Div,
-    ModuloEq -> Modulo
+    ModuloEq -> Modulo,
+    PlusPlusEq -> PlusPlus
   )
 
 

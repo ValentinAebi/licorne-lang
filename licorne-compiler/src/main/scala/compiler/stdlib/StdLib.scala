@@ -1,7 +1,7 @@
 package compiler.stdlib
 
 import compiler.identifiers.{FunOrVarId, NormalFunOrVarId, TypeIdentifier}
-import compiler.lang.FunctionSignature
+import compiler.lang.{FunctionDescriptor, FunctionSignature}
 import compiler.lang.Types.NamedType
 
 object StdLib {
@@ -10,9 +10,12 @@ object StdLib {
     case NamedType(tid, _, _) => tid == recId
     case _ => false
   }
+  
+  def isFunc(recId: TypeIdentifier, desc: FunctionDescriptor)(sig: FunctionSignature): Boolean =
+    isFunc(recId, desc.funId, desc.paramsCnt)(sig)
 
-  def isFunc(recId: TypeIdentifier, funId: FunOrVarId)(sig: FunctionSignature): Boolean =
-    hasReceiver(recId)(sig) && sig.functionName == funId
+  def isFunc(recId: TypeIdentifier, funId: FunOrVarId, paramsCnt: Int)(sig: FunctionSignature): Boolean =
+    hasReceiver(recId)(sig) && sig.functionName == funId && sig.paramsWithoutThis.size == paramsCnt
 
   val stdLibPackageName: String = "licorne"
 
@@ -34,7 +37,6 @@ object StdLib {
   // licorne.core.String
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
   val stringType: NamedType = NamedType(StdLib.stringTypeId, List.empty, List.empty)
-  val stringSizeFunId: FunOrVarId = NormalFunOrVarId("size")
   val stringIsEmptyFunId: FunOrVarId = NormalFunOrVarId("isEmpty")
   val stringConcatFunId: FunOrVarId = NormalFunOrVarId("concat")
   val stringStartsWithFunId: FunOrVarId = NormalFunOrVarId("startsWith")
@@ -47,6 +49,9 @@ object StdLib {
   val stringToLowerCaseFunId: FunOrVarId = NormalFunOrVarId("toLowerCase")
   val stringJavaIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaIndexOf")
   val stringJavaLastIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaLastIndexOf")
+  
+  val stringLTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "StringL")
+  val StringLMinTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "StringLMin")
 
   // licorne.core.Strings
   val stringsTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Strings")

@@ -128,9 +128,8 @@ class AnalyzerTests(fileName: String) {
       .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, counterExBoxOpt))
       .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
-    val fakeStringSrc = SourceFile("./src/test/res/minimal-string/String.lic", isStdLib = true)
     try {
-      pipeline.apply(fakeStringSrc :: srcFiles)
+      pipeline.apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {
       case ExitException => ()
     }

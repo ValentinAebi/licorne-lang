@@ -18,7 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.stringType
+import compiler.stdlib.StdLib.{countTypeId, sizeFunId, stringLTypeId, stringType, stringTypeId}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -250,7 +250,7 @@ final class Typer(
         saveEquality(assigned, BoolConst(src))
 
       case AssignStringConst(assigned, src) =>
-        currScope.saveType(assigned, stringType)
+        currScope.saveType(assigned, mkTypeForStringLit(src))
         saveEquality(assigned, StringConst(src))
 
       case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
@@ -314,7 +314,7 @@ final class Typer(
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
         if (func.isResolved) {
           currScope.markHasExitedIfNothing(returnType)
-          if (StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)(func.getFunSigUnsafe)) {
+          if (StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)(func.getFunSigUnsafe)) {
             er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${StdLib.sizeFunId} is not callable", invk.getPosition)
           }
         }
@@ -450,7 +450,7 @@ final class Typer(
               }
               var indexedSizeCallFlag = false
               assertion.traversePreOrder {
-                case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId)) =>
+                case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)) =>
                   indexedSizeCallFlag = true
                 case _ => ()
               }
@@ -592,7 +592,7 @@ final class Typer(
           tpe
         case IntConst(value) => IntType
         case BoolConst(value) => BoolType
-        case StringConst(value) => stringType
+        case StringConst(value) => mkTypeForStringLit(value)
         case sel@Select(owner, field) if field.isResolved =>
           field.getInstantiatedTypeUnsafe
         case sel@Select(owner, field) if field.isNotResolvedYet =>
@@ -662,6 +662,9 @@ final class Typer(
     }
     tpe
   }
+
+  private def mkTypeForStringLit(stringLit: String)(using TypeParamsContext, SubtypingContext): Type =
+    NamedType(stringLTypeId, List.empty, List(IntConst(stringLit.length)))
 
   private def detectTypeForSmartcast(formula: Formula, scope: Scope)(using TypeParamsContext): Option[Type] = formula match {
     case value: IdValue =>
@@ -1463,7 +1466,7 @@ final class Typer(
         case superTDealiased =>
           er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
-      if (sig.sigName != StdLib.arrayTypeId && sig.id != StdLib.stringTypeId && sig.sigName != StdLib.indexableTypeId && superTInst.typeName == StdLib.indexedTypeId) {
+      if (superTInst.typeName == StdLib.indexedTypeId && sig.sigName != StdLib.arrayTypeId && sig.id != StdLib.stringTypeId && sig.sigName != StdLib.indexableTypeId) {
         er.reportError(s"implementation restriction: extending ${StdLib.indexedTypeId} is not allowed, use ${StdLib.indexableTypeId} instead", sig.declPosOpt)
       }
       superTInst
@@ -1550,11 +1553,11 @@ final class Typer(
       }
       tryToResolveTypeVars(paramRes, argRes)
     case (tv: TypeVariable, argType) if !tv.isResolved =>
-      tv.resolve(argType)
+      tv.resolve(simplifier.simplify(argType))
     case (tv: TypeVariable, argType) if tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
       tv.remapIfNotLocked(argType)
     case (paramType, tv: TypeVariable) if tvResolMode == TypeVarsResolMode.ParamsAndArgs && !tv.isResolved =>
-      tv.resolve(paramType)
+      tv.resolve(simplifier.simplify(paramType))
     case _ => ()
   }
 

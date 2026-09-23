@@ -23,7 +23,7 @@ object StdLibFunctions {
   )
   
   private val stringFuncRedirect = Map(
-    stringSizeFunId -> ("length", javaSig(CD_int)),
+    sizeFunId -> ("length", javaSig(CD_int)),
     stringIsEmptyFunId -> ("isEmpty", javaSig(CD_boolean)),
     stringConcatFunId -> ("concat", javaSig(CD_String, CD_String)),
     stringStartsWithFunId -> ("startsWith", javaSig(CD_boolean, CD_String)),

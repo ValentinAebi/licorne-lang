@@ -1,0 +1,9 @@
+
+object Main {
+
+    fn foo() {
+        var s = "Hello ";
+        s : Nothing;    //> E : type ascription: expected Nothing, found s : licorne.core.StringL(6)
+    }
+
+}
