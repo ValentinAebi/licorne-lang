@@ -18,7 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{countTypeId, sizeFunId, stringLTypeId, stringType, stringTypeId}
+import compiler.stdlib.StdLib.{stringLTypeId, stringType}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -1261,21 +1261,23 @@ final class Typer(
             val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
             val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
-            val composedTypeSubstEnhanced = composedTypeSubst ++ (funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg).getOrElse(arg))).flatMap {
-              case ((_, ClosureType(closureParams, closureResultType@NamedType(closureResultTypeId, Nil, Nil), _)), PureClosureValue(params, body, _))
-                if composedTypeSubst.get(closureResultTypeId).exists(_.isInstanceOf[TypeVariable])
-                  && funSig.retType.mentionsType(closureResultType)
-                  && funSig.paramsWithoutThis.count((_, tpe) => tpe.mentionsType(closureResultType)) == 1
-              =>
-                val absIntAssumptions = params.zip(closureParams.map(_.substitute(composedTypeSubst, Map.empty))).toMap
-                absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
-                  case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
-                    typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
-                    Some(closureResultTypeId -> absIntResult)
+            val absIntSubst =
+              funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg).getOrElse(arg)))
+                .flatMap {
+                  case ((_, ClosureType(closureParams, closureResultType@NamedType(closureResultTypeId, Nil, Nil), _)), PureClosureValue(params, body, _))
+                    if composedTypeSubst.get(closureResultTypeId).exists(_.isInstanceOf[TypeVariable])
+                      && funSig.retType.mentionsType(closureResultType)
+                  =>
+                    val absIntAssumptions = params.zip(closureParams.map(_.substitute(composedTypeSubst, Map.empty))).toMap
+                    absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
+                      case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
+                        typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
+                        Some(closureResultTypeId -> absIntResult)
+                      case _ => None
+                    }
                   case _ => None
-                }
-              case _ => None
-            })
+                }.groupBy(_._1)
+                .mapVals(group => meetJoin.computeJoin(group.map(_._2)))
             val paramTypesInclThis = funSig.paramsInclThis.map { (paramVal, tpe) =>
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
             }
@@ -1289,7 +1291,7 @@ final class Typer(
               solver.assert(precondSubst)
             }
             val instantiatedRetType =
-              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubstEnhanced, argsSubst))
+              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst))
                 .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
