@@ -72,6 +72,10 @@ To type-check a program using the (jar of the) compiler, run `java -jar licorne-
 Licorne uses [Z3](https://github.com/z3prover/z3) via the [KSMT](https://github.com/UnitTestBot/ksmt) API. KSMT bundles Z3 into the compiler jar, so there is no need to install it separately.
 
 
+## Papers
+
+[Practical range refinement types with inference](https://arxiv.org/abs/2607.00824) (SEFM 2026)
+
 ## What's that name?
 
 "Licorne" stands for "<b>L</b>ightweight <b>I</b>nferen<b>C</b>e <b>O</b>f <b>R</b>efi<b>NE</b>ments", and means "unicorn" in French. Earlier versions of Licorne were called Rattlesnake and [Grattlesnake](https://github.com/epfl-systemf/grattlesnake-lang), the former being a very simple toy language, and the latter corresponding to my master's thesis work on gradual object capabilities. They can be found as secondary branches of this repository.
