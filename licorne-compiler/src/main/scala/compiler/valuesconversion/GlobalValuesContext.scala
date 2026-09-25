@@ -1,7 +1,7 @@
 package compiler.valuesconversion
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
-import compiler.irs.ircorne.Formulas.{IdValue, UninterpretedConstIdValue}
+import compiler.irs.ircorne.Formulas.{IdValue, NamedIdValue, UninterpretedConstIdValue}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.TypeVariable
 import compiler.valproxies.ProxyStore
@@ -17,12 +17,12 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   
   val globalScope: Scope = Scope.root(this)
   
-  val unitVal: IdValue = globalScope.newUninterpretedConst("unit")
-  val trueVal: IdValue = globalScope.newUninterpretedConst("true")
-  val falseVal: IdValue = globalScope.newUninterpretedConst("false")
-  val nullVal: IdValue = globalScope.newUninterpretedConst("null")
+  val unitVal: NamedIdValue = globalScope.newUninterpretedConst("unit")
+  val trueVal: NamedIdValue = globalScope.newUninterpretedConst("true")
+  val falseVal: NamedIdValue = globalScope.newUninterpretedConst("false")
+  val nullVal: NamedIdValue = globalScope.newUninterpretedConst("null")
   
-  val itValue: IdValue = globalScope.newUninterpretedConst("it")
+  val itValue: NamedIdValue = globalScope.newUninterpretedConst("it")
 
   def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =
     idToObjName.getOrElseUpdate(objectId, {

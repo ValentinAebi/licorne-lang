@@ -1,6 +1,6 @@
 package compiler.parser
 
-import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
+import compiler.identifiers.{ItId, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.asts.Asts.*
 import compiler.irs.tokens.Tokens.*
 import compiler.parser.ParseTree.^:
@@ -125,7 +125,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       FunctionsImportStat(TypeIdentifier(prefix, importedName), None)
   } setName "importStat"
 
-  private lazy val topLevelDef: P[TopLevelDef] = typeVisibilityModifierOpt :::  (interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef) map {
+  private lazy val topLevelDef: P[TopLevelDef] = typeVisibilityModifierOpt ::: (interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef) map {
     case visibility ^: df =>
       df.visibility = visibility
       df
@@ -348,7 +348,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "assignmentStat"
 
   private lazy val expr: P[Expr] = recursive {
-    simpleExpr OR ternary OR closure
+    simpleExpr OR ternary OR regularClosure OR shorthandClosure
   } setName "expr"
 
   private lazy val simpleExpr: P[Expr] = recursive {
@@ -424,7 +424,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       }
     }
 
-    atomicExpr ::: (typeArgsListOpt ::: parenthArgsList OR repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(colon ::: typeTree) map {
+    atomicExpr ::: (typeArgsListOpt ::: parenthArgsList OR repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: (parenthArgsList OR shorthandClosure.map(List(_)))))) ::: opt(colon ::: typeTree) map {
       case atExpr ^: (selects: List[NormalFunOrVarId ^: Option[Option[List[TypeTree]] ^: List[Expr]]]) ^: typeAnnotOpt =>
         maybeWithTypeAnnot(typeAnnotOpt) {
           selects.foldLeft(atExpr) {
@@ -439,14 +439,23 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "selectOrIndexingChain"
 
-  private lazy val closure = recursive {
+  private lazy val regularClosure = recursive {
     opt(kw(Pure)) ::: kw(Fn).ignored ::: openParenth ::: repeatWithSep(funOrVarId ::: opt(colon ::: typeTree), comma) ::: closeParenth ::: -> ::: (expr OR block) map {
       case optPure ^: params ^: (body: Block) =>
         ClosureDef(params.toPairs, body, optPure.isDefined)
       case optPure ^: params ^: (expr: Expr) =>
-        ClosureDef(params.toPairs, Block(List(ReturnStat(Some(expr)))), optPure.isDefined)
+        ClosureDef(params.toPairs, mkSimpleClosureBody(expr), optPure.isDefined)
     }
-  } setName "closure"
+  } setName "regularClosure"
+
+  private lazy val shorthandClosure: P[ClosureDef] = recursive {
+    verticalBar ::: expr ::: verticalBar map { expr =>
+      ClosureDef(List(ItId -> None), mkSimpleClosureBody(expr), declaredPure = true)
+    }
+  } setName "shorthandClosure"
+
+  private def mkSimpleClosureBody(expr: Expr): Block =
+    Block(List(ReturnStat(Some(expr)).withDesugaringSource(expr))).withDesugaringSource(expr)
 
   private lazy val parenthesizedExpr = recursive {
     openParenth ::: expr ::: closeParenth

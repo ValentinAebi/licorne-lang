@@ -258,7 +258,7 @@ object IRcorne {
     override def consumedVals: List[IdValue] = fieldsInit.map(_._2)
   }
 
-  final case class MkClosure(assigned: IdValue, params: List[(ParamIdValue, Type)], body: Scope, var isPure: Boolean, closureTypeName: TypeIdentifier) extends AssigningInstr, ConsumesNoVal {
+  final case class MkClosure(assigned: IdValue, params: List[(NamedIdValue, Type)], body: Scope, var isPure: Boolean, closureTypeName: TypeIdentifier) extends AssigningInstr, ConsumesNoVal {
     override def children: List[Instr] = List(body)
   }
 
@@ -411,7 +411,7 @@ object IRcorne {
       val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
-        if (!allowOverwrite && types.contains(idVal)) {
+        if (!allowOverwrite && types.contains(idVal) && idVal != globalValsCtx.itValue) {
           throw IllegalStateException(s"$idVal has already been assigned a type")
         }
         types.put(idVal, tpe)

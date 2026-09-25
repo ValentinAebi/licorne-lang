@@ -376,7 +376,7 @@ final class IRcornePrinter(
         s"$paramVal: $paramType"
     }.mkString("(", ", ", ")")
 
-  private def mkFunctionParamsDescr(params: Iterable[(NamedIdValue, Type)], precondOpt: Option[Formula]): String =
+  private def mkFunctionParamsDescr(params: Iterable[(IdValue, Type)], precondOpt: Option[Formula]): String =
     params.map { (idVal, tpe) =>
       s"$idVal: $tpe"
     }.mkString("(", ", ", "") ++ precondOpt.map(" | " + _).getOrElse("") + ")"

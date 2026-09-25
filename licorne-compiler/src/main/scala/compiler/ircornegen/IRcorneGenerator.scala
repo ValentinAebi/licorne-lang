@@ -1057,13 +1057,14 @@ final class IRcorneGenerator(
         proxy
       case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
         val closureParamsScope = Scope.nestedInside(currScope, bodyTree)
-        val paramValsAndTypesB = List.newBuilder[(ParamIdValue, Type)]
+        val globalCtx = closureParamsScope.valuesCtx.globalCtx
+        val paramValsAndTypesB = List.newBuilder[(NamedIdValue, Type)]
         for ((id, typeTreeOpt) <- params) {
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
-          val paramVal = closureParamsScope.newParam(id, posOpt)
+          val paramVal = if id == ItId then globalCtx.itValue else closureParamsScope.newParam(id, posOpt)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, closureParamsScope))
-          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, typeParamsCtx, closureDefTree.getPosition)(closureParamsScope.valuesCtx.globalCtx.saveTypeVariable))
+          val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, typeParamsCtx, closureDefTree.getPosition)(globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)
           closureParamsScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, closureParamsScope, ReassigPermission.Val, givenTypeOpt)
         }

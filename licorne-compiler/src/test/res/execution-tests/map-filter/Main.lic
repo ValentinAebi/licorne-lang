@@ -10,8 +10,8 @@ object Main {
             array.set(i, 2*i);
         };
         val ls = listFromArray(array);
-        ls.map(fn (i) -> i + 1)
-          .filter(fn (i) -> i < array.size())
+        ls.map|it + 1|
+          .filter(|it < array.size()|)  // the parentheses are not needed, this is just to make sure that shorthand closures can also be used as a normal expression
           .foreach(fn (i) -> {
             println(array.get(i))
           });

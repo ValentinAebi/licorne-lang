@@ -752,7 +752,7 @@ final class Backend(
     }
   }
 
-  private def generateClosureClass(closureTypeName: TypeIdentifier, params: List[(Formulas.ParamIdValue, Type)], body: Scope, freeVals: SeqMap[IdValue, Type], enclosingClassId: TypeIdentifier)
+  private def generateClosureClass(closureTypeName: TypeIdentifier, params: List[(Formulas.NamedIdValue, Type)], body: Scope, freeVals: SeqMap[IdValue, Type], enclosingClassId: TypeIdentifier)
                                   (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, classHierarchyResolver: ClassHierarchyResolver,
                                    globalValsCtx: GlobalValuesContext, subtypingCtx: SimplifiedSubtypingContext, resolCtx: ResolutionContext): ClassDesc = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
