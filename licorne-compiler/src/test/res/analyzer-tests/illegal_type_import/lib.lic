@@ -1,0 +1,8 @@
+package example.lib;
+
+private(example) interface I
+private(example.lib) interface J
+
+record Abc(i: Int)
+private(example) record Foo(i: Int) : J     // wrong, but ignored since the compiler does not reach the phase that would detect it (see "subtype_violating_visibility" test)
+private(example.lib) record Bar(i: Int) : J

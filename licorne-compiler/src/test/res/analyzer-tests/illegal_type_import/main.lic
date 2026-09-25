@@ -1,0 +1,5 @@
+package example.main;
+
+import example.lib.Abc;    // OK
+import example.lib.Foo;    // OK
+import example.lib.Bar;    //> E : type Bar with visibility restricted to package example.lib cannot be imported from package example.main

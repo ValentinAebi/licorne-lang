@@ -59,8 +59,8 @@ final class IRcornePrinter(
 
   private def printTypeAlias(typealiasSig: TypeAliasSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val TypeAliasSignature(id, typeParams, params, rhs, sigScope, declPosOpt) = typealiasSig
-    pps.add(s"TYPEALIAS (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val TypeAliasSignature(id, typeParams, params, rhs, visibility, sigScope, declPosOpt) = typealiasSig
+    pps.add(s"TYPEALIAS ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkTypeAliasParamsDescr(params))
       .add(" = ").add(rhs)
@@ -70,8 +70,8 @@ final class IRcornePrinter(
 
   private def printInterface(interfaceSig: InterfaceSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val InterfaceSignature(id, typeParams, functions, directSupertypes, sigScope, declPosOpt) = interfaceSig
-    pps.add(s"INTERFACE (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val InterfaceSignature(id, typeParams, functions, directSupertypes, visibility, sigScope, declPosOpt) = interfaceSig
+    pps.add(s"INTERFACE ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
@@ -81,8 +81,8 @@ final class IRcornePrinter(
 
   private def printClass(classSig: ClassSignature)
                         (using pps: PrettyPrintString, program: Program): Unit = {
-    val ClassSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = classSig
-    pps.add(s"CLASS (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val ClassSignature(id, typeParams, fields, functions, directSupertypes, visibility, sigScope, declPosOpt) = classSig
+    pps.add(s"CLASS ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))
@@ -93,8 +93,8 @@ final class IRcornePrinter(
 
   private def printObject(objectSig: ObjectSignature)
                          (using pps: PrettyPrintString, program: Program): Unit = {
-    val ObjectSignature(id, functions, directSupertypes, sigScope, declPosOpt) = objectSig
-    pps.add(s"OBJECT (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val ObjectSignature(id, functions, directSupertypes, visibility, sigScope, declPosOpt) = objectSig
+    pps.add(s"OBJECT ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
     printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = true)
@@ -103,8 +103,8 @@ final class IRcornePrinter(
 
   private def printDatatype(datatypeSig: DatatypeSignature)
                            (using pps: PrettyPrintString, program: Program): Unit = {
-    val DatatypeSignature(id, typeParams, functions, directSupertypes, directSubtypes, sigScope, declPosOpt) = datatypeSig
-    pps.add(s"DATATYPE (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val DatatypeSignature(id, typeParams, functions, directSupertypes, directSubtypes, visibility, sigScope, declPosOpt) = datatypeSig
+    pps.add(s"DATATYPE ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
       .add(" with cases ")
@@ -120,8 +120,8 @@ final class IRcornePrinter(
 
   private def printRecord(recordSig: RecordSignature)
                          (using pps: PrettyPrintString, program: Program): Unit = {
-    val RecordSignature(id, typeParams, fields, functions, directSupertypes, sigScope, declPosOpt) = recordSig
-    pps.add(s"RECORD (scope ${sigScope.scopeUid})").addSpace().add(id)
+    val RecordSignature(id, typeParams, fields, functions, directSupertypes, visibility, sigScope, declPosOpt) = recordSig
+    pps.add(s"RECORD ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))

@@ -54,7 +54,7 @@ final class IRcorneGenerator(
     for (src <- sources) {
       checkPackageAndPosition(src)
       for (importStat <- src.imports) {
-        checkImport(importStat, packagesInfo)
+        checkImport(importStat, packagesInfo, src.pkgDeclOpt.map(_.nameParts))
       }
       val currentPackagePrefix = src.pkgDeclOpt.map(_.nameParts).getOrElse(List.empty)
       val datatypeDefs = mutable.ListBuffer.empty[(List[String], Asts.DataTypeDef)]
@@ -62,7 +62,7 @@ final class IRcorneGenerator(
       for (df <- src.defs) {
         val typeId = TypeIdentifier(currentPackagePrefix, df.name)
         df match {
-          case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes) =>
+          case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -77,13 +77,13 @@ final class IRcorneGenerator(
 
             given TypeParamsContext = fullTypeParamsCtx
 
-            val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), interfaceSigScope, df.getPosition)
+            val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), visibility, interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
-          case df@Asts.ObjectDef(_, functions, directSupertypes) =>
+          case df@Asts.ObjectDef(_, functions, directSupertypes, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -94,13 +94,13 @@ final class IRcorneGenerator(
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
-            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), objSigScope, df.getPosition)
+            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), visibility, objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
-          case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes) =>
+          case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -134,7 +134,7 @@ final class IRcorneGenerator(
               case param: (Asts.SimpleParam | Asts.PublicParam) =>
                 saveNonReassigParam(param)
             }
-            val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), classSigScope, df.getPosition)
+            val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), visibility, classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
@@ -149,7 +149,7 @@ final class IRcorneGenerator(
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(currentPackagePrefix, df)
 
-          case df@Asts.RecordDef(_, typeParamTrees, fields, functions, directSupertypes) =>
+          case df@Asts.RecordDef(_, typeParamTrees, fields, functions, directSupertypes, visibility) =>
 
             given importsCtx: ImportsContext = createImportsCtx(src, Some(df))
 
@@ -171,7 +171,8 @@ final class IRcorneGenerator(
                 stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = true)
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, recordSigScope, ReassigPermission.Val, Some(fieldType))
             }
-            val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty, directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), recordSigScope, df.getPosition)
+            val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty,
+              directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), visibility, recordSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generatePublicFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
@@ -187,7 +188,7 @@ final class IRcorneGenerator(
               datatypeSubtypes.getOrElseUpdate(superTId, mutable.LinkedHashSet.empty).addOne(typeId)
             }
 
-          case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs) =>
+          case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs, visibility) =>
 
             given ImportsContext = createImportsCtx(src, None)
 
@@ -206,11 +207,12 @@ final class IRcorneGenerator(
                 typeAliasParams(paramId) = (paramType, paramValue)
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, typeAliasSigScope, ReassigPermission.Val, Some(paramType))
             }
-            val sig = TypeAliasSignature(typeId, typeParams, SeqMap.from(typeAliasParams), mkType(rhs, typeAliasSigScope)(using Map.empty), typeAliasSigScope, df.getPosition)
+            val sig = TypeAliasSignature(typeId, typeParams, SeqMap.from(typeAliasParams),
+              mkType(rhs, typeAliasSigScope)(using Map.empty), visibility, typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
-      for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, functions, directSupertypes)) <- datatypeDefs) {
+      for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, functions, directSupertypes, visibility)) <- datatypeDefs) {
 
         given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -228,7 +230,7 @@ final class IRcorneGenerator(
 
         val subtypes = SeqSet(datatypeSubtypes.getOrElse(datatypeId, mutable.LinkedHashSet.empty))
         val noFunctionsSig = DatatypeSignature(datatypeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
-          subtypes, datatypeSigScope, df.getPosition)
+          subtypes, visibility, datatypeSigScope, df.getPosition)
         val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
         val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, datatypeId, ownerIsAbstractType = true)
         val datatypeSig = noFunctionsSig.copy(functions = funcs)
@@ -310,14 +312,24 @@ final class IRcorneGenerator(
     ImportsContext(SeqMap.from(typeImports), SeqMap.from(funcImports))
   }
 
-  private def checkImport(importStat: ImportStat, packagesInfo: PackagesInfo): Unit = {
+  private def checkImport(importStat: ImportStat, packagesInfo: PackagesInfo, currPkgPrefixOpt: Option[List[String]]): Unit = {
 
-    def locateObject(tid: TypeIdentifier, posOpt: Option[Position]): Option[Asts.TopLevelDef] = {
+    def locateType(tid: TypeIdentifier, posOpt: Option[Position]): Option[Asts.TopLevelDef] = {
       val TypeIdentifier(prefixes, nonPrefixedId) = tid
       packagesInfo.get(prefixes) match {
         case Some(pkgDefs) =>
           pkgDefs.get(nonPrefixedId) match {
-            case someDef@Some(_) => someDef
+            case someDef@Some(df) =>
+              (currPkgPrefixOpt, df.visibility) match {
+                case (_, TypeVisibility.Public) => ()
+                case (None, TypeVisibility.Private(pkgPrefix)) =>
+                  reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from the default package", posOpt)
+                case (Some(currPkgPrefix), TypeVisibility.Private(pkgPrefix)) =>
+                  if (!currPkgPrefix.startsWith(pkgPrefix)) {
+                    reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from package ${currPkgPrefix.mkString(".")}", posOpt)
+                  }
+              }
+              someDef
             case None =>
               reportError(s"type not found: $tid", posOpt)
               None
@@ -334,7 +346,7 @@ final class IRcorneGenerator(
           funIdsWithAlias <- funIdsWithAliasOpt
           (funId, aliasOpt) <- funIdsWithAlias
         } {
-          locateObject(tid, importStat.getPosition) match {
+          locateType(tid, importStat.getPosition) match {
             case Some(df: ObjectDef) =>
               if (!df.functions.exists(_.id == funId)) {
                 reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
@@ -347,25 +359,17 @@ final class IRcorneGenerator(
           }
         }
       case Asts.TypeImportStat(tid, aliasOpt) =>
-        locateObject(tid, importStat.getPosition)
+        locateType(tid, importStat.getPosition)
     }
   }
 
   private def checkPackageAndPosition(source: Asts.Source): Unit = srcRootForPkgMismatchCheckOpt.foreach { srcRoot =>
-
-    def pathToList(p: Path, isStdLib: Boolean): List[String] = {
-      val lsb = List.newBuilder[String]
-      p.iterator().forEachRemaining(pp => lsb.addOne(pp.toString))
-      val pathLs = lsb.result()
-      if isStdLib then StdLib.stdLibPackageName :: pathLs.reverse.takeWhile(_ != StdLib.stdLibPackageName).reverse else pathLs
-    }
-
     source.getPosition match {
       case None if source.defs.isEmpty => ()
       case None =>
         warn(s"missing positioning information for source starting with definition of type ${source.defs.head.name}", None)
       case Some(pos) =>
-        val pathAsList = pathToList(Path.of(pos.srcCodeProviderName), pos.isStdLib)
+        val pathAsList = pathToPkgPrefix(Path.of(pos.srcCodeProviderName), pos.isStdLib)
         if (pathAsList.isEmpty) {
           warn("source file name is empty", Some(pos))
         } else source.pkgDeclOpt match {
@@ -379,6 +383,13 @@ final class IRcorneGenerator(
             }
         }
     }
+  }
+
+  private def pathToPkgPrefix(p: Path, isStdLib: Boolean): List[String] = {
+    val lsb = List.newBuilder[String]
+    p.iterator().forEachRemaining(pp => lsb.addOne(pp.toString))
+    val pathLs = lsb.result()
+    if isStdLib then StdLib.stdLibPackageName :: pathLs.reverse.takeWhile(_ != StdLib.stdLibPackageName).reverse else pathLs
   }
 
   private def generatePublicFieldsAccessors(
@@ -397,13 +408,13 @@ final class IRcorneGenerator(
         val accessorDescr = FunctionDescriptor(fieldId, 0)
         functionsMap.get(accessorDescr) match {
           case Some(funSig, funScope) =>
-            er.reportError(s"parameterless method ${funSig.functionName} conflicts with compiler-generated accessor of ${Visibility.Public} field $fieldId", funSig.declPosOpt)
+            er.reportError(s"parameterless method ${funSig.functionName} conflicts with compiler-generated accessor of ${FuncVisibility.Public} field $fieldId", funSig.declPosOpt)
           case None =>
             val syntheticFunSigScope = Scope.nestedInside(globalScope, fieldsOwner)
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, Visibility.Public, Overridability.Final, Purity.Pure, fieldsOwner.getPosition, isSyntheticAccessor = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, FuncVisibility.Public, Overridability.Final, Purity.Pure, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = IRcorne.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
@@ -439,7 +450,7 @@ final class IRcorneGenerator(
 
       val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
       val (thisVal, thisScope) = functionsProvider match {
-        case Asts.ObjectDef(_, functions, directSupertypes) =>
+        case Asts.ObjectDef(_, functions, directSupertypes, _) =>
           (funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id), globalScope)
         case _ =>
           (funSigScope.newParam(ThisId, functionsProvider.getPosition), funSigScope)

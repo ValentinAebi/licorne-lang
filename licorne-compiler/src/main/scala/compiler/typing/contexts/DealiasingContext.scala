@@ -15,7 +15,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
     case NamedType(typeName, typeArgsRaw, args) =>
       val typeArgsSubst = typeArgsRaw.map(dealiasType)
       typeAliases.get(typeName) match {
-        case Some(TypeAliasSignature(id, typeParams, params, rhs, sigScope, declPosOpt)) =>
+        case Some(TypeAliasSignature(id, typeParams, params, rhs, visibility, sigScope, declPosOpt)) =>
           val typesSubst =
             typeParams.map(_.tid)
               .zip(typeArgsSubst)

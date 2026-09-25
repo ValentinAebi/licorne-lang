@@ -18,7 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{sizeFunId, stringLTypeId, stringType}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -963,7 +963,7 @@ final class Typer(
   }
 
   def typeTypeAliasSig(typealiasSig: TypeAliasSignature): TypeAliasSignature = {
-    val TypeAliasSignature(id, typeParamsRaw, paramsRaw, rhsRaw, sigScope, declPosOpt) = typealiasSig
+    val TypeAliasSignature(id, typeParamsRaw, paramsRaw, rhsRaw, visibility, sigScope, declPosOpt) = typealiasSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -975,13 +975,18 @@ final class Typer(
       (paramId, (paramTypeInst, paramVal))
     }
     val rhsInst = instantiateType(rhsRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
+    dealiasingCtx.dealiasType(rhsInst).asRefinedType.flattenedRefinement.baseType match {
+      case NamedType(btid, _, _) if resolutionCtx.resolveTypeSig(btid).exists(!_.visibility.isAtLeastAsPermissiveAs(typealiasSig.visibility)) =>
+        er.reportError(s"type ${typealiasSig.sigName} is not allowed to alias $btid, as it expands its visibility", declPosOpt)
+      case _ => ()
+    }
     checkingAllTypeVarsResolved {
-      TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, sigScope, declPosOpt)
+      TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, visibility, sigScope, declPosOpt)
     }
   }
 
   def typeInterfaceSig(interfaceSig: InterfaceSignature): InterfaceSignature = {
-    val InterfaceSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, sigScope, declPosOpt) = interfaceSig
+    val InterfaceSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = interfaceSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -993,12 +998,12 @@ final class Typer(
     }
     val directSuperTypesInst = typeSupertypesAsInterfaces(interfaceSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      InterfaceSignature(id, typeParamsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+      InterfaceSignature(id, typeParamsInst, functionsInst, directSuperTypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
   def typeClassSig(classSig: ClassSignature): ClassSignature = {
-    val ClassSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, sigScope, declPosOpt) = classSig
+    val ClassSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = classSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -1011,24 +1016,24 @@ final class Typer(
     }
     val directSuperTypesInst = typeSupertypesAsInterfaces(classSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      ClassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+      ClassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSuperTypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
   def typeObjectSig(objSig: ObjectSignature): ObjectSignature = {
-    val ObjectSignature(id, functionsRaw, directSupertypesRaw, sigScope, declPosOpt) = objSig
+    val ObjectSignature(id, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = objSig
 
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, TypeParamsContext.empty)
     }
     val directSuperTypesInst = typeSupertypes(objSig, "interface", resolutionCtx, TypeParamsContext.empty)
     checkingAllTypeVarsResolved {
-      ObjectSignature(id, functionsInst, directSuperTypesInst, sigScope, declPosOpt)
+      ObjectSignature(id, functionsInst, directSuperTypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
   def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
-    val DatatypeSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, directSubtypes, sigScope, declPosOpt) = datatypeSig
+    val DatatypeSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, directSubtypes, visibility, sigScope, declPosOpt) = datatypeSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -1040,12 +1045,12 @@ final class Typer(
     }
     val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(datatypeSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      DatatypeSignature(id, typeParamsInst, functionsInst, directSupertypesInst, directSubtypes, sigScope, declPosOpt)
+      DatatypeSignature(id, typeParamsInst, functionsInst, directSupertypesInst, directSubtypes, visibility, sigScope, declPosOpt)
     }
   }
 
   def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
-    val RecordSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, sigScope, declPosOpt) = recordSig
+    val RecordSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = recordSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -1058,7 +1063,7 @@ final class Typer(
     }
     val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(recordSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      RecordSignature(id, typeParamsInst, fieldsInst, functionsInst, directSupertypesInst, sigScope, declPosOpt)
+      RecordSignature(id, typeParamsInst, fieldsInst, functionsInst, directSupertypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
@@ -1255,8 +1260,8 @@ final class Typer(
         val targetDesc = FunctionDescriptor(invkTarget.funId, typedCallArgs.size)
         resolutionCtx.resolveFunSig(typeName, targetDesc) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
-            if (funSig.visibility == Visibility.Private && !receiverIsThisPtr(scope, receiver)) {
-              er.reportError(s"illegal access to ${Visibility.Private} method ${funSig.functionName}", posOpt)
+            if (funSig.visibility == FuncVisibility.Private && !receiverIsThisPtr(scope, receiver)) {
+              er.reportError(s"illegal access to ${FuncVisibility.Private} method ${funSig.functionName}", posOpt)
             }
             val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
             val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
@@ -1462,8 +1467,16 @@ final class Typer(
       val superTInst = instantiateNamedType(superTRaw, Some(Covariant), sig.sigScope, sig.declPosOpt, subTIfInSuperTPos = Some(sig.id))(using typeParamsCtx)
       dealiasingCtx.dealiasType(superTInst) match {
         case superTDealiased: NamedType =>
-          if (resolutionCtx.resolveTypeSigAs[S](superTDealiased.typeName).isEmpty) {
-            er.reportError(s"$superTKindDescr not found: ${superTDealiased.typeName}", sig.declPosOpt)
+          resolutionCtx.resolveTypeSigAs[S](superTDealiased.typeName) match {
+            case Some(superTDealiasedSig) =>
+              val isSealedHierarchyEdge = superTDealiasedSig.isInstanceOf[DatatypeSignature]
+              if (isSealedHierarchyEdge && superTDealiasedSig.visibility != sig.visibility) {
+                er.reportError(s"visibility of ${sig.sigName} differs from the visibility of its supertype ${superTInst.typeName}, which is a datatype", sig.declPosOpt)
+              } else if (!isSealedHierarchyEdge && !superTDealiasedSig.visibility.isAtLeastAsPermissiveAs(sig.visibility)) {
+                er.reportError(s"type ${sig.sigName} is not allowed to be a subtype of ${superTDealiasedSig.sigName}, whose visibility is more restricted", sig.declPosOpt)
+              }
+            case None =>
+              er.reportError(s"$superTKindDescr not found: ${superTDealiased.typeName}", sig.declPosOpt)
           }
         case superTDealiased =>
           er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)

@@ -8,9 +8,9 @@ import compiler.parser.TreeParsers.*
 import compiler.pipeline.CompilationStep.Parsing
 import compiler.pipeline.CompilerStep
 import compiler.reporting.Errors.{Err, ErrorReporter}
-import compiler.lang.{Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, Types, Variance, Visibility}
+import compiler.lang.{FuncVisibility, Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, TypeVisibility, Types, Variance}
 import compiler.lang.Operator.*
-import compiler.lang.Keyword.{Import, *}
+import compiler.lang.Keyword.*
 import compiler.lang.Types.PrimitiveType
 
 import scala.compiletime.uninitialized
@@ -125,12 +125,16 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       FunctionsImportStat(TypeIdentifier(prefix, importedName), None)
   } setName "importStat"
 
-  private lazy val topLevelDef: P[TopLevelDef] = interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef
+  private lazy val topLevelDef: P[TopLevelDef] = typeVisibilityModifierOpt :::  (interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef) map {
+    case visibility ^: df =>
+      df.visibility = visibility
+      df
+  }
 
   private lazy val interfaceDef: P[InterfaceDef] = {
     kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
       case id ^: typeParams ^: supertypes ^: functions =>
-        InterfaceDef(id, typeParams, functions, supertypes)
+        InterfaceDef(id, typeParams, functions, supertypes, TypeVisibility.Public)
     }
   } setName "interfaceDef"
 
@@ -139,20 +143,20 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       ::: opt(openParenth ::: repeatWithSep(classParamTree, comma) ::: closeParenth)
       ::: supertypesListOpt ::: methodsListOpt map {
       case moduleName ^: typeParams ^: paramsOpt ^: supertypes ^: functions =>
-        ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes)
+        ClassDef(moduleName, typeParams, paramsOpt.getOrElse(Nil), functions, supertypes, TypeVisibility.Public)
     }
   } setName "classDef"
 
   private lazy val objectDef: P[ObjectDef] = {
     kw(Object).ignored ::: highName ::: supertypesListOpt ::: methodsListOpt map {
       case objectName ^: supertypes ^: functions =>
-        ObjectDef(objectName, functions, supertypes)
+        ObjectDef(objectName, functions, supertypes, TypeVisibility.Public)
     }
   } setName "objectDef"
 
   private lazy val datatypeDef = {
     kw(Datatype).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
-      case id ^: typeParams ^: supertypes ^: functions => DataTypeDef(id, typeParams, functions, supertypes)
+      case id ^: typeParams ^: supertypes ^: functions => DataTypeDef(id, typeParams, functions, supertypes, TypeVisibility.Public)
     }
   } setName "datatypeDef"
 
@@ -160,7 +164,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     kw(Record).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
       case name ^: typeParams ^: fieldsOpt ^: supertypes ^: functions =>
-        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes)
+        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes, TypeVisibility.Public)
     }
   } setName "recordDef"
 
@@ -168,9 +172,16 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth)
       ::: assig ::: typeTree map {
-      case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs)
+      case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs, TypeVisibility.Public)
     }
   } setName "typeAliasDef"
+
+  private lazy val typeVisibilityModifierOpt = {
+    opt(kw(Private).ignored ::: openParenth ::: repeatWithSep(lowName, dot) ::: closeParenth) map {
+      case Some(pkgParts) => TypeVisibility.Private(pkgParts)
+      case None => TypeVisibility.Public
+    }
+  } setName "typeVisibilityModifierOpt"
 
   private lazy val funDef = {
 
@@ -198,7 +209,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
           case _ => Overridability.Abstract
         }
         FunDef(funName, typeParams, params, optRetType, optPrecond, bodyOptDesugared,
-          visibility = if optModif.contains(Keyword.Private) then Visibility.Private else Visibility.Public,
+          visibility = if optModif.contains(Keyword.Private) then FuncVisibility.Private else FuncVisibility.Public,
           overridability,
           purity = if optPure.isDefined then Purity.Pure else Purity.PossiblyImpure
         )
@@ -412,7 +423,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         case None => afterSelectsFolding
       }
     }
-    
+
     atomicExpr ::: (typeArgsListOpt ::: parenthArgsList OR repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: parenthArgsList))) ::: opt(colon ::: typeTree) map {
       case atExpr ^: (selects: List[NormalFunOrVarId ^: Option[Option[List[TypeTree]] ^: List[Expr]]]) ^: typeAnnotOpt =>
         maybeWithTypeAnnot(typeAnnotOpt) {

@@ -252,8 +252,8 @@ final class Backend(
     val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
     val funDesc = mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis)
     var flags = funSig.visibility match {
-      case Visibility.Private => ClassFile.ACC_PRIVATE
-      case Visibility.Public => ClassFile.ACC_PUBLIC
+      case FuncVisibility.Private => ClassFile.ACC_PRIVATE
+      case FuncVisibility.Public => ClassFile.ACC_PUBLIC
     }
     if (funSig.overridability == Overridability.Abstract) {
       flags |= ClassFile.ACC_ABSTRACT

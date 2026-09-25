@@ -83,16 +83,16 @@ object Asts {
   final case class Block(stats: List[Statement]) extends Statement {
     override def children: List[Ast] = stats
   }
-  
+
   final case class PackageDecl(nameParts: List[String]) extends Ast {
     override def children: List[Ast] = Nil
   }
 
   sealed trait ImportStat extends Ast
-  
+
   final case class FunctionsImportStat(receiverObj: TypeIdentifier, funIdsWithAliasOpt: Option[List[(FunOrVarId, Option[FunOrVarId])]]) extends ImportStat {
     def isWildcardImport: Boolean = funIdsWithAliasOpt.isEmpty
-    
+
     override def children: List[Ast] = Nil
   }
 
@@ -104,6 +104,8 @@ object Asts {
     def name: String
 
     def typeParams: List[TypeParamWithVariance]
+
+    var visibility: TypeVisibility
   }
 
   sealed trait TypeDefTree extends TopLevelDef {
@@ -122,7 +124,8 @@ object Asts {
                                  name: String,
                                  typeParams: List[TypeParamWithVariance],
                                  functions: List[FunDef],
-                                 directSupertypes: List[NamedTypeTree]
+                                 directSupertypes: List[NamedTypeTree],
+                                 var visibility: TypeVisibility
                                ) extends EncapsulatedTypeDefTree {
     override def description: String = s"interface $name"
 
@@ -132,7 +135,8 @@ object Asts {
   final case class ObjectDef(
                               name: String,
                               functions: List[FunDef],
-                              directSupertypes: List[NamedTypeTree]
+                              directSupertypes: List[NamedTypeTree],
+                              var visibility: TypeVisibility
                             ) extends EncapsulatedTypeDefTree {
     override def description: String = s"object $name"
 
@@ -146,7 +150,8 @@ object Asts {
                              typeParams: List[TypeParamWithVariance],
                              params: List[ClassParam],
                              functions: List[FunDef],
-                             directSupertypes: List[NamedTypeTree]
+                             directSupertypes: List[NamedTypeTree],
+                             var visibility: TypeVisibility
                            ) extends EncapsulatedTypeDefTree {
     override def description: String = s"class $name"
 
@@ -157,7 +162,8 @@ object Asts {
                                 name: String,
                                 typeParams: List[TypeParamWithVariance],
                                 functions: List[FunDef],
-                                directSupertypes: List[NamedTypeTree]
+                                directSupertypes: List[NamedTypeTree],
+                                var visibility: TypeVisibility
                               ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"datatype $name"
 
@@ -169,7 +175,8 @@ object Asts {
                               typeParams: List[TypeParamWithVariance],
                               fields: List[RecordParam],
                               functions: List[FunDef],
-                              directSupertypes: List[NamedTypeTree]
+                              directSupertypes: List[NamedTypeTree],
+                              var visibility: TypeVisibility
                             ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"record $name"
 
@@ -183,14 +190,20 @@ object Asts {
                            optRetType: Option[TypeTree],
                            optPrecond: Option[Expr],
                            bodyOpt: Option[Block],
-                           visibility: Visibility,
+                           visibility: FuncVisibility,
                            overridability: Overridability,
                            purity: Purity
                          ) extends Ast {
     override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
   }
 
-  final case class TypeAliasDef(name: String, typeParams: List[TypeParamWithVariance], params: List[TypeAliasParam], rhs: TypeTree) extends TopLevelDef {
+  final case class TypeAliasDef(
+                                 name: String,
+                                 typeParams: List[TypeParamWithVariance],
+                                 params: List[TypeAliasParam],
+                                 rhs: TypeTree,
+                                 var visibility: TypeVisibility
+                               ) extends TopLevelDef {
     override def children: List[Ast] = typeParams ++ params :+ rhs
   }
 
@@ -239,7 +252,7 @@ object Asts {
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
   }
-  
+
   sealed trait TypeParam extends Ast
 
   final case class TypeParamWithoutVariance(name: String, upperBoundOpt: Option[TypeTree], lowerBoundOpt: Option[TypeTree]) extends TypeParam {
@@ -293,7 +306,7 @@ object Asts {
    * String literal
    */
   final case class StringLit(value: String) extends NonNumericLiteral
-  
+
   final case class NullRef() extends Expr {
     override def children: List[Ast] = List.empty
   }
@@ -477,7 +490,7 @@ object Asts {
   final case class Cast(expr: Expr, tpe: TypeTree) extends Expr {
     override def children: List[Ast] = List(expr, tpe)
   }
-  
+
   final case class HybridCast(expr: Expr) extends Expr {
     override def children: List[Ast] = List(expr)
   }
@@ -494,7 +507,7 @@ object Asts {
   }
 
   sealed trait TypeTree extends Ast
-  
+
   final case class RefinedTypeTree(baseTypeTree: TypeTree, predicateTree: Expr) extends TypeTree {
     override def children: List[Ast] = List(baseTypeTree, predicateTree)
   }
@@ -502,7 +515,7 @@ object Asts {
   final case class IntRangeTypeTree(lowerBoundOpt: Option[Expr], upperBoundOpt: Option[Expr], upperIncluded: Boolean) extends TypeTree {
     override def children: List[Ast] = lowerBoundOpt.toList ++ upperBoundOpt
   }
-  
+
   final case class NullableTypeTree(wrappedType: TypeTree) extends TypeTree {
     override def children: List[Ast] = List(wrappedType)
   }

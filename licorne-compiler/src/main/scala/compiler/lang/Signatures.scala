@@ -30,7 +30,7 @@ final case class FunctionSignature(
                                     precondOpt: Option[Formula],
                                     retType: Type,
                                     sigScope: Scope,
-                                    visibility: Visibility,
+                                    visibility: FuncVisibility,
                                     overridability: Overridability,
                                     purity: Purity,
                                     declPosOpt: Option[Position],
@@ -126,6 +126,8 @@ sealed trait TypeSignature extends DeclSignature {
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
   def directSupertypes: List[NamedType]
+  
+  def visibility: TypeVisibility
 
   def sigScope: Scope
 
@@ -158,6 +160,7 @@ final case class TypeAliasSignature(
                                      typeParams: List[TypeTypeParamInfo],
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type,
+                                     visibility: TypeVisibility,
                                      sigScope: Scope,
                                      declPosOpt: Option[Position]
                                    ) extends TypeSignature {
@@ -210,6 +213,7 @@ final case class InterfaceSignature(
                                      typeParams: List[TypeTypeParamInfo],
                                      functions: Map[FunctionDescriptor, FunctionSignature],
                                      directSupertypes: List[NamedType],
+                                     visibility: TypeVisibility,
                                      sigScope: Scope,
                                      declPosOpt: Option[Position]
                                    )
@@ -221,6 +225,7 @@ final case class ClassSignature(
                                  fields: SeqMap[FunOrVarId, Field],
                                  functions: Map[FunctionDescriptor, FunctionSignature],
                                  directSupertypes: List[NamedType],
+                                 visibility: TypeVisibility,
                                  sigScope: Scope,
                                  declPosOpt: Option[Position]
                                )
@@ -232,6 +237,7 @@ final case class ObjectSignature(
                                   id: TypeIdentifier,
                                   functions: Map[FunctionDescriptor, FunctionSignature],
                                   directSupertypes: List[NamedType],
+                                  visibility: TypeVisibility,
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
@@ -247,6 +253,7 @@ final case class DatatypeSignature(
                                     functions: Map[FunctionDescriptor, FunctionSignature],
                                     directSupertypes: List[NamedType],
                                     directSubtypes: SeqSet[TypeIdentifier],
+                                    visibility: TypeVisibility,
                                     sigScope: Scope,
                                     declPosOpt: Option[Position]
                                   )
@@ -260,6 +267,7 @@ final case class RecordSignature(
                                   fields: SeqMap[FunOrVarId, StableField],
                                   functions: Map[FunctionDescriptor, FunctionSignature],
                                   directSupertypes: List[NamedType],
+                                  visibility: TypeVisibility,
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
@@ -286,7 +294,7 @@ enum Field {
   override def toString: String = this match {
     case Field.ReassignableField(id, tpe) => s"${Keyword.Var} $id: $tpe"
     case Field.StableField(id, tpe, value, isPublished) =>
-      val maybePublic = if isPublished then s"${Visibility.Public} " else ""
+      val maybePublic = if isPublished then s"${FuncVisibility.Public} " else ""
       s"$maybePublic$value: $tpe"
   }
 }

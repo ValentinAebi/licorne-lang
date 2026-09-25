@@ -1,0 +1,8 @@
+package example.lib;
+
+private(example) interface I
+private(example.lib) interface J
+
+record Abc(i: Int)
+private(example) record Foo(i: Int) : J     //> E : type example.lib.Foo is not allowed to be a subtype of example.lib.J, whose visibility is more restricted
+private(example.lib) record Bar(i: Int) : J
