@@ -468,11 +468,24 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "recordOrModuleInstantiation"
 
   private lazy val fieldInitializer = recursive {
-    funOrVarId ::: opt(assig ::: expr) map {
-      case fieldName ^: Some(rhs) => FullFieldInitializer(fieldName, rhs)
-      case fieldName ^: None => ShorthandFieldInitializer(fieldName)
+    expr ::: opt(assig ::: expr) map {
+      case initExpr ^: None => ShorthandFieldInitializer(initExpr)
+      case VariableRef(fldId) ^: Some(initExpr) => FullFieldInitializer(fldId, initExpr)
+      case malformedLabelExpr ^: Some(initExpr) =>
+        errorReporter.reportError("malformed initializer", malformedLabelExpr.getPosition)(using Parsing)
+        ShorthandFieldInitializer(initExpr)
     }
   } setName "fieldInitializer"
+  
+  private lazy val fullFieldInitializer = recursive {
+    funOrVarId ::: assig ::: expr map {
+      case fieldName ^: rhs => FullFieldInitializer(fieldName, rhs)
+    }
+  } setName "fullFieldInitializer"
+  
+  private lazy val shorthandFieldInitializer = recursive {
+    expr map (ShorthandFieldInitializer(_))
+  } setName "shorthandFieldInitializer"
 
   private lazy val stat: P[Statement] = {
     exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR returnStat

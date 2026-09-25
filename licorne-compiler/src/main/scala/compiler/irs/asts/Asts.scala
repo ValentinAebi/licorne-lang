@@ -345,16 +345,14 @@ object Asts {
     override def children: List[Ast] = typeArgs ++ initializers
   }
 
-  sealed abstract class FieldInitializer extends Ast {
-    val fieldName: FunOrVarId
-  }
+  sealed abstract class FieldInitializer extends Ast
 
   final case class FullFieldInitializer(fieldName: FunOrVarId, rhs: Expr) extends FieldInitializer {
     override def children: List[Ast] = List(rhs)
   }
 
-  final case class ShorthandFieldInitializer(fieldName: FunOrVarId) extends FieldInitializer {
-    override def children: List[Ast] = Nil
+  final case class ShorthandFieldInitializer(expr: Expr) extends FieldInitializer {
+    override def children: List[Ast] = List(expr)
   }
 
   final case class UnaryOp(operator: Operator, operand: Expr) extends Expr {

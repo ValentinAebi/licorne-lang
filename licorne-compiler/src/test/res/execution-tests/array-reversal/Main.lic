@@ -14,10 +14,7 @@ object Main {
     }
 
     fn main() {
-        val a = new Array(size = 10);
-        for (var i = 0; i < 10; i += 1) {
-            a.set(i, 2*i + 1);
-        };
+        val a = new Array(size = 10, |2*it + 1|);
         reverse(a);
         for (var i = 0; i < a.size(); i += 1) {
             println(a.get(i));

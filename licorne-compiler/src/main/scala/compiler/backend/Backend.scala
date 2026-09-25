@@ -569,38 +569,56 @@ final class Backend(
           }
           cb.aastore()
         }
-        cb.invokeinterface(ClassDesc.of(StdLib.closureTypeId.stringId), closureFunName, MethodTypeDesc.of(CD_Object, CD_Object.arrayType()))
         val assignedKind = typeKindOf(assigned, currScope)
-        if (assignedKind == TypeKind.VOID) {
-          cb.pop()
-        } else if (assignedKind != TypeKind.REFERENCE) {
-          val unboxedDesc = typeDescOf(assigned, currScope)
-          val boxedDesc = boxDesc(unboxedDesc)
-          cb.checkcast(boxedDesc)
-          cb.invokevirtual(boxedDesc, unboxingFunc(boxedDesc), MethodTypeDesc.of(unboxedDesc))
-        } else {
-          cb.checkcast(typeDescOf(assigned, currScope))
-        }
+        val assignedUnboxedDesc = typeDescOf(assigned, currScope)
+        generateClosureCallWithOutUnboxIfNeeded(assignedKind, assignedUnboxedDesc, cb)
         genValueStore(assigned, currScope, cb)
 
 
-      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal))) =>
+      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal), (_, initClosureVal))) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
         val elemDesc = tConv.descriptorFor(elemType)
         genValueLoad(sizeVal, currScope, cb)
         cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
         genValueStore(assigned, currScope, cb)
+        val counterSlot = funGenCtx.allocateSlotOfSize(TypeKind.INT.slotSize())
+        cb.iconst_0()
+        cb.istore(counterSlot)
+        // LOOP CONDITION START
+        val initLoopStartLabel = cb.newBoundLabel()
+        val loopExitLabel = cb.newLabel()
+        cb.iload(counterSlot)
+        genValueLoad(sizeVal, currScope, cb)
+        cb.isub()
+        cb.ifge(loopExitLabel)
+        // LOOP BODY START
+        genValueLoad(assigned, currScope, cb)
+        cb.iload(counterSlot)
+        // invoke the initialization closure, it takes a single argument, wrapped in an array
+        genValueLoad(initClosureVal, currScope, cb)
+        cb.iconst_1()
+        cb.anewarray(CD_Integer)
+        cb.dup()
+        cb.iconst_0()
+        cb.iload(counterSlot)
+        cb.invokestatic(CD_Integer, "valueOf", MethodTypeDesc.of(CD_Integer, CD_int))
+        cb.aastore()
+        generateClosureCallWithOutUnboxIfNeeded(TypeKind.REFERENCE, boxDesc(tConv.descriptorFor(elemType)), cb)
+        cb.aastore()
+        cb.iinc(counterSlot, 1)
+        cb.goto_(initLoopStartLabel)
+        // LOOP END
+        cb.labelBinding(loopExitLabel)
+        cb.nop()
 
       case IRcorne.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val fieldsInitMap = fieldsInit.toMap
         val createdObjTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName).get
         val desc = tConv.descriptorFor(classOrRecordName)
         cb.new_(desc)
         cb.dup()
-        for (fld <- createdObjTypeSig.fields.values) {
-          val argVal = fieldsInitMap.apply(fld.id)
+        for ((fld, (_, argVal)) <- createdObjTypeSig.fields.values zip fieldsInit) {
           genValueLoad(argVal, currScope, cb)
           ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
         }
@@ -741,6 +759,19 @@ final class Backend(
         cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
         cb.athrow()
         throw TerminateScopeSignal
+    }
+  }
+
+  private def generateClosureCallWithOutUnboxIfNeeded(assignedKind: TypeKind, assignedUnboxedDesc: ClassDesc, cb: CodeBuilder) = {
+    cb.invokeinterface(ClassDesc.of(StdLib.closureTypeId.stringId), closureFunName, MethodTypeDesc.of(CD_Object, CD_Object.arrayType()))
+    if (assignedKind == TypeKind.VOID) {
+      cb.pop()
+    } else if (assignedKind != TypeKind.REFERENCE) {
+      val boxedDesc = boxDesc(assignedUnboxedDesc)
+      cb.checkcast(boxedDesc)
+      cb.invokevirtual(boxedDesc, unboxingFunc(boxedDesc), MethodTypeDesc.of(assignedUnboxedDesc))
+    } else {
+      cb.checkcast(assignedUnboxedDesc)
     }
   }
 

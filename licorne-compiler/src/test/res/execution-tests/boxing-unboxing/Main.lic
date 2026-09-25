@@ -4,10 +4,7 @@ import licorne.collections.SinglyLinkedLists.*;
 object Main {
 
     fn main() {
-        val array = new Array(size = 4);
-        for (var i = 0; i < array.size(); i += 1) {
-            array.set(i, 2*i + 1);
-        };
+        val array = new Array(4, |2*it + 1|);
         val ls = listFromArray(array);
         println(ls.get(2) - 1);
     }

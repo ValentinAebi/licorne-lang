@@ -1001,13 +1001,13 @@ final class IRcorneGenerator(
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
       case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeIdRaw, typeArgTrees, initializers) =>
-        val argsB = List.newBuilder[(FunOrVarId, IdValue)]
+        val argsB = List.newBuilder[(Option[FunOrVarId], IdValue)]
         for (initializer <- initializers) {
-          val initializerRhs = rhsOf(initializer)
+          val (labelOpt, initializerRhs, idValNameHint) = decomposeInitializer(initializer)
           // TODO maybe we can avoid using locals for constructor arguments
-          val rhsVal = currScope.newIntermediate(initializer.fieldName.stringId)
+          val rhsVal = currScope.newIntermediate(idValNameHint.getOrElse("init"))
           generateIRExpr(rhsVal, initializerRhs, currScope)
-          argsB.addOne(initializer.fieldName -> rhsVal)
+          argsB.addOne(labelOpt -> rhsVal)
         }
         val typeId = importsCtx.applyImports(typeIdRaw)
         val typeArgs = typeArgTrees.map(mkType(_, currScope))
@@ -1362,11 +1362,11 @@ final class IRcorneGenerator(
     val assignedVars = assigned.toSet -- defined
     assignedVars
   }
-
-  private def rhsOf(initializer: Asts.FieldInitializer): Asts.Expr = initializer match {
-    case Asts.FullFieldInitializer(fieldName, rhs) => rhs
-    case Asts.ShorthandFieldInitializer(fieldName) =>
-      Asts.VariableRef(fieldName).withDesugaringSource(initializer)
+  
+  private def decomposeInitializer(initializer: Asts.FieldInitializer): (labelOpt: Option[FunOrVarId], rhs: Asts.Expr, idValNameHint: Option[String]) = initializer match {
+    case Asts.FullFieldInitializer(fieldName, rhs) => (Some(fieldName), rhs, Some(fieldName.stringId))
+    case Asts.ShorthandFieldInitializer(expr@VariableRef(name)) => (None, expr, Some(name.stringId))
+    case Asts.ShorthandFieldInitializer(expr) => (None, expr, None)
   }
 
   extension (scope: Scope) private def saveInstr(instr: IRcorne.Instr, node: Asts.Ast): Unit = {

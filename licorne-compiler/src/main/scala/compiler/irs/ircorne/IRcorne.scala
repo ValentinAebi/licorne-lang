@@ -246,7 +246,7 @@ object IRcorne {
     override def consumedVals: List[IdValue] = callee :: args
   }
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(FunOrVarId, IdValue)]) extends AssigningInstr, NoChildren {
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(Option[FunOrVarId], IdValue)]) extends AssigningInstr, NoChildren {
     private var outType: Option[Type] = None
     
     def resolveOutType(tpe: Type): Unit = {

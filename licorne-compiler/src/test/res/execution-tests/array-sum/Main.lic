@@ -15,7 +15,7 @@ object Main {
     }
 
     private fn genArray(size: Cnt) -> Array[[0..]] {
-        val array = new Array(size);
+        val array = new Array(size, |0|);
         for (var i = 0; i < size; i += 1) {
             array.set(i, relu(foo(i)));
         };

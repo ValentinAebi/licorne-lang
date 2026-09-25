@@ -18,7 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{sizeFunId, stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{stringLTypeId, stringType}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -527,11 +527,20 @@ final class Typer(
     var errorFlag = false
     while (!errorFlag && expFieldsIter.hasNext && actFieldsIter.hasNext) {
       val (_, fld) = expFieldsIter.next()
-      val (initFldId, rhsVal) = actFieldsIter.next()
-      if (initFldId == fld.id) {
+      val (initFldIdOpt, rhsVal) = actFieldsIter.next()
+      if (initFldIdOpt.forall(_ == fld.id)) {
         val rhsValType = currScope.getCurrentTypeOf(rhsVal)
         val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
-        subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field $initFldId", currScope, instantiate.getPosition)
+        (expType.withTypeVarsExpanded, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
+          case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
+            absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType)).toMap, None) match {
+              case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
+                resultTV.resolve(absIntResult)
+              case _ => ()
+            }
+          case _ => ()
+        }
+        subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field ${fld.id}", currScope, instantiate.getPosition)
         fld match {
           case fld: StableField =>
             val fldResolTarget = FieldResolutionTarget(fld.id)
@@ -544,7 +553,7 @@ final class Typer(
           case _ => ()
         }
       } else {
-        er.reportError(s"expected initializer of field ${fld.id}, found label $initFldId", instantiate.getPosition)
+        er.reportError(s"expected initializer of field ${fld.id}, found label ${fld.id}", instantiate.getPosition)
         errorFlag = true
       }
     }

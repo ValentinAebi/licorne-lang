@@ -147,12 +147,9 @@ final class TypeCandidatesInferrer(
         tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
       } {
         val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
-        for {
-          (fldId, fldVal) <- fieldsInit
-          fld <- tSig.fields.get(fldId)
-        } {
+        for (((fldId, fld), (_, arg)) <- tSig.fields zip fieldsInit) {
           val expFldType = fld.tpe.substitute(subst, Map.empty)
-          typeCandidatesStore.offerCandidate(fldVal, expFldType)
+          typeCandidatesStore.offerCandidate(arg, expFldType)
         }
       }
     case mkClosure@MkClosure(assigned, params, body, declaredPure, closureTypeName) =>
