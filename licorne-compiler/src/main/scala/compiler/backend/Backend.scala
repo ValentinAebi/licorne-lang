@@ -194,14 +194,12 @@ final class Backend(
     val flags = if isPrivate then ClassFile.ACC_PRIVATE else ClassFile.ACC_PUBLIC
     cb.withMethod(INIT_NAME, constrDesc, flags, mb => mb.withCode(cb => {
       cb.aload(cb.receiverSlot())
-      cb.dup()
       cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
-      cb.astore(0)
       cb.localVariable(0, tSig.id.nonPrefixedId, tDesc, cb.startLabel(), cb.endLabel())
       var paramSlotIdx = 1
       for (fld <- tSig.fields.values) {
         cb.aload(0)
-        cb.aload(paramSlotIdx)
+        cb.loadLocal(tConv.kindFor(fld.tpe), paramSlotIdx)
         val fldId = fld.id.stringId
         val fldTypeDesc = tConv.descriptorFor(fld.tpe)
         cb.putfield(tDesc, fldId, fldTypeDesc)
