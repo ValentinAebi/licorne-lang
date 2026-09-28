@@ -162,7 +162,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val recordDef = {
     kw(Record).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
+      ::: opt(openParenth ::: repeatWithSep(recordParam, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
       case name ^: typeParams ^: fieldsOpt ^: supertypes ^: functions =>
         RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes, TypeVisibility.Public)
     }
@@ -170,7 +170,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val typeAliasDef: P[TypeAliasDef] = {
     kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParam, comma) ::: closeParenth)
+      ::: opt(openParenth ::: repeatWithSep(recordOrTypeAliasParamWithoutDefaultInit, comma) ::: closeParenth)
       ::: assig ::: typeTree map {
       case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs, TypeVisibility.Public)
     }
@@ -218,7 +218,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val funParamTree = funOrClassParamTree OR thisParam
 
-  private lazy val classParamTree = funOrClassParamTree OR publicParam
+  private lazy val classParamTree = (funOrClassParamTree OR publicParam) ::: opt(assig ::: expr) map {
+    case paramTree ^: defaultInitOpt => (paramTree, defaultInitOpt)
+  } setName "classParamTree"
 
   private lazy val funOrClassParamTree: P[FunctionParam & ClassParam] = recursive {
     opt(kw(Var)) ::: funOrVarId ::: colon ::: typeTree map {
@@ -239,11 +241,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     }
   } setName "publicParam"
 
-  private lazy val recordOrTypeAliasParam: P[RecordParam & TypeAliasParam] = recursive {
+  private lazy val recordOrTypeAliasParamWithoutDefaultInit: P[RecordParam & TypeAliasParam] = recursive {
     funOrVarId ::: colon ::: typeTree map {
       case name ^: tpe => SimpleParam(name, tpe)
     }
-  } setName "recordOrTypeAliasParam"
+  } setName "recordOrTypeAliasParamWithoutDefaultInit"
+  
+  private lazy val recordParam = recursive {
+    recordOrTypeAliasParamWithoutDefaultInit ::: opt(assig ::: expr) map {
+      case param ^: defaultInitOpt => (param, defaultInitOpt)
+    }
+  } setName "recordParam"
 
   private lazy val methodsListOpt = {
     opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {

@@ -148,14 +148,14 @@ object Asts {
   final case class ClassDef(
                              name: String,
                              typeParams: List[TypeParamWithVariance],
-                             params: List[ClassParam],
+                             params: List[(ClassParam, Option[Expr])],
                              functions: List[FunDef],
                              directSupertypes: List[NamedTypeTree],
                              var visibility: TypeVisibility
                            ) extends EncapsulatedTypeDefTree {
     override def description: String = s"class $name"
 
-    override def children: List[Ast] = typeParams ++ params ++ functions
+    override def children: List[Ast] = typeParams ++ params.flatMap((p, initOpt) => List(p) ++ initOpt) ++ functions
   }
 
   final case class DataTypeDef(
@@ -173,14 +173,14 @@ object Asts {
   final case class RecordDef(
                               name: String,
                               typeParams: List[TypeParamWithVariance],
-                              fields: List[RecordParam],
+                              fields: List[(RecordParam, Option[Expr])],
                               functions: List[FunDef],
                               directSupertypes: List[NamedTypeTree],
                               var visibility: TypeVisibility
                             ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"record $name"
 
-    override def children: List[Ast] = typeParams ++ fields ++ directSupertypes
+    override def children: List[Ast] = typeParams ++ fields.flatMap((p, initOpt) => List(p) ++ initOpt) ++ directSupertypes
   }
 
   final case class FunDef(

@@ -246,7 +246,7 @@ object IRcorne {
     override def consumedVals: List[IdValue] = callee :: args
   }
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], fieldsInit: List[(Option[FunOrVarId], IdValue)]) extends AssigningInstr, NoChildren {
+  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], var fieldsInit: List[(label: Option[FunOrVarId], rhs: IdValue, rhsEval: Iterable[RealInstr])]) extends AssigningInstr, NoChildren {
     private var outType: Option[Type] = None
     
     def resolveOutType(tpe: Type): Unit = {
@@ -255,7 +255,7 @@ object IRcorne {
     
     def getOutType: Type = outType.get
 
-    override def consumedVals: List[IdValue] = fieldsInit.map(_._2)
+    override def consumedVals: List[IdValue] = fieldsInit.map(_.rhs)
   }
 
   final case class MkClosure(assigned: IdValue, params: List[(NamedIdValue, Type)], body: Scope, var isPure: Boolean, closureTypeName: TypeIdentifier) extends AssigningInstr, ConsumesNoVal {

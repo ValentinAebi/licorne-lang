@@ -8,9 +8,15 @@ import scala.collection.mutable
 
 object FormulasCompilation {
 
-  def convertFormulaToIR(formula: Formula, currScope: Scope): (Iterable[IRcorne.RealInstr], IdValue) = {
+  /**
+   * **WARNING**: when calling this function, remember to add a consumer to resVal if it should not be dropped
+   */
+  def convertFormulaToIR(formula: Formula, currScope: Scope)(typeInstr: RealInstr => Unit): (instructions: Iterable[IRcorne.RealInstr], resVal: IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
     val resVal = compileFormula(formula)(using instructions, currScope)
+    for (instr <- instructions) {
+      typeInstr(instr)
+    }
     (instructions.toList, resVal)
   }
 

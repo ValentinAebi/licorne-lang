@@ -274,12 +274,14 @@ final case class RecordSignature(
   extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig
 
 enum Field {
-  case ReassignableField(id: FunOrVarId, tpe: Type)
-  case StableField(id: FunOrVarId, tpe: Type, value: ParamIdValue, isPublishedAsMethod: Boolean)
+  case ReassignableField(id: FunOrVarId, tpe: Type, defaultInitializerOpt: Option[Formula])
+  case StableField(id: FunOrVarId, tpe: Type, value: ParamIdValue, isPublishedAsMethod: Boolean, defaultInitializerOpt: Option[Formula])
 
   def id: FunOrVarId
 
   def tpe: Type
+  
+  def defaultInitializerOpt: Option[Formula]
 
   def isStable: Boolean = this match {
     case _: ReassignableField => false
@@ -287,13 +289,13 @@ enum Field {
   }
 
   def hasPublicSyntheticAccessor: Boolean = this match {
-    case Field.ReassignableField(id, tpe) => false
-    case Field.StableField(id, tpe, value, isPublishedAsMethod) => isPublishedAsMethod
+    case Field.ReassignableField(id, tpe, defaultInitializer) => false
+    case Field.StableField(id, tpe, value, isPublishedAsMethod, defaultInitializer) => isPublishedAsMethod
   }
 
   override def toString: String = this match {
-    case Field.ReassignableField(id, tpe) => s"${Keyword.Var} $id: $tpe"
-    case Field.StableField(id, tpe, value, isPublished) =>
+    case Field.ReassignableField(id, tpe, defaultInitializer) => s"${Keyword.Var} $id: $tpe"
+    case Field.StableField(id, tpe, value, isPublished, defaultInitializer) =>
       val maybePublic = if isPublished then s"${FuncVisibility.Public} " else ""
       s"$maybePublic$value: $tpe"
   }

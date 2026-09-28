@@ -1,0 +1,19 @@
+
+object Main {
+
+    fn main() {
+        // see the corresponding test in ExecutionTests for cases that work
+        new Foo(0, 1, 2);           //> E : unexpected unlabeled initializer
+        new Foo(0, b = 1, 2);       //> E : unexpected unlabeled initializer
+        new Foo(0, 1, b = 2);       //> E : unexpected initializer of label b
+        new Foo(0, b = 1, b = 2);   //> E : unexpected initializer of label b
+        new Bar(b = 0, 1, 2);       //> E : expected initializer of field a, found label b
+        new Bar(0, 1, 2, 3);        //> E : unexpected unlabeled initializer
+        new Baz(0, 1);              //> E : missing initializer for field c
+    }
+
+}
+
+record Foo(a: Int, b: [a..] = a + 1)
+record Bar(a: Int, b: Int = 2*a + 5, c: Int = 0)
+record Baz(a: Int, b: Int = 2*a + 5, c: Int)

@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.backend.FormulasCompilation
+import compiler.backend.FormulasCompilation.convertFormulaToIR
 import compiler.identifiers.*
 import compiler.irs.ircorne.*
 import compiler.irs.ircorne.Formulas.*
@@ -23,7 +23,7 @@ import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
-import compiler.util.{SeqSet, findUnique, mapVals}
+import compiler.util.{BidirectionalIterator, SeqSet, findUnique, mapVals}
 import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
@@ -384,7 +384,8 @@ final class Typer(
             irModif {
               instantiate.typeArgs = instantiatedTypeArgs
             }
-            val tpe = typeInstInitializers(instantiate, typeSig, currScope, typesSubst)
+            val (newFieldsInit, tpe) = typeInstInitializers(instantiate, typeSig, currScope, typesSubst, branchInfo)
+            instantiate.fieldsInit = newFieldsInit
             instantiate.resolveOutType(tpe)
             currScope.saveType(assigned, tpe)
           case None =>
@@ -444,10 +445,7 @@ final class Typer(
             // TODO maybe check if assertion provably succeeds / fails
             val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPred.substitute(itValue, inValue)).get)
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
-              val (irAssertion, resultVal) = FormulasCompilation.convertFormulaToIR(assertion, currScope)
-              for (instr <- irAssertion) {
-                typeInstr(instr, currScope, branchInfo)
-              }
+              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope)(typeInstr(_, currScope, branchInfo))
               var indexedSizeCallFlag = false
               assertion.traversePreOrder {
                 case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)) =>
@@ -515,19 +513,29 @@ final class Typer(
     }
   }
 
-  private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type])
-                                  (using TypeParamsContext): Type = {
+  private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type], branchInfo: BranchingInfo)
+                                  (using TypeParamsContext): (newFieldsInit: List[(Option[FunOrVarId], IdValue, Iterable[RealInstr])], newInstanceType: Type) = {
+    val newFieldsInitB = List.newBuilder[(Option[FunOrVarId], IdValue, Iterable[RealInstr])]
     val assigned = instantiate.assigned
     val newInstanceTypeBase = typeSig.toType(typesSubst)
     tryToResolveTypeVarsUsingCandidates(assigned, newInstanceTypeBase)
     val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
     val returnTypePredParts = mutable.ListBuffer.empty[Formula]
-    val expFieldsIter = typeSig.fields.iterator
-    val actFieldsIter = instantiate.fieldsInit.iterator
+    var remainingLabels = typeSig.fields.keySet
+
+    def generateDefaultInitializer(fieldId: FunOrVarId, defaultInitializer: Formula): Unit = {
+      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(defaultInitializer.substitute(fieldsInitArgsSubst), currScope)(typeInstr(_, currScope, branchInfo))
+      defaultInitResVal.users.addOne(instantiate)
+      newFieldsInitB.addOne(Some(fieldId), defaultInitResVal, defaultInitEvalInstr)
+      remainingLabels -= fieldId
+    }
+
+    val expFieldsIter = BidirectionalIterator(typeSig.fields.values)
+    val actFieldsIter = BidirectionalIterator(instantiate.fieldsInit)
     var errorFlag = false
-    while (!errorFlag && expFieldsIter.hasNext && actFieldsIter.hasNext) {
-      val (_, fld) = expFieldsIter.next()
-      val (initFldIdOpt, rhsVal) = actFieldsIter.next()
+    while (!errorFlag && expFieldsIter.canMoveForward && actFieldsIter.canMoveForward) {
+      val fld = expFieldsIter.moveForward()
+      val (initFldIdOpt, rhsVal, rhsEval) = actFieldsIter.moveForward()
       if (initFldIdOpt.forall(_ == fld.id)) {
         val rhsValType = currScope.getCurrentTypeOf(rhsVal)
         val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
@@ -552,17 +560,40 @@ final class Typer(
             fieldsInitArgsSubst.put(fld.value, rhsVal)
           case _ => ()
         }
-      } else {
-        er.reportError(s"expected initializer of field ${fld.id}, found label ${fld.id}", instantiate.getPosition)
-        errorFlag = true
+        newFieldsInitB.addOne(Some(fld.id), rhsVal, rhsEval)
+        remainingLabels -= fld.id
+      } else fld.defaultInitializerOpt match {
+        case Some(defaultInitializer) if initFldIdOpt.exists(remainingLabels.contains) =>
+          actFieldsIter.moveBackward()
+          generateDefaultInitializer(fld.id, defaultInitializer)
+        case _ =>
+          val foundDescr = initFldIdOpt match {
+            case Some(initFieldId) => s"label $initFieldId"
+            case None => SourceLevelFormulaPrinter.prettyprint(rhsVal)
+          }
+          er.reportError(s"expected initializer of field ${fld.id}, found $foundDescr", instantiate.getPosition)
+          errorFlag = true
       }
     }
-    if (!errorFlag && expFieldsIter.hasNext) {
-      er.reportError(s"missing initializer for field ${expFieldsIter.next()._1}", instantiate.getPosition)
+    if (!errorFlag) {
+      var continuePadding = true
+      while (continuePadding && expFieldsIter.canMoveForward) {
+        val fld = expFieldsIter.moveForward()
+        fld.defaultInitializerOpt match {
+          case Some(initializer) =>
+            generateDefaultInitializer(fld.id, initializer)
+          case None =>
+            expFieldsIter.moveBackward()
+            continuePadding = false
+        }
+      }
+    }
+    if (!errorFlag && expFieldsIter.canMoveForward) {
+      er.reportError(s"missing initializer for field ${expFieldsIter.moveForward().id}", instantiate.getPosition)
       errorFlag = true
     }
-    if (!errorFlag && actFieldsIter.hasNext) {
-      er.reportError(s"unexpected initializer for field ${actFieldsIter.next()._1}", instantiate.getPosition)
+    if (!errorFlag && actFieldsIter.canMoveForward) {
+      er.reportError(s"unexpected ${actFieldsIter.moveForward().label.map(l => s"initializer of label $l").getOrElse("unlabeled initializer")}", instantiate.getPosition)
       errorFlag = true
     }
     val newInstanceType =
@@ -572,7 +603,7 @@ final class Typer(
         val pred = proxyStore.developNearest(rawPred).getOrElse(rawPred)
         RefinedType(newInstanceTypeBase, pred)
       }
-    newInstanceType
+    (newFieldsInitB.result(), newInstanceType)
   }
 
   private def tryToApplyCandidates(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
@@ -894,23 +925,35 @@ final class Typer(
   }
 
   def typeField(field: Field, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Field = {
+    given TypeParamsContext = typeParamsCtx
+
     val sigScope = owner.sigScope
     field match {
-      case ReassignableField(id, typeRaw) =>
-        val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)(using typeParamsCtx)
-        val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
-        ReassignableField(id, typeInst)
+      case ReassignableField(id, typeRaw, defaultInitializerOpt) =>
+        val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)
+        defaultInitializerOpt.foreach(typeDefaultInitializer(id, typeInst, _, sigScope, posOpt))
+        ReassignableField(id, typeInst, defaultInitializerOpt)
       case field: StableField => typeStableField(field, owner, typeParamsCtx, posOpt)
     }
   }
 
   def typeStableField(field: StableField, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): StableField = {
+    given TypeParamsContext = typeParamsCtx
+
     val sigScope = owner.sigScope
-    val StableField(id, typeRaw, value, isPublishedAsMethod) = field
-    val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)(using typeParamsCtx)
-    sigScope.saveType(value, typeInst)(using typeParamsCtx)
-    val thisVal = sigScope.getLocalValuesContextUnsafe.getThisValue.get
-    StableField(id, typeInst, value, isPublishedAsMethod)
+    val StableField(id, typeRaw, value, isPublishedAsMethod, defaultInitializerOpt) = field
+    val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)
+    sigScope.saveType(value, typeInst)
+    defaultInitializerOpt.foreach(typeDefaultInitializer(id, typeInst, _, sigScope, posOpt))
+    StableField(id, typeInst, value, isPublishedAsMethod, defaultInitializerOpt)
+  }
+
+  private def typeDefaultInitializer(fieldId: FunOrVarId, fieldType: Type, init: Formula, sigScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
+    val defaultInitType = typeFormula(init, sigScope, posOpt)
+    subtypingCtx.enforceIsSubtype(init, defaultInitType, fieldType, s"type $defaultInitType of default initializer of field $fieldId does not conform to field type $fieldType", sigScope, posOpt)
+    if (!init.isPure) {
+      er.reportError(s"I cannot prove that the default initializer of field $fieldId is pure", posOpt)
+    }
   }
 
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, currScope: Scope, posOpt: Option[Position])

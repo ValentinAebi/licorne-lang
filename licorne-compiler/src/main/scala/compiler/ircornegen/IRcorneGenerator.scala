@@ -5,7 +5,7 @@ import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, InvocationTarget, IRcorne}
+import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, IRcorne, InvocationTarget}
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
@@ -115,24 +115,24 @@ final class IRcorneGenerator(
 
             val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
 
-            def saveNonReassigParam(param: Asts.SimpleParam | Asts.PublicParam): Unit = {
+            def saveNonReassigParam(param: Asts.SimpleParam | Asts.PublicParam, initOpt: Option[Expr]): Unit = {
               val isPublishedAsMethod = param.isInstanceOf[Asts.PublicParam]
               val paramId = param.paramId
               val paramTypeTree = param.paramTypeTree
               val fieldValue = classSigScope.newParam(paramId, param.getPosition)
               val paramType = mkType(paramTypeTree, classSigScope)(using Map.empty)
               mustNotBeUnit(paramType, param.getPosition)
-              fields(paramId) = StableField(paramId, paramType, fieldValue, isPublishedAsMethod)
+              fields(paramId) = StableField(paramId, paramType, fieldValue, isPublishedAsMethod, initOpt.flatMap(generateFormula(_, classSigScope)(using Map.empty)))
               classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, classSigScope, ReassigPermission.Val, Some(paramType))
             }
 
             params.foreach {
-              case param@Asts.VarParam(paramId, paramTypeTree) =>
+              case (param@Asts.VarParam(paramId, paramTypeTree), initOpt) =>
                 val paramType = mkType(paramTypeTree, classSigScope)(using Map.empty)
                 mustNotBeUnit(paramType, param.getPosition)
-                fields(paramId) = ReassignableField(paramId, paramType)
-              case param: (Asts.SimpleParam | Asts.PublicParam) =>
-                saveNonReassigParam(param)
+                fields(paramId) = ReassignableField(paramId, paramType, initOpt.flatMap(generateFormula(_, classSigScope)(using Map.empty)))
+              case (param: (Asts.SimpleParam | Asts.PublicParam), initOpt) =>
+                saveNonReassigParam(param, initOpt)
             }
             val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), visibility, classSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
@@ -164,11 +164,11 @@ final class IRcorneGenerator(
 
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             fields.foreach {
-              case param@Asts.SimpleParam(paramId, paramTypeTree) =>
+              case (param@Asts.SimpleParam(paramId, paramTypeTree), initOpt) =>
                 val fieldValue = recordSigScope.newParam(paramId, param.getPosition)
                 val fieldType = mkType(paramTypeTree, recordSigScope)(using Map.empty)
                 mustNotBeUnit(fieldType, param.getPosition)
-                stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = true)
+                stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = true, initOpt.flatMap(generateFormula(_, recordSigScope)(using Map.empty)))
                 recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, recordSigScope, ReassigPermission.Val, Some(fieldType))
             }
             val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty,
@@ -404,7 +404,7 @@ final class IRcorneGenerator(
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)]
     val accessorsSubst = mutable.Map.empty[IdValue, IdValue => FunCall]
     fields.foreach {
-      case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod)) if isPublishedAsMethod =>
+      case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod, defaultInitializerOpt)) if isPublishedAsMethod =>
         val accessorDescr = FunctionDescriptor(fieldId, 0)
         functionsMap.get(accessorDescr) match {
           case Some(funSig, funScope) =>
@@ -1001,13 +1001,13 @@ final class IRcorneGenerator(
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
       case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeIdRaw, typeArgTrees, initializers) =>
-        val argsB = List.newBuilder[(Option[FunOrVarId], IdValue)]
+        val argsB = List.newBuilder[(Option[FunOrVarId], IdValue, List[RealInstr])]
         for (initializer <- initializers) {
           val (labelOpt, initializerRhs, idValNameHint) = decomposeInitializer(initializer)
           // TODO maybe we can avoid using locals for constructor arguments
           val rhsVal = currScope.newIntermediate(idValNameHint.getOrElse("init"))
           generateIRExpr(rhsVal, initializerRhs, currScope)
-          argsB.addOne(labelOpt -> rhsVal)
+          argsB.addOne(labelOpt, rhsVal, List.empty)
         }
         val typeId = importsCtx.applyImports(typeIdRaw)
         val typeArgs = typeArgTrees.map(mkType(_, currScope))

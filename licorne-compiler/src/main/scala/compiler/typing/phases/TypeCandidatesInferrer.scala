@@ -2,7 +2,7 @@ package compiler.typing.phases
 
 import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.{Formula, IdValue}
-import compiler.irs.ircorne.IRcorne
+import compiler.irs.ircorne.{Formulas, IRcorne}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.lang.Types.*
 import compiler.lang.{ExecutionEnvironment, FunctionDescriptor, RuntimeTypeSignature, TypeParamInfo, UserInstantiableTypeSig}
@@ -147,7 +147,7 @@ final class TypeCandidatesInferrer(
         tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
       } {
         val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
-        for (((fldId, fld), (_, arg)) <- tSig.fields zip fieldsInit) {
+        for (((fldId, fld), (_, arg, _)) <- tSig.fields zip fieldsInit) {
           val expFldType = fld.tpe.substitute(subst, Map.empty)
           typeCandidatesStore.offerCandidate(arg, expFldType)
         }

@@ -191,6 +191,12 @@ final class IRcornePrinter(
     }
   }
 
+  private def instrToString(instr: Instr, scope: Scope): String = {
+    val pps = PrettyPrintString(indentUnit)
+    printInstr(instr, scope)(using pps)
+    pps.built
+  }
+
   private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
     instr match {
       case IRcorne.Loop(cond, condVal, body, variables) =>
@@ -264,7 +270,9 @@ final class IRcornePrinter(
       case InvokeClosure(assigned, callee, _, args) =>
         pps.add(s"INVK-CLOSURE ${maybeTyped(assigned, scope)} := $callee" ++ args.mkString("(", ",", ")"))
       case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
-        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName" ++ fieldsInit.map((fldId, rhsVal) => s"$fldId := $rhsVal").mkString("(", ", ", ")"))
+        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName" ++ fieldsInit.map(
+          (fldIdOpt, rhsVal, rhsEval) => s"${fldIdOpt.getOrElse("??")} := ${if rhsEval.isEmpty then rhsVal else rhsEval.map(instrToString(_, scope)).mkString("{", ";", "}") + rhsVal}").mkString("(", ", ", ")")
+        )
         printTypeArgsList(typeArgs)
       case MkClosure(assigned, params, body, declaredPure, closureTypeName) =>
         val purityDescr = if declaredPure then " (pure)" else ""

@@ -579,10 +579,13 @@ final class Backend(
         genValueStore(assigned, currScope, cb)
 
 
-      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal), (_, initClosureVal))) =>
+      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal, sizeEval), (_, initClosureVal, initClosureEval))) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
         val elemDesc = tConv.descriptorFor(elemType)
+        for (instr <- sizeEval ++ initClosureEval) {
+          generateInstr(instr, cb, currScope)
+        }
         genValueLoad(sizeVal, currScope, cb)
         cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
         genValueStore(assigned, currScope, cb)
@@ -622,7 +625,10 @@ final class Backend(
         val desc = tConv.descriptorFor(classOrRecordName)
         cb.new_(desc)
         cb.dup()
-        for ((fld, (_, argVal)) <- createdObjTypeSig.fields.values zip fieldsInit) {
+        for ((fld, (_, argVal, argEval)) <- createdObjTypeSig.fields.values zip fieldsInit) {
+          for (instr <- argEval) {
+            generateInstr(instr, cb, currScope)
+          }
           genValueLoad(argVal, currScope, cb)
           ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
         }

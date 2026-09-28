@@ -1,0 +1,25 @@
+
+object Main {
+
+    fn main() {
+        println(new Foo(27, 38));
+        println(new Foo(59));
+        println(new Bar(21, 11, 27));
+        println(new Bar(32, b = 28, 11));
+        println(new Bar(88, c = 14));
+        println(new Bar(a = 101, 25, c = -1));
+    }
+
+}
+
+record Foo(a: Int, b: [a..] = a + 1) {
+    fn toString() -> String {
+        return "(" ++ str(a) ++ "," ++ str(b) ++ ")"
+    }
+}
+
+record Bar(a: Int, b: Int = 2*a + 5, c: Int = 0) {
+    fn toString() -> String {
+        return "(" ++ str(a) ++ "," ++ str(b) ++ "," ++ str(c) ++ ")"
+    }
+}
