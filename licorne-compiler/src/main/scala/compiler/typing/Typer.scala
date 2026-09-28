@@ -445,7 +445,7 @@ final class Typer(
             // TODO maybe check if assertion provably succeeds / fails
             val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPred.substitute(itValue, inValue)).get)
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
-              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope)(typeInstr(_, currScope, branchInfo))
+              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
               var indexedSizeCallFlag = false
               assertion.traversePreOrder {
                 case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)) =>
@@ -523,16 +523,33 @@ final class Typer(
     val returnTypePredParts = mutable.ListBuffer.empty[Formula]
     var remainingLabels = typeSig.fields.keySet
 
-    def generateDefaultInitializer(fieldId: FunOrVarId, defaultInitializer: Formula): Unit = {
-      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(defaultInitializer.substitute(fieldsInitArgsSubst), currScope)(typeInstr(_, currScope, branchInfo))
+    def saveFldValInTypeIfStable(fld: Field, rhsValRaw: IdValue, substitutedType: Type): Unit = {
+      val rhsValExpanded = simplifier.simplifyInt(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
+      fld match {
+        case fld: Field.StableField =>
+          val fldResolTarget = FieldResolutionTarget(fld.id)
+          fldResolTarget.resolve(typeSig, substitutedType)
+          val itSelect = Select(itValue, fldResolTarget)
+          returnTypePredParts.addOne(Equality(itSelect, rhsValExpanded))
+          val assignedSelect = Select(assigned, fldResolTarget)
+          solver.assertEq(assignedSelect, rhsValExpanded, SimplifiedType.from(substitutedType))
+          fieldsInitArgsSubst.put(fld.value, rhsValExpanded)
+        case _ => ()
+      }
+    }
+
+    def generateDefaultInitializer(fld: Field): Unit = {
+      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(fld.defaultInitializerOpt.get.substitute(fieldsInitArgsSubst), currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
       defaultInitResVal.users.addOne(instantiate)
-      newFieldsInitB.addOne(Some(fieldId), defaultInitResVal, defaultInitEvalInstr)
-      remainingLabels -= fieldId
+      newFieldsInitB.addOne(Some(fld.id), defaultInitResVal, defaultInitEvalInstr)
+      remainingLabels -= fld.id
+      saveFldValInTypeIfStable(fld, defaultInitResVal, fld.tpe.substitute(typesSubst, fieldsInitArgsSubst))
     }
 
     val expFieldsIter = BidirectionalIterator(typeSig.fields.values)
     val actFieldsIter = BidirectionalIterator(instantiate.fieldsInit)
     var errorFlag = false
+
     while (!errorFlag && expFieldsIter.canMoveForward && actFieldsIter.canMoveForward) {
       val fld = expFieldsIter.moveForward()
       val (initFldIdOpt, rhsVal, rhsEval) = actFieldsIter.moveForward()
@@ -549,23 +566,13 @@ final class Typer(
           case _ => ()
         }
         subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field ${fld.id}", currScope, instantiate.getPosition)
-        fld match {
-          case fld: StableField =>
-            val fldResolTarget = FieldResolutionTarget(fld.id)
-            fldResolTarget.resolve(typeSig, expType)
-            val itSelect = Select(itValue, fldResolTarget)
-            returnTypePredParts.addOne(Equality(itSelect, rhsVal))
-            val assignedSelect = Select(assigned, fldResolTarget)
-            solver.assertEq(assignedSelect, rhsVal, SimplifiedType.from(rhsValType))
-            fieldsInitArgsSubst.put(fld.value, rhsVal)
-          case _ => ()
-        }
+        saveFldValInTypeIfStable(fld, rhsVal, expType)
         newFieldsInitB.addOne(Some(fld.id), rhsVal, rhsEval)
         remainingLabels -= fld.id
       } else fld.defaultInitializerOpt match {
         case Some(defaultInitializer) if initFldIdOpt.exists(remainingLabels.contains) =>
           actFieldsIter.moveBackward()
-          generateDefaultInitializer(fld.id, defaultInitializer)
+          generateDefaultInitializer(fld)
         case _ =>
           val foundDescr = initFldIdOpt match {
             case Some(initFieldId) => s"label $initFieldId"
@@ -581,7 +588,7 @@ final class Typer(
         val fld = expFieldsIter.moveForward()
         fld.defaultInitializerOpt match {
           case Some(initializer) =>
-            generateDefaultInitializer(fld.id, initializer)
+            generateDefaultInitializer(fld)
           case None =>
             expFieldsIter.moveBackward()
             continuePadding = false

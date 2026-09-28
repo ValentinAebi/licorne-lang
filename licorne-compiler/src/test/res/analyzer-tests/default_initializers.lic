@@ -10,6 +10,9 @@ object Main {
         new Bar(b = 0, 1, 2);       //> E : expected initializer of field a, found label b
         new Bar(0, 1, 2, 3);        //> E : unexpected unlabeled initializer
         new Baz(0, 1);              //> E : missing initializer for field c
+
+        val f = new Foo(1);
+        f : Nothing;                //> E : type ascription: expected Nothing, found f : Foo with it.a == 1 && it.b == 2
     }
 
 }

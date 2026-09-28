@@ -3,6 +3,7 @@ package compiler.backend
 import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne}
+import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 
@@ -11,12 +12,13 @@ object FormulasCompilation {
   /**
    * **WARNING**: when calling this function, remember to add a consumer to resVal if it should not be dropped
    */
-  def convertFormulaToIR(formula: Formula, currScope: Scope)(typeInstr: RealInstr => Unit): (instructions: Iterable[IRcorne.RealInstr], resVal: IdValue) = {
+  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)(typeInstr: RealInstr => Unit): (instructions: Iterable[IRcorne.RealInstr], resVal: IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
     val resVal = compileFormula(formula)(using instructions, currScope)
     for (instr <- instructions) {
       typeInstr(instr)
     }
+    proxyStore.saveProxy(resVal, formula)
     (instructions.toList, resVal)
   }
 
