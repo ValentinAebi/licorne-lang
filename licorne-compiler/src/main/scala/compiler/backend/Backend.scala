@@ -3,13 +3,14 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.TypeIdentifier
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
+import compiler.lang.TypeVisibility.Private
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType}
 import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
@@ -98,7 +99,12 @@ final class Backend(
       ClassDesc.of(tid.stringId),
       cb => {
         val (majorVersion, minorVersion) = javaVersionCode
-        var flags = ClassFile.ACC_PUBLIC
+        var flags = 0
+        tSig.visibility match {
+          case Private(pkgPrefix) if pkgPrefix == tSig.id.prefixes => ()
+          case _ =>
+            flags |= ClassFile.ACC_PUBLIC
+        }
         if (tSig.isInstanceOf[AbstractTypeSig]) {
           flags |= ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
         } else {
