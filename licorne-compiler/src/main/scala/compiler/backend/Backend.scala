@@ -444,9 +444,15 @@ final class Backend(
       case IRcorne.Rem(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
 
       case IRcorne.LogicNeg(assigned, operand) =>
-        cb.iconst_m1()
         genValueLoad(operand, currScope, cb)
-        cb.ixor()
+        val pushTrueLabel = cb.newLabel()
+        val endLabel = cb.newLabel()
+        cb.ifeq(pushTrueLabel)
+        cb.iconst_0()
+        cb.goto_(endLabel)
+        cb.labelBinding(pushTrueLabel)
+        cb.iconst_1()
+        cb.labelBinding(endLabel)
         genValueStore(assigned, currScope, cb)
 
       case And(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iand(), _ => assert(false))

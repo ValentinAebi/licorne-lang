@@ -1,0 +1,19 @@
+
+object Main {
+
+    fn main() {
+        println(gcd(15, 45));   // 15
+        println(gcd(21, 34));   // 1
+        println(gcd(21, 77));   // 7
+    }
+
+    private fn gcd(var a: [0..], var b: [0..]) -> [0..] {
+        while b != 0 {
+            val oldB = b;
+            b = a % b;
+            a = oldB;
+        };
+        return a;
+    }
+
+}
