@@ -749,12 +749,8 @@ final class Typer(
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
         && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope)
     if (mayBeDivByZero) {
-      val rhsDescr =
-        proxyStore.developNearest(rhs).orElse(Some(rhs)) match {
-          case Some(f) => s" $f"
-          case None => ""
-        }
-      er.reportError(s"I cannot prove that right-hand side$rhsDescr of operator '$op' cannot be zero", posOpt)
+      val rhsDescr = proxyStore.developNearest(rhs).getOrElse(rhs).toString
+      er.reportError(s"I cannot prove that right-hand side $rhsDescr of operator '$op' cannot be zero", posOpt)
     }
     absIntFunc(forceRange(lhsType.withTypeVarsExpanded), forceRange(rhsType.withTypeVarsExpanded)) match {
       case Some(tpe) => tpe
