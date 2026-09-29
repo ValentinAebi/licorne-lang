@@ -750,7 +750,7 @@ final class Typer(
         && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope)
     if (mayBeDivByZero) {
       val rhsDescr =
-        proxyStore.developDeep(rhs).orElse(Some(rhs)) match {
+        proxyStore.developNearest(rhs).orElse(Some(rhs)) match {
           case Some(f) => s" $f"
           case None => ""
         }
