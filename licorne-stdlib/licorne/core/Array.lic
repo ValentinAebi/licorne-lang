@@ -15,3 +15,16 @@ class Array[T](public size: Cnt, initializer: fn (Idx(this)) -> T) : Indexed {
     }
 
 }
+
+object Arrays {
+
+    fn copy[T](src: Array[T]) -> ArrayL[T](src.size()) =
+        new Array(src.size(), |src.get(it)|)
+
+    fn copy[T](src: Array[T], dst: Array[T] where dst.size() >= src.size()) {
+        for (var i = 0; i < src.size(); i += 1) {
+            dst.set(i, src.get(i));
+        }
+    }
+
+}

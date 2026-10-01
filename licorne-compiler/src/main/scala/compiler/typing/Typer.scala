@@ -540,14 +540,16 @@ final class Typer(
     val expFieldsIter = BidirectionalIterator(typeSig.constructorParams.values)
     val actFieldsIter = BidirectionalIterator(instantiate.fieldsInit)
     var errorFlag = false
-
+    val typeSigThisVal = typeSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
     while (!errorFlag && expFieldsIter.canMoveForward && actFieldsIter.canMoveForward) {
       val fld = expFieldsIter.moveForward()
       val (initFldIdOpt, rhsVal, rhsEval) = actFieldsIter.moveForward()
       if (initFldIdOpt.forall(_ == fld.id)) {
         val rhsValType = currScope.getCurrentTypeOf(rhsVal)
-        val expType = fld.tpe.substitute(typesSubst, fieldsInitArgsSubst)
-        (expType.withTypeVarsExpanded, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
+        val expType = dealiasingCtx.dealiasType(fld.tpe.withTypeVarsExpanded).withTypeVarsExpanded
+          .withDependenciesTransformed(_.convertThisDotFieldToFieldVal(typeSig))
+          .substitute(typesSubst, fieldsInitArgsSubst)
+        (expType, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
           case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
             absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType)).toMap, None) match {
               case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>

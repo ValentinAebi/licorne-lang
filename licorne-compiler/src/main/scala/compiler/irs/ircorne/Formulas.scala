@@ -17,11 +17,11 @@ object Formulas {
 
   sealed trait Formula {
     def isAtomic = false
-    
+
     def children: List[Formula]
 
     final override def toString: String = SourceLevelFormulaPrinter.prettyprint(this)
-    
+
     def traversePreOrder(action: Formula => Unit): Unit = {
       action(this)
       for (child <- children) {
@@ -29,7 +29,7 @@ object Formulas {
       }
     }
   }
-  
+
   sealed trait AtomicValue extends Formula
 
   sealed abstract class IdValue extends AtomicValue {
@@ -55,7 +55,7 @@ object Formulas {
 
   sealed trait Binop(val op: Operator) {
     formula: Formula =>
-    
+
     def lhs: Formula
 
     def rhs: Formula
@@ -65,7 +65,7 @@ object Formulas {
 
   final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p"), LocalIdValue {
     override def name: String = id.stringId
-    
+
   }
 
   final case class ValIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("s"), LocalIdValue {
@@ -84,7 +84,7 @@ object Formulas {
         annotTypeOpt = annotOpt
       }
     }
-    
+
     def getAnnotTypeOpt: Option[Type] = annotTypeOpt
 
     override def name: String = id.stringId
@@ -190,7 +190,7 @@ object Formulas {
   final case class Phi(terms: SeqSet[Formula]) extends Formula {
     override def children: List[Formula] = terms.toList
   }
-  
+
   final case class WrappedScope(resVal: IdValue, scope: Scope) extends Formula {
     override def children: List[Formula] = List.empty
   }
@@ -388,6 +388,40 @@ object Formulas {
     case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoSelectOn(owner), tpe)
     case Phi(terms) => Phi(terms.map(_.transformParamValsIntoSelectOn(owner)))
     case _: WrappedScope => throw UnsupportedOperationException(s"transformParamValsIntoSelectOn on a ${classOf[WrappedScope].getSimpleName}")
+  }
+
+  extension (formula: Formula) def convertThisDotFieldToFieldVal(tSig: RuntimeTypeSignature): Formula = formula match {
+    case value: AtomicValue => value
+    case Select(owner, field) =>
+      val convertedOwner = owner.convertThisDotFieldToFieldVal(tSig)
+      if field.isResolved && convertedOwner == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
+      then field.getFieldUnsafe.value
+      else Select(convertedOwner, field)
+    case FunCall(receiver, func, typeArgs, args) =>
+      val convertedReceiver = receiver.convertThisDotFieldToFieldVal(tSig)
+      Option.when(func.isResolved && convertedReceiver == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get) {
+        tSig.fields.get(func.funId).map(_.value)
+      }.flatten.getOrElse {
+        FunCall(convertedReceiver, func, typeArgs.map(_.withDependenciesTransformed(_.convertThisDotFieldToFieldVal(tSig))), args.map(_.convertThisDotFieldToFieldVal(tSig)))
+      }
+    case ClosureCall(callee, closureTypingTarget, args) =>
+      ClosureCall(callee.convertThisDotFieldToFieldVal(tSig), closureTypingTarget, args.map(_.convertThisDotFieldToFieldVal(tSig)))
+    case PureClosureValue(params, body, closureVal) =>
+      PureClosureValue(params, body.convertThisDotFieldToFieldVal(tSig), closureVal)
+    case Plus(lhs, rhs) => Plus(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case Neg(operand) => Neg(operand.convertThisDotFieldToFieldVal(tSig))
+    case Times(lhs, rhs) => Times(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case DivBy(lhs, rhs) => DivBy(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case Modulo(lhs, rhs) => Modulo(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case LogicalNot(operand) => LogicalNot(operand.convertThisDotFieldToFieldVal(tSig))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case Equality(lhs, rhs) => Equality(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case LessThan(lhs, rhs) => LessThan(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.convertThisDotFieldToFieldVal(tSig), tpe)
+    case Phi(terms) => Phi(terms.map(_.convertThisDotFieldToFieldVal(tSig)))
+    case wrap@WrappedScope(resVal, scope) => wrap
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
