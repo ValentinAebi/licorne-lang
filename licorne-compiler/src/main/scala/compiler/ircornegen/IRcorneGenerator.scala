@@ -150,7 +150,10 @@ final class IRcorneGenerator(
             val encapsulatedFields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
             for (fldDf@Asts.EncapsulatedFieldDef(fieldId, fieldTypeTreeOpt, initTree, isReassignable) <- encapsulatedFieldTrees) {
               saveAndCheckFieldId(fieldId, fldDf.getPosition)
-              val fieldType = typeVarsCtx.newTypeVariable(fieldId, None, None, fullTypeParamsCtx, fldDf.getPosition)
+              val fieldType = fieldTypeTreeOpt match {
+                case Some(fieldTypeTree) => mkType(fieldTypeTree, classSigScope)(using Map.empty)
+                case None => typeVarsCtx.newTypeVariable(fieldId, None, None, fullTypeParamsCtx, fldDf.getPosition)
+              }
               val paramVal = classSigScope.newParam(fieldId, fldDf.getPosition)
               classSigScope.getLocalValuesContextUnsafe.saveNewLocal(fieldId, paramVal, classSigScope, ReassigPermission.Val, Some(fieldType))
               val initOpt = generateFormula(initTree, classSigScope, s"initializer of field $fieldId", allowWrappedInstr = true)(using None, Map.empty)

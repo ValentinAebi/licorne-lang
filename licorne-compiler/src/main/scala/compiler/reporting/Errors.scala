@@ -135,7 +135,7 @@ object Errors {
             warningsCnt += 1
         }
       }
-      errorsConsumer(s"\n${maybePlural(errorsCnt, "error", "errors")}, ${maybePlural(warningsCnt, "warning", "warnings")}\n")
+      errorsConsumer(s"\n${maybePlural(errorsCnt, "error", "errors")}\n")
     }
 
     /**

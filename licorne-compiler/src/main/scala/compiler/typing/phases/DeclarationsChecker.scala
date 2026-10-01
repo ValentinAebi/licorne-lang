@@ -76,11 +76,15 @@ final class DeclarationsChecker(
 
         typer.typeInstr(instr, tSig.sigScope, BranchingInfo.empty)
         val fieldType = tSig.encapsulatedFields.apply(fieldId).tpe
-        subtypingCtx.enforceIsSubtype(tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier), fieldType,
+        val initializerType = tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier)
+        val isSubtype = subtypingCtx.enforceIsSubtype(initializerType, fieldType,
           s"initializer of field $fieldId does not conform to its declared type $fieldType", tSig.declPosOpt)
         fieldType match {
           case fieldType: TypeVariable if !fieldType.isResolved =>
             er.reportError(s"could not infer type of field $fieldId", tSig.declPosOpt)
+          case fieldType if !fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) =>
+            val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
+            er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
           case _ => ()
         }
       }
