@@ -536,6 +536,7 @@ object Types {
       baseType.allTypeVariables
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => SeqSet.empty
     case NullableType(nullatedType) => nullatedType.allTypeVariables
+    case tv: TypeVariable if tv.isResolved => tv.withTypeVarsExpanded.allTypeVariables
     case tv: TypeVariable => SeqSet(tv)
   }
   
