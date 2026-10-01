@@ -341,9 +341,9 @@ final class IRcorneGenerator(
       }
     }
 
-    for ((ts, tid) <- StdLib.automaticTypeImports) {
-      if (!typeImports.contains(ts) && !typesDefInThisSource.contains(ts)) {
-        typeImports.put(ts, tid)
+    for ((typeName, _) <- packagesInfo.getOrElse(StdLib.licorneCorePkgPrefix, List.empty)) {
+      if (!typeImports.contains(typeName) && !typesDefInThisSource.contains(typeName)) {
+        typeImports.put(typeName, TypeIdentifier(StdLib.licorneCorePkgPrefix, typeName))
       }
     }
     for ((fs, (ownerId, funId)) <- StdLib.automaticFuncImports) {

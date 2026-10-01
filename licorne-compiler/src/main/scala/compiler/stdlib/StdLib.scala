@@ -74,17 +74,6 @@ object StdLib {
   val heapVarGetFunId: FunOrVarId = NormalFunOrVarId("get")
   val heapVarSetFunId: FunOrVarId = NormalFunOrVarId("set")
 
-  val automaticTypeImports: Iterable[(String, TypeIdentifier)] = List(
-    // TODO add all type aliases from licorne.core
-    nonZeroIntTypeId.nonPrefixedId -> nonZeroIntTypeId,
-    countTypeId.nonPrefixedId -> countTypeId,
-    indexTypeId.nonPrefixedId -> indexTypeId,
-    arrayTypeId.nonPrefixedId -> arrayTypeId,
-    indexedTypeId.nonPrefixedId -> indexedTypeId,
-    indexableTypeId.nonPrefixedId -> indexableTypeId,
-    stringTypeId.nonPrefixedId -> stringTypeId
-  )
-
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),
     consolePrintlnFunId -> (consoleTypeId, consolePrintlnFunId),
