@@ -177,7 +177,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "typeAliasDef"
 
   private lazy val encapsulatedFieldDef = {
-    opt(kw(Val) OR kw(Var)) ::: funOrVarId ::: opt(colon ::: typeTree) ::: assig ::: expr map {
+    (kw(Val) OR kw(Var)) ::: funOrVarId ::: opt(colon ::: typeTree) ::: assig ::: expr map {
       case valOrVarKw ^: fieldId ^: typeOpt ^: rhs => EncapsulatedFieldDef(fieldId, typeOpt, rhs, isReassignable = valOrVarKw == Var)
     }
   } setName "encapsulatedFieldDef"
