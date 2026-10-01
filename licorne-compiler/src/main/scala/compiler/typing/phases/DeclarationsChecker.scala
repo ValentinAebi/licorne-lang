@@ -70,22 +70,19 @@ final class DeclarationsChecker(
         tSig <- resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](tid)
         tpCtx <- Some(TypeParamsContext(tSig.typeParams))
         (fieldId, (fieldInitInstructions, fieldInitVal)) <- constructorFields
-        instr <- fieldInitInstructions
       } {
         given TypeParamsContext = tpCtx
 
-        typer.typeInstr(instr, tSig.sigScope, BranchingInfo.empty)
+        for (instr <- fieldInitInstructions) {
+          typer.typeInstr(instr, tSig.sigScope, BranchingInfo.empty)
+        }
         val fieldType = tSig.encapsulatedFields.apply(fieldId).tpe
         val initializerType = tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier)
         val isSubtype = subtypingCtx.enforceIsSubtype(initializerType, fieldType,
           s"initializer of field $fieldId does not conform to its declared type $fieldType", tSig.declPosOpt)
-        fieldType match {
-          case fieldType: TypeVariable if !fieldType.isResolved =>
-            er.reportError(s"could not infer type of field $fieldId", tSig.declPosOpt)
-          case fieldType if !fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) =>
-            val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
-            er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
-          case _ => ()
+        if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) && tSig.encapsulatedFields.apply(fieldId).isStable) {
+          val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
+          er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
         }
       }
 
@@ -103,6 +100,19 @@ final class DeclarationsChecker(
           } else if (!closureBody.hasExited && closureRetType.withTypeVarsExpanded == UnitType) {
             er.reportError(s"missing return in non-$UnitType closure", closureBody.getPosition)
           }
+        }
+      }
+
+      for {
+        (tid, constructorFields) <- programNew.constructorFieldsInit
+        tSig <- resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](tid)
+        tpCtx <- Some(TypeParamsContext(tSig.typeParams))
+        (fieldId, (fieldInitInstructions, fieldInitVal)) <- constructorFields
+      } {
+        tSig.encapsulatedFields.apply(fieldId).tpe match {
+          case fieldType: TypeVariable if fieldType.allTypeVariables.exists(!_.isResolved) =>
+            er.reportError(s"could not infer type of field $fieldId", tSig.declPosOpt)
+          case _ => ()
         }
       }
 
