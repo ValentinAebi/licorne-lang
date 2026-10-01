@@ -28,12 +28,6 @@ object IRcorne {
   sealed abstract class Instr {
     private var astNodeOpt: Option[Ast] = None
     private var idxInScopeOpt: Option[Int] = None
-    
-    {
-      for (idVal <- consumedVals) {
-        idVal.users.addOne(this)
-      }
-    }
 
     def setAstNode(astNode: Ast): this.type = {
       if (this.astNodeOpt.isDefined) {
@@ -305,11 +299,6 @@ object IRcorne {
 
     def setMode(mode: HybridCastMode): Unit = {
       modeOpt = Some(mode)
-      mode match {
-        case HybridCastMode.AssertNonNull => ()
-        case HybridCastMode.AssertPredicate(predicate, compiledPredicate, resultValue) =>
-          resultValue.users.addOne(this)
-      }
     }
 
     def isNonNullAssertion: Boolean = modeOpt.contains(AssertNonNull)
@@ -350,7 +339,6 @@ object IRcorne {
     }
 
     private val uidGen = AtomicLong(-1)
-    private val valuesDefinedHere = mutable.LinkedHashSet.empty[IdValue]
 
     val scopeUid: Long = scopeUidGen.incrementAndGet()
 
@@ -406,17 +394,17 @@ object IRcorne {
         outScopeOpt.contains(outerScope) ||
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
-    def saveType(idVal: IdValue, rawType: Type, allowOverwrite: Boolean = false)
+    def saveType(idVal: IdValue, rawType: Type)
                 (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
       val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
-        if (!allowOverwrite && types.contains(idVal) && idVal != globalValsCtx.itValue) {
+        if (types.contains(idVal) && idVal != globalValsCtx.itValue) {
           throw IllegalStateException(s"$idVal has already been assigned a type")
         }
         types.put(idVal, tpe)
       } else if (idVal.definingScope.depth < this.depth && outScopeOpt.isDefined) {
-        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore))(using getLocalValuesContextUnsafe.globalCtx), allowOverwrite)
+        outScopeOpt.get.saveType(idVal, tpe.filtered(idVal, Some(this, proxyStore))(using getLocalValuesContextUnsafe.globalCtx))
       } else {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
@@ -549,9 +537,7 @@ object IRcorne {
     }
 
     private def newValue[T <: IdValue](creation: Long => T): T = {
-      val value = creation(uidGen.incrementAndGet())
-      valuesDefinedHere.add(value)
-      value
+      creation(uidGen.incrementAndGet())
     }
 
   }
@@ -613,6 +599,20 @@ object IRcorne {
   enum HybridCastMode {
     case AssertNonNull
     case AssertPredicate(predicate: Formula, compiledPredicate: Iterable[RealInstr], resultValue: IdValue)
+  }
+
+  extension(instr: Instr) def isObviouslyPure: Boolean = instr match {
+    case _: PureInstr => true
+    case Loop(cond, condVal, body, variables) =>
+      cond.isObviouslyPure && body.isObviouslyPure
+    case Disjunction(condVal, thenBr, elseBr, variables) =>
+      thenBr.isObviouslyPure && elseBr.isObviouslyPure
+    case scope: Scope =>
+      scope.instructions.forall(_.isObviouslyPure)
+    case _: (Instantiate | MkClosure) => true
+    case LocalDecl(localId, tpe) => true
+    case Unreachable() => true
+    case _ => false
   }
 
 }

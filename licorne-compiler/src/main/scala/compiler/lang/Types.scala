@@ -20,6 +20,7 @@ object Types {
 
   sealed trait Type {
     def formulaDependencies: List[Formula]
+    def baseTypeAssumingNoAlias: Type
   }
 
   sealed trait NominalType extends Type
@@ -37,6 +38,8 @@ object Types {
 
     override def formulaDependencies: List[Formula] = List.empty
 
+    override def baseTypeAssumingNoAlias: Type = this
+
     override def toString: String = str
   }
 
@@ -50,6 +53,8 @@ object Types {
 
     override def formulaDependencies: List[Formula] = typeArgs.flatMap(_.formulaDependencies) ++ args
 
+    override def baseTypeAssumingNoAlias: Type = this
+
     override def toString: String = {
       val typeParamsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")
@@ -60,12 +65,16 @@ object Types {
   final case class ClosureType(params: List[Type], result: Type, enforcedPure: Boolean) extends Type {
     override def formulaDependencies: List[Formula] = params.flatMap(_.formulaDependencies) ++ result.formulaDependencies
 
+    override def baseTypeAssumingNoAlias: Type = this
+
     override def toString: String =
       (if enforcedPure then s"${Keyword.Pure} " else "") ++ s"${Keyword.Fn} (${params.mkString(",")}) -> $result"
   }
 
   final case class UnionType private(types: SeqSet[Type]) extends Type {
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
+
+    override def baseTypeAssumingNoAlias: Type = UnionType(types.map(_.baseTypeAssumingNoAlias))
 
     override def toString: String = types.mkString(" | ")
   }
@@ -94,6 +103,8 @@ object Types {
   final case class IntersectionType private(types: SeqSet[Type]) extends Type {
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
 
+    override def baseTypeAssumingNoAlias: Type = IntersectionType(types.map(_.baseTypeAssumingNoAlias))
+
     override def toString: String = types.mkString(" & ")
   }
 
@@ -120,6 +131,8 @@ object Types {
 
   final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
+
+    override def baseTypeAssumingNoAlias: Type = baseType.baseTypeAssumingNoAlias
 
     def flattenedRefinement(using globalValsCtx: GlobalValuesContext): RefinedType = {
 
@@ -158,6 +171,8 @@ object Types {
 
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
+
+    override def baseTypeAssumingNoAlias: Type = IntType
 
     def boundsAsPredicate(itValue: IdValue): Formula = (lowerBoundOpt, upperBoundOpt) match {
       case (Some(lb), Some(ub)) => LogicalAnd(LessOrEq(lb, itValue), LessOrEq(itValue, ub))
@@ -233,6 +248,8 @@ object Types {
   final case class NullableType private(nullatedType: Type) extends Type {
     override def formulaDependencies: List[Formula] = nullatedType.formulaDependencies
 
+    override def baseTypeAssumingNoAlias: Type = nullatedType.baseTypeAssumingNoAlias
+
     override def toString: String = nullatedType match {
       case nullatedType: (RefinedType | UnionType | IntersectionType) => s"($nullatedType)?"
       case nullatedType => s"$nullatedType?"
@@ -268,6 +285,8 @@ object Types {
     }
 
     override def formulaDependencies: List[Formula] = List.empty
+
+    override def baseTypeAssumingNoAlias: Type = this
 
     def resolve(tpe: Type): Unit = {
       if (isResolved) {
@@ -529,7 +548,10 @@ object Types {
     case RefinedType(baseType, predicate) => RefinedType(baseType.withDependenciesTransformed(f), f(predicate))
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntRangeType(lowerBoundOpt.map(f), upperBoundOpt.map(f))
     case NullableType(nullatedType) => NullableType(nullatedType.withDependenciesTransformed(f))
-    case tv: TypeVariable => tv
+    case tv: TypeVariable => tv.actualTypeIfResolved match {
+      case Some(actualType) => actualType.withDependenciesTransformed(f)
+      case None => tv
+    }
   }
   
   extension (tpe: Type) def mentionsType(target: Type): Boolean = target == tpe || (tpe match {

@@ -10,7 +10,7 @@ class DogProducer : Producer[Animal, Int] {
 }
 
 interface Animal
-class Dog(name: String) : Animal {
+class Dog(val name: String) : Animal {
    fn name() -> String {
       return this.name;
    }

@@ -164,6 +164,7 @@ final class EGraph private[egraphs](startClId: Long) {
     case PureClosureValue(params, body, closureVal) =>
       encode(closureVal)
     case Phi(terms) => UnknownENode()
+    case WrappedScope(resVal, scope) => encode(resVal)
   }
 
   private[egraphs] def canonicalize(n: ENode): Unit = n match {

@@ -29,6 +29,8 @@ final class FormulasConverter[IntSort <: KSort](
   
   private given ResolutionContext = resolCtx
   
+  private given GlobalValuesContext = globalValsContext
+  
   private val anySort = kCtx.mkUninterpretedSort(AnyType.toString)
 
   private var acceptPhisForInts: Boolean = false
@@ -111,6 +113,7 @@ final class FormulasConverter[IntSort <: KSort](
           }
         }
       case Phi(terms) => None
+      case WrappedScope(resVal, scope) => convertInt(resVal)
     }
   }
 
@@ -172,6 +175,7 @@ final class FormulasConverter[IntSort <: KSort](
         } yield kCtx.mkEq(l, r)
       case TypePredicate(subject, tpe) => None
       case Phi(terms) => None
+      case WrappedScope(resVal, scope) => convertBool(resVal)
     }
   }
 
@@ -192,6 +196,7 @@ final class FormulasConverter[IntSort <: KSort](
       case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
         mkClosureApp(callee, closureTypingTarget, args, anySort)
       case PureClosureValue(params, body, closureVal) => None
+      case WrappedScope(resVal, scope) => convertObj(resVal)
       case _ => None
     }
   }

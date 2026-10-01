@@ -4,6 +4,7 @@ import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Field.StableField
 import compiler.irs.ircorne.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
+import compiler.irs.ircorne.IRLevelFormulaPrinter
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type, TypeVariable}
@@ -57,8 +58,6 @@ final case class FunctionSignature(
   override def expectedResultType: Type = retType
 
   override def requiresPurityInBody: Boolean = isPure
-
-  override def root: FunctionSignature = this
 
   override def typeVarsWithDescr: SeqSet[(TypeVariable, String)] = SeqSet(
     typeParams.flatMap { tp =>
@@ -189,7 +188,13 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
 
 sealed trait ConcreteTypeSig extends RuntimeTypeSignature
 
-sealed trait UserInstantiableTypeSig extends ConcreteTypeSig
+sealed trait UserInstantiableTypeSig extends ConcreteTypeSig  {
+  def constructorParams: SeqMap[FunOrVarId, ConstructorParam]
+  def encapsulatedFields: SeqMap[FunOrVarId, Field]
+
+  override def fields: SeqMap[FunOrVarId, Field] =
+    constructorParams.filter(_._2.isInstanceOf[Field]).mapVals(_.asInstanceOf[Field]) ++ encapsulatedFields
+}
 
 sealed trait AbstractTypeSig extends RuntimeTypeSignature {
   override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
@@ -222,14 +227,17 @@ final case class InterfaceSignature(
 final case class ClassSignature(
                                  id: TypeIdentifier,
                                  typeParams: List[TypeTypeParamInfo],
-                                 fields: SeqMap[FunOrVarId, Field],
+                                 constructorParams: SeqMap[FunOrVarId, ConstructorParam],
+                                 encapsulatedFields: SeqMap[FunOrVarId, Field],
                                  functions: Map[FunctionDescriptor, FunctionSignature],
                                  directSupertypes: List[NamedType],
                                  visibility: TypeVisibility,
                                  sigScope: Scope,
                                  declPosOpt: Option[Position]
                                )
-  extends RuntimeTypeSignature, ConcreteTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig, UserInstantiableTypeSig
+  extends RuntimeTypeSignature, ConcreteTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig, UserInstantiableTypeSig {
+  
+}
 
 final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
 
@@ -264,40 +272,45 @@ final case class DatatypeSignature(
 final case class RecordSignature(
                                   id: TypeIdentifier,
                                   typeParams: List[TypeTypeParamInfo],
-                                  fields: SeqMap[FunOrVarId, StableField],
+                                  constructorParams: SeqMap[FunOrVarId, StableField],
                                   functions: Map[FunctionDescriptor, FunctionSignature],
                                   directSupertypes: List[NamedType],
                                   visibility: TypeVisibility,
                                   sigScope: Scope,
                                   declPosOpt: Option[Position]
                                 )
-  extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig
+  extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig {
+  override def encapsulatedFields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+}
 
-enum Field {
-  case ReassignableField(id: FunOrVarId, tpe: Type, defaultInitializerOpt: Option[Formula])
-  case StableField(id: FunOrVarId, tpe: Type, value: ParamIdValue, isPublishedAsMethod: Boolean, defaultInitializerOpt: Option[Formula])
-
+sealed trait ConstructorParam {
   def id: FunOrVarId
+  
+  def value: NamedIdValue
 
   def tpe: Type
-  
+
   def defaultInitializerOpt: Option[Formula]
+}
+
+final case class NonFieldConstructorParam(id: FunOrVarId, tpe: Type, value: NamedIdValue, defaultInitializerOpt: Option[Formula]) extends ConstructorParam {
+  override def toString: String = s"$id: $tpe"
+}
+
+enum Field extends ConstructorParam {
+  case ReassignableField(id: FunOrVarId, tpe: Type, value: NamedIdValue, defaultInitializerOpt: Option[Formula])
+  case StableField(id: FunOrVarId, tpe: Type, value: ParamIdValue, isPublishedAsMethod: Boolean, defaultInitializerOpt: Option[Formula])
 
   def isStable: Boolean = this match {
     case _: ReassignableField => false
     case _: StableField => true
   }
 
-  def hasPublicSyntheticAccessor: Boolean = this match {
-    case Field.ReassignableField(id, tpe, defaultInitializer) => false
-    case Field.StableField(id, tpe, value, isPublishedAsMethod, defaultInitializer) => isPublishedAsMethod
-  }
-
   override def toString: String = this match {
-    case Field.ReassignableField(id, tpe, defaultInitializer) => s"${Keyword.Var} $id: $tpe"
+    case Field.ReassignableField(id, tpe, value, defaultInitializer) => s"${Keyword.Var} $id: $tpe"
     case Field.StableField(id, tpe, value, isPublished, defaultInitializer) =>
-      val maybePublic = if isPublished then s"${FuncVisibility.Public} " else ""
-      s"$maybePublic$value: $tpe"
+      val maybePublic = if isPublished then Keyword.Public else Keyword.Val
+      s"$maybePublic $value: $tpe"
   }
 }
 

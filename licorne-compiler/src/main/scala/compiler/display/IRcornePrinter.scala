@@ -81,10 +81,10 @@ final class IRcornePrinter(
 
   private def printClass(classSig: ClassSignature)
                         (using pps: PrettyPrintString, program: Program): Unit = {
-    val ClassSignature(id, typeParams, fields, functions, directSupertypes, visibility, sigScope, declPosOpt) = classSig
+    val ClassSignature(id, typeParams, constructorParams, encapsulatedFields, functions, directSupertypes, visibility, sigScope, declPosOpt) = classSig
     pps.add(s"CLASS ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
-    printFields(fields)
+    printFields(constructorParams ++ encapsulatedFields)
     pps.add(mkSuperTypesDescr(directSupertypes))
       .add(mkPosDescr(declPosOpt))
     printFunctionsBlockIfNotEmpty(functions, emptyLineBeforeFunc = true)
@@ -173,17 +173,29 @@ final class IRcornePrinter(
     }
   }
 
-  private def printFields(fields: Iterable[(FunOrVarId, Field)])
+  private def scopeToString(scope: Scope): String = {
+    val pps = PrettyPrintString(indentUnit)
+    printScope(scope)(using pps)
+    pps.built
+  }
+
+  private def printFields(fields: Iterable[(FunOrVarId, ConstructorParam)])
                          (using pps: PrettyPrintString): Unit = {
+
+    def paramToString(param: ConstructorParam): String = param.defaultInitializerOpt match {
+      case Some(initializer) => s"$param := ${IRLevelFormulaPrinter.prettyprint(initializer)(using Some(scopeToString))}"
+      case None => param.toString
+    }
+
     fields.size match {
       case 0 => ()
       case 1 =>
-        val (_, fld) = fields.head
-        pps.add("(").add(fld.toString).add(")")
+        val (_, param) = fields.head
+        pps.add("(").add(paramToString(param)).add(")")
       case _ =>
         pps.add("(").indentln {
-          traverseIterable(fields.iterator) { (_, fld) =>
-            pps.add(fld.toString)
+          traverseIterable(fields.iterator) { (_, param) =>
+            pps.add(paramToString(param))
           } {
             pps.add(",").newLine()
           }
@@ -270,10 +282,9 @@ final class IRcornePrinter(
       case InvokeClosure(assigned, callee, _, args) =>
         pps.add(s"INVK-CLOSURE ${maybeTyped(assigned, scope)} := $callee" ++ args.mkString("(", ",", ")"))
       case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
-        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName" ++ fieldsInit.map(
-          (fldIdOpt, rhsVal, rhsEval) => s"${fldIdOpt.getOrElse("??")} := ${if rhsEval.isEmpty then rhsVal else rhsEval.map(instrToString(_, scope)).mkString("{", ";", "}") + rhsVal}").mkString("(", ", ", ")")
-        )
+        pps.add(s"INSTANTIATE ${maybeTyped(assigned, scope)} := new $classOrRecordName")
         printTypeArgsList(typeArgs)
+        pps.add(fieldsInit.map((fldIdOpt, rhsVal, rhsEval) => s"${fldIdOpt.getOrElse("??")} := ${if rhsEval.isEmpty then rhsVal else rhsEval.map(instrToString(_, scope)).mkString("{", ";", "}") + rhsVal}").mkString("(", ", ", ")"))
       case MkClosure(assigned, params, body, declaredPure, closureTypeName) =>
         val purityDescr = if declaredPure then " (pure)" else ""
         pps.add(s"MK-CLOSURE<$closureTypeName>$purityDescr ${maybeTyped(assigned, scope)} := ").add(mkFunctionParamsDescr(params, precondOpt = None)).add(" ->").indent {

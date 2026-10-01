@@ -1,14 +1,20 @@
 package compiler.typing.phases
 
+import compiler.lang.Types.PrimitiveType.UnitType
+import compiler.lang.Types.TypeVariable
+import compiler.lang.UserInstantiableTypeSig
 import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
-import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeVariablesContext}
-import compiler.valproxies.ProxyStore
+import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
+import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
+
+import scala.collection.mutable
+
 
 final class DeclarationsChecker(
                                  ihm: IntHandlingMode[?],
@@ -27,14 +33,16 @@ final class DeclarationsChecker(
 
     given globalValsCtx: GlobalValuesContext = programOld.globalValuesContext
 
-    val dealiasingCtx = DealiasingContext(programOld.typeAliases)
+    given dealiasingCtx: DealiasingContext = DealiasingContext(programOld.typeAliases)
+
     val resolCtx = ResolutionContext(programOld, er)
 
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
+      val closuresCollector = mutable.Queue.empty[ClosureInfo]
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
 
       val programNew = Program(globalValsCtx,
         for ((id, interfaceSig) <- programOld.interfaces) yield {
@@ -53,8 +61,46 @@ final class DeclarationsChecker(
           id -> typer.typeRecordSig(recordSig)
         },
         programOld.typeAliases,
-        programOld.functions
+        programOld.functions,
+        programOld.constructorFieldsInit
       )
+
+      for {
+        (tid, constructorFields) <- programNew.constructorFieldsInit
+        tSig <- resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](tid)
+        tpCtx <- Some(TypeParamsContext(tSig.typeParams))
+        (fieldId, (fieldInitInstructions, fieldInitVal)) <- constructorFields
+        instr <- fieldInitInstructions
+      } {
+        given TypeParamsContext = tpCtx
+
+        typer.typeInstr(instr, tSig.sigScope, BranchingInfo.empty)
+        val fieldType = tSig.encapsulatedFields.apply(fieldId).tpe
+        subtypingCtx.enforceIsSubtype(tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier), fieldType,
+          s"initializer of field $fieldId does not conform to its declared type $fieldType", tSig.declPosOpt)
+        fieldType match {
+          case fieldType: TypeVariable if !fieldType.isResolved =>
+            er.reportError(s"could not infer type of field $fieldId", tSig.declPosOpt)
+          case _ => ()
+        }
+      }
+
+      while (closuresCollector.nonEmpty) {
+        val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
+        val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
+          proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+        solver.onNewFrame {
+          for ((paramVal, paramType) <- closureParams) {
+            solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))
+          }
+          closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
+          if (!closureRetType.isResolved) {
+            er.reportError("I could not infer the return type of the closure", closureBody.getPosition)
+          } else if (!closureBody.hasExited && closureRetType.withTypeVarsExpanded == UnitType) {
+            er.reportError(s"missing return in non-$UnitType closure", closureBody.getPosition)
+          }
+        }
+      }
 
       er.displayAndTerminateIfErrors()
       (programNew, subtypingInfo)

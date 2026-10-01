@@ -1,0 +1,13 @@
+
+class Foo {
+    val bar = 0;
+
+    fn func() {
+        if bar == 0 {
+            println("yes")
+        } else {
+            println("no")   //> E : dead code
+        }
+    }
+
+}

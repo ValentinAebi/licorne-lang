@@ -3,15 +3,15 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
+import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.TypeVisibility.Private
-import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType}
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
 import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
@@ -121,8 +121,10 @@ final class Backend(
           case _ => ()
         }
         tSig match {
-          case tSig: ConcreteTypeSig =>
-            generateConstructor(tSig, cb, isPrivate = tSig.isInstanceOf[ObjectSignature])
+          case objSig: ObjectSignature => generateObjectConstructor(objSig, cb)
+          case tSig: UserInstantiableTypeSig =>
+            val fieldsInit = program.constructorFieldsInit.getOrElse(tSig.id, Map.empty)
+            generateUserAccessibleConstructor(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
           case _ => ()
         }
 
@@ -192,25 +194,48 @@ final class Backend(
     }
   }
 
-  private def generateConstructor(tSig: ConcreteTypeSig, cb: ClassBuilder, isPrivate: Boolean)
-                                 (using TypeParamsContext, DealiasingContext): Unit = {
-    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val tDesc = tConv.descriptorFor(tSig.id)
-    val constrDesc = mkConstrDesc(tSig)
-    val flags = if isPrivate then ClassFile.ACC_PRIVATE else ClassFile.ACC_PUBLIC
-    cb.withMethod(INIT_NAME, constrDesc, flags, mb => mb.withCode(cb => {
+  private def generateObjectConstructor(objSig: ObjectSignature, cb: ClassBuilder)(using DealiasingContext): Unit = {
+    cb.withMethod(INIT_NAME, MethodTypeDesc.of(CD_void), ClassFile.ACC_PRIVATE, mb => mb.withCode(cb => {
       cb.aload(cb.receiverSlot())
       cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
-      cb.localVariable(0, tSig.id.nonPrefixedId, tDesc, cb.startLabel(), cb.endLabel())
-      var paramSlotIdx = 1
-      for (fld <- tSig.fields.values) {
+      cb.return_()
+    }))
+  }
+
+  private def generateUserAccessibleConstructor(tSig: UserInstantiableTypeSig, fieldsInit: Map[FunOrVarId, (initInstr: Iterable[RealInstr], resVal: IdValue)], cb: ClassBuilder)
+                                               (using DealiasingContext, GlobalValuesContext, ResolutionContext, SimplifiedSubtypingContext, ClassHierarchyResolver): Unit = {
+    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+    val tDesc = tConv.descriptorFor(tSig.id)
+    val sigScope = tSig.sigScope
+
+    given tpCtx: TypeParamsContext = TypeParamsContext(tSig.typeParams)
+
+    given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(summon[GlobalValuesContext], tpCtx, isSyntheticAccessor = false, tSig.sigName, UnitType, closureInfoOpt = None)
+
+    cb.withMethod(INIT_NAME, mkConstrDesc(tSig), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
+      allocateAndDeclare(sigScope.getLocalValuesContextUnsafe.getThisValue.get.asInstanceOf[NamedIdValue], cb, sigScope)
+      cb.aload(cb.receiverSlot())
+      cb.invokespecial(CD_Object, INIT_NAME, MethodTypeDesc.of(CD_void))
+      for ((paramId, param) <- tSig.constructorParams) yield {
+        allocateAndDeclare(param.value, cb, sigScope)
+        param match {
+          case param: Field =>
+            cb.aload(0)
+            genValueLoad(param.value, sigScope, cb)
+            val fldTypeDesc = tConv.descriptorFor(param.tpe)
+            cb.putfield(tDesc, param.id.stringId, fldTypeDesc)
+          case _: NonFieldConstructorParam => ()
+        }
+      }
+      for ((fldId, fld) <- tSig.encapsulatedFields) {
+        val (instructions, resVal) = fieldsInit.apply(fldId)
+        for (instr <- instructions) {
+          generateInstr(instr, cb, sigScope)
+        }
         cb.aload(0)
-        cb.loadLocal(tConv.kindFor(fld.tpe), paramSlotIdx)
-        val fldId = fld.id.stringId
+        genValueLoad(resVal, sigScope, cb)
         val fldTypeDesc = tConv.descriptorFor(fld.tpe)
-        cb.putfield(tDesc, fldId, fldTypeDesc)
-        cb.localVariable(paramSlotIdx, fldId, fldTypeDesc, cb.startLabel(), cb.endLabel())
-        paramSlotIdx += tConv.kindFor(fld.tpe).slotSize()
+        cb.putfield(tDesc, fldId.stringId, fldTypeDesc)
       }
       cb.return_()
     }))
@@ -299,9 +324,9 @@ final class Backend(
       extractParams(funSig).map((_, tpe) => tConv.descriptorFor(tpe.substitute(subst, Map.empty))).toJavaUtilList)
   }
 
-  private def mkConstrDesc(tSig: ConcreteTypeSig)(using DealiasingContext): MethodTypeDesc = {
+  private def mkConstrDesc(tSig: UserInstantiableTypeSig)(using DealiasingContext): MethodTypeDesc = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    MethodTypeDesc.of(CD_void, tSig.fields.values.map(f => tConv.descriptorFor(f.tpe)(using TypeParamsContext(tSig.typeParams))).toArray *)
+    MethodTypeDesc.of(CD_void, tSig.constructorParams.values.map(f => tConv.descriptorFor(f.tpe)(using TypeParamsContext(tSig.typeParams))).toArray *)
   }
 
   private def mkPathToClass(typeId: TypeIdentifier): Path = {
@@ -922,13 +947,9 @@ final class Backend(
     given TypeParamsContext = funcGenCtx.typeParamsCtx
 
     val kind = typeKindOf(idVal, currScope)
-    idVal match {
-      case _ if kind == VOID => ()
-      case idVal: IntermediateIdValue if idVal.users.isEmpty =>
-        genPop(kind, cb)
-      case _ =>
-        val slot = allocateAndDeclareIfNew(idVal, currScope, cb)
-        cb.storeLocal(kind, slot)
+    if (kind != VOID) {
+      val slot = allocateAndDeclareIfNew(idVal, currScope, cb)
+      cb.storeLocal(kind, slot)
     }
   }
 
@@ -983,7 +1004,9 @@ final class Backend(
     given TypeParamsContext = funGenCtx.typeParamsCtx
 
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val tpe = rawTypeOf(idVal, currScope).get
+    val tpe = rawTypeOf(idVal, currScope).getOrElse {
+      throw AssertionError(s"type not found for value $idVal")
+    }
     val kind = tConv.kindFor(tpe)
     val descr = tConv.descriptorFor(tpe)
     val slot = funGenCtx.allocateSlot(kind, idVal)

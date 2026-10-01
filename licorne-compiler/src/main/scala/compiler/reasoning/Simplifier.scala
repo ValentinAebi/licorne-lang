@@ -336,6 +336,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case TypePredicate(subject, tpe) => None
     case Phi(terms) if terms.size == 1 => eval(terms.head)
     case Phi(terms) => None
+    case WrappedScope(resVal, scope) => eval(resVal)
   }
 
   def linearize(formula: Formula): Map[Formula, Int] = formula match {
@@ -376,6 +377,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case TypePredicate(subject, tpe) => Map.empty
     case Phi(terms) if terms.size == 1 => linearize(terms.head)
     case Phi(terms) => Map.empty
+    case WrappedScope(resVal, scope) => linearize(resVal)
   }
 
   private def linearizeTimes(times: Times): (Formula, Int) = {

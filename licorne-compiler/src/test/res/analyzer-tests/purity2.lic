@@ -9,7 +9,7 @@ class Foo {
 
 }
 
-class Animal(name: String, var hungerLevel: [0..]) {
+class Animal(val name: String, var hungerLevel: [0..]) {
 
    fn eat(food: Food) {
       val hungerLevelBefore = this.hungerLevel;

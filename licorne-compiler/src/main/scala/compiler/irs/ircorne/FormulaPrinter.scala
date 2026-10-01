@@ -1,6 +1,7 @@
 package compiler.irs.ircorne
 
 import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue, NamedIdValue}
+import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Operator.Precedence
 import compiler.lang.{Keyword, Operator}
 
@@ -10,7 +11,7 @@ trait FormulaPrinter {
   
   protected def inclAllocMode: Boolean
 
-  def prettyprint(formula: Formula): String = formula match {
+  def prettyprint(formula: Formula)(using ppScopeOpt: Option[Scope => String] = None): String = formula match {
     case IntermediateIdValue(definingScope, uid, nameHint) =>
       s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i"
     case value: NamedIdValue => printIdVal(value)
@@ -43,6 +44,12 @@ trait FormulaPrinter {
     case Formulas.LessThan(lhs, rhs) => printBinop(lhs, Operator.LessThan, rhs)
     case Formulas.TypePredicate(subject, tpe) => s"${ppMaybeParenth(subject, Precedence.TypeTest.bindsMoreThan(precedenceOf(subject)))}"
     case Formulas.Phi(terms) => "phi(" ++ terms.map(prettyprint).mkString(",") ++ ")"
+    case Formulas.WrappedScope(resVal, scope) =>
+      val scopeDescr = ppScopeOpt match {
+        case Some(ppScope) => ppScope(scope)
+        case None => s"scope ${scope.scopeUid}"
+      }
+      prettyprint(resVal) ++ s"<--{$scopeDescr}"
   }
 
   // TODO may be extended to types
@@ -82,6 +89,7 @@ trait FormulaPrinter {
     case Formulas.LessThan(lhs, rhs) => Precedence.Comparison
     case Formulas.TypePredicate(subject, tpe) => Precedence.TypeTest
     case Formulas.Phi(terms) => Precedence.Atom
+    case Formulas.WrappedScope(resVal, scope) => Precedence.Atom
   }
 
 }

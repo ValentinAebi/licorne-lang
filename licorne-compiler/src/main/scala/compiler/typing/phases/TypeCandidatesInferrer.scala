@@ -44,7 +44,7 @@ final class TypeCandidatesInferrer(
     Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, fakeEr, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
-      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false)
+      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false, closuresCollectorFuncOpt = None)
       fakeEr.withReportingSuspended {
         for {
           ((ownerId, funDescr), func) <- program.functions
@@ -153,7 +153,7 @@ final class TypeCandidatesInferrer(
         }
       }
     case mkClosure@MkClosure(assigned, params, body, declaredPure, closureTypeName) =>
-      val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, currEnvir, TypeParamsContext.empty /* TODO check this */)
+      val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, TypeParamsContext.empty /* TODO check this */)
       traverseScope(body, closureInfo)
     case MkHeapVar(assigned) => ()
     case TypeTest(assigned, testedValue, testedTypeId) => ()

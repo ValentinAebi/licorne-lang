@@ -1,6 +1,6 @@
 package compiler.typing
 
-import compiler.backend.FormulasCompilation.convertFormulaToIR
+import compiler.ircornegen.FormulasCompilation.convertFormulaToIR
 import compiler.identifiers.*
 import compiler.irs.ircorne.*
 import compiler.irs.ircorne.Formulas.*
@@ -48,9 +48,12 @@ final class Typer(
                    absInt: AbstractInterpreter,
                    globalValuesCtx: GlobalValuesContext,
                    er: ErrorReporter,
-                   closuresCollectorFunc: ClosureInfo => Unit = _ => (),
+                   closuresCollectorFuncOpt: Option[ClosureInfo => Unit],
                    allowWriteToIR: Boolean = true
                  )(using CompilationStep) {
+  private val closuresCollectorFunc = closuresCollectorFuncOpt.getOrElse {
+    (closureInfo: ClosureInfo) => er.reportError("closure definition is not allowed in this position", closureInfo.body.getPosition)
+  }
 
   // @formatter:off
   private given DealiasingContext = dealiasingCtx
@@ -72,7 +75,7 @@ final class Typer(
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
     meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
-    closuresCollectorFunc, allowWriteToIR = false)
+    closuresCollectorFuncOpt, allowWriteToIR = false)
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
@@ -329,12 +332,7 @@ final class Typer(
       case fr@FieldRead(assigned, owner, field) =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor) match {
-          case Some(smartcastType) =>
-            currScope.saveType(assigned, smartcastType)
-          case None =>
-            currScope.saveType(assigned, tpe)
-        }
+        currScope.saveType(assigned, proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor).getOrElse(tpe))
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) =>
         val ownerType = currScope.computeCurrentType(owner, fw.getPosition)
@@ -408,13 +406,7 @@ final class Typer(
           mkClosure.isPure = isPure
         }
         currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
-        executionEnvirOpt match {
-          case Some(executionEnvir) =>
-            val closureInfo = ClosureInfo(params, body, resultTypeVar, branchInfo, isPure, executionEnvir, typeParamsCtx)
-            closuresCollectorFunc(closureInfo)
-          case None =>
-            er.reportError("closure creation is not allowed in this position", mkClosure.getPosition)
-        }
+        closuresCollectorFunc(ClosureInfo(params, body, resultTypeVar, branchInfo, isPure, typeParamsCtx))
 
       case tt@TypeTest(assigned, testedValue, testedTypeId) =>
         checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
@@ -521,11 +513,11 @@ final class Typer(
     tryToResolveTypeVarsUsingCandidates(assigned, newInstanceTypeBase)
     val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
     val returnTypePredParts = mutable.ListBuffer.empty[Formula]
-    var remainingLabels = typeSig.fields.keySet
+    var remainingLabels = typeSig.constructorParams.keySet
 
-    def saveFldValInTypeIfStable(fld: Field, rhsValRaw: IdValue, substitutedType: Type): Unit = {
+    def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
       val rhsValExpanded = simplifier.simplifyInt(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
-      fld match {
+      param match {
         case fld: Field.StableField =>
           val fldResolTarget = FieldResolutionTarget(fld.id)
           fldResolTarget.resolve(typeSig, substitutedType)
@@ -538,15 +530,14 @@ final class Typer(
       }
     }
 
-    def generateDefaultInitializer(fld: Field): Unit = {
-      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(fld.defaultInitializerOpt.get.substitute(fieldsInitArgsSubst), currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
-      defaultInitResVal.users.addOne(instantiate)
-      newFieldsInitB.addOne(Some(fld.id), defaultInitResVal, defaultInitEvalInstr)
-      remainingLabels -= fld.id
-      saveFldValInTypeIfStable(fld, defaultInitResVal, fld.tpe.substitute(typesSubst, fieldsInitArgsSubst))
+    def generateDefaultInitializer(param: ConstructorParam): Unit = {
+      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(param.defaultInitializerOpt.get.substitute(fieldsInitArgsSubst), currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
+      newFieldsInitB.addOne(Some(param.id), defaultInitResVal, defaultInitEvalInstr)
+      remainingLabels -= param.id
+      saveFldValInTypeIfStable(param, defaultInitResVal, param.tpe.substitute(typesSubst, fieldsInitArgsSubst))
     }
 
-    val expFieldsIter = BidirectionalIterator(typeSig.fields.values)
+    val expFieldsIter = BidirectionalIterator(typeSig.constructorParams.values)
     val actFieldsIter = BidirectionalIterator(instantiate.fieldsInit)
     var errorFlag = false
 
@@ -625,12 +616,12 @@ final class Typer(
     }
   }
 
-  def typeFormula(formula: Formula, scope: Scope, posOpt: Option[Position], suspendReporting: Boolean = false)
+  def typeFormula(formula: Formula, currScope: Scope, posOpt: Option[Position], suspendReporting: Boolean = false)
                  (using typeParamsCtx: TypeParamsContext): Type = er.withReportingSuspendedIf(suspendReporting) {
-    val tpe = scope.smartcastFor(formula).getOrElse {
+    val tpe = currScope.smartcastFor(formula).getOrElse {
       val rawType = formula match {
         case value: IdValue =>
-          val tpe = scope.detectCurrentType(value)
+          val tpe = currScope.detectCurrentType(value)
           value match {
             case UninterpretedConstIdValue(name, definingScope, uid) if tpe == NothingType =>
               er.reportError(s"object not found: $name", posOpt)
@@ -643,15 +634,15 @@ final class Typer(
         case sel@Select(owner, field) if field.isResolved =>
           field.getInstantiatedTypeUnsafe
         case sel@Select(owner, field) if field.isNotResolvedYet =>
-          val ownerType = typeFormula(owner, scope, posOpt)
-          val tpe = resolveFieldAccess(owner, ownerType, field, scope, needsWriteAccess = false, posOpt)
-          scope.smartcastFor(sel).getOrElse(tpe)
+          val ownerType = typeFormula(owner, currScope, posOpt)
+          val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, posOpt)
+          currScope.smartcastFor(sel).getOrElse(tpe)
         case Select(owner, field) =>
           assert(field.isUnresolvable)
           NothingType
         case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
         case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-          val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, scope, posOpt)
+          val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, posOpt)
           if (funTypeArgsInst.nonEmpty) {
             irModif {
               call.typeArgs = funTypeArgsInst
@@ -663,44 +654,47 @@ final class Typer(
           NothingType
         case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolved => closureTypingTarget.getTypeUnsafe.result
         case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isNotResolvedYet =>
-          val calleeType = typeFormula(callee, scope, posOpt)
-          val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
-          typeClosureCall(callee, calleeType, closureTypingTarget, argsWithTypes, scope, posOpt)
+          val calleeType = typeFormula(callee, currScope, posOpt)
+          val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
+          typeClosureCall(callee, calleeType, closureTypingTarget, argsWithTypes, currScope, posOpt)
         case ClosureCall(callee, closureTypingTarget, args) =>
           assert(closureTypingTarget.isUnresolvable)
           NothingType
         case PureClosureValue(params, body, closureVal) =>
           // TODO check that this is safe
-          scope.detectCurrentType(closureVal)
+          currScope.detectCurrentType(closureVal)
         case Plus(lhs, rhs) =>
-          typeNumericBinop(lhs, rhs, scope, absInt.typePlusType, Operator.Plus, posOpt)
+          typeNumericBinop(lhs, rhs, currScope, absInt.typePlusType, Operator.Plus, posOpt)
         case Neg(operand) =>
-          typeNumericNeg(operand, scope, posOpt)
+          typeNumericNeg(operand, currScope, posOpt)
         case Times(lhs, rhs) =>
-          typeNumericBinop(lhs, rhs, scope, absInt.typeTimesType, Operator.Times, posOpt)
+          typeNumericBinop(lhs, rhs, currScope, absInt.typeTimesType, Operator.Times, posOpt)
         case DivBy(lhs, rhs) =>
-          typeNumericBinop(lhs, rhs, scope, absInt.typeDivType, Operator.Div, posOpt)
+          typeNumericBinop(lhs, rhs, currScope, absInt.typeDivType, Operator.Div, posOpt)
         case Modulo(lhs, rhs) =>
-          typeNumericBinop(lhs, rhs, scope, absInt.typeModuloType(Some(rhs)), Operator.Modulo, posOpt)
+          typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(Some(rhs)), Operator.Modulo, posOpt)
         case LogicalAnd(lhs, rhs) =>
-          typeLogicalBinop(lhs, rhs, scope, Operator.And, posOpt)
+          typeLogicalBinop(lhs, rhs, currScope, Operator.And, posOpt)
         case LogicalOr(lhs, rhs) =>
-          typeLogicalBinop(lhs, rhs, scope, Operator.Or, posOpt)
+          typeLogicalBinop(lhs, rhs, currScope, Operator.Or, posOpt)
         case LogicalNot(operand) =>
-          typeLogicalNeg(operand, scope, posOpt)
+          typeLogicalNeg(operand, currScope, posOpt)
         case LessOrEq(lhs, rhs) =>
-          typeComparisonBinop(lhs, rhs, scope, Operator.LessOrEq, posOpt)
+          typeComparisonBinop(lhs, rhs, currScope, Operator.LessOrEq, posOpt)
         case LessThan(lhs, rhs) =>
-          typeComparisonBinop(lhs, rhs, scope, Operator.LessThan, posOpt)
+          typeComparisonBinop(lhs, rhs, currScope, Operator.LessThan, posOpt)
         case Equality(lhs, rhs) =>
-          typeFormula(lhs, scope, posOpt)
-          typeFormula(rhs, scope, posOpt)
+          typeFormula(lhs, currScope, posOpt)
+          typeFormula(rhs, currScope, posOpt)
           BoolType
         case TypePredicate(subject, tpe) =>
-          checkDowncast(subject, tpe, scope, posOpt)
+          checkDowncast(subject, tpe, currScope, posOpt)
           BoolType
         case Phi(terms) =>
-          meetJoin.computeJoin(terms.map(typeFormula(_, scope, posOpt, suspendReporting)))
+          meetJoin.computeJoin(terms.map(typeFormula(_, currScope, posOpt, suspendReporting)))
+        case WrappedScope(resVal, wrappedScope) =>
+          typeScopeInstructions(wrappedScope, BranchingInfo.empty)
+          typeFormula(resVal, currScope, posOpt, suspendReporting)
       }
       rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
     }
@@ -927,31 +921,51 @@ final class Typer(
     }
   }
 
-  def typeField(field: Field, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): Field = {
+  def typeConstructorParam(param: ConstructorParam, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): ConstructorParam = {
     given TypeParamsContext = typeParamsCtx
 
     val sigScope = owner.sigScope
-    field match {
-      case ReassignableField(id, typeRaw, defaultInitializerOpt) =>
-        val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)
-        defaultInitializerOpt.foreach(typeDefaultInitializer(id, typeInst, _, sigScope, posOpt))
-        ReassignableField(id, typeInst, defaultInitializerOpt)
-      case field: StableField => typeStableField(field, owner, typeParamsCtx, posOpt)
+    param match {
+      case NonFieldConstructorParam(id, typeRaw, value, defaultInitializerOpt) =>
+        val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)
+        defaultInitializerOpt.foreach(typeInitializer(id, typeInst, _, sigScope, posOpt))
+        sigScope.saveType(value, typeInst)
+        NonFieldConstructorParam(id, typeInst, value, defaultInitializerOpt)
+      case field: Field => typeField(field, owner, typeParamsCtx, posOpt, isEncapsulatedField = false)
     }
   }
 
-  def typeStableField(field: StableField, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position]): StableField = {
+  def typeField(field: Field, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position], isEncapsulatedField: Boolean): Field = {
+    given TypeParamsContext = typeParamsCtx
+
+    val sigScope = owner.sigScope
+    val convertedField = field match {
+      case ReassignableField(id, typeRaw, value, defaultInitializerOpt) =>
+        val typeInst = instantiateType(typeRaw, Some(Invariant), sigScope, posOpt)
+        if (!isEncapsulatedField) {
+          defaultInitializerOpt.foreach(typeInitializer(id, typeInst, _, sigScope, posOpt))
+          sigScope.saveType(value, typeInst)
+        }
+        ReassignableField(id, typeInst, value, defaultInitializerOpt)
+      case field: StableField => typeStableField(field, owner, typeParamsCtx, posOpt, isEncapsulatedField)
+    }
+    convertedField
+  }
+
+  def typeStableField(field: StableField, owner: UserInstantiableTypeSig, typeParamsCtx: TypeParamsContext, posOpt: Option[Position], isEncapsulatedField: Boolean): StableField = {
     given TypeParamsContext = typeParamsCtx
 
     val sigScope = owner.sigScope
     val StableField(id, typeRaw, value, isPublishedAsMethod, defaultInitializerOpt) = field
     val typeInst = instantiateType(typeRaw, Some(Covariant), sigScope, posOpt)
-    sigScope.saveType(value, typeInst)
-    defaultInitializerOpt.foreach(typeDefaultInitializer(id, typeInst, _, sigScope, posOpt))
+    if (!isEncapsulatedField) {
+      defaultInitializerOpt.foreach(typeInitializer(id, typeInst, _, sigScope, posOpt))
+      sigScope.saveType(value, typeInst)
+    }
     StableField(id, typeInst, value, isPublishedAsMethod, defaultInitializerOpt)
   }
 
-  private def typeDefaultInitializer(fieldId: FunOrVarId, fieldType: Type, init: Formula, sigScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
+  private def typeInitializer(fieldId: FunOrVarId, fieldType: Type, init: Formula, sigScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     val defaultInitType = typeFormula(init, sigScope, posOpt)
     subtypingCtx.enforceIsSubtype(init, defaultInitType, fieldType, s"type $defaultInitType of default initializer of field $fieldId does not conform to field type $fieldType", sigScope, posOpt)
     if (!init.isPure) {
@@ -1011,10 +1025,9 @@ final class Typer(
       solver.assert(precond)
     }
     val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
-    checkingAllTypeVarsResolved {
-      FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt,
-        retTypeInst, sigScope, visibility, overridability, purity, declPosOpt, isSynthetic)
-    }
+    val funSig = FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt,
+      retTypeInst, sigScope, visibility, overridability, purity, declPosOpt, isSynthetic)
+    if isSynthetic then funSig else checkingAllTypeVarsResolved(funSig)
   }
 
   def typeTypeAliasSig(typealiasSig: TypeAliasSignature): TypeAliasSignature = {
@@ -1058,20 +1071,21 @@ final class Typer(
   }
 
   def typeClassSig(classSig: ClassSignature): ClassSignature = {
-    val ClassSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = classSig
+    val ClassSignature(id, typeParamsRaw, constructorParamsRaw, encapsulatedFieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = classSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     saveReceiverType(classSig, fullTypeParamsCtx)
-    val fieldsInst = typeFieldsUsing(typeField(_, classSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
+    val constructorParamsInst = typeFieldsUsing(typeConstructorParam(_, classSig, fullTypeParamsCtx, declPosOpt))(constructorParamsRaw)
+    val encapsulatedFieldsInst = typeFieldsUsing(typeField(_, classSig, fullTypeParamsCtx, declPosOpt, isEncapsulatedField = true))(encapsulatedFieldsRaw)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
     val directSuperTypesInst = typeSupertypesAsInterfaces(classSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      ClassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSuperTypesInst, visibility, sigScope, declPosOpt)
+      ClassSignature(id, typeParamsInst, constructorParamsInst, encapsulatedFieldsInst, functionsInst, directSuperTypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
@@ -1112,7 +1126,7 @@ final class Typer(
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
     saveReceiverType(recordSig, fullTypeParamsCtx)
-    val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt))(fieldsRaw)
+    val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt, isEncapsulatedField = false))(fieldsRaw)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
@@ -1128,9 +1142,9 @@ final class Typer(
     sig.sigScope.saveType(thisVal, tpe)(using typeParamsCtx)
   }
 
-  private def typeFieldsUsing[F <: Field](indivTypingFunc: F => F)
-                                         (fieldsRaw: SeqMap[FunOrVarId, F]) = {
-    val fieldsInstB = SeqMap.newBuilder[FunOrVarId, F]
+  private def typeFieldsUsing[P <: ConstructorParam](indivTypingFunc: P => P)
+                                                    (fieldsRaw: SeqMap[FunOrVarId, P]) = {
+    val fieldsInstB = SeqMap.newBuilder[FunOrVarId, P]
     for ((id, rawField) <- fieldsRaw) {
       val typedField = indivTypingFunc(rawField)
       fieldsInstB.addOne(id -> typedField)
@@ -1298,7 +1312,7 @@ final class Typer(
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
                                         callArgs: List[Formula], scope: Scope, posOpt: Option[Position])
-                                       (using tParamsCtx: TypeParamsContext): (Type, List[Type], List[Type]) = {
+                                       (using tParamsCtx: TypeParamsContext): (returnType: Type, instantiatedReceiverTypeArgs: List[Type], instantiatedFunTypeArgs: List[Type]) = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
@@ -1311,6 +1325,7 @@ final class Typer(
 
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
     dealiasingCtx.dealiasType(receiverType.withTypeVarsExpanded).withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
+      case NothingType => (NothingType, List.empty, List.empty)
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         val targetDesc = FunctionDescriptor(invkTarget.funId, typedCallArgs.size)
         resolutionCtx.resolveFunSig(typeName, targetDesc) match {
@@ -1425,6 +1440,7 @@ final class Typer(
 
     val owt = requireNonNullable(ownerType.withTypeVarsExpanded, s"owner of field ${fieldResolTarget.fieldId}", posOpt)
     dealiasingCtx.dealiasType(owt.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType.baseType match {
+      case NothingType => NothingType
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) if receiverIsThisPtr(currScope, owner) =>
@@ -1442,6 +1458,7 @@ final class Typer(
             if (isPurityRequired && !field.isStable) {
               er.reportError(s"illegal access to impure field ${field.id}", posOpt)
             }
+            val thisVal = currScope.getLocalValuesContextUnsafe.getThisValue.get
             instantiatedFieldType
           case _ => errorCase()
         }

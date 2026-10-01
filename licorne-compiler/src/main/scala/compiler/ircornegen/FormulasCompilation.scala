@@ -1,4 +1,4 @@
-package compiler.backend
+package compiler.ircornegen
 
 import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
@@ -8,11 +8,8 @@ import compiler.valproxies.ProxyStore
 import scala.collection.mutable
 
 object FormulasCompilation {
-
-  /**
-   * **WARNING**: when calling this function, remember to add a consumer to resVal if it should not be dropped
-   */
-  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)(typeInstr: RealInstr => Unit): (instructions: Iterable[IRcorne.RealInstr], resVal: IdValue) = {
+  
+  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)(typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
     val resVal = compileFormula(formula)(using instructions, currScope)
     for (instr <- instructions) {
@@ -92,6 +89,10 @@ object FormulasCompilation {
 
       case Formulas.Phi(terms) =>
         throw AssertionError("cannot convert phi formula")
+
+      case Formulas.WrappedScope(resVal, scope) =>
+        save(scope)
+        resVal
     }
   }
 

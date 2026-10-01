@@ -53,7 +53,7 @@ final class TypeAliasesAnalyzer(
         globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
       }
       
-      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er)
+      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollectorFuncOpt = None /* TODO maybe we can allow closures in type aliases */)
       programOld.copy(typeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig))
     }
 

@@ -79,7 +79,7 @@ final class SimplificationTests {
 
     val er = ErrorReporter(_ => fail(), _ => fail())
     val globalValuesCtx = GlobalValuesContext(proxyStore)
-    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty)
+    val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Map.empty)
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, er)
     Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx, None) { solver =>

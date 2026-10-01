@@ -1,0 +1,22 @@
+object Main {
+
+    fn main() {
+        val s1 = new FixedLenSeq(5, 0);
+        s1.set(1, 42);
+        s1.set(2, 100);
+        println(s1.get(2));
+    }
+
+}
+
+class FixedLenSeq[T](public size: Cnt, defaultElem: T) : Indexable {
+    val array = new Array(size, |defaultElem|)
+
+    fn set(i: Idx(this), elem: T) {
+        array.set(i + 1, elem)  //> E : first argument of call to set: expected licorne.core.Idx(this.array()), found i + 1 : [1 .. this.size()]
+    }
+
+    fn get(i: Idx(this)) -> T {
+        return array.get(i)
+    }
+}

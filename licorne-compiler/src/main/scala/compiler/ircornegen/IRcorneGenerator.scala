@@ -2,7 +2,7 @@ package compiler.ircornegen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, VariableRef}
+import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, ValParam, VariableRef}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, IRcorne, InvocationTarget}
@@ -51,6 +51,7 @@ final class IRcorneGenerator(
     val programBuilder = Program.Builder(er, proxyStore)
     val globalScope = programBuilder.globalValuesContext.globalScope
     val allFunctionsB = SeqMap.newBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
+    val allFieldsInitB = Map.newBuilder[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
     for (src <- sources) {
       checkPackageAndPosition(src)
       for (importStat <- src.imports) {
@@ -61,8 +62,11 @@ final class IRcorneGenerator(
       val datatypeSubtypes = mutable.Map.empty[TypeIdentifier, mutable.LinkedHashSet[TypeIdentifier]]
       for (df <- src.defs) {
         val typeId = TypeIdentifier(currentPackagePrefix, df.name)
+
+        given FunctionInfo = FunctionInfo(currentPackagePrefix, None)
+
         df match {
-          case df@Asts.InterfaceDef(_, typeParamTrees, functions, directSupertypes, visibility) =>
+          case df@Asts.InterfaceDef(_, typeParamTrees, functionTrees, directSupertypeTrees, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -77,13 +81,13 @@ final class IRcorneGenerator(
 
             given TypeParamsContext = fullTypeParamsCtx
 
-            val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, interfaceSigScope)), visibility, interfaceSigScope, df.getPosition)
+            val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, directSupertypeTrees.map(mkNamedType(_, interfaceSigScope)), visibility, interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = true)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
-          case df@Asts.ObjectDef(_, functions, directSupertypes, visibility) =>
+          case df@Asts.ObjectDef(_, functionTrees, directSupertypeTrees, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -94,15 +98,17 @@ final class IRcorneGenerator(
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
-            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypes.map(mkNamedType(_, objSigScope)), visibility, objSigScope, df.getPosition)
+            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypeTrees.map(mkNamedType(_, objSigScope)), visibility, objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val sig = noFunctionsSig.copy(functions = funcs)
             programBuilder.saveSignature(sig, df.getPosition)
 
-          case df@Asts.ClassDef(_, typeParamTrees, params, functions, directSupertypes, visibility) =>
+          case df@Asts.ClassDef(_, typeParamTrees, paramTrees, encapsulatedFieldTrees, functionTrees, directSupertypeTrees, visibility) =>
 
             given ImportsContext = createImportsCtx(src, Some(df))
+
+            given FunctionInfo = FunctionInfo(currentPackagePrefix, None)
 
             val classSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = classSigScope.newParam(ThisId, df.getPosition)
@@ -113,30 +119,56 @@ final class IRcorneGenerator(
 
             given TypeParamsContext = fullTypeParamsCtx
 
-            val fields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
+            val constructorParams = mutable.LinkedHashMap.empty[FunOrVarId, ConstructorParam]
+            val allFieldIds = mutable.Set.empty[FunOrVarId]
 
-            def saveNonReassigParam(param: Asts.SimpleParam | Asts.PublicParam, initOpt: Option[Expr]): Unit = {
-              val isPublishedAsMethod = param.isInstanceOf[Asts.PublicParam]
-              val paramId = param.paramId
-              val paramTypeTree = param.paramTypeTree
-              val fieldValue = classSigScope.newParam(paramId, param.getPosition)
-              val paramType = mkType(paramTypeTree, classSigScope)(using Map.empty)
-              mustNotBeUnit(paramType, param.getPosition)
-              fields(paramId) = StableField(paramId, paramType, fieldValue, isPublishedAsMethod, initOpt.flatMap(generateFormula(_, classSigScope)(using Map.empty)))
-              classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, classSigScope, ReassigPermission.Val, Some(paramType))
+            def saveAndCheckFieldId(fldId: FunOrVarId, posOpt: Option[Position]): Unit = {
+              if (!allFieldIds.add(fldId)) {
+                reportError(s"a field named $fldId has already been declared in class $typeId", posOpt)
+              }
             }
 
-            params.foreach {
-              case (param@Asts.VarParam(paramId, paramTypeTree), initOpt) =>
-                val paramType = mkType(paramTypeTree, classSigScope)(using Map.empty)
-                mustNotBeUnit(paramType, param.getPosition)
-                fields(paramId) = ReassignableField(paramId, paramType, initOpt.flatMap(generateFormula(_, classSigScope)(using Map.empty)))
-              case (param: (Asts.SimpleParam | Asts.PublicParam), initOpt) =>
-                saveNonReassigParam(param, initOpt)
+            for ((paramTree, initTreeOpt) <- paramTrees) {
+              val paramId = paramTree.paramId
+              saveAndCheckFieldId(paramId, paramTree.getPosition)
+              val paramType = mkType(paramTree.paramTypeTree, classSigScope)(using Map.empty)
+              mustNotBeUnit(paramType, paramTree.getPosition)
+              val paramVal = classSigScope.newParam(paramId, paramTree.getPosition)
+              val initOpt = initTreeOpt.flatMap(generateFormula(_, classSigScope, s"default value of $paramId")(using None, Map.empty))
+              paramTree match {
+                case Asts.VarParam(paramId, paramTypeTree) =>
+                  constructorParams(paramId) = ReassignableField(paramId, paramType, paramVal, initOpt)
+                case param: (Asts.SimpleParam | Asts.ValParam | Asts.PublicParam) =>
+                  val isPublishedAsMethod = param.isInstanceOf[Asts.PublicParam]
+                  constructorParams(paramId) = param match {
+                    case Asts.SimpleParam(_, paramTypeTree) => NonFieldConstructorParam(paramId, paramType, paramVal, initOpt)
+                    case _ => StableField(paramId, paramType, paramVal, isPublishedAsMethod, initOpt)
+                  }
+              }
+              classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramVal, classSigScope, ReassigPermission.Val, Some(paramType))
             }
-            val noFunctionsSig = ClassSignature(typeId, typeParams, SeqMap.from(fields), Map.empty, directSupertypes.map(mkNamedType(_, classSigScope)(using Map.empty)), visibility, classSigScope, df.getPosition)
-            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using fields)
-            val targetsToResolve = generatePublicFieldsAccessors(typeId, df, fields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
+            val encapsulatedFields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
+            for (fldDf@Asts.EncapsulatedFieldDef(fieldId, fieldTypeTreeOpt, initTree, isReassignable) <- encapsulatedFieldTrees) {
+              saveAndCheckFieldId(fieldId, fldDf.getPosition)
+              val fieldType = typeVarsCtx.newTypeVariable(fieldId, None, None, fullTypeParamsCtx, fldDf.getPosition)
+              val paramVal = classSigScope.newParam(fieldId, fldDf.getPosition)
+              classSigScope.getLocalValuesContextUnsafe.saveNewLocal(fieldId, paramVal, classSigScope, ReassigPermission.Val, Some(fieldType))
+              val initOpt = generateFormula(initTree, classSigScope, s"initializer of field $fieldId", allowWrappedInstr = true)(using None, Map.empty)
+              encapsulatedFields.put(fieldId,
+                if isReassignable then ReassignableField(fieldId, fieldType, paramVal, initOpt)
+                else StableField(fieldId, fieldType, paramVal, isPublishedAsMethod = false, initOpt)
+              )
+            }
+            val noFunctionsSig = ClassSignature(typeId, typeParams,
+              SeqMap.from(constructorParams),
+              SeqMap.from(encapsulatedFields),
+              Map.empty,
+              directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty)),
+              visibility, classSigScope, df.getPosition
+            )
+            allFieldsInitB.addOne(typeId, encapsulatedFields.flatMap((fldId, fld) => fld.defaultInitializerOpt.map(init => fldId -> FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore)(_ => ()))).toMap)
+            val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using constructorParams.filter(_._2.isInstanceOf[Field]) ++ encapsulatedFields)
+            val targetsToResolve = generateFieldsAccessors(typeId, df, constructorParams ++ encapsulatedFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val classSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
@@ -149,7 +181,7 @@ final class IRcorneGenerator(
           case df: Asts.DataTypeDef =>
             datatypeDefs.addOne(currentPackagePrefix, df)
 
-          case df@Asts.RecordDef(_, typeParamTrees, fields, functions, directSupertypes, visibility) =>
+          case df@Asts.RecordDef(_, typeParamTrees, fieldTrees, functionTrees, directSupertypeTrees, visibility) =>
 
             given importsCtx: ImportsContext = createImportsCtx(src, Some(df))
 
@@ -163,18 +195,24 @@ final class IRcorneGenerator(
             given TypeParamsContext = fullTypeParamsCtx
 
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
-            fields.foreach {
-              case (param@Asts.SimpleParam(paramId, paramTypeTree), initOpt) =>
-                val fieldValue = recordSigScope.newParam(paramId, param.getPosition)
-                val fieldType = mkType(paramTypeTree, recordSigScope)(using Map.empty)
-                mustNotBeUnit(fieldType, param.getPosition)
-                stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = true, initOpt.flatMap(generateFormula(_, recordSigScope)(using Map.empty)))
-                recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, recordSigScope, ReassigPermission.Val, Some(fieldType))
+            for ((param, initTreeOpt) <- fieldTrees) {
+              if (param.isInstanceOf[ValParam]) {
+                warn(s"${Keyword.Val} is redundant for record fields", param.getPosition)
+              }
+              val paramId = param.paramId
+              val fieldValue = recordSigScope.newParam(paramId, param.getPosition)
+              val fieldType = mkType(param.paramTypeTree, recordSigScope)(using Map.empty)
+              mustNotBeUnit(fieldType, param.getPosition)
+              stableFields(paramId) = StableField(paramId, fieldType, fieldValue, isPublishedAsMethod = true, initTreeOpt.flatMap(generateFormula(_, recordSigScope, s"default initializer of field $paramId")(using None, Map.empty)))
+              val idIsFresh = recordSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, fieldValue, recordSigScope, ReassigPermission.Val, Some(fieldType))
+              if (!idIsFresh) {
+                reportError(s"a field with name $paramId has already been declared in record $typeId", param.getPosition)
+              }
             }
             val noFunctionsSig = RecordSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty,
-              directSupertypes.map(mkNamedType(_, recordSigScope)(using Map.empty)), visibility, recordSigScope, df.getPosition)
+              directSupertypeTrees.map(mkNamedType(_, recordSigScope)(using Map.empty)), visibility, recordSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
-            val targetsToResolve = generatePublicFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
+            val targetsToResolve = generateFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val recordSig = noFunctionsSig.copy(functions = funcs)
             for ((fldTarget, callTarget, accessorSig, tpe) <- targetsToResolve) {
@@ -183,12 +221,12 @@ final class IRcorneGenerator(
               proxyStore.saveAccessorProxy(recordSig.id, accessorSig.functionName)
             }
             programBuilder.saveSignature(recordSig, df.getPosition)
-            for (superT <- directSupertypes) {
+            for (superT <- directSupertypeTrees) {
               val superTId = importsCtx.applyImports(superT.name)
               datatypeSubtypes.getOrElseUpdate(superTId, mutable.LinkedHashSet.empty).addOne(typeId)
             }
 
-          case df@Asts.TypeAliasDef(_, typeParamTrees, params, rhs, visibility) =>
+          case df@Asts.TypeAliasDef(_, typeParamTrees, paramTrees, rhsTrees, visibility) =>
 
             given ImportsContext = createImportsCtx(src, None)
 
@@ -200,7 +238,7 @@ final class IRcorneGenerator(
             given TypeParamsContext = fullTypeParamsCtx
 
             val typeAliasParams = mutable.LinkedHashMap.empty[FunOrVarId, (Type, IdValue)]
-            params.foreach {
+            paramTrees.foreach {
               case param@Asts.SimpleParam(paramId, paramTypeTree) =>
                 val paramValue = typeAliasSigScope.newParam(paramId, param.getPosition)
                 val paramType = mkType(paramTypeTree, typeAliasSigScope)(using Map.empty)
@@ -208,11 +246,13 @@ final class IRcorneGenerator(
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, typeAliasSigScope, ReassigPermission.Val, Some(paramType))
             }
             val sig = TypeAliasSignature(typeId, typeParams, SeqMap.from(typeAliasParams),
-              mkType(rhs, typeAliasSigScope)(using Map.empty), visibility, typeAliasSigScope, df.getPosition)
+              mkType(rhsTrees, typeAliasSigScope)(using Map.empty), visibility, typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
-      for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, functions, directSupertypes, visibility)) <- datatypeDefs) {
+      for ((pkgPrefix, df@Asts.DataTypeDef(datatypeName, typeParamTrees, functionTrees, directSupertypeTrees, visibility)) <- datatypeDefs) {
+
+        given FunctionInfo = FunctionInfo(currentPackagePrefix, None)
 
         given ImportsContext = createImportsCtx(src, Some(df))
 
@@ -229,7 +269,7 @@ final class IRcorneGenerator(
         given TypeParamsContext = fullTypeParamsCtx
 
         val subtypes = SeqSet(datatypeSubtypes.getOrElse(datatypeId, mutable.LinkedHashSet.empty))
-        val noFunctionsSig = DatatypeSignature(datatypeId, typeParams, Map.empty, directSupertypes.map(mkNamedType(_, datatypeSigScope)),
+        val noFunctionsSig = DatatypeSignature(datatypeId, typeParams, Map.empty, directSupertypeTrees.map(mkNamedType(_, datatypeSigScope)),
           subtypes, visibility, datatypeSigScope, df.getPosition)
         val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
         val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, datatypeId, ownerIsAbstractType = true)
@@ -237,7 +277,7 @@ final class IRcorneGenerator(
         programBuilder.saveSignature(datatypeSig, df.getPosition)
       }
     }
-    val program = programBuilder.build(allFunctionsB.result())
+    val program = programBuilder.build(allFunctionsB.result(), allFieldsInitB.result())
     for (tv <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv)
     }
@@ -392,29 +432,33 @@ final class IRcorneGenerator(
     if isStdLib then StdLib.stdLibPackageName :: pathLs.reverse.takeWhile(_ != StdLib.stdLibPackageName).reverse else pathLs
   }
 
-  private def generatePublicFieldsAccessors(
-                                             classId: TypeIdentifier,
-                                             fieldsOwner: Asts.TypeDefTree,
-                                             fields: Iterable[(FunOrVarId, Field)],
-                                             functionsMap: mutable.SeqMap[FunctionDescriptor, (FunctionSignature, Function)],
-                                             globalScope: Scope,
-                                             thisType: Type,
-                                             allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
-                                           ): Iterable[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)] = {
+  private def generateFieldsAccessors(
+                                       classId: TypeIdentifier,
+                                       fieldsOwner: Asts.TypeDefTree,
+                                       fields: Iterable[(FunOrVarId, ConstructorParam)],
+                                       functionsMap: mutable.SeqMap[FunctionDescriptor, (FunctionSignature, Function)],
+                                       globalScope: Scope,
+                                       thisType: Type,
+                                       allFunctionsCollector: SeqMapBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
+                                     ): Iterable[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)] = {
     val targetsToResolve = mutable.ListBuffer.empty[(FieldResolutionTarget, InvocationTarget, FunctionSignature, Type)]
     val accessorsSubst = mutable.Map.empty[IdValue, IdValue => FunCall]
     fields.foreach {
-      case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod, defaultInitializerOpt)) if isPublishedAsMethod =>
+      case (_, fld@StableField(fieldId, fieldType, fieldVal, isPublishedAsMethod, defaultInitializerOpt)) =>
+        val accessorVisibility = if isPublishedAsMethod then FuncVisibility.Public else FuncVisibility.Private
         val accessorDescr = FunctionDescriptor(fieldId, 0)
         functionsMap.get(accessorDescr) match {
           case Some(funSig, funScope) =>
-            er.reportError(s"parameterless method ${funSig.functionName} conflicts with compiler-generated accessor of ${FuncVisibility.Public} field $fieldId", funSig.declPosOpt)
+            // TODO maybe we can accept that the user overwrites this method?
+            if (isPublishedAsMethod) {
+              er.reportError(s"parameterless method ${funSig.functionName} conflicts with $accessorVisibility compiler-generated accessor of field $fieldId", funSig.declPosOpt)
+            }
           case None =>
             val syntheticFunSigScope = Scope.nestedInside(globalScope, fieldsOwner)
             val thisValue = syntheticFunSigScope.newParam(ThisId, fieldsOwner.getPosition)
             val accessorRetType = fieldType.substitute(Map.empty, accessorsSubst.mapVals(_.apply(thisValue)))
             val syntheticFunSig = FunctionSignature(classId, fieldId, List.empty, SeqMap(thisValue -> thisType),
-              precondOpt = None, accessorRetType, syntheticFunSigScope, FuncVisibility.Public, Overridability.Final, Purity.Pure, fieldsOwner.getPosition, isSyntheticAccessor = true)
+              precondOpt = None, accessorRetType, syntheticFunSigScope, accessorVisibility, Overridability.Final, Purity.Pure, fieldsOwner.getPosition, isSyntheticAccessor = true)
             val syntheticFuncBody = Scope.nestedInside(syntheticFunSigScope, fieldsOwner)
             val syntheticFunc = IRcorne.Function(classId, fld.id, Some(syntheticFuncBody))
             val retVal = syntheticFunSigScope.newIntermediate("ret")
@@ -437,10 +481,14 @@ final class IRcorneGenerator(
                                 functionsProviderIncompleteSig: RuntimeTypeSignature,
                                 globalScope: Scope,
                                 allFunctionsB: SeqMapBuilder[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
-                              )(using currImplicitFields: collection.Map[FunOrVarId, Field], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunctionDescriptor, (FunctionSignature, IRcorne.Function)] = {
+                              )(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], outerTypeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): mutable.SeqMap[FunctionDescriptor, (FunctionSignature, IRcorne.Function)] = {
     val functions = mutable.LinkedHashMap.empty[FunctionDescriptor, (FunctionSignature, IRcorne.Function)]
     val functionOverloads = mutable.Map.empty[(FunOrVarId, Int), FunctionSignature]
     for (funDef <- functionsProvider.functions) {
+      val ownerId = functionsProviderIncompleteSig.id
+
+      given FunctionInfo = FunctionInfo(ownerId.prefixes, Some(funDef.id))
+
       val funSigScope = Scope.nestedInside(globalScope, funDef)
       val (convertedTypeParams, fullTypeParamsCtx) = processTypeParamsAccumulating(outerTypeParamsCtx, funDef.typeParams) {
         convertFunTypeParam(_, funSigScope)
@@ -497,10 +545,9 @@ final class IRcorneGenerator(
         case Some(retTypeTree) => mkType(retTypeTree, funSigScope)
         case None => PrimitiveType.UnitType
       }
-      val ownerId = functionsProviderIncompleteSig.id
       val funId = funDef.id
       val function = generateIRFunc(ownerId, funId, funDef.bodyOpt, funSigScope, funDef.getPosition)
-      val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope))
+      val precondFormulaOpt = funDef.optPrecond.flatMap(generateFormula(_, funSigScope, "precondition")(using None))
       val sig = FunctionSignature(ownerId, funId, convertedTypeParams, SeqMap.from(paramsInclThis), precondFormulaOpt, retType,
         funSigScope, funDef.visibility, funDef.overridability, funDef.purity, funDef.getPosition, isSyntheticAccessor = false)
       val funDescr = sig.descriptor
@@ -557,12 +604,12 @@ final class IRcorneGenerator(
     resultB.result()
   }
 
-  private def convertTypeTypeParam(typeParam: Asts.TypeParamWithVariance, scope: Scope)(using collection.Map[FunOrVarId, Field], TypeParamsContext, ImportsContext): TypeTypeParamInfo = {
+  private def convertTypeTypeParam(typeParam: Asts.TypeParamWithVariance, scope: Scope)(using collection.Map[FunOrVarId, ConstructorParam], TypeParamsContext, FunctionInfo, ImportsContext): TypeTypeParamInfo = {
     val Asts.TypeParamWithVariance(tParamName, variance, upperBoundOpt, lowerBoundOpt) = typeParam
     TypeTypeParamInfo(TypeIdentifier(List.empty, tParamName), variance, upperBoundOpt.map(mkType(_, scope)), lowerBoundOpt.map(mkType(_, scope)))
   }
 
-  private def convertFunTypeParam(typeParam: Asts.TypeParamWithoutVariance, scope: Scope)(using collection.Map[FunOrVarId, Field], TypeParamsContext, ImportsContext): FunctionTypeParamInfo = {
+  private def convertFunTypeParam(typeParam: Asts.TypeParamWithoutVariance, scope: Scope)(using collection.Map[FunOrVarId, ConstructorParam], TypeParamsContext, FunctionInfo, ImportsContext): FunctionTypeParamInfo = {
     val Asts.TypeParamWithoutVariance(tParamName, upperBoundOpt, lowerBoundOpt) = typeParam
     FunctionTypeParamInfo(TypeIdentifier(List.empty, tParamName), upperBoundOpt.map(mkType(_, scope)), lowerBoundOpt.map(mkType(_, scope)))
   }
@@ -573,11 +620,11 @@ final class IRcorneGenerator(
                               bodyOpt: Option[Asts.Block],
                               funSigScope: Scope,
                               posOpt: Option[Position]
-                            )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): IRcorne.Function = bodyOpt match {
+                            )(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): IRcorne.Function = bodyOpt match {
     case Some(body) =>
       val funScope = Scope.nestedInside(funSigScope, body)
       for (stat <- body.stats) {
-        generateIR(stat, funScope, newScopeIfBlock = false)(using currImplicitFields, ReturnCollector.doNothingCollector, FunctionInfo(funSigScope, owner.prefixes, funId))
+        generateIR(stat, funScope, newScopeIfBlock = false)(using None, currImplicitFields, ReturnCollector.doNothingCollector, FunctionInfo(owner.prefixes, Some(funId)))
       }
       IRcorne.Function(owner, funId, Some(funScope))
     case None =>
@@ -585,7 +632,7 @@ final class IRcorneGenerator(
   }
 
   private def generateIR(stat: Asts.Statement, currScope: Scope, newScopeIfBlock: Boolean)
-                        (using currImplicitFields: collection.Map[FunOrVarId, Field], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo,
+                        (using currItVal: CurrentItVal, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], returnCollector: ReturnCollector, currFuncInfo: FunctionInfo,
                          importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Unit = {
     currScope.getLocalValuesContextUnsafe.reportHasExitedIfNeeded(er, stat.getPosition)
     if (currScope.getLocalValuesContextUnsafe.hasExited) {
@@ -771,7 +818,7 @@ final class IRcorneGenerator(
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
 
       case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
-        val retVal = currFuncInfo.funSigScope.newIntermediate("ret")
+        val retVal = currScope.newIntermediate("ret")
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateIRExpr(retVal, returnedTree, currScope)
@@ -806,7 +853,7 @@ final class IRcorneGenerator(
                               resultVal: IdValue,
                               expr: Asts.Expr,
                               currScope: Scope
-                            )(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext, functionInfo: FunctionInfo): Option[Formula] = {
+                            )(using currItVal: CurrentItVal, typeParamsCtx: TypeParamsContext, functionInfo: FunctionInfo, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], importsCtx: ImportsContext): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateIRExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
@@ -898,6 +945,11 @@ final class IRcorneGenerator(
         }
       case Asts.ThisRef() =>
         recurseOnDesugared(Asts.VariableRef(ThisId))
+      case Asts.ItRef() if currItVal.isDefined =>
+        val itVal = currItVal.get
+        currScope.saveInstr(AssignVal(resultVal, itVal), expr)
+        proxyStore.saveProxy(resultVal, itVal)
+        Some(itVal)
       case Asts.ItRef() =>
         recurseOnDesugared(Asts.VariableRef(ItId))
       case Asts.ObjectRef(objectNameRaw) =>
@@ -1062,7 +1114,7 @@ final class IRcorneGenerator(
         for ((id, typeTreeOpt) <- params) {
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
-          val paramVal = if id == ItId then globalCtx.itValue else closureParamsScope.newParam(id, posOpt)
+          val paramVal = closureParamsScope.newParam(id, posOpt)
           val givenTypeOpt = typeTreeOpt.map(mkType(_, closureParamsScope))
           val tpe = givenTypeOpt.getOrElse(TypeVariable(id, None, None, typeParamsCtx, closureDefTree.getPosition)(globalCtx.saveTypeVariable))
           paramValsAndTypesB.addOne(paramVal -> tpe)
@@ -1079,12 +1131,13 @@ final class IRcorneGenerator(
           }
           currScope.getLocalValuesContextUnsafe.remap(varId, heapAddr)
         }
+        val paramValsAndTypes = paramValsAndTypesB.result()
         val closureBodyScope = Scope.nestedInside(closureParamsScope, closureDefTree)
         val retValCollector = ReturnCollector.freshUniqueCollector
-        generateIR(bodyTree, closureBodyScope, newScopeIfBlock = false)(using currImplicitFields, retValCollector, FunctionInfo(closureParamsScope, functionInfo.packagePrefix, functionInfo.funId))
-        val isPure = declaredPure || isObviouslyPure(closureBodyScope)
-        val paramValsAndTypes = paramValsAndTypesB.result()
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funId.stringId)), closureDefTree)
+        val isShorthandClosure = params.size == 1 && params.head._1 == ItId
+        generateIR(bodyTree, closureBodyScope, newScopeIfBlock = false)(using Option.when(isShorthandClosure)(paramValsAndTypes.head._1), currImplicitFields, retValCollector, FunctionInfo(functionInfo.packagePrefix, functionInfo.funIdOpt))
+        val isPure = declaredPure || closureBodyScope.isObviouslyPure
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funIdOpt.map(_.stringId).getOrElse("$$anonymous"))), closureDefTree)
         retValCollector.getUniqueRet.flatMap { closureRetVal =>
           val closure = PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
           if isPure then Some(closure)
@@ -1107,12 +1160,13 @@ final class IRcorneGenerator(
     proxyOpt
   }
 
-  private def generateFormula(expr: Expr, currScope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, Field], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext): Option[Formula] = {
+  private def generateFormula(expr: Expr, currScope: Scope, positionDescr: String, allowWrappedInstr: Boolean = false)
+                             (using currItVal: CurrentItVal, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo): Option[Formula] = {
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
       def failIllegalConstruct(constructKindDescr: String): Option[Formula] = {
-        er.reportError(s"illegal construct in formula: $constructKindDescr", expr.getPosition)
+        er.reportError(s"illegal construct in $positionDescr: $constructKindDescr", expr.getPosition)
         None
       }
 
@@ -1137,7 +1191,7 @@ final class IRcorneGenerator(
               }
           }
         case Asts.ThisRef() => generateFormula(VariableRef(ThisId), currScope)
-        case Asts.ItRef() => generateFormula(VariableRef(ItId), currScope)
+        case Asts.ItRef() => currItVal.orElse(generateFormula(VariableRef(ItId), currScope))
         case Asts.ObjectRef(objectNameRaw) =>
           val objectName = importsCtx.applyImports(objectNameRaw)
           Some(currScope.valuesCtx.resolveObject(objectName))
@@ -1166,7 +1220,6 @@ final class IRcorneGenerator(
               }
             } yield ClosureCall(calleeFormula, ClosureTypingTarget(), argFormulas)
           }
-        case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
         case Asts.UnaryOp(Operator.Minus, operand) =>
           for {
             opFormula <- generateFormula(operand, currScope)
@@ -1248,6 +1301,12 @@ final class IRcorneGenerator(
           for {
             ownerFormula <- generateFormula(lhs, currScope)
           } yield Select(ownerFormula, FieldResolutionTarget(field))
+        case instantiation: (Asts.RecordOrClassInstantiation | Asts.ClosureDef | Asts.Ternary) if allowWrappedInstr =>
+          val resVal = currScope.newIntermediate("wrapped")
+          val scopeToWrap = Scope.nestedInside(currScope, instantiation)
+          generateIRExpr(resVal, instantiation, scopeToWrap)
+          Some(WrappedScope(resVal, scopeToWrap))
+        case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
         case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
         case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
@@ -1263,19 +1322,6 @@ final class IRcorneGenerator(
     }
 
     generateFormula(expr, currScope)
-  }
-
-  private def isObviouslyPure(instr: Instr): Boolean = instr match {
-    case _: PureInstr => true
-    case Loop(cond, condVal, body, variables) =>
-      isObviouslyPure(cond) && isObviouslyPure(body)
-    case Disjunction(condVal, thenBr, elseBr, variables) =>
-      isObviouslyPure(thenBr) && isObviouslyPure(elseBr)
-    case scope: Scope =>
-      scope.instructions.forall(isObviouslyPure)
-    case LocalDecl(localId, tpe) => true
-    case Unreachable() => true
-    case _ => false
   }
 
   private def mustNotBeUnit(tpe: Type, posOpt: Option[Position]): Unit = {
@@ -1295,55 +1341,43 @@ final class IRcorneGenerator(
     }
   }
 
-  private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, Field], typeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): Type = {
-
-    extension (optFormula: Option[Formula]) def required(errorMsg: String, posOpt: Option[Position]): Option[Formula] = optFormula match {
-      case s@Some(_) => s
-      case None =>
-        er.reportError(errorMsg, posOpt)
-        None
-    }
-
-    typeTree match {
-      case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
-      case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
-      case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
-        ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
-      case Asts.RefinedTypeTree(baseTypeTree, predicateTree) =>
-        val baseType = mkType(baseTypeTree, scope)
-        generateFormula(predicateTree, scope) match {
-          case Some(predicate) => RefinedType(baseType, predicate)
-          case None =>
-            er.reportError("invalid predicate", predicateTree.getPosition)
-            baseType
+  private def mkType(typeTree: Asts.TypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo, importsCtx: ImportsContext): Type = typeTree match {
+    case Asts.PrimitiveTypeTree(primitiveType) => primitiveType
+    case namedTypeTree: Asts.NamedTypeTree => mkNamedType(namedTypeTree, scope)
+    case Asts.ClosureTypeTree(paramTypes, resultType, enforcedPure) =>
+      ClosureType(paramTypes.map(mkType(_, scope)), mkType(resultType, scope), enforcedPure)
+    case Asts.RefinedTypeTree(baseTypeTree, predicateTree) =>
+      val baseType = mkType(baseTypeTree, scope)
+      generateFormula(predicateTree, scope, "type predicate")(using None) match {
+        case Some(predicate) => RefinedType(baseType, predicate)
+        case None => baseType
+      }
+    case rangeTypeTree@Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt, upperIncluded) =>
+      import FormulasDsl.*
+      IntRangeType(
+        lowerBoundOpt.flatMap(lb => generateFormula(lb, scope, "range bound")(using None)),
+        upperBoundOpt.flatMap(ub => generateFormula(ub, scope, "range bound")(using None)).map { ub =>
+          if upperIncluded then ub else ub - 1
         }
-      case rangeTypeTree@Asts.IntRangeTypeTree(lowerBoundOpt, upperBoundOpt, upperIncluded) =>
-        import FormulasDsl.*
-        IntRangeType(
-          lowerBoundOpt.flatMap(lb => generateFormula(lb, scope).required("invalid lower bound", lb.getPosition)),
-          upperBoundOpt.flatMap(ub => generateFormula(ub, scope).required("invalid upper bound", ub.getPosition)).map { ub =>
-            if upperIncluded then ub else ub - 1
-          }
-        )
-      case Asts.NullableTypeTree(wrappedType) =>
-        NullableType(mkType(wrappedType, scope))
-      case Asts.UnionTypeTree(types) =>
-        UnionType(SeqSet(types.map(mkType(_, scope))))
-      case Asts.IntersectionTypeTree(types) =>
-        IntersectionType(SeqSet(types.map(mkType(_, scope))))
-    }
+      )
+    case Asts.NullableTypeTree(wrappedType) =>
+      NullableType(mkType(wrappedType, scope))
+    case Asts.UnionTypeTree(types) =>
+      UnionType(SeqSet(types.map(mkType(_, scope))))
+    case Asts.IntersectionTypeTree(types) =>
+      IntersectionType(SeqSet(types.map(mkType(_, scope))))
   }
 
-  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, Field], typeParamsCtx: TypeParamsContext, importsCtx: ImportsContext): NamedType = namedTypeTree match {
+  private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo, importsCtx: ImportsContext): NamedType = namedTypeTree match {
     case Asts.NamedTypeTree(rawTId@TypeIdentifier(Nil, typeName), typeParams, params) =>
       typeParamsCtx.resolve(rawTId) match {
         case Some(tpe) => NamedType(rawTId, List.empty, List.empty)
         case None =>
           val tid = importsCtx.importedTypeFor(typeName).getOrElse(rawTId)
-          NamedType(tid, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope)))
+          NamedType(tid, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope, s"argument of $tid")(using None)))
       }
     case Asts.NamedTypeTree(name, typeParams, params) =>
-      NamedType(name, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope)))
+      NamedType(name, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope, s"argument of $name")(using None)))
   }
 
   private def externalVarsAssignedIn(ast: Asts.Ast): Set[FunOrVarId] = {
@@ -1362,7 +1396,7 @@ final class IRcorneGenerator(
     val assignedVars = assigned.toSet -- defined
     assignedVars
   }
-  
+
   private def decomposeInitializer(initializer: Asts.FieldInitializer): (labelOpt: Option[FunOrVarId], rhs: Asts.Expr, idValNameHint: Option[String]) = initializer match {
     case Asts.FullFieldInitializer(fieldName, rhs) => (Some(fieldName), rhs, Some(fieldName.stringId))
     case Asts.ShorthandFieldInitializer(expr@VariableRef(name)) => (None, expr, Some(name.stringId))
@@ -1386,6 +1420,8 @@ final class IRcorneGenerator(
     er.report(Warning(IRcorneGeneration, msg, posOpt))
   }
 
-  private case class FunctionInfo(funSigScope: Scope, packagePrefix: List[String], funId: FunOrVarId)
+  private case class FunctionInfo(packagePrefix: List[String], funIdOpt: Option[FunOrVarId])
+
+  private type CurrentItVal = Option[IdValue]
 
 }

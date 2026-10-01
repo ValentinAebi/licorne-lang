@@ -1,8 +1,10 @@
 package compiler.typing.phases
 
-import compiler.irs.ircorne.IRcorne
+import compiler.irs.ircorne.Formulas.FunCall
+import compiler.irs.ircorne.{FieldResolutionTarget, Formulas, IRcorne, InvocationTarget}
 import compiler.irs.ircorne.IRcorne.AssigningInstr
-import compiler.lang.{FunctionSignature, RuntimeTypeSignature}
+import compiler.lang.Field.StableField
+import compiler.lang.{FunctionDescriptor, FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
 import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
 import compiler.lang.Types.Type
 import compiler.pipeline.CompilationStep.TypeChecking
@@ -56,7 +58,7 @@ final class TypeChecker(
       }
 
       typeVarsCtx.checkAllTypeVariablesHaveBeenResolved(
-        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er),
+        Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, None),
         er
       )
     }
@@ -97,36 +99,58 @@ final class TypeChecker(
 
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
-      val ownerSig = resolCtx.resolveTypeSig(funSig.ownerName).get
+        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+      val ownerSig = resolCtx.resolveTypeSigAs(funSig.ownerName).get
+
+      given TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
+
+      given ResolutionContext = resolCtx
+
+      given Simplifier = simplifier
+
       val precondInfos = funSig.precondOpt match {
         case Some(precond) =>
-          val (infosIfPrecondTrue, _) = proxyStore.rawInfosFor(precond, funSig.sigScope)(using dealiasingCtx)
+          val (infosIfPrecondTrue, _) = proxyStore.rawInfosFor(precond, funSig.sigScope)
           infosIfPrecondTrue
         case None => BranchingInfo.empty
       }
       solver.onNewFrame {
+        ownerSig match {
+          case ownerSig: UserInstantiableTypeSig =>
+            ownerSig.encapsulatedFields.foreach {
+              case (_, StableField(fldId, fldType, fldVal, isPublishedAsMethod, Some(initializer))) =>
+                val thisVal = funSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
+                val invkTarget = InvocationTarget(fldId)
+                val accessorFunSig = resolCtx.forceGetFunction(ownerSig.id, FunctionDescriptor(fldId, 0))
+                invkTarget.resolve(ownerSig, accessorFunSig, fldType)
+                val accessorCall = FunCall(thisVal, invkTarget, List.empty, List.empty)
+                solver.assertEq(accessorCall, initializer, SimplifiedType.from(fldType))
+                funSig.sigScope.eMerge(accessorCall, initializer)
+              case _ => ()
+            }
+          case _ => ()
+        }
         for ((paramVal, paramType) <- funSig.paramsInclThis) {
           solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType).withTypeVarsExpanded)
         }
-        funcTyper.typeScopeInstructions(funcBody, precondInfos)(using TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams))
-      }
-      checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
+        funcTyper.typeScopeInstructions(funcBody, precondInfos)
+        checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
 
-      while (closuresCollector.nonEmpty) {
-        val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, containingFunction, typeParamsCtx) = closuresCollector.dequeue()
-        val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-          proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollector.enqueue)
-        solver.onNewFrame {
-          for ((paramVal, paramType) <- closureParams) {
-            solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))
+        while (closuresCollector.nonEmpty) {
+          val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
+          val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
+            proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+          solver.onNewFrame {
+            for ((paramVal, paramType) <- closureParams) {
+              solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))
+            }
+            closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
+            if (!closureRetType.isResolved) {
+              closureRetType.resolve(UnitType)
+            }
           }
-          closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
-          if (!closureRetType.isResolved) {
-            closureRetType.resolve(UnitType)
-          }
+          checkReturns(closureRetType.withTypeVarsExpanded, closureBody.hasExited, closureBody.getPosition, "closure")
         }
-        checkReturns(closureRetType.withTypeVarsExpanded, closureBody.hasExited, closureBody.getPosition, "closure")
       }
     }
 

@@ -1,7 +1,9 @@
 package compiler.program
 
 import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.irs.ircorne.Formulas.IdValue
 import compiler.irs.ircorne.IRcorne
+import compiler.irs.ircorne.IRcorne.RealInstr
 import compiler.lang.*
 import compiler.lang.Types.PrimitiveType
 import compiler.pipeline.CompilationStep.IRcorneGeneration
@@ -21,7 +23,8 @@ final case class Program(
                           datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
-                          functions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]
+                          functions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function],
+                          constructorFieldsInit: Map[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
                         ) {
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
@@ -47,7 +50,10 @@ object Program {
       }
     }
 
-    def build(allFunctions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function]): Program = {
+    def build(
+               allFunctions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function],
+               allFieldInitializers: Map[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
+             ): Program = {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]
@@ -72,7 +78,8 @@ object Program {
         datatypes.result(),
         recordsB.result(),
         typeAliasesB.result(),
-        allFunctions
+        allFunctions,
+        allFieldInitializers
       )
     }
   }

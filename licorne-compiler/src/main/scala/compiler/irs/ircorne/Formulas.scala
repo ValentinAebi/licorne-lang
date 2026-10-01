@@ -1,7 +1,7 @@
 package compiler.irs.ircorne
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.irs.ircorne.IRcorne.{Instr, LocalDecl, Scope}
+import compiler.irs.ircorne.IRcorne.{Instr, LocalDecl, RealInstr, Scope}
 import compiler.irs.ircorne.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
 import compiler.lang.{Operator, RuntimeTypeSignature}
@@ -40,8 +40,6 @@ object Formulas {
     override def isAtomic: Boolean = true
 
     override def children: List[Formula] = List.empty
-
-    val users: mutable.ListBuffer[Instr] = mutable.ListBuffer.empty
   }
 
   sealed trait NamedIdValue(val valKindDescr: String) extends IdValue {
@@ -192,6 +190,10 @@ object Formulas {
   final case class Phi(terms: SeqSet[Formula]) extends Formula {
     override def children: List[Formula] = terms.toList
   }
+  
+  final case class WrappedScope(resVal: IdValue, scope: Scope) extends Formula {
+    override def children: List[Formula] = List.empty
+  }
 
   object Phi {
     def apply(terms: Iterable[Formula]): Phi = new Phi(SeqSet(terms))
@@ -232,6 +234,7 @@ object Formulas {
     case LessThan(lhs, rhs) => LessThan(lhs.substitute(subst), rhs.substitute(subst))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
     case Phi(terms) => Phi(terms.map(_.substitute(subst)))
+    case _: WrappedScope => throw UnsupportedOperationException(s"substitute on a ${classOf[WrappedScope].getSimpleName}")
   }
 
   // TODO may be optimized: when operand(s) do not change, return input as is
@@ -257,6 +260,7 @@ object Formulas {
     case LessThan(lhs, rhs) => LessThan(lhs.substitute(target, repl), rhs.substitute(target, repl))
     case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(target, repl), tpe)
     case Phi(terms) => Phi(terms.map(_.substitute(target, repl)))
+    case _: WrappedScope => throw UnsupportedOperationException(s"substitute on a ${classOf[WrappedScope].getSimpleName}")
   }
 
   extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {
@@ -285,6 +289,7 @@ object Formulas {
     case LessThan(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case TypePredicate(subject, tpe) => typeCanMention(subject)
     case Phi(terms) => terms.forall(typeCanMention)
+    case _: WrappedScope => throw UnsupportedOperationException(s"typeCanMention on a ${classOf[WrappedScope].getSimpleName}")
   }
 
   extension (formula: Formula) def isPure: Boolean = formula match {
@@ -311,6 +316,7 @@ object Formulas {
     case LessThan(lhs, rhs) => lhs.isPure && rhs.isPure
     case TypePredicate(subject, tpe) => subject.isPure
     case Phi(terms) => terms.forall(_.isPure)
+    case WrappedScope(resVal, scope) => scope.isObviouslyPure
   }
 
   extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {
@@ -347,6 +353,7 @@ object Formulas {
     case TypePredicate(subject, tpe) =>
       subject.idValsDependencies
     case Phi(terms) => terms.flatMap(_.idValsDependencies)
+    case _: WrappedScope => throw UnsupportedOperationException(s"idValDependencies on a ${classOf[WrappedScope].getSimpleName}")
   }
 
   extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula)(using ownerSig: RuntimeTypeSignature): Formula = formula match {
@@ -380,6 +387,7 @@ object Formulas {
     case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
     case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoSelectOn(owner), tpe)
     case Phi(terms) => Phi(terms.map(_.transformParamValsIntoSelectOn(owner)))
+    case _: WrappedScope => throw UnsupportedOperationException(s"transformParamValsIntoSelectOn on a ${classOf[WrappedScope].getSimpleName}")
   }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =

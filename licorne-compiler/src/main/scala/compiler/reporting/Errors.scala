@@ -177,9 +177,10 @@ object Errors {
     }
 
     def withReportingSuspended[T](action: => T): T = {
+      val oldState = suspended
       suspended = true
       val res = action
-      suspended = false
+      suspended = oldState
       res
     }
 

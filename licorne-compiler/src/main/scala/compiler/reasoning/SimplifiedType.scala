@@ -1,8 +1,9 @@
 package compiler.reasoning
 
 import compiler.lang.Types.PrimitiveType.{BoolType, IntType}
-import compiler.lang.Types.{IntRangeType, Type}
+import compiler.lang.Types.{IntRangeType, Type, asRefinedType}
 import compiler.typing.contexts.DealiasingContext
+import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.sort.{KBoolSort, KSort, KUninterpretedSort}
 
 enum SimplifiedType[S <: KSort] {
@@ -12,12 +13,13 @@ enum SimplifiedType[S <: KSort] {
 }
 
 object SimplifiedType {
-  
-  def from[IntSort <: KSort](tpe: Type)(using dealiasingCtx: DealiasingContext): SimplifiedType[?] = dealiasingCtx.dealiasType(tpe) match {
-    case IntType => SimplifiedType.Integer[IntSort]()
-    case _: IntRangeType => SimplifiedType.Integer[IntSort]()
-    case BoolType => SimplifiedType.Boolean
-    case _ => SimplifiedType.Object
-  }
-  
+
+  def from[IntSort <: KSort](tpe: Type)(using dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): SimplifiedType[?] =
+    dealiasingCtx.dealiasType(tpe).withTypeVarsExpanded.asRefinedType.baseType match {
+      case IntType => SimplifiedType.Integer[IntSort]()
+      case _: IntRangeType => SimplifiedType.Integer[IntSort]()
+      case BoolType => SimplifiedType.Boolean
+      case _ => SimplifiedType.Object
+    }
+
 }

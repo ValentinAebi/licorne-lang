@@ -129,7 +129,7 @@ object Asts {
                                ) extends EncapsulatedTypeDefTree {
     override def description: String = s"interface $name"
 
-    override def children: List[Ast] = typeParams ++ functions
+    override def children: List[Ast] = typeParams ++ functions ++ directSupertypes
   }
 
   final case class ObjectDef(
@@ -142,20 +142,21 @@ object Asts {
 
     override def typeParams: List[TypeParamWithVariance] = Nil
 
-    override def children: List[Ast] = functions
+    override def children: List[Ast] = functions ++ directSupertypes
   }
 
   final case class ClassDef(
                              name: String,
                              typeParams: List[TypeParamWithVariance],
                              params: List[(ClassParam, Option[Expr])],
+                             encapsulatedFields: List[EncapsulatedFieldDef],
                              functions: List[FunDef],
                              directSupertypes: List[NamedTypeTree],
                              var visibility: TypeVisibility
                            ) extends EncapsulatedTypeDefTree {
     override def description: String = s"class $name"
 
-    override def children: List[Ast] = typeParams ++ params.flatMap((p, initOpt) => List(p) ++ initOpt) ++ functions
+    override def children: List[Ast] = typeParams ++ params.flatMap((p, initOpt) => List(p) ++ initOpt) ++ encapsulatedFields ++ functions ++ directSupertypes
   }
 
   final case class DataTypeDef(
@@ -167,7 +168,7 @@ object Asts {
                               ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"datatype $name"
 
-    override def children: List[Ast] = typeParams
+    override def children: List[Ast] = typeParams ++ functions ++ directSupertypes
   }
 
   final case class RecordDef(
@@ -180,7 +181,7 @@ object Asts {
                             ) extends UnencapsulatedTypeDefTree {
     override def description: String = s"record $name"
 
-    override def children: List[Ast] = typeParams ++ fields.flatMap((p, initOpt) => List(p) ++ initOpt) ++ directSupertypes
+    override def children: List[Ast] = typeParams ++ fields.flatMap((p, initOpt) => List(p) ++ initOpt) ++ functions ++ directSupertypes
   }
 
   final case class FunDef(
@@ -194,7 +195,7 @@ object Asts {
                            overridability: Overridability,
                            purity: Purity
                          ) extends Ast {
-    override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ bodyOpt
+    override def children: List[Ast] = typeParams ++ params ++ optRetType.toList ++ optPrecond.toList ++ bodyOpt
   }
 
   final case class TypeAliasDef(
@@ -235,6 +236,10 @@ object Asts {
     override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
   }
 
+  final case class ValParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, RecordParam {
+    override def children: List[Ast] = List(paramTypeTree)
+  }
+
   final case class VarParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, NonThisFunctionParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
@@ -251,6 +256,10 @@ object Asts {
     override val paramId: FunOrVarId = ThisId
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
+  }
+  
+  final case class EncapsulatedFieldDef(fieldId: FunOrVarId, fieldTypeTreeOpt: Option[TypeTree], initValue: Expr, isReassignable: Boolean) extends Ast {
+    override def children: List[Ast] = fieldTypeTreeOpt.toList :+ initValue
   }
 
   sealed trait TypeParam extends Ast

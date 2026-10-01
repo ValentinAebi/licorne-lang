@@ -1,0 +1,23 @@
+
+object Main {
+
+    fn main() {
+        val s1 = new FixedLenSeq(5, 0);
+        s1.set(1, 42);
+        s1.set(2, 100);
+        println(s1.get(2));
+    }
+
+}
+
+class FixedLenSeq[T](public size: Cnt, defaultElem: T) : Indexable {
+    val array = new Array(size, |defaultElem|)
+
+    fn set(i: Idx(this), elem: T) {
+        array.set(i, elem)
+    }
+
+    fn get(i: Idx(this)) -> T {
+        return array.get(i)
+    }
+}

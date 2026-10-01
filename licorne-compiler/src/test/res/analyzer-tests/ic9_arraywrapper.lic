@@ -16,7 +16,7 @@ object Client {
 
 class ArrayWrapper[T] (
     public size: Length,
-    wrapped: Array[T] with it.size() == size
+    val wrapped: Array[T] with it.size() == size
 ) : Sized {
 
     fn set(i: Idx(this), elem: T) {

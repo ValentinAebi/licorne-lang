@@ -7,7 +7,7 @@ import compiler.typing.contexts.{DealiasingContext, TypeParamsContext}
 
 object Erasure {
 
-  def getRuntimeType(tpe: Type)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext): Type = dealiasingCtx.dealiasType(tpe) match {
+  def getRuntimeType(tpe: Type)(using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext): Type = dealiasingCtx.dealiasType(tpe).withTypeVarsExpanded.baseTypeAssumingNoAlias match {
     case tpe@NamedType(tid, _, _) if tpCtx.isTypeParam(tpe) =>
       tpCtx.resolve(tid).get.upperBoundOpt.getOrElse(NullableType(AnyType))
     case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>

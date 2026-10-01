@@ -13,11 +13,8 @@ final case class ClosureInfo(
                               retTypeVar: TypeVariable,
                               branchingInfo: BranchingInfo,
                               requiresPurityInBody: Boolean,
-                              containingEnvir: ExecutionEnvironment,
                               typeParamsCtx: TypeParamsContext
                             ) extends ExecutionEnvironment {
 
   override def expectedResultType: Type = retTypeVar
-
-  override def root: FunctionSignature = containingEnvir.root
 }

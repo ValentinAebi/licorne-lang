@@ -54,7 +54,7 @@ object Clamp {
 }
 
 // see (many) other examples for implementations of Array that use range types
-class Array[T](len: [0..]) {
+class Array[T](val len: [0..]) {
    fn length() -> [0..] = this.len
    fn at(i: Int) -> T {
       panic "not implemented"
