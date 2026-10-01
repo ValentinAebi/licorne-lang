@@ -56,7 +56,7 @@ final class Backend(
 
   private val nullUnboxingMessage = "tried to unbox null"
 
-  private val equalsMethodName = "equals"
+  private val objectsInternalName = "java/util/Objects"
   private val assertionErrorInternalName = "java/lang/AssertionError"
   private val assertionErrorConstrDesc = MethodTypeDesc.of(CD_void, CD_Object)
   private val heapVarDesc = ClassDesc.of(heapVarTypeId.stringId)
@@ -500,7 +500,7 @@ final class Backend(
         ensureAssignable(AnyType, dealiasedTypeOf(lhs, currScope), cb)
         genValueLoad(rhs, currScope, cb)
         ensureAssignable(AnyType, dealiasedTypeOf(rhs, currScope), cb)
-        cb.invokevirtual(CD_Object, equalsMethodName, MethodTypeDesc.of(CD_boolean, CD_Object))
+        cb.invokestatic(ClassDesc.ofInternalName(objectsInternalName), "equals", MethodTypeDesc.of(CD_boolean, CD_Object, CD_Object))
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.Leq(assigned, lhs, rhs) =>
@@ -1098,16 +1098,6 @@ final class Backend(
       val _ = whenDouble
     case _ =>
       throw AssertionError(s"unexpected kind in arithmetic dispatcher: $kind")
-  }
-
-  private def genPop(k: TypeKind, cb: CodeBuilder): Unit = k.slotSize() match {
-    case 0 => ()
-    case 1 =>
-      cb.pop()
-    case 2 =>
-      cb.pop2()
-    case slotSize =>
-      throw AssertionError(s"pop: unexpected size $slotSize (kind is $k)")
   }
 
 }

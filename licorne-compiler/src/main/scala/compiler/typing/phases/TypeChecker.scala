@@ -79,8 +79,6 @@ final class TypeChecker(
     // @formatter:on
 
     globalValsCtx.globalScope.saveType(globalValsCtx.unitVal, UnitType)
-    globalValsCtx.globalScope.saveType(globalValsCtx.trueVal, BoolType)
-    globalValsCtx.globalScope.saveType(globalValsCtx.falseVal, BoolType)
     globalValsCtx.globalScope.saveType(globalValsCtx.nullVal, NullType)
   }
 

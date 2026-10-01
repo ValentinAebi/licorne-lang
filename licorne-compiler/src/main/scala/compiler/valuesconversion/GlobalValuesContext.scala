@@ -18,9 +18,10 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   val globalScope: Scope = Scope.root(this)
   
   val unitVal: NamedIdValue = globalScope.newUninterpretedConst("unit")
-  val trueVal: NamedIdValue = globalScope.newUninterpretedConst("true")
-  val falseVal: NamedIdValue = globalScope.newUninterpretedConst("false")
   val nullVal: NamedIdValue = globalScope.newUninterpretedConst("null")
+  
+  def isPredefLiteralValue(idValue: IdValue): Boolean =
+    idValue == unitVal || idValue == nullVal
   
   val itValue: NamedIdValue = globalScope.newUninterpretedConst("it")
 

@@ -620,14 +620,7 @@ final class Typer(
                  (using typeParamsCtx: TypeParamsContext): Type = er.withReportingSuspendedIf(suspendReporting) {
     val tpe = currScope.smartcastFor(formula).getOrElse {
       val rawType = formula match {
-        case value: IdValue =>
-          val tpe = currScope.detectCurrentType(value)
-          value match {
-            case UninterpretedConstIdValue(name, definingScope, uid) if tpe == NothingType =>
-              er.reportError(s"object not found: $name", posOpt)
-            case _ => ()
-          }
-          tpe
+        case value: IdValue => currScope.computeCurrentType(value, posOpt)
         case IntConst(value) => IntType
         case BoolConst(value) => BoolType
         case StringConst(value) => mkTypeForStringLit(value)
@@ -1394,7 +1387,7 @@ final class Typer(
     val tpe = scope.getCurrentTypeOf(formula)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {
-        case (UninterpretedConstIdValue(name, definingScope, uid), NothingType) =>
+        case (idVal@UninterpretedConstIdValue(name, definingScope, uid), NothingType) if !globalValuesCtx.isPredefLiteralValue(idVal) =>
           er.reportError(s"object not found: $name", posOpt)
         case _ => ()
       }

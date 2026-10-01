@@ -6,9 +6,13 @@ object Console : InStream, OutStream {
         panic "compiler stub"
     }
 
+    fn println() {
+        print("\n");
+    }
+
     fn println(o: Any?) {
         print(o);
-        print("\n");
+        println();
     }
 
     fn write(s: String) {

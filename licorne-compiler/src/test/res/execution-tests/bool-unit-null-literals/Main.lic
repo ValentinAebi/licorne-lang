@@ -1,0 +1,41 @@
+
+object Main {
+
+    fn main() {
+        takeAnimal(new Tiger());
+        takeAnimal(new Dolphin());
+        return unit
+    }
+
+    private fn takeAnimal(a: Animal) {
+        val descr = describe(a);
+        if (descr == null) {
+            println();
+        } else {
+            display(descr);
+        };
+        val u = unit;
+        return u;
+    }
+
+    private fn describe(a: Animal) -> String? =
+        when a.isMarine() then "marine" else null;
+
+    private fn display(s: String) {
+        println(s);
+        return;     // implicit unit literal
+    }
+
+}
+
+interface Animal {
+    fn isMarine() -> Bool
+}
+
+class Tiger : Animal {
+    fn isMarine() -> Bool = false
+}
+
+class Dolphin : Animal {
+    fn isMarine() -> Bool = true
+}
