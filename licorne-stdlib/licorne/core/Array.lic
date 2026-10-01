@@ -1,5 +1,9 @@
 package licorne.core;
 
+
+typealias ArrayL[T](len: Cnt) = Array[T] with it.size() == len
+typealias ArrayLMin[T](minLen: Cnt) = Array[T] with it.size() == minLen
+
 class Array[T](public size: Cnt, initializer: fn (Idx(this)) -> T) : Indexed {
 
     pure fn get(i: Idx(this)) -> T {

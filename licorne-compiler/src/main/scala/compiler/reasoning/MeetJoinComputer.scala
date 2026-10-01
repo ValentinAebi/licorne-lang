@@ -2,7 +2,7 @@ package compiler.reasoning
 
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas
-import compiler.irs.ircorne.Formulas.{BoolConst, Formula, LogicalAnd}
+import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
@@ -185,13 +185,13 @@ final class MeetJoinComputer(
     val superTypeSigs = mutable.ListBuffer.empty[RuntimeTypeSignature]
     val worklist = mutable.Queue.empty[TypeIdentifier]
     val alreadySeen = mutable.Set.empty[TypeIdentifier]
-    
+
     def enqueue(tid: TypeIdentifier): Unit = {
       if (!alreadySeen.contains(tid)) {
         worklist.enqueue(tid)
       }
     }
-    
+
     for (tid <- types) {
       enqueue(tid)
     }
@@ -207,7 +207,7 @@ final class MeetJoinComputer(
         }
       }
     }
-    
+
     superTypeSigs.toList.distinct
   }
 
@@ -282,9 +282,20 @@ final class MeetJoinComputer(
   }
 
   private def joinPredicates(predicates: collection.Seq[SeqSet[Formula]]) = {
-    predicates.flatten
-      .filter(cp => predicates.forall(_.exists(solver.canProveImplication(_, cp))))
-      .distinct
+    predicates.flatten.flatMap(cp => {
+
+        def filterFormula(f: Formula): Option[Formula] =
+          Option.when(predicates.forall(_.exists(solver.canProveImplication(_, f))))(f)
+
+        filterFormula(cp).orElse {
+          cp match {
+            case Equality(lhs, rhs) =>
+              filterFormula(LessOrEq(lhs, rhs))
+                .orElse(filterFormula(LessOrEq(rhs, lhs)))
+            case _ => None
+          }
+        }
+      }).distinct
       .foldLeft[Formula](BoolConst(true))(LogicalAnd(_, _))
   }
 

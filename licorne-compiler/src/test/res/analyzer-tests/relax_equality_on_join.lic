@@ -1,0 +1,9 @@
+
+object Main {
+
+    fn foo(decider: Bool, m: Cnt, n: Cnt, a: ArrayL[Int](m), b: ArrayL[Int](n) where m >= n) {
+        val x = when decider then a else b;
+        x : Nothing;    //> E : type ascription: expected Nothing, found x : licorne.core.Array[Int] with it.size() <= m && n <= it.size()
+    }
+
+}
