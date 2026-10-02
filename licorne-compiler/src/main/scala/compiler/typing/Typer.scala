@@ -424,37 +424,37 @@ final class Typer(
         val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, hybridCast.getPosition)).withTypeVarsExpanded
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
-          case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
-            er.reportError(s"illegal use of !!: I did not find any predicate to enforce", hybridCast.getPosition)
           case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
             irModif {
               hybridCast.setMode(AssertNonNull)
             }
             currScope.saveSmartcast(inValue, nullatedType)
+          case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
+            er.reportError(s"illegal use of !!: I did not find any predicate to enforce", hybridCast.getPosition)
           case (preType, Some(targetType)) =>
             val RefinedType(inBase, inPred) = preType.asRefinedType.flattenedRefinement
-            val RefinedType(targetBase, targetPred) = targetType.asRefinedType.flattenedRefinement
+            val RefinedType(targetBase, targetPredRaw) = targetType.asRefinedType.flattenedRefinement
+            val targetPredSubst = targetPredRaw.substitute(itValue, inValue)
             // TODO maybe check if assertion provably succeeds / fails
-            val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPred.substitute(itValue, inValue)).get)
+            val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPredSubst).getOrElse(targetPredSubst))
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
               val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
-              var indexedSizeCallFlag = false
-              assertion.traversePreOrder {
-                case invk: FunCall if invk.func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)) =>
-                  indexedSizeCallFlag = true
-                case _ => ()
-              }
-              if (indexedSizeCallFlag) {
-                er.reportError(s"implementation restriction: hybrid cast is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
-              } else {
-                targetBase match {
-                  case NamedType(StdLib.arrayTypeId, _, _) =>
-                    er.reportError(s"hybrid cast target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
-                  case _ => ()
-                }
-                irModif {
-                  hybridCast.setMode(AssertPredicate(assertion, irAssertion, resultVal))
-                }
+              irAssertion.find {
+                case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+                  func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0))
+                case _ => false
+              } match {
+                case Some(_) =>
+                  er.reportError(s"implementation restriction: hybrid cast is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+                case None =>
+                  targetBase match {
+                    case NamedType(StdLib.arrayTypeId, _, _) =>
+                      er.reportError(s"hybrid cast target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
+                    case _ => ()
+                  }
+                  irModif {
+                    hybridCast.setMode(AssertPredicate(assertion, irAssertion, resultVal))
+                  }
               }
               currScope.saveSmartcast(inValue, targetType)
             } else {

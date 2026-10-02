@@ -16,6 +16,14 @@ final class FieldResolutionTarget(val fieldId: FunOrVarId) {
   def isUnresolvable: Boolean = cannotResolveFlag
 
   def isNotResolvedYet: Boolean = !isResolved && !isUnresolvable
+  
+  def copy: FieldResolutionTarget = {
+    val copyTarget = new FieldResolutionTarget(fieldId)
+    copyTarget.receiverSigOpt = this.receiverSigOpt
+    copyTarget.instantiatedTypeOpt = this.instantiatedTypeOpt
+    copyTarget.cannotResolveFlag = this.cannotResolveFlag
+    copyTarget
+  }
 
   def resolve(receiverSig: RuntimeTypeSignature, instantiatedType: Type): Unit = {
     if (isUnresolvable) {

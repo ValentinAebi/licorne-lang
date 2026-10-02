@@ -18,6 +18,15 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
 
   override def isUnresolvable: Boolean = cannotResolveFlag
 
+  def copy: InvocationTarget = {
+    val copyTarget = new InvocationTarget(funId)
+    copyTarget.receiverSigOpt = this.receiverSigOpt
+    copyTarget.funSigOpt = this.funSigOpt
+    copyTarget.instantiatedReturnTypeOpt = this.instantiatedReturnTypeOpt
+    copyTarget.cannotResolveFlag = this.cannotResolveFlag
+    copyTarget
+  }
+
   def resolve(receiverSig: RuntimeTypeSignature, funSig: FunctionSignature, instantiatedReturnType: Type): Unit = {
     if (isUnresolvable) {
       throw AssertionError("trying to resolve a field resolution target marked as unresolvable")

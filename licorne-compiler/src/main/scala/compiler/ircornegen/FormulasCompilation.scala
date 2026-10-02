@@ -9,7 +9,8 @@ import scala.collection.mutable
 
 object FormulasCompilation {
   
-  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)(typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
+  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)
+                        (typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
     val resVal = compileFormula(formula)(using instructions, currScope)
     for (instr <- instructions) {
@@ -43,19 +44,19 @@ object FormulasCompilation {
 
       case Formulas.Select(owner, field) => withIntermediateValue { res =>
         val ownerVal = compileFormula(owner)
-        save(FieldRead(res, ownerVal, field))
+        save(FieldRead(res, ownerVal, field.copy))
       }
 
       case Formulas.FunCall(receiver, func, typeArgs, args) => withIntermediateValue { res =>
         val recVal = compileFormula(receiver)
         val argVals = args.map(compileFormula)
-        save(InvokeFunc(res, recVal, func, typeArgs, argVals))
+        save(InvokeFunc(res, recVal, func.copy, typeArgs, argVals))
       }
 
       case Formulas.ClosureCall(callee, closureTypingTarget, args) => withIntermediateValue { res =>
         val calleeVal = compileFormula(callee)
         val argVals = args.map(compileFormula)
-        save(InvokeClosure(res, calleeVal, closureTypingTarget, argVals))
+        save(InvokeClosure(res, calleeVal, closureTypingTarget.copy, argVals))
       }
 
       case Formulas.PureClosureValue(params, body, closureVal) => closureVal

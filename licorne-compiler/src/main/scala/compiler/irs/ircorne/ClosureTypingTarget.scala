@@ -18,6 +18,13 @@ final class ClosureTypingTarget extends CallableTarget {
   override def markUnresolvable(): Unit = {
     unresolvableFlag = true
   }
+  
+  def copy: ClosureTypingTarget = {
+    val copyTarget = new ClosureTypingTarget
+    copyTarget.typeOpt = this.typeOpt
+    copyTarget.unresolvableFlag = this.unresolvableFlag
+    copyTarget
+  }
 
   def typeIfResolved: Option[ClosureType] = typeOpt
   
