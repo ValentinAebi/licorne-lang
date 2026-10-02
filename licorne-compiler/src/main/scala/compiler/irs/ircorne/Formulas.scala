@@ -211,57 +211,45 @@ object Formulas {
     if parenth then s"($term)" else term.toString
   }
 
-  // TODO may be optimized: when operand(s) do not change, return input as is
-  extension (formula: Formula) def substitute(subst: collection.Map[IdValue, Formula]): Formula = formula match {
-    case value: IdValue => subst.getOrElse(value, value)
-    case c: IntConst => c
-    case c: BoolConst => c
-    case c: StringConst => c
-    case Select(owner, field) => Select(owner.substitute(subst), field)
-    case FunCall(receiver, funId, typeArgs, args) => FunCall(receiver.substitute(subst), funId, typeArgs.map(_.substitute(Map.empty, subst)), args.map(_.substitute(subst)))
-    case ClosureCall(callee, target, args) => ClosureCall(callee.substitute(subst), target, args.map(_.substitute(subst)))
-    case PureClosureValue(params, body, closureVal) => PureClosureValue(params, body.substitute(subst.filterNot(params.contains)), closureVal)
-    case Plus(lhs, rhs) => Plus(lhs.substitute(subst), rhs.substitute(subst))
-    case Neg(operand) => Neg(operand.substitute(subst))
-    case Times(lhs, rhs) => Times(lhs.substitute(subst), rhs.substitute(subst))
-    case DivBy(lhs, rhs) => DivBy(lhs.substitute(subst), rhs.substitute(subst))
-    case Modulo(lhs, rhs) => Modulo(lhs.substitute(subst), rhs.substitute(subst))
-    case LogicalNot(operand) => LogicalNot(operand.substitute(subst))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(subst), rhs.substitute(subst))
-    case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(subst), rhs.substitute(subst))
-    case Equality(lhs, rhs) => Equality(lhs.substitute(subst), rhs.substitute(subst))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(subst), rhs.substitute(subst))
-    case LessThan(lhs, rhs) => LessThan(lhs.substitute(subst), rhs.substitute(subst))
-    case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(subst), tpe)
-    case Phi(terms) => Phi(terms.map(_.substitute(subst)))
-    case _: WrappedScope => throw UnsupportedOperationException(s"substitute on a ${classOf[WrappedScope].getSimpleName}")
-  }
+  extension (formula: Formula) def applyRecursively(pf: PartialFunction[Formula, Formula]): Formula =
+    formula.applyRecursively(f => pf.lift.apply(f).getOrElse(f))
+
+  extension (formula: Formula) def applyRecursively(f: Formula => Formula): Formula = f(formula match {
+    case value: AtomicValue => value
+    case Select(owner, field) => Select(owner.applyRecursively(f), field)
+    case FunCall(receiver, func, typeArgs, args) =>
+      FunCall(receiver.applyRecursively(f), func, typeArgs.map(_.withDependenciesTransformed(_.applyRecursively(f))), args.map(_.applyRecursively(f)))
+    case ClosureCall(callee, closureTypingTarget, args) =>
+      ClosureCall(callee.applyRecursively(f), closureTypingTarget, args.map(_.applyRecursively(f)))
+    case PureClosureValue(params, body, closureVal) =>
+      PureClosureValue(params, body.applyRecursively(f), closureVal)
+    case Plus(lhs, rhs) => Plus(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case Neg(operand) => Neg(operand.applyRecursively(f))
+    case Times(lhs, rhs) => Times(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case DivBy(lhs, rhs) => DivBy(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case Modulo(lhs, rhs) => Modulo(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case LogicalNot(operand) => LogicalNot(operand.applyRecursively(f))
+    case LogicalOr(lhs, rhs) => LogicalOr(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case Equality(lhs, rhs) => Equality(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case LessOrEq(lhs, rhs) => LessOrEq(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case LessThan(lhs, rhs) => LessThan(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case TypePredicate(subject, tpe) => TypePredicate(subject.applyRecursively(f), tpe)
+    case Phi(terms) => Phi(terms.map(_.applyRecursively(f)))
+    case WrappedScope(resVal, scope) => WrappedScope(resVal, scope)
+  })
 
   // TODO may be optimized: when operand(s) do not change, return input as is
-  extension (formula: Formula) def substitute(target: Formula, repl: Formula): Formula = formula match {
-    case formula if formula == target => repl
-    case value: IdValue => value
-    case formula: ConstFormula => formula
-    case Select(owner, field) => Select(owner.substitute(target, repl), field)
-    case FunCall(receiver, func, typeArgs, args) => FunCall(receiver.substitute(target, repl), func, typeArgs, args.map(_.substitute(target, repl)))
-    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.substitute(target, repl), closureTypingTarget, args.map(_.substitute(target, repl)))
-    case formula@PureClosureValue(params, body, closureVal) if params.contains(target) => formula
-    case PureClosureValue(params, body, closureVal) => PureClosureValue(params, body.substitute(target, repl), closureVal)
-    case Plus(lhs, rhs) => Plus(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case Neg(operand) => Neg(operand.substitute(target, repl))
-    case Times(lhs, rhs) => Times(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case DivBy(lhs, rhs) => DivBy(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case Modulo(lhs, rhs) => Modulo(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case LogicalNot(operand) => LogicalNot(operand.substitute(target, repl))
-    case LogicalOr(lhs, rhs) => LogicalOr(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case Equality(lhs, rhs) => Equality(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case LessThan(lhs, rhs) => LessThan(lhs.substitute(target, repl), rhs.substitute(target, repl))
-    case TypePredicate(subject, tpe) => TypePredicate(subject.substitute(target, repl), tpe)
-    case Phi(terms) => Phi(terms.map(_.substitute(target, repl)))
-    case _: WrappedScope => throw UnsupportedOperationException(s"substitute on a ${classOf[WrappedScope].getSimpleName}")
-  }
+  extension (formula: Formula) def substitute(subst: collection.Map[IdValue, Formula]): Formula =
+    formula.applyRecursively {
+      case value: IdValue => subst.getOrElse(value, value)
+    }
+
+  // TODO may be optimized: when operand(s) do not change, return input as is
+  extension (formula: Formula) def substitute(target: Formula, repl: Formula): Formula =
+    formula.applyRecursively {
+      case formula if formula == target => repl
+    }
 
   extension (idValue: IdValue) def typeCanMention(formula: Formula): Boolean = formula match {
     case otherValue: IdValue =>
@@ -319,110 +307,33 @@ object Formulas {
     case WrappedScope(resVal, scope) => scope.isObviouslyPure
   }
 
-  extension (formula: Formula) def idValsDependencies: Set[IdValue] = formula match {
-    case value: IdValue => Set(value)
-    case formula: ConstFormula => Set.empty
-    case Select(owner, field) => owner.idValsDependencies
-    case FunCall(receiver, func, typeArgs, args) =>
-      receiver.idValsDependencies ++ args.flatMap(_.idValsDependencies)
-    case ClosureCall(callee, closureTypingTarget, args) =>
-      callee.idValsDependencies ++ args.flatMap(_.idValsDependencies)
-    case PureClosureValue(params, body, closureVal) =>
-      body.idValsDependencies -- params
-    case Plus(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case Neg(operand) => operand.idValsDependencies
-    case Times(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case DivBy(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case Modulo(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case LogicalAnd(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case LogicalNot(operand) =>
-      operand.idValsDependencies
-    case LogicalOr(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case Equality(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case LessOrEq(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case LessThan(lhs, rhs) =>
-      lhs.idValsDependencies ++ rhs.idValsDependencies
-    case TypePredicate(subject, tpe) =>
-      subject.idValsDependencies
-    case Phi(terms) => terms.flatMap(_.idValsDependencies)
-    case _: WrappedScope => throw UnsupportedOperationException(s"idValDependencies on a ${classOf[WrappedScope].getSimpleName}")
+  extension (formula: Formula) def idValsDependencies: Set[IdValue] = {
+    val deps = Set.newBuilder[IdValue]
+    formula.traversePreOrder {
+      case idValue: IdValue =>
+        deps.addOne(idValue)
+      case _ => ()
+    }
+    deps.result()
   }
 
-  extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula)(using ownerSig: RuntimeTypeSignature): Formula = formula match {
-    case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId =>
-      val field = FieldResolutionTarget(id)
-      ownerSig.stableFields.get(paramIdVal.id).foreach { fld =>
-        field.resolve(ownerSig, fld.tpe)
-      }
-      Select(owner, field)
-    case value: IdValue => value
-    case cst: ConstFormula => cst
-    case Select(owner, field) => Select(owner.transformParamValsIntoSelectOn(owner), field)
-    case FunCall(receiver, func, typeArgs, args) => FunCall(
-      receiver.transformParamValsIntoSelectOn(owner),
-      func,
-      typeArgs.map(_.withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner))),
-      args.map(_.transformParamValsIntoSelectOn(owner))
-    )
-    case ClosureCall(callee, closureTypingTarget, args) => ClosureCall(callee.transformParamValsIntoSelectOn(owner), closureTypingTarget, args.map(_.transformParamValsIntoSelectOn(owner)))
-    case closure: PureClosureValue => closure
-    case Plus(lhs, rhs) => Plus(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case Neg(operand) => Neg(operand.transformParamValsIntoSelectOn(owner))
-    case Times(lhs, rhs) => Times(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case DivBy(lhs, rhs) => DivBy(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case Modulo(lhs, rhs) => Modulo(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case LogicalNot(operand) => LogicalNot(operand.transformParamValsIntoSelectOn(owner))
-    case LogicalOr(lhs, rhs) => LogicalOr(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case Equality(lhs, rhs) => Equality(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case LessThan(lhs, rhs) => LessThan(lhs.transformParamValsIntoSelectOn(owner), rhs.transformParamValsIntoSelectOn(owner))
-    case TypePredicate(subject, tpe) => TypePredicate(subject.transformParamValsIntoSelectOn(owner), tpe)
-    case Phi(terms) => Phi(terms.map(_.transformParamValsIntoSelectOn(owner)))
-    case _: WrappedScope => throw UnsupportedOperationException(s"transformParamValsIntoSelectOn on a ${classOf[WrappedScope].getSimpleName}")
-  }
+  extension (formula: Formula) def transformParamValsIntoSelectOn(owner: Formula, ownerSig: RuntimeTypeSignature): Formula =
+    formula.applyRecursively {
+      case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId =>
+        val field = FieldResolutionTarget(id)
+        ownerSig.stableFields.get(paramIdVal.id).foreach { fld =>
+          field.resolve(ownerSig, fld.tpe)
+        }
+        Select(owner, field)
+    }
 
-  extension (formula: Formula) def convertThisDotFieldToFieldVal(tSig: RuntimeTypeSignature): Formula = formula match {
-    case value: AtomicValue => value
-    case Select(owner, field) =>
-      val convertedOwner = owner.convertThisDotFieldToFieldVal(tSig)
-      if field.isResolved && convertedOwner == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
-      then field.getFieldUnsafe.value
-      else Select(convertedOwner, field)
-    case FunCall(receiver, func, typeArgs, args) =>
-      val convertedReceiver = receiver.convertThisDotFieldToFieldVal(tSig)
-      Option.when(func.isResolved && convertedReceiver == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get) {
-        tSig.fields.get(func.funId).map(_.value)
-      }.flatten.getOrElse {
-        FunCall(convertedReceiver, func, typeArgs.map(_.withDependenciesTransformed(_.convertThisDotFieldToFieldVal(tSig))), args.map(_.convertThisDotFieldToFieldVal(tSig)))
-      }
-    case ClosureCall(callee, closureTypingTarget, args) =>
-      ClosureCall(callee.convertThisDotFieldToFieldVal(tSig), closureTypingTarget, args.map(_.convertThisDotFieldToFieldVal(tSig)))
-    case PureClosureValue(params, body, closureVal) =>
-      PureClosureValue(params, body.convertThisDotFieldToFieldVal(tSig), closureVal)
-    case Plus(lhs, rhs) => Plus(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case Neg(operand) => Neg(operand.convertThisDotFieldToFieldVal(tSig))
-    case Times(lhs, rhs) => Times(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case DivBy(lhs, rhs) => DivBy(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case Modulo(lhs, rhs) => Modulo(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case LogicalAnd(lhs, rhs) => LogicalAnd(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case LogicalNot(operand) => LogicalNot(operand.convertThisDotFieldToFieldVal(tSig))
-    case LogicalOr(lhs, rhs) => LogicalOr(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case Equality(lhs, rhs) => Equality(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case LessOrEq(lhs, rhs) => LessOrEq(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case LessThan(lhs, rhs) => LessThan(lhs.convertThisDotFieldToFieldVal(tSig), rhs.convertThisDotFieldToFieldVal(tSig))
-    case TypePredicate(subject, tpe) => TypePredicate(subject.convertThisDotFieldToFieldVal(tSig), tpe)
-    case Phi(terms) => Phi(terms.map(_.convertThisDotFieldToFieldVal(tSig)))
-    case wrap@WrappedScope(resVal, scope) => wrap
-  }
+  extension (formula: Formula) def convertThisDotFieldToFieldVal(tSig: RuntimeTypeSignature): Formula =
+    formula.applyRecursively {
+      case Select(owner, field) if field.isResolved && owner == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
+        field.getFieldUnsafe.value
+      case funCall@FunCall(receiver, func, typeArgs, args) if func.isResolved && receiver == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
+        tSig.fields.get(func.funId).map(_.value).getOrElse(funCall)
+    }
 
   extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
     !subject.isInstanceOf[ConstFormula] && subject.idValsDependencies.forall(_.typeCanMention(dep))

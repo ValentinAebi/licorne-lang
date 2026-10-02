@@ -1442,7 +1442,7 @@ final class Typer(
             val (typeSubst, _) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
             val instantiatedFieldType =
               field.tpe.substitute(typeSubst, Map.empty)
-                .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner)(using ownerSig))
+                .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner, ownerSig))
                 .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
