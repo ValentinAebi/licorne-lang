@@ -1,7 +1,7 @@
 package licorne.collections;
 
 
-datatype SinglyLinkedList[+T] : Seq[T] {
+datatype SinglyLinkedList[+T] : ImmutSeq[T] {
 
     pure fn get(i: Idx(this)) -> T {
         var j = i;
@@ -20,7 +20,7 @@ datatype SinglyLinkedList[+T] : Seq[T] {
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             rev = new Cons(head = f(ls.head()), tail = rev);
         };
-        return rev.reverse();
+        return rev.reversed();
     }
 
     fn filter(pred: pure fn (T) -> Bool) -> SinglyLinkedList[T with pred(it)] {
@@ -30,7 +30,7 @@ datatype SinglyLinkedList[+T] : Seq[T] {
                 rev = new Cons(head = ls.head(), tail = rev);
             }
         };
-        return rev.reverse();
+        return rev.reversed();
     }
 
     fn foreach(action: fn (T) -> Unit) {
@@ -39,7 +39,7 @@ datatype SinglyLinkedList[+T] : Seq[T] {
         }
     }
 
-    pure fn reverse() -> SinglyLinkedList[T] {
+    pure fn reversed() -> SinglyLinkedList[T] {
         var res = new Nil();
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             res = new Cons(head = ls.head(), tail = res);

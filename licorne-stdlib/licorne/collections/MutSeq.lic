@@ -1,4 +1,10 @@
 package licorne.collections;
 
-interface MutSeq[T] : Seq[T]
 
+interface MutSeq[T] : Collection[T] {
+
+    fn get(i: Int) -> T?
+
+    fn addLast(elem: T)
+    
+}

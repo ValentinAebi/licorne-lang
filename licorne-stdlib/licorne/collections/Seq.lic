@@ -1,7 +1,0 @@
-package licorne.collections;
-
-interface Seq[+T] : Collection[T], Indexable {
-    pure fn get(i: Idx(this)) -> T
-
-    pure fn reverse() -> Seq[T]
-}
