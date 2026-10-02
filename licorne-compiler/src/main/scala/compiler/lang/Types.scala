@@ -3,7 +3,7 @@ package compiler.lang
 import compiler.identifiers.{Identifier, ItId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.Scope
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType}
+import compiler.lang.Types.PrimitiveType.*
 import compiler.reasoning.Simplifier
 import compiler.reporting.Position
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
@@ -352,6 +352,11 @@ object Types {
       tvRegistrator(tv)
       tv
     }
+  }
+
+  def isExtreme(tpe: Type): Boolean = tpe match {
+    case NothingType | UnitType | AnyType | NullableType(AnyType) | NullType => true
+    case _ => false
   }
 
   extension (tpe: Type) def substitute(typesSubst: collection.Map[TypeIdentifier, Type], valsSubst: collection.Map[IdValue, Formula]): Type = tpe match {

@@ -162,7 +162,7 @@ final class Typer(
                 .orElse(typeCandidatesStore.getCandidates(inCondVal).find { candidate =>
                   subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
                 })
-                .filter(tpe => tpe != AnyType && tpe != NullableType(AnyType))
+                .filterNot(Types.isExtreme)
                 .getOrElse(currScope.detectCurrentType(beforeLoopVal).ignoreRangesShallow)
             varDefScope.saveType(inCondVal, tpe)
             Some(())
@@ -409,7 +409,7 @@ final class Typer(
         uniqueRetOpt.foreach { uniqueRet =>
           val closureSummary = proxyStore.developDeep(uniqueRet, bypassPurityChecks = true, acceptPhis = true).getOrElse(uniqueRet)
           val tpe = this.copyNotAllowedToWriteToIR.typeFormula(closureSummary, body, None, suspendReporting = true).withTypeVarsExpanded
-          if (tpe != NothingType && tpe != UnitType && tpe != AnyType && tpe != NullableType(AnyType)) {
+          if (!Types.isExtreme(tpe)) {
             resultTypeVar.setResolutionCandidate(tpe)
           }
         }
@@ -564,7 +564,7 @@ final class Typer(
         (expType, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
           case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
             absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType)).toMap, None) match {
-              case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
+              case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
                 resultTV.resolve(absIntResult)
               case _ => ()
             }
@@ -1351,7 +1351,7 @@ final class Typer(
                   =>
                     val absIntAssumptions = params.zip(closureParams.map(_.substitute(composedTypeSubst, Map.empty))).toMap
                     absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
-                      case Some(absIntResult) if absIntResult != UnitType && absIntResult != AnyType && absIntResult != NullableType(AnyType) =>
+                      case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
                         typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
                         Some(closureResultTypeId -> absIntResult)
                       case _ => None
