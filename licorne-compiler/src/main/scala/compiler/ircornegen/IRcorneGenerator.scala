@@ -1140,8 +1140,9 @@ final class IRcorneGenerator(
         val isShorthandClosure = params.size == 1 && params.head._1 == ItId
         generateIR(bodyTree, closureBodyScope, newScopeIfBlock = false)(using Option.when(isShorthandClosure)(paramValsAndTypes.head._1), currImplicitFields, retValCollector, FunctionInfo(functionInfo.packagePrefix, functionInfo.funIdOpt))
         val isPure = declaredPure || closureBodyScope.isObviouslyPure
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, isPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funIdOpt.map(_.stringId).getOrElse("$$anonymous"))), closureDefTree)
-        retValCollector.getUniqueRet.flatMap { closureRetVal =>
+        val uniqueRetOpt = retValCollector.getUniqueRet
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, uniqueRetOpt, isPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funIdOpt.map(_.stringId).getOrElse("$$anonymous"))), closureDefTree)
+        uniqueRetOpt.flatMap { closureRetVal =>
           val closure = PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
           if isPure then Some(closure)
           else {

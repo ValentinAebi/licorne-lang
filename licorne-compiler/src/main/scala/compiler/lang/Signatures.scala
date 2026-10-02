@@ -4,7 +4,6 @@ import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Field.StableField
 import compiler.irs.ircorne.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
-import compiler.irs.ircorne.IRLevelFormulaPrinter
 import compiler.lang.Keyword.{Sub, Super}
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type, TypeVariable}
@@ -43,7 +42,7 @@ final case class FunctionSignature(
   val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
 
   def ownerAndDescr: (TypeIdentifier, FunctionDescriptor) = (ownerName, descriptor)
-  
+
   def descriptor: FunctionDescriptor = FunctionDescriptor(functionName, paramsWithoutThis.size)
 
   def paramsWithoutThis: Iterable[(NamedIdValue, Type)] = paramsInclThis.tail
@@ -52,7 +51,7 @@ final case class FunctionSignature(
 
   def smtFunctionCode: String =
     functionName.toString ++ "$" ++ paramsWithoutThis.map((param, tpe) => s"${param}_$tpe").mkString("$")
-    
+
   def isMain: Boolean = functionName.stringId == "main"
 
   override def expectedResultType: Type = retType
@@ -125,7 +124,7 @@ sealed trait TypeSignature extends DeclSignature {
   def params: SeqMap[FunOrVarId, (Type, IdValue)]
 
   def directSupertypes: List[NamedType]
-  
+
   def visibility: TypeVisibility
 
   def sigScope: Scope
@@ -171,15 +170,7 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
 
   def fields: SeqMap[FunOrVarId, Field]
 
-  def stableFields: SeqMap[FunOrVarId, StableField] = {
-    val stableFieldsB = SeqMap.newBuilder[FunOrVarId, StableField]
-    fields.foreach {
-      case (id, fld: StableField) =>
-        stableFieldsB.addOne(id, fld)
-      case _ => ()
-    }
-    stableFieldsB.result()
-  }
+  def stableExposedFields: SeqMap[FunOrVarId, StableField]
 
   val functions: Map[FunctionDescriptor, FunctionSignature]
 
@@ -188,9 +179,21 @@ sealed trait RuntimeTypeSignature extends TypeSignature {
 
 sealed trait ConcreteTypeSig extends RuntimeTypeSignature
 
-sealed trait UserInstantiableTypeSig extends ConcreteTypeSig  {
+sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
   def constructorParams: SeqMap[FunOrVarId, ConstructorParam]
+
   def encapsulatedFields: SeqMap[FunOrVarId, Field]
+
+  def stableExposedFields: SeqMap[FunOrVarId, StableField] = {
+    fields.filter((id, fld) => fld.isStable && constructorParams.contains(id))
+    val stableExposedFieldsB = SeqMap.newBuilder[FunOrVarId, StableField]
+    fields.foreach {
+      case (id, fld: StableField) if constructorParams.contains(id) =>
+        stableExposedFieldsB.addOne(id, fld)
+      case _ => ()
+    }
+    stableExposedFieldsB.result()
+  }
 
   override def fields: SeqMap[FunOrVarId, Field] =
     constructorParams.filter(_._2.isInstanceOf[Field]).mapVals(_.asInstanceOf[Field]) ++ encapsulatedFields
@@ -198,6 +201,7 @@ sealed trait UserInstantiableTypeSig extends ConcreteTypeSig  {
 
 sealed trait AbstractTypeSig extends RuntimeTypeSignature {
   override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+  override def stableExposedFields: SeqMap[FunOrVarId, Field.StableField] = SeqMap.empty
 }
 
 sealed trait EncapsulatedTypeSig extends RuntimeTypeSignature
@@ -236,7 +240,7 @@ final case class ClassSignature(
                                  declPosOpt: Option[Position]
                                )
   extends RuntimeTypeSignature, ConcreteTypeSig, TypeParametricTypeSig, EncapsulatedTypeSig, UserInstantiableTypeSig {
-  
+
 }
 
 final case class ClassFieldInfo(tpe: Type, isReassignable: Boolean)
@@ -253,6 +257,8 @@ final case class ObjectSignature(
   override def typeParams: List[TypeTypeParamInfo] = List.empty
 
   override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+
+  override def stableExposedFields: SeqMap[FunOrVarId, Field.StableField] = SeqMap.empty
 }
 
 final case class DatatypeSignature(
@@ -285,7 +291,7 @@ final case class RecordSignature(
 
 sealed trait ConstructorParam {
   def id: FunOrVarId
-  
+
   def value: NamedIdValue
 
   def tpe: Type

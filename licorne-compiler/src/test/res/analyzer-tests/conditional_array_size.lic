@@ -1,0 +1,13 @@
+
+object Main {
+
+    private fn foo(b: Bool, sz: [0..]) {
+        var array = new Array(sz, |0|);
+        if b {
+            array = new Array(2*array.size(), |0|);
+        };
+        // TODO find a way of distinguishing both versions of array in the error message
+        array : Nothing;    //> E : type ascription: expected Nothing, found array : licorne.core.Array[Int] with it.size() <= 2 * array.size() && sz <= it.size()
+    }
+
+}

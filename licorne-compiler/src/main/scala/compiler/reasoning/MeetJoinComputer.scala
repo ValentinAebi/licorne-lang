@@ -1,7 +1,7 @@
 package compiler.reasoning
 
 import compiler.identifiers.TypeIdentifier
-import compiler.irs.ircorne.Formulas
+import compiler.irs.ircorne.{Formulas, InvocationTarget}
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
@@ -10,10 +10,10 @@ import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.reasoning.{Simplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
+import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.boundary
 
 // TODO caching
@@ -23,15 +23,55 @@ final class MeetJoinComputer(
                               resolutionCtx: ResolutionContext,
                               subtypingCtx: SubtypingContext,
                               solver: Solver,
+                              proxyStore: ProxyStore,
                               globalValuesContext: GlobalValuesContext
                             ) {
 
   private[reasoning] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
 
+  private given GlobalValuesContext = globalValuesContext
+
+  private given ResolutionContext = resolutionCtx
+
+  def computeJoinUsingVals(typedVals: (IdValue, Type)*)(using TypeParamsContext): Type =
+    computeJoinUsingVals(Iterable.from(typedVals))
+
+  def computeJoinUsingVals(typedVals: Iterable[(IdValue, Type)])(using TypeParamsContext): Type = {
+    val itValue = globalValuesContext.itValue
+    val expandedTypes = typedVals.map { (idValRaw, tpe) =>
+      val idValDev = proxyStore.developNearest(idValRaw).getOrElse(idValRaw)
+      val RefinedType(baseType, originalPredicate) = dealiasingCtx.dealiasType(tpe.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
+      baseType match {
+        case NamedType(tid, typeArgs, Nil) =>
+          resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](tid) match {
+            case Some(tSig) =>
+              val subst = tSig.typeParams.map(_.tid).zip(typeArgs).toMap
+              val newSelfReferringPredPart = tSig.functions.values
+                // TODO maybe can be generalized to functions that take arguments, based on the arguments found in the predicates of other types
+                .filter(funSig => funSig.isPure && funSig.paramsWithoutThis.isEmpty && funSig.typeParams.isEmpty)
+                .map { funSig =>
+                  val invkTarget = InvocationTarget(funSig.functionName)
+                  invkTarget.resolve(tSig, funSig, funSig.retType.substitute(subst, Map.empty))
+                  Equality(
+                    FunCall(itValue, invkTarget, List.empty, List.empty),
+                    FunCall(idValDev, invkTarget, List.empty, List.empty)
+                  )
+                }.filterNot(solver.canProveImplication(originalPredicate, _))
+                .foldLeft[Formula](BoolConst(true))(LogicalAnd(_, _))
+              RefinedType(baseType, LogicalAnd(newSelfReferringPredPart, originalPredicate))
+            case None => tpe
+          }
+        case _ => tpe
+      }
+    }
+    computeJoin(expandedTypes)
+  }
+
   def computeJoin(types: Type*)(using TypeParamsContext): Type =
     computeJoin(Iterable.from(types))
 
   def computeJoin(inputTypes: Iterable[Type])(using TypeParamsContext): Type = {
+    inputTypes.flatMap(_.allTypeVariables).foreach(_.promoteAnyResolutionCandidate())
 
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
       tpe.withTypeVarsExpanded match {
@@ -230,6 +270,8 @@ final class MeetJoinComputer(
     computeMeet(types.toList)
 
   def computeMeet(types: Iterable[Type])(using TypeParamsContext): Type = {
+    types.flatMap(_.allTypeVariables).foreach(_.promoteAnyResolutionCandidate())
+
     val expandedTypes = SeqSet(types).map(_.withTypeVarsExpanded)
     if expandedTypes.size == 1 then expandedTypes.head
     else {

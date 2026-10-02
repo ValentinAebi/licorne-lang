@@ -202,9 +202,14 @@ final class Typer(
           val joinType = {
             if elseBr.hasExited then afterThenValType
             else if thenBr.hasExited then afterElseValType
-            else typeCandidatesStore.getCandidates(joinedVal)
-              .find(candType => subtypingCtx.isSubtype(afterThenVal, afterThenValType, candType, thenBr) && subtypingCtx.isSubtype(afterElseVal, afterElseValType, candType, elseBr))
-              .getOrElse(meetJoin.computeJoin(afterThenValType, afterElseValType))
+            else {
+              val selectedCandidateTypeOpt =
+                typeCandidatesStore.getCandidates(joinedVal)
+                  .find(candType => subtypingCtx.isSubtype(afterThenVal, afterThenValType, candType, thenBr) && subtypingCtx.isSubtype(afterElseVal, afterElseValType, candType, elseBr))
+              val forwardCandidateType = meetJoin.computeJoinUsingVals(afterThenVal -> afterThenValType, afterElseVal -> afterElseValType)
+              selectedCandidateTypeOpt.filterNot(subtypingCtx.isSubtype(forwardCandidateType, _))
+                .getOrElse(forwardCandidateType)
+            }
           }
           currScope.saveType(joinedVal, joinType)
         }
@@ -390,7 +395,7 @@ final class Typer(
             er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
         }
 
-      case mkClosure@MkClosure(assigned, params, body, knownPureBeforeTyping, closureTypeName) =>
+      case mkClosure@MkClosure(assigned, params, body, uniqueRetOpt, knownPureBeforeTyping, closureTypeName) =>
         val id = NormalFunOrVarId(assigned match {
           case assigned: NamedIdValue => IRLevelFormulaPrinter.prettyprint(assigned)
           case assigned: IntermediateIdValue => assigned.toString
@@ -400,6 +405,13 @@ final class Typer(
         for ((paramVal, paramType) <- params) {
           body.saveType(paramVal, paramType)
           paramTypesB.addOne(paramType)
+        }
+        uniqueRetOpt.foreach { uniqueRet =>
+          val closureSummary = proxyStore.developDeep(uniqueRet, bypassPurityChecks = true, acceptPhis = true).getOrElse(uniqueRet)
+          val tpe = this.copyNotAllowedToWriteToIR.typeFormula(closureSummary, body, None, suspendReporting = true).withTypeVarsExpanded
+          if (tpe != NothingType && tpe != UnitType && tpe != AnyType && tpe != NullableType(AnyType)) {
+            resultTypeVar.setResolutionCandidate(tpe)
+          }
         }
         val isPure = knownPureBeforeTyping || typeCandidatesStore.hasPureClosureCandidateFor(assigned)
         irModif {
@@ -516,9 +528,9 @@ final class Typer(
     var remainingLabels = typeSig.constructorParams.keySet
 
     def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
-      val rhsValExpanded = simplifier.simplifyInt(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
       param match {
         case fld: Field.StableField =>
+          val rhsValExpanded = simplifier.simplifyInt(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
           val fldResolTarget = FieldResolutionTarget(fld.id)
           fldResolTarget.resolve(typeSig, substitutedType)
           val itSelect = Select(itValue, fldResolTarget)
@@ -1163,14 +1175,13 @@ final class Typer(
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectTypeForSmartcast(subject, scope)
-        smartcastType <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache, subtypingCtx)
+        smartcastTypeRaw <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache, subtypingCtx)
       } {
+        val smartcastType = simplifier.simplify(smartcastTypeRaw)
         if (smartcastType == NothingType) {
           scope.markHasExited()
           scope.insertInstrDuringTraversal(Unreachable())
         } else {
-          val oldType = scope.detectCurrentType(subject)
-          val newType = meetJoin.computeMeet(oldType, smartcastType)
           scope.saveSmartcast(subject, smartcastType)
         }
       }

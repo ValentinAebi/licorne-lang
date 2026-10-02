@@ -666,7 +666,7 @@ final class Backend(
         cb.invokespecial(desc, INIT_NAME, mkConstrDesc(createdObjTypeSig))
         genValueStore(assigned, currScope, cb)
 
-      case IRcorne.MkClosure(assigned, params, body, isPure, closureTypeName) =>
+      case IRcorne.MkClosure(assigned, params, body, uniqueRetOpt, isPure, closureTypeName) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         val paramsSet = params.map(_._1).toSet[IdValue]
         val freeVals = SeqMap.from(

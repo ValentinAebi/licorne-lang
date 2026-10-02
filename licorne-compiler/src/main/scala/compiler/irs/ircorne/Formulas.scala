@@ -1,7 +1,7 @@
 package compiler.irs.ircorne
 
 import compiler.identifiers.{FunOrVarId, ThisId, TypeIdentifier}
-import compiler.irs.ircorne.IRcorne.{Instr, LocalDecl, RealInstr, Scope}
+import compiler.irs.ircorne.IRcorne.{LocalDecl, Scope}
 import compiler.irs.ircorne.{FieldResolutionTarget, InvocationTarget}
 import compiler.lang.Types.Type
 import compiler.lang.{Operator, RuntimeTypeSignature}
@@ -10,7 +10,6 @@ import compiler.util.SeqSet
 
 import java.util.Objects
 import scala.collection
-import scala.collection.mutable
 
 
 object Formulas {
@@ -321,7 +320,7 @@ object Formulas {
     formula.applyRecursively {
       case paramIdVal@ParamIdValue(id, definingScope, uid, defPosOpt) if id != ThisId =>
         val field = FieldResolutionTarget(id)
-        ownerSig.stableFields.get(paramIdVal.id).foreach { fld =>
+        ownerSig.stableExposedFields.get(paramIdVal.id).foreach { fld =>
           field.resolve(ownerSig, fld.tpe)
         }
         Select(owner, field)

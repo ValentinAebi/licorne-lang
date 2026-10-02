@@ -52,7 +52,7 @@ final class TypeCandidatesInferrer(
           body <- func.bodyOpt
         } {
           val resolCtx = ResolutionContext(program, fakeEr)
-          val meetJoinComputer = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, solver, globalValsCtx)
+          val meetJoinComputer = MeetJoinComputer(dealiasingCtx, resolCtx, subtypingCtx, solver, proxyStore, globalValsCtx)
           val typeParamsCtx = TypeParamsContext(resolCtx.resolveTypeSig(ownerId).toList.flatMap(_.typeParams) ++ funSig.typeParams)
           val lightweightTyper = LightweightTyper(typer, dealiasingCtx, meetJoinComputer, resolCtx, funSig.sigScope, typeParamsCtx)
           traverseScope(body, funSig)(using typeParamsCtx, resolCtx, program.globalValuesContext, subtypingCtx, dealiasingCtx, tmpTypeVarsCtx, lightweightTyper)
@@ -152,7 +152,7 @@ final class TypeCandidatesInferrer(
           typeCandidatesStore.offerCandidate(arg, expFldType)
         }
       }
-    case mkClosure@MkClosure(assigned, params, body, declaredPure, closureTypeName) =>
+    case mkClosure@MkClosure(assigned, params, body, uniqueRetOpt, declaredPure, closureTypeName) =>
       val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, TypeParamsContext.empty /* TODO check this */)
       traverseScope(body, closureInfo)
     case MkHeapVar(assigned) => ()
@@ -186,7 +186,7 @@ final class TypeCandidatesInferrer(
       case NamedType(typeName, typeArgs, args) =>
         resolCtx.resolveTypeSigAs[RuntimeTypeSignature](typeName).map { sig =>
           val typesSubst = sig.typeParams.map(_.tid).zip(typeArgs).toMap
-          val valsSubst = sig.params.map(_._2._2).zip(args).toMap
+          val valsSubst = sig.fields.map(_._2.value).zip(args).toMap[IdValue, Formula]
           (typeName, typesSubst, valsSubst)
         }
       case _ => None
@@ -251,7 +251,7 @@ final class TypeCandidatesInferrer(
   private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
 
     def detectDealiasedTypeOf(formula: Formula): Type = {
-      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true)(using resolCtx).getOrElse(formula)
+      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true, acceptPhis = true)(using resolCtx).getOrElse(formula)
       val typeRaw = typer.typeFormula(dev, funSigScope, None)(using typeParamsCtx)
       dealiasingCtx.dealiasType(typeRaw)
     }

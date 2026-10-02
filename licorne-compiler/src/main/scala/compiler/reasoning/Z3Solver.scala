@@ -103,8 +103,21 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
   def intMin(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMin)
 
   override def discardNonMins(formulas: Iterable[Formula]): Iterable[Formula] = {
-    // TODO what if some of the formulas are provably equal?
-    formulas.filterNot(cand => formulas.exists(canProveLt(_, cand)))
+    var wipFormula = formulas.filterNot(cand => formulas.exists(canProveLt(_, cand)))
+    var continue = true
+    while (continue) {
+      val old = wipFormula
+      var keepAllRemaining = false
+      wipFormula = wipFormula.filter(cand => {
+        keepAllRemaining || {
+          val keepThis = !wipFormula.exists(f => f != cand && canProveLeq(f, cand))
+          keepAllRemaining = !keepThis
+          keepThis
+        }
+      })
+      continue = wipFormula.size < old.size
+    }
+    wipFormula
   }
 
   def intMax(l: Formula, r: Formula): Option[Formula] = {
@@ -116,8 +129,21 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
   def intMax(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMax)
 
   override def discardNonMax(formulas: Iterable[Formula]): Iterable[Formula] = {
-    // TODO what if some of the formulas are provably equal?
-    formulas.filterNot(cand => formulas.exists(canProveLt(cand, _)))
+    var wipFormula = formulas.filterNot(cand => formulas.exists(canProveLt(cand, _)))
+    var continue = true
+    while (continue) {
+      val old = wipFormula
+      var keepAllRemaining = false
+      wipFormula = wipFormula.filter(cand => {
+        keepAllRemaining || {
+          val keepThis = !wipFormula.exists(f => f != cand && canProveLeq(cand, f))
+          keepAllRemaining = !keepThis
+          keepThis
+        }
+      })
+      continue = wipFormula.size < old.size
+    }
+    wipFormula
   }
 
   private def findMinOrMax(formulas: Iterable[Formula], minOrMaxFunc: (Formula, Formula) => Option[Formula]): Option[Formula] =

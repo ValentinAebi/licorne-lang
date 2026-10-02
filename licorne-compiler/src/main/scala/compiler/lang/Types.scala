@@ -269,6 +269,7 @@ object Types {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOptBackingField = Option.empty[Type]
     private var lockedFlag = false
+    private var resolCandidateOpt = Option.empty[Type]
 
     private def actualTypeOptAccessor: Option[Type] = actualTypeOptBackingField match {
       case Some(tpe) =>
@@ -319,6 +320,16 @@ object Types {
     def isResolved: Boolean = actualTypeIfResolved.isDefined
 
     def substitutedIfResolved: Type = actualTypeIfResolved.getOrElse(this)
+
+    def setResolutionCandidate(candidate: Type): Unit = {
+      resolCandidateOpt = Some(candidate)
+    }
+
+    def promoteAnyResolutionCandidate(): Unit = {
+      if (!isResolved && !lockedFlag) {
+        resolCandidateOpt.foreach(resolve)
+      }
+    }
 
     override def toString: String =
       if isResolved then actualTypeIfResolved.get.toString else s"?$id"

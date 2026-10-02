@@ -15,7 +15,7 @@ object Reasoning {
                                    (f: (Solver, SubtypingContext, Simplifier, MeetJoinComputer, AbstractInterpreter) => T): T =
     usingFreshSolver(ihm, dealiasingCtx, resolutionCtx, globalValuesContext, proxyStore, counterExBoxOpt) { solver =>
       val subtypingCtx = mkSubtypingCtx(solver)
-      val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver, globalValuesContext)
+      val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver, proxyStore, globalValuesContext)
       val simplifier = meetJoin.simplifier
       val absInt = AbstractInterpreter(solver, simplifier, globalValuesContext)
       f(solver, subtypingCtx, simplifier, meetJoin, absInt)
