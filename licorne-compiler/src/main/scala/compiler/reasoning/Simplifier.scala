@@ -19,6 +19,8 @@ import scala.reflect.ClassTag
 final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, globalValuesContext: GlobalValuesContext) {
 
   private given GlobalValuesContext = globalValuesContext
+  
+  private given MeetJoinComputer = meetJoinComputer
 
   import globalValuesContext.nullVal
   import globalValuesContext.itValue
@@ -285,13 +287,13 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case formula => (false, List(formula))
   }
 
-  private def searchTypeTests(formula: Formula, baseType: Type): (List[Type], List[Formula]) = formula match {
+  private def searchTypeTests(formula: Formula, baseType: Type)(using TypeParamsContext): (List[Type], List[Formula]) = formula match {
     case LogicalAnd(lhs, rhs) =>
       val (lTids, lRem) = searchTypeTests(lhs, baseType)
       val (rTids, rRem) = searchTypeTests(rhs, baseType)
       (lTids ++ rTids, lRem ++ rRem)
     case TypePredicate(`itValue`, tpe) =>
-      subtypingCtx.checkDowncastTarget(baseType, tpe).asOption match {
+      subtypingCtx.checkDowncastTarget(baseType, tpe, acceptTypeParamTarget = false).asOption match {
         case Some(targetType) => (List(targetType), List.empty)
         case None => (List.empty, List(formula))
       }

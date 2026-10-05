@@ -142,7 +142,9 @@ final class MeetJoinComputer(
                 else if otherTypes.size == 1 then otherTypes.head
                 else if otherTypes.nonEmpty then AnyType
                 else if namedTypes.isEmpty && closureTypes.nonEmpty then computeJoinOfClosures(closureTypes).getOrElse(AnyType)
-                else if namedTypes.nonEmpty && closureTypes.isEmpty then computeJoinOfNamed(namedTypes).getOrElse(AnyType)
+                else if namedTypes.nonEmpty && closureTypes.isEmpty then computeJoinOfNamed(namedTypes).getOrElse {
+                  UnionType(nonNullDealiasedTypes ++ (if nullableFlag then List(NullType) else List.empty))
+                }
                 else AnyType
               }
 
@@ -323,7 +325,7 @@ final class MeetJoinComputer(
     }
   }
 
-  private def joinPredicates(predicates: collection.Seq[SeqSet[Formula]]) = {
+  def joinPredicates(predicates: collection.Seq[SeqSet[Formula]]) = {
     predicates.flatten.flatMap(cp => {
 
         def filterFormula(f: Formula): Option[Formula] =

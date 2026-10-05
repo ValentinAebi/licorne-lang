@@ -3,7 +3,7 @@ package compiler.typing.contexts
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas
-import compiler.irs.ircorne.Formulas.{Equality, Formula, FunCall, IntConst, IntermediateIdValue}
+import compiler.irs.ircorne.Formulas.{BoolConst, Equality, Formula, FunCall, IntConst, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
@@ -12,11 +12,12 @@ import compiler.lang.{RuntimeTypeSignature, TypeParamInfo, TypeTypeParamInfo}
 import compiler.pipeline.CompilationStep
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
-import compiler.reasoning.{CounterexampleBox, Solver}
+import compiler.reasoning.{CounterexampleBox, MeetJoinComputer, Solver}
 import compiler.stdlib.StdLib
 import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
+import compiler.util.{SeqSet, mapVals}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -55,10 +56,36 @@ final class SubtypingContext(
   def isEnumCaseOf(subId: TypeIdentifier, superId: TypeIdentifier): Boolean =
     subToSuperSubst(subId, superId).isDefined
 
-  def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier): DowncastTargetCheckResult = {
+  def checkDowncastTarget(originalType: Type, targetId: TypeIdentifier, acceptTypeParamTarget: Boolean)(using tpCtx: TypeParamsContext, meetJoin: MeetJoinComputer): DowncastTargetCheckResult = {
+
+    def checkMultipleTypes(types: SeqSet[Type]): DowncastTargetCheckResult = {
+      val targets =
+        types.map(checkDowncastTarget(_, targetId, acceptTypeParamTarget))
+          .flatMap(_.asOption)
+          .map(_.asRefinedType)
+          .groupBy(_.baseType)
+          .mapVals(refinedTypes => meetJoin.joinPredicates(refinedTypes.toSeq.map(_.predicateAsSetOfConjuncts)))
+      targets.size match {
+        case 0 => CannotDowncast(s"no valid downcast target found for source type $originalType")
+        case 1 =>
+          val (baseType, pred) = targets.head
+          CanDowncast(if pred == BoolConst(true) then baseType else RefinedType(baseType, pred))
+        case _ => CannotDowncast(s"ambiguous downcast target for source type $originalType: candidates are: ${targets.mkString(", ")}")
+      }
+    }
+
     if targetId == StdLib.arrayTypeId
     then CannotDowncast(s"implementation restriction: type tests against type ${StdLib.arrayTypeId} are not supported")
     else dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
+      case UnionType(types) => checkMultipleTypes(types)
+      case IntersectionType(types) => checkMultipleTypes(types)
+      case RefinedType(baseType, predicate) => checkDowncastTarget(baseType, targetId, acceptTypeParamTarget) match {
+        case CanDowncast(tpe) => CanDowncast(RefinedType(tpe, predicate))
+        case cannot: CannotDowncast => cannot
+      }
+      case tpe if tpCtx.isTypeParam(tpe) =>
+        if acceptTypeParamTarget then CanDowncast(tpe)
+        else CannotDowncast("type tests against type parameters are not supported")
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>
@@ -93,7 +120,7 @@ final class SubtypingContext(
             }
         }
       case _ =>
-        CannotDowncast(s"tested type $originalType is unresolved or primitive")
+        CannotDowncast(s"tested type $originalType cannot be downcast")
     }
   }
 
@@ -317,10 +344,10 @@ object SubtypingContext {
   type SupertypesSubst = mutable.SeqMap[TypeIdentifier, mutable.SeqMap[TypeIdentifier, Map[TypeIdentifier, Type]]]
 
   enum DowncastTargetCheckResult {
-    case CanDowncast(tpe: NamedType)
+    case CanDowncast(tpe: Type)
     case CannotDowncast(reason: String)
 
-    def asOption: Option[NamedType] = this match {
+    def asOption: Option[Type] = this match {
       case CanDowncast(tpe) => Some(tpe)
       case CannotDowncast(reason) => None
     }

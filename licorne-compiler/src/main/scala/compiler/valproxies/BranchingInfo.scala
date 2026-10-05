@@ -2,14 +2,14 @@ package compiler.valproxies
 
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.*
-import compiler.lang.Types
+import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
-import compiler.reasoning.Solver
-import compiler.typing.contexts.SubtypingContext
+import compiler.reasoning.{MeetJoinComputer, Solver}
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*
 import compiler.typing.smartcasting.TypesReasoningCache
-import compiler.util.{SeqSet, mergeCombineInOrder}
+import compiler.util.{SeqSet, asIterableOfType, mergeCombineInOrder}
 import compiler.valproxies.BoundMode.*
 import compiler.valproxies.BranchingInfo.SmartcastData
 
@@ -65,27 +65,45 @@ object BranchingInfo {
       this.knownIsNot.concat(that.knownIsNot)
     )
 
-    def tryToSmartcast(originalType: Type, typesReasoningCache: TypesReasoningCache, subtypingCtx: SubtypingContext): Option[Type] = originalType match {
-      case NamedType(typeName, typeArgs, args) =>
-        val candidatesOpt =
-          typesReasoningCache.developUnencapsulated(typeName).map { records =>
-            records.filterNot(r => knownIsNot.exists(forbiddenSuper => subtypingCtx.subToSuperSubst(r.id, forbiddenSuper).isDefined))
-          }
-        (candidatesOpt match {
-          case Some(Nil) => Some(NothingType)
-          case Some(recordSig :: Nil) =>
-            subtypingCtx.checkDowncastTarget(originalType, recordSig.id).asOption
-          case _ => None
-        }) orElse boundary {
-          for (tpe <- knownIs.reverse) {
-            subtypingCtx.checkDowncastTarget(originalType, tpe) match {
-              case CanDowncast(tpe) => boundary.break(Some(tpe))
-              case CannotDowncast(reason) => ()
+    def tryToSmartcast(originalType: Type, typesReasoningCache: TypesReasoningCache)
+                      (using tpCtx: TypeParamsContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext, meetJoin: MeetJoinComputer): Option[Type] = {
+
+      def tryToSmartcastByExclusion(tids: List[TypeIdentifier]): Option[Type] = boundary {
+        val candidates =
+          tids.flatMap { tid =>
+            typesReasoningCache.developUnencapsulated(tid) match {
+              case Some(records) => records.map(_.id)
+              case None => List(tid)
             }
-          }
-          None
+          }.filterNot(tid => knownIsNot.exists(forbiddenSuper => subtypingCtx.subToSuperSubst(tid, forbiddenSuper).isDefined))
+        candidates match {
+          case Nil => Some(NothingType)
+          case List(candidate) =>
+            subtypingCtx.checkDowncastTarget(originalType, candidate, acceptTypeParamTarget = true).asOption.filter(_ != originalType)
+          case _ => None
         }
-      case originalType => None
+      }
+
+      def tryToSmartcastByInclusion: Option[Type] = boundary {
+        for (tpe <- knownIs.reverse) {
+          subtypingCtx.checkDowncastTarget(originalType, tpe, acceptTypeParamTarget = true) match {
+            case CanDowncast(tpe) => boundary.break(Some(tpe))
+            case CannotDowncast(reason) => ()
+          }
+        }
+        None
+      }
+
+      def tryToSmartcast(tids: List[TypeIdentifier]): Option[Type] =
+        tryToSmartcastByExclusion(tids).orElse(tryToSmartcastByInclusion)
+
+      originalType match {
+        case NamedType(typeName, typeArgs, Nil) => tryToSmartcast(List(typeName))
+        case UnionType(types) =>
+          types.asIterableOfType[NamedType]
+            .flatMap(namedTypes => tryToSmartcast(namedTypes.map(_.typeName).toList))
+        case _ => None
+      }
     }
 
   }

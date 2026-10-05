@@ -815,7 +815,7 @@ final class Typer(
   private def checkDowncast(subject: Formula, tid: TypeIdentifier, currScope: Scope, posOpt: Option[Position])
                            (using TypeParamsContext): Option[Type] = {
     val subjectType = typeFormula(subject, currScope, posOpt).withTypeVarsExpanded
-    subtypingCtx.checkDowncastTarget(requireNonNullable(subjectType, "cast value", posOpt), tid) match {
+    subtypingCtx.checkDowncastTarget(requireNonNullable(subjectType, "cast value", posOpt), tid, acceptTypeParamTarget = false) match {
       case DowncastTargetCheckResult.CanDowncast(tpe) => Some(tpe)
       case DowncastTargetCheckResult.CannotDowncast(reason) =>
         er.reportError(s"$tid is not a valid downcast target for type $subjectType", posOpt)
@@ -1175,7 +1175,7 @@ final class Typer(
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectTypeForSmartcast(subject, scope)
-        smartcastTypeRaw <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache, subtypingCtx)
+        smartcastTypeRaw <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache)
       } {
         val smartcastType = simplifier.simplify(smartcastTypeRaw)
         if (smartcastType == NothingType) {

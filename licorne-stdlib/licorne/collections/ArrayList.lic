@@ -1,0 +1,46 @@
+package licorne.collections;
+
+
+class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
+    var array = new Array[T | NoElem](initialCapacity, |NoElem|);
+    var currSize: Cnt = 0;
+
+    fn get(i: Int) -> T {
+        if (0 <= i && i < currSize) {
+            val elem = array.get(i!!);
+            if elem is NoElem {
+                panic "ArrayList consistency error"
+            } else {
+                return elem;
+            }
+        } else {
+            panic "access to ArrayList is out of bounds"
+        }
+    }
+
+    fn addLast(elem: T) {
+        var array = this.array;
+        val insertionIdx = this.currSize;
+        if (insertionIdx >= array.size()) {
+            array = new Array(2*array.size() + 1,
+                |when it < array.size() then array.get(it) else NoElem|);
+        };
+        array.set(insertionIdx!!, elem);
+        this.currSize = insertionIdx + 1;
+    }
+
+    fn map[U](f: fn (T) -> U) -> Collection[U] {
+        panic "TODO"
+    }
+
+    fn filter(pred: pure fn (T) -> Bool) -> Collection[T with pred(it)] {
+        panic "TODO"
+    }
+
+    fn foreach(f: fn (T) -> Unit) {
+        panic "TODO"
+    }
+
+}
+
+private object NoElem

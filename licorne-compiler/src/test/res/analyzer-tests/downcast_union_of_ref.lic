@@ -1,0 +1,21 @@
+
+object Test {
+
+    fn foo(x: A with it.bar() >= 20 | B with it.bar() <= 10) {
+        val y = x as B;
+        y : Nothing;    //> E : type ascription: expected Nothing, found y : B with it.bar() <= 10
+    }
+
+}
+
+interface I {
+    pure fn bar() -> Int
+}
+
+class A: I {
+    pure fn bar() -> Int = 42
+}
+
+class B : I {
+    pure fn bar() -> Int = 10
+}

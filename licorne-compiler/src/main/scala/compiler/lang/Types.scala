@@ -89,7 +89,7 @@ object Types {
       flattenedTypes.size match {
         case 0 => NothingType
         case 1 => flattenedTypes.head
-        case 2 => new UnionType(flattenedTypes)
+        case _ => new UnionType(flattenedTypes)
       }
     }
 
