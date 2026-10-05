@@ -265,7 +265,7 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val typeParamsCtx: TypeParamsContext, val instantiationPosOpt: Option[Position]) extends Type {
+  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val typeParamsCtx: TypeParamsContext, val instantiationPosOpt: Option[Position], ignoreRefinementOnResolve: Boolean) extends Type {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOptBackingField = Option.empty[Type]
     private var lockedFlag = false
@@ -281,6 +281,7 @@ object Types {
     private def setActualType(tpe: Type): Unit = {
       actualTypeOptBackingField = Some(tpe match {
         case IntRangeType(Some(lb), Some(ub)) if lb == ub => IntType
+        case tpe if ignoreRefinementOnResolve => tpe.baseTypeAssumingNoAlias
         case tpe => tpe
       })
     }
@@ -347,8 +348,8 @@ object Types {
   }
 
   object TypeVariable {
-    def apply(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], typeParamsCtx: TypeParamsContext, instantiationPosOpt: Option[Position])(tvRegistrator: TypeVariable => Unit): TypeVariable = {
-      val tv = new TypeVariable(id, upperBoundOpt, lowerBoundOpt, typeParamsCtx, instantiationPosOpt)
+    def apply(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], typeParamsCtx: TypeParamsContext, instantiationPosOpt: Option[Position], ignoreRefinementOnResolve: Boolean = false)(tvRegistrator: TypeVariable => Unit): TypeVariable = {
+      val tv = new TypeVariable(id, upperBoundOpt, lowerBoundOpt, typeParamsCtx, instantiationPosOpt, ignoreRefinementOnResolve)
       tvRegistrator(tv)
       tv
     }

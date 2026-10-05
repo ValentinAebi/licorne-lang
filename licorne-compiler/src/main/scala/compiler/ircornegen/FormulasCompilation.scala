@@ -1,6 +1,6 @@
 package compiler.ircornegen
 
-import compiler.irs.ircorne.Formulas.{Formula, IdValue, IntermediateIdValue}
+import compiler.irs.ircorne.Formulas.{Binop, Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne}
 import compiler.valproxies.ProxyStore
@@ -12,18 +12,18 @@ object FormulasCompilation {
   def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)
                         (typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
-    val resVal = compileFormula(formula)(using instructions, currScope)
+    val resVal = compileFormula(formula)(using instructions, currScope, proxyStore)
     for (instr <- instructions) {
       typeInstr(instr)
     }
-    proxyStore.saveProxy(resVal, formula)
     (instructions.toList, resVal)
   }
 
-  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope): IdValue = {
+  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore): IdValue = {
 
-    def save(instr: IRcorne.RealInstr): Unit = {
+    def save(instr: IRcorne.AssigningInstr): Unit = {
       instrOut.addOne(instr)
+      proxyStore.saveProxy(instr.assigned, formula)
     }
 
     formula match {
@@ -61,10 +61,10 @@ object FormulasCompilation {
 
       case Formulas.PureClosureValue(params, body, closureVal) => closureVal
 
-      case Formulas.Plus(lhs, rhs) => genBinop(lhs, rhs, Add(_, _, _))
-      case Formulas.Times(lhs, rhs) => genBinop(lhs, rhs, Mul(_, _, _))
-      case Formulas.DivBy(lhs, rhs) => genBinop(lhs, rhs, Div(_, _, _))
-      case Formulas.Modulo(lhs, rhs) => genBinop(lhs, rhs, Rem(_, _, _))
+      case plus@Formulas.Plus(lhs, rhs) => genBinop(plus, Add(_, _, _))
+      case times@Formulas.Times(lhs, rhs) => genBinop(times, Mul(_, _, _))
+      case div@Formulas.DivBy(lhs, rhs) => genBinop(div, Div(_, _, _))
+      case mod@Formulas.Modulo(lhs, rhs) => genBinop(mod, Rem(_, _, _))
 
       case Formulas.Neg(operand) => withIntermediateValue { res =>
         val operandVal = compileFormula(operand)
@@ -76,12 +76,12 @@ object FormulasCompilation {
         save(LogicNeg(res, operandVal))
       }
 
-      case Formulas.LogicalAnd(lhs, rhs) => genBinop(lhs, rhs, And(_, _, _))
-      case Formulas.LogicalOr(lhs, rhs) => genBinop(lhs, rhs, Or(_, _, _))
+      case and@Formulas.LogicalAnd(lhs, rhs) => genBinop(and, And(_, _, _))
+      case or@Formulas.LogicalOr(lhs, rhs) => genBinop(or, Or(_, _, _))
 
-      case Formulas.Equality(lhs, rhs) => genBinop(lhs, rhs, Equal(_, _, _))
-      case Formulas.LessOrEq(lhs, rhs) => genBinop(lhs, rhs, Leq(_, _, _))
-      case Formulas.LessThan(lhs, rhs) => genBinop(lhs, rhs, Lt(_, _, _))
+      case eq@Formulas.Equality(lhs, rhs) => genBinop(eq, Equal(_, _, _))
+      case leq@Formulas.LessOrEq(lhs, rhs) => genBinop(leq, Leq(_, _, _))
+      case lt@Formulas.LessThan(lhs, rhs) => genBinop(lt, Lt(_, _, _))
 
       case Formulas.TypePredicate(subject, tpe) => withIntermediateValue { res =>
         val subjVal = compileFormula(subject)
@@ -92,18 +92,19 @@ object FormulasCompilation {
         throw AssertionError("cannot convert phi formula")
 
       case Formulas.WrappedScope(resVal, scope) =>
-        save(scope)
+        instrOut.addOne(scope)
         resVal
     }
   }
 
-  private def genBinop(lhs: Formula, rhs: Formula, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => RealInstr)
-                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope): IntermediateIdValue =
+  private def genBinop(binop: Binop, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => AssigningInstr)
+                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore): IntermediateIdValue =
     withIntermediateValue { res =>
-      val lhsVal = compileFormula(lhs)
-      val rhsVal = compileFormula(rhs)
+      val lhsVal = compileFormula(binop.lhs)
+      val rhsVal = compileFormula(binop.rhs)
       val instr = mkInstr(res, lhsVal, rhsVal)
       instructions.addOne(instr)
+      proxyStore.saveProxy(instr.assigned, binop)
     }
 
   private def withIntermediateValue(action: IntermediateIdValue => Unit, idHint: String = "f_interm")(using currScope: Scope): IntermediateIdValue = {

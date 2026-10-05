@@ -111,7 +111,7 @@ final class DeclarationsChecker(
       } {
         tSig.encapsulatedFields.apply(fieldId).tpe match {
           case fieldType: TypeVariable if fieldType.allTypeVariables.exists(!_.isResolved) =>
-            er.reportError(s"could not infer type of field $fieldId", tSig.declPosOpt)
+            er.reportError(s"I could not infer type of field $fieldId", tSig.declPosOpt)
           case _ => ()
         }
       }

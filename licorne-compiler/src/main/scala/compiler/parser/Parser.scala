@@ -479,7 +479,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val shorthandClosure: P[ClosureDef] = recursive {
     verticalBar ::: expr ::: verticalBar map { expr =>
-      ClosureDef(List(ItId -> None), mkSimpleClosureBody(expr), declaredPure = true)
+      ClosureDef(List(ItId -> None), mkSimpleClosureBody(expr), declaredPure = false)
     }
   } setName "shorthandClosure"
 

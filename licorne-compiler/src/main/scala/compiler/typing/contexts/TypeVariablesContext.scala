@@ -12,8 +12,8 @@ import scala.collection.mutable
 final class TypeVariablesContext {
   private val allTypeVariables = mutable.ListBuffer.empty[TypeVariable]
   
-  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], typeParamsCtx: TypeParamsContext, instantiationPosOpt: Option[Position]): TypeVariable =
-    TypeVariable(id, upperBoundOpt, lowerBoundOpt, typeParamsCtx, instantiationPosOpt)(saveTypeVariable)
+  def newTypeVariable(id: Identifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], typeParamsCtx: TypeParamsContext, instantiationPosOpt: Option[Position], ignoreRefinementOnResolve: Boolean = false): TypeVariable =
+    TypeVariable(id, upperBoundOpt, lowerBoundOpt, typeParamsCtx, instantiationPosOpt, ignoreRefinementOnResolve)(saveTypeVariable)
 
   def saveTypeVariable(tv: TypeVariable): Unit = {
     allTypeVariables.addOne(tv)

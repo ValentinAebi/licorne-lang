@@ -152,7 +152,7 @@ final class IRcorneGenerator(
               saveAndCheckFieldId(fieldId, fldDf.getPosition)
               val fieldType = fieldTypeTreeOpt match {
                 case Some(fieldTypeTree) => mkType(fieldTypeTree, classSigScope)(using Map.empty)
-                case None => typeVarsCtx.newTypeVariable(fieldId, None, None, fullTypeParamsCtx, fldDf.getPosition)
+                case None => typeVarsCtx.newTypeVariable(fieldId, None, None, fullTypeParamsCtx, fldDf.getPosition, ignoreRefinementOnResolve = isReassignable)
               }
               val paramVal = classSigScope.newParam(fieldId, fldDf.getPosition)
               classSigScope.getLocalValuesContextUnsafe.saveNewLocal(fieldId, paramVal, classSigScope, ReassigPermission.Val, Some(fieldType))

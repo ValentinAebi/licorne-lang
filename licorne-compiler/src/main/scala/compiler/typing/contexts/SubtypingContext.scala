@@ -22,6 +22,7 @@ import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
+import scala.runtime.BooleanRef
 
 final class SubtypingContext(
                               subtypingGraph: Graph[TypeIdentifier],
@@ -289,17 +290,19 @@ final class SubtypingContext(
 
   def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
     counterExBoxOpt.foreach(_.reinitialize())
-    lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
-    lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
-    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superTDev, found $subTDev" ++ counterexampleMessage(), posOpt)
+    val unstabilityCollector = mutable.LinkedHashSet.empty[Formula]
+    lazy val subTDev = developTypeDepsForErrorMsg(subT.withTypeVarsExpanded, unstabilityCollector)
+    lazy val superTDev = developTypeDepsForErrorMsg(superT.withTypeVarsExpanded, unstabilityCollector)
+    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superTDev, found $subTDev" ++ mkUnstabilityMsg(unstabilityCollector) ++ counterexampleMessage(), posOpt)
   }
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
                             (using TypeParamsContext, Typer, DealiasingContext): Boolean = {
     counterExBoxOpt.foreach(_.reinitialize())
 
-    lazy val subTDev = developTypeDeps(subT.withTypeVarsExpanded)
-    lazy val superTDev = developTypeDeps(superT.withTypeVarsExpanded)
+    val unstabilityCollector = mutable.LinkedHashSet.empty[Formula]
+    lazy val subTDev = developTypeDepsForErrorMsg(subT.withTypeVarsExpanded, unstabilityCollector)
+    lazy val superTDev = developTypeDepsForErrorMsg(superT.withTypeVarsExpanded, unstabilityCollector)
 
     def toStringAlongSubT(f: Formula): String = f match {
       case f: IntConst => f.toString
@@ -314,7 +317,7 @@ final class SubtypingContext(
         }
       case subject => toStringAlongSubT(subject)
     }
-    enforceIsSubtype(subject, subT, superT, s"$posDescr: expected $superTDev, found $foundDescr" ++ counterexampleMessage(), scope, posOpt)
+    enforceIsSubtype(subject, subT, superT, s"$posDescr: expected $superTDev, found $foundDescr" ++ mkUnstabilityMsg(unstabilityCollector) ++ counterexampleMessage(), scope, posOpt)
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
@@ -328,9 +331,31 @@ final class SubtypingContext(
       && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
   }
 
-  private def developTypeDeps(tpe: Type): Type = tpe.withDependenciesTransformed { dep =>
-    proxyStore.developNearest(dep).getOrElse(dep)
+  private def developTypeDepsForErrorMsg(tpe: Type, unstabilityCollector: mutable.LinkedHashSet[Formula]): Type = tpe.withDependenciesTransformed { dep =>
+    proxyStore.developNearest(dep).orElse {
+      val devOpt = proxyStore.developNearest(dep, bypassPurityChecks = true)
+      devOpt.foreach { devDep =>
+        unstabilityCollector.add(findMinimalUnstable(devDep).getOrElse(devDep))
+      }
+      devOpt
+    }.getOrElse(dep)
   }
+
+  private def findMinimalUnstable(formula: Formula): Option[Formula] = {
+
+    def isStable(f: Formula): Boolean =
+      proxyStore.developNearest(f) == proxyStore.developNearest(f, bypassPurityChecks = true)
+
+    formula.children.iterator.map(findMinimalUnstable).find(_.isDefined).flatten.orElse {
+      Option.when(!isStable(formula)){
+        formula
+      }
+    }
+  }
+
+  private def mkUnstabilityMsg(unstabilityCollector: mutable.LinkedHashSet[Formula]): String =
+    if unstabilityCollector.isEmpty then ""
+    else s" (where I am unable to prove the stability of the following values: ${unstabilityCollector.mkString(", ")})"
 
   private def counterexampleMessage(): String = counterExBoxOpt.flatMap(_.describe) match {
     case Some(msg) if msg.nonEmpty => s". Counter-example: $msg"

@@ -100,7 +100,7 @@ object UseLists {
 
    fn instanceTests(ls: List[I], thres: Int) {
       val filtered = ls.filter(fn (x) -> x is A && x.value() >= thres);
-      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()]
+      filtered : Nothing;   //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()] (where I am unable to prove the stability of the following values: it.value())
    }
 
 }

@@ -52,8 +52,7 @@ object Formulas {
     def id: FunOrVarId
   }
 
-  sealed trait Binop(val op: Operator) {
-    formula: Formula =>
+  sealed trait Binop(val op: Operator) extends Formula {
 
     def lhs: Formula
 

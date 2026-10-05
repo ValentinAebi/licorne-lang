@@ -19,14 +19,28 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     }
 
     fn addLast(elem: T) {
-        var array = this.array;
         val insertionIdx = this.currSize;
-        if (insertionIdx >= array.size()) {
-            array = new Array(2*array.size() + 1,
-                |when it < array.size() then array.get(it) else NoElem|);
-        };
+        prepareForSingleAddition();
         array.set(insertionIdx!!, elem);
         this.currSize = insertionIdx + 1;
+    }
+
+    fn removeLast() {
+        val deletionIdx = this.currSize - 1;
+        if deletionIdx < 0 {
+            panic "cannot remove from empty ArrayList"
+        };
+        this.array.set(deletionIdx!!, NoElem);
+        this.currSize = deletionIdx;
+    }
+
+    private fn prepareForSingleAddition() {
+        val array = this.array;
+        if (currSize + 1 < array.size()) {
+            return;
+        };
+        this.array = new Array(2*array.size() + 1,
+                        |when it < array.size() then array.get(it) else NoElem|);
     }
 
     fn map[U](f: fn (T) -> U) -> Collection[U] {
