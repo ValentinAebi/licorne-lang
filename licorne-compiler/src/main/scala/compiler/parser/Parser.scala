@@ -183,8 +183,9 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "encapsulatedFieldDef"
 
   private lazy val typeVisibilityModifierOpt = {
-    opt(kw(Private).ignored ::: openParenth ::: repeatWithSep(lowName, dot) ::: closeParenth) map {
-      case Some(pkgParts) => TypeVisibility.Private(pkgParts)
+    opt(kw(Private).ignored ::: opt(openParenth ::: repeatWithSep(lowName, dot) ::: closeParenth)) map {
+      case Some(Some(pkgParts)) => TypeVisibility.PkgPrivate(pkgParts)
+      case Some(None) => TypeVisibility.FilePrivate
       case None => TypeVisibility.Public
     }
   } setName "typeVisibilityModifierOpt"

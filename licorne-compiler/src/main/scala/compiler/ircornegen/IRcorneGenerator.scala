@@ -357,28 +357,40 @@ final class IRcorneGenerator(
 
   private def checkImport(importStat: ImportStat, packagesInfo: PackagesInfo, currPkgPrefixOpt: Option[List[String]]): Unit = {
 
-    def locateType(tid: TypeIdentifier, posOpt: Option[Position]): Option[Asts.TopLevelDef] = {
+    def locateType(tid: TypeIdentifier): Option[Asts.TopLevelDef] = {
       val TypeIdentifier(prefixes, nonPrefixedId) = tid
+      val importStatPosOpt = importStat.getPosition
       packagesInfo.get(prefixes) match {
         case Some(pkgDefs) =>
           pkgDefs.get(nonPrefixedId) match {
             case someDef@Some(df) =>
               (currPkgPrefixOpt, df.visibility) match {
                 case (_, TypeVisibility.Public) => ()
-                case (None, TypeVisibility.Private(pkgPrefix)) =>
-                  reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from the default package", posOpt)
-                case (Some(currPkgPrefix), TypeVisibility.Private(pkgPrefix)) =>
+                case (_, TypeVisibility.FilePrivate) =>
+                  (importStatPosOpt, df.getPosition) match {
+                    case (Some(Position(currFile, _, _)), Some(Position(dfPos, _, _))) =>
+                      if (currFile != dfPos) {
+                        reportError(s"type $nonPrefixedId with visibility restricted to its defining file cannot be imported from here", importStatPosOpt)
+                      }
+                    case (None, _) =>
+                      reportError(s"cannot check the importability of type $nonPrefixedId: missing position information on import statement", importStatPosOpt)
+                    case (_, None) =>
+                      reportError(s"cannot check the importability of type $nonPrefixedId: missing position information on its definition", importStatPosOpt)
+                  }
+                case (None, TypeVisibility.PkgPrivate(pkgPrefix)) =>
+                  reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from the default package", importStatPosOpt)
+                case (Some(currPkgPrefix), TypeVisibility.PkgPrivate(pkgPrefix)) =>
                   if (!currPkgPrefix.startsWith(pkgPrefix)) {
-                    reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from package ${currPkgPrefix.mkString(".")}", posOpt)
+                    reportError(s"type $nonPrefixedId with visibility restricted to package ${pkgPrefix.mkString(".")} cannot be imported from package ${currPkgPrefix.mkString(".")}", importStatPosOpt)
                   }
               }
               someDef
             case None =>
-              reportError(s"type not found: $tid", posOpt)
+              reportError(s"type not found: $tid", importStatPosOpt)
               None
           }
         case None =>
-          reportError(s"package not found: ${prefixes.mkString(".")}", posOpt)
+          reportError(s"package not found: ${prefixes.mkString(".")}", importStatPosOpt)
           None
       }
     }
@@ -389,7 +401,7 @@ final class IRcorneGenerator(
           funIdsWithAlias <- funIdsWithAliasOpt
           (funId, aliasOpt) <- funIdsWithAlias
         } {
-          locateType(tid, importStat.getPosition) match {
+          locateType(tid) match {
             case Some(df: ObjectDef) =>
               if (!df.functions.exists(_.id == funId)) {
                 reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
@@ -402,7 +414,7 @@ final class IRcorneGenerator(
           }
         }
       case Asts.TypeImportStat(tid, aliasOpt) =>
-        locateType(tid, importStat.getPosition)
+        locateType(tid)
     }
   }
 

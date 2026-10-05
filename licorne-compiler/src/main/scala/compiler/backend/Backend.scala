@@ -10,7 +10,7 @@ import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
-import compiler.lang.TypeVisibility.Private
+import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
 import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
@@ -101,7 +101,8 @@ final class Backend(
         val (majorVersion, minorVersion) = javaVersionCode
         var flags = 0
         tSig.visibility match {
-          case Private(pkgPrefix) if pkgPrefix == tSig.id.prefixes => ()
+          case FilePrivate => ()
+          case PkgPrivate(pkgPrefix) if pkgPrefix == tSig.id.prefixes => ()
           case _ =>
             flags |= ClassFile.ACC_PUBLIC
         }
