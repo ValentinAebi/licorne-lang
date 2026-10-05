@@ -31,6 +31,9 @@ extension [A, B](map: mutable.Map[A, B]) def mapVals[C](f: B => C): mutable.Map[
 
 extension [A, B](ls: List[(A, B)]) def mapVals[C](f: B => C): List[(A, C)] =
   ls.map((a, b) => (a, f(b)))
+  
+extension [A, B](iterable: Iterable[(A, B)]) def valuesGroupedByKey: Map[A, Iterable[B]] =
+  iterable.groupBy(_._1).map((groupKey, group) => groupKey -> group.map(_._2))
 
 extension [T](iterable: Iterable[T]) def findUnique(cond: T => Boolean): Option[T] = {
   val filtered = iterable.filter(cond)

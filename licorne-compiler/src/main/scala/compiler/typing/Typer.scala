@@ -1171,7 +1171,8 @@ final class Typer(
     sig
   }
 
-  private def applyBranchInfo(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
+  private def applyBranchInfo(scope: Scope, rawBranchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
+    val branchInfo = rawBranchInfo.crossData
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
         originalType <- detectTypeForSmartcast(subject, scope)

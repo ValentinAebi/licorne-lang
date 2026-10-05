@@ -32,6 +32,9 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
       value
     })
     
+  def resolveObjectIfKnown(objectId: TypeIdentifier): Option[UninterpretedConstIdValue] =
+    idToObjName.get(objectId)
+    
   def getNameOfObject(objectVal: IdValue): Option[TypeIdentifier] =
     objNameToId.get(objectVal)
     

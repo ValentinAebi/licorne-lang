@@ -8,7 +8,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     fn get(i: Int) -> T {
         if (0 <= i && i < currSize) {
             val elem = array.get(i!!);
-            if elem is NoElem {
+            if elem == NoElem {
                 panic "ArrayList consistency error"
             } else {
                 return elem;

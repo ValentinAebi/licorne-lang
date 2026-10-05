@@ -246,7 +246,7 @@ final class ProxyStore {
       developNearest(cond, allowConjunctsOmission = true).map(infosFor(_)(using outerScope))
         .getOrElse((BranchingInfo.empty, BranchingInfo.empty))
     val (infoIfTrueDeep, infoIfFalseDeep) =
-      developDeep(cond).map(infosFor(_)(using outerScope))
+      developDeep(cond, allowConjunctsOmission = true).map(infosFor(_)(using outerScope))
         .getOrElse((BranchingInfo.empty, BranchingInfo.empty))
     (ambientBranchingInfo ++ infoIfTrueNearest ++ infoIfTrueDeep,
       ambientBranchingInfo ++ infoIfFalseNearest ++ infoIfFalseDeep)

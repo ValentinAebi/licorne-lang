@@ -2,16 +2,17 @@ package compiler.valproxies
 
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.*
-import compiler.lang.{RuntimeTypeSignature, Types}
+import compiler.lang.Types
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.reasoning.{MeetJoinComputer, Solver}
-import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.typing.smartcasting.TypesReasoningCache
-import compiler.util.{SeqSet, asIterableOfType, mergeCombineInOrder}
+import compiler.util.*
 import compiler.valproxies.BoundMode.*
 import compiler.valproxies.BranchingInfo.SmartcastData
+import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.SeqMap
 import scala.util.boundary
@@ -41,6 +42,34 @@ final case class BranchingInfo(
       case _ => ()
     }
     None
+  }
+
+  def crossData(using globalValsCtx: GlobalValuesContext): BranchingInfo = {
+    val newAssumptions = for {
+      (subject, SmartcastData(knownIs, knownIsNot)) <- smartcasts
+      tid <- knownIs
+      objVal <- globalValsCtx.resolveObjectIfKnown(tid)
+    } yield Equality(subject, objVal)
+    val itVal = globalValsCtx.itValue
+    val newKnownIs = (assumptions.toList.flatMap {
+      case Equality(lhs: IdValue, rhs) =>
+        globalValsCtx.getNameOfObject(lhs).map(rhs -> _)
+      case _ => None
+    } ++ assumptions.toList.flatMap {
+      case Equality(lhs, rhs: IdValue) =>
+        globalValsCtx.getNameOfObject(rhs).map(lhs -> _)
+      case _ => None
+    }).valuesGroupedByKey.mapVals(SmartcastData(_, Iterable.empty))
+    val newKnownIsNot = (assumptions.toList.flatMap {
+      case LogicalNot(Equality(lhs: IdValue, rhs)) =>
+        globalValsCtx.getNameOfObject(lhs).map(rhs -> _)
+      case _ => None
+    } ++ assumptions.toList.flatMap {
+      case LogicalNot(Equality(lhs, rhs: IdValue)) =>
+        globalValsCtx.getNameOfObject(rhs).map(lhs -> _)
+      case _ => None
+    }).valuesGroupedByKey.mapVals(SmartcastData(Iterable.empty, _))
+    this ++ BranchingInfo(SeqMap.from(newKnownIs), SeqSet.empty) ++ BranchingInfo(SeqMap.from(newKnownIsNot), SeqSet.empty) ++ BranchingInfo(SeqMap.empty, SeqSet(newAssumptions))
   }
 
 }
@@ -106,6 +135,11 @@ object BranchingInfo {
       }
     }
 
+  }
+  
+  object SmartcastData {
+    def apply(knownIs: Iterable[TypeIdentifier], knownIsNot: Iterable[TypeIdentifier]): SmartcastData =
+      SmartcastData(SeqSet(knownIs), SeqSet(knownIsNot))
   }
 
 }
