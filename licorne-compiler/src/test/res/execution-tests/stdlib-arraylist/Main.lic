@@ -1,0 +1,32 @@
+import licorne.collections.ArrayList;
+import licorne.collections.MutSeq;
+
+
+object Main {
+
+    fn main() {
+        val al1 = new ArrayList();
+        al1.addLast(25);
+        al1.addLast(32);
+        println(al1);   // expects [25,32]
+        al1.mapInPlace|it / 2|;
+        println(al1);   // expects [12,16]
+        al1.add(1, 24);
+        println(al1);   // expects [12,24,16]
+        val al2 = al1.filter|it % 3 == 0|;
+        println(al2);   // expects [12,24]
+        foo(al2);       // should print 24
+        println(al2);   // expects [24,12]
+        al1.add(0, 77);
+        println(al1);   // expects [77,12,24,16]
+        al1.map|it % 6 == 0|.foreach(fn (b) -> {
+            println(b);
+        });
+    }
+
+    private fn foo(seq: MutSeq[Int with it % 3 == 0]) {
+        seq.reverse();
+        println(seq.get(0));
+    }
+
+}

@@ -1,9 +1,13 @@
 package licorne.collections;
 
+// TODO ternary types (#28) would help modularize index checks
+// TODO negative casts (#30) would make NoElems checks more concise
 
 class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     var array = new Array[T | NoElem](initialCapacity, |NoElem|);
     var currSize: Cnt = 0;
+
+    fn size() -> Cnt = currSize
 
     fn get(i: Int) -> T {
         if (0 <= i && i < currSize) {
@@ -25,6 +29,36 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         this.currSize = insertionIdx + 1;
     }
 
+    fn add(idx: Int, elem: T) {
+        prepareForSingleAddition();
+        val array = this.array;
+        if !(0 <= idx && idx <= currSize) {
+            panic "insertion index out of bounds";
+        };
+        for (var i = currSize; i > idx; i -= 1) {
+            array.set(i!!, array.get((i - 1)!!));
+        };
+        array.set(idx!!, elem);
+        currSize = currSize + 1;
+    }
+
+    fn remove(idx: Int) {
+        val currSize = this.currSize;
+        if !(0 <= idx && idx < currSize) {
+            panic "removal index is out of bounds"
+        };
+        val array = this.array;
+        for (var i = idx; i + 1 < array.size(); i += 1) {
+            val elem = array.get(i + 1);
+            array.set(i + 1, NoElem);
+            if elem is NoElem {
+                return;
+            };
+            array.set(i, elem);
+        };
+        this.currSize = currSize - 1;
+    }
+
     fn removeLast() {
         val deletionIdx = this.currSize - 1;
         if deletionIdx < 0 {
@@ -32,6 +66,75 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         };
         this.array.set(deletionIdx!!, NoElem);
         this.currSize = deletionIdx;
+    }
+
+    fn map[U](f: fn (T) -> U) -> ArrayList[U] {
+        val mapped = new ArrayList(currSize);
+        val array = this.array;
+        for (var i = 0; i < array.size(); i += 1) {
+            val elem = array.get(i);
+            if elem is NoElem {
+                return mapped;
+            };
+            mapped.add(i, f(elem));
+        };
+        return mapped;
+    }
+
+    fn mapInPlace(f: fn (T) -> T) {
+        val array = this.array;
+        for (var i = 0; i < array.size(); i += 1) {
+            val elem = array.get(i);
+            if elem is NoElem {
+                return;
+            };
+            array.set(i, f(elem));
+        };
+    }
+
+    fn filter(pred: pure fn (T) -> Bool) -> ArrayList[T with pred(it)] {
+        val filtered = new ArrayList(currSize);
+        foreach(fn (elem) -> {
+            if pred(elem) {
+                filtered.addLast(elem);
+            }
+        });
+        return filtered;
+    }
+
+    fn reverse() {
+        var i = 0;
+        var j = currSize - 1;
+        while (i < j) {
+            swap(i, j);
+            i += 1;
+            j -= 1;
+        }
+    }
+
+    fn foreach(f: fn (T) -> Unit) {
+        val array = this.array;
+        for (var i = 0; i < array.size(); i += 1) {
+            val elem = array.get(i);
+            if elem is NoElem {
+                return;
+            };
+            f(elem);
+        };
+    }
+
+    fn toString() -> String {
+        var s = "[";
+        var isFirst = true;
+        foreach(fn (elem) -> {
+            if !isFirst {
+                s ++= ",";
+            };
+            s ++= str(elem);
+            isFirst = false;
+        });
+        s ++= "]";
+        return s;
     }
 
     private fn prepareForSingleAddition() {
@@ -43,16 +146,11 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
                         |when it < array.size() then array.get(it) else NoElem|);
     }
 
-    fn map[U](f: fn (T) -> U) -> Collection[U] {
-        panic "TODO"
-    }
-
-    fn filter(pred: pure fn (T) -> Bool) -> Collection[T with pred(it)] {
-        panic "TODO"
-    }
-
-    fn foreach(f: fn (T) -> Unit) {
-        panic "TODO"
+    private fn swap(i: Int, j: Int) {
+        val array = this.array;
+        val tmp = array.get(i!!);
+        array.set(i, array.get(j!!));
+        array.set(j, tmp);
     }
 
 }

@@ -2,6 +2,8 @@ package licorne.collections;
 
 interface Collection[+T] {
 
+    fn size() -> Cnt
+
     fn map[U](f: fn (T) -> U) -> Collection[U]
 
     fn filter(pred: pure fn (T) -> Bool) -> Collection[T with pred(it)]
