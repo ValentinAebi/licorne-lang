@@ -6,6 +6,7 @@ import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.PrimitiveType.*
 import compiler.reasoning.Simplifier
 import compiler.reporting.Position
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
@@ -155,14 +156,14 @@ object Types {
       val (base, pred) = flattenPred(this)
       RefinedType(base, pred)
     }
-    
+
     def predicateAsSetOfConjuncts: SeqSet[Formula] = {
-      
+
       def splitPredicate(pred: Formula): List[Formula] = pred match {
         case LogicalAnd(lhs, rhs) => splitPredicate(lhs) ++ splitPredicate(rhs)
         case pred => List(pred)
       }
-      
+
       SeqSet(splitPredicate(predicate))
     }
 
@@ -180,7 +181,7 @@ object Types {
       case (None, Some(ub)) => LessOrEq(itValue, ub)
       case (None, None) => BoolConst(true)
     }
-    
+
     override def toString: String = {
       val lbDescrOpt = lowerBoundOpt.map(_.toString)
       val ((ubDescrOpt, isUbExcl), ubIsAtomic) = upperBoundOpt match {
@@ -265,7 +266,14 @@ object Types {
 
   private val typeVarUidGen = new AtomicLong(-1)
 
-  final class TypeVariable private(val id: Identifier, val upperBoundOpt: Option[Type], val lowerBoundOpt: Option[Type], val typeParamsCtx: TypeParamsContext, val instantiationPosOpt: Option[Position], ignoreRefinementOnResolve: Boolean) extends Type {
+  final class TypeVariable private(
+                                    val id: Identifier,
+                                   val upperBoundOpt: Option[Type],
+                                   val lowerBoundOpt: Option[Type],
+                                   val typeParamsCtx: TypeParamsContext,
+                                   val instantiationPosOpt: Option[Position],
+                                   ignoreRefinementOnResolve: Boolean
+                                  ) extends Type {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOptBackingField = Option.empty[Type]
     private var lockedFlag = false
@@ -280,8 +288,9 @@ object Types {
 
     private def setActualType(tpe: Type): Unit = {
       actualTypeOptBackingField = Some(tpe match {
-        case IntRangeType(Some(lb), Some(ub)) if lb == ub => IntType
+        case NamedType(StdLib.stringLTypeId, Nil, List(_)) => StdLib.stringType
         case tpe if ignoreRefinementOnResolve => tpe.baseTypeAssumingNoAlias
+        case IntRangeType(Some(lb), Some(ub)) if lb == ub => IntType
         case tpe => tpe
       })
     }
@@ -478,6 +487,11 @@ object Types {
     import globalValsCtx.itValue
     tpe match {
       case refinedType: RefinedType => refinedType
+      case IntRangeType(lowerBoundOpt, upperBoundOpt) if lowerBoundOpt == upperBoundOpt =>
+        RefinedType(IntType, lowerBoundOpt match {
+          case Some(lb) => Equality(itValue, lb)
+          case None => BoolConst(true)
+        })
       case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
         val predicateParts = lowerBoundOpt.map(LessOrEq(_, itValue)) ++ upperBoundOpt.map(LessOrEq(itValue, _))
         val predicate = if predicateParts.isEmpty then BoolConst(true) else predicateParts.reduce[Formula](LogicalAnd(_, _))
@@ -491,9 +505,9 @@ object Types {
       case tpe => RefinedType(tpe, BoolConst(true))
     }
   }
-  
+
   extension (tpe: Type) def withTypeVarsSubstituted: Option[Type] = {
-    
+
     def substAll(ls: Iterable[Type]): Option[List[Type]] = boundary {
       val resB = List.newBuilder[Type]
       for (t <- ls) {
@@ -506,7 +520,7 @@ object Types {
       }
       Some(resB.result())
     }
-    
+
     tpe match {
       case primitiveType: PrimitiveType => Some(primitiveType)
       case NamedType(typeName, typeArgs, args) =>
@@ -538,7 +552,7 @@ object Types {
       case tv: TypeVariable => tv.actualTypeIfResolved
     }
   }
-  
+
   extension (tpe: Type) def allTypeVariables: SeqSet[TypeVariable] = tpe match {
     case primitiveType: PrimitiveType => SeqSet.empty
     case NamedType(typeName, typeArgs, args) =>
@@ -556,7 +570,7 @@ object Types {
     case tv: TypeVariable if tv.isResolved => tv.withTypeVarsExpanded.allTypeVariables
     case tv: TypeVariable => SeqSet(tv)
   }
-  
+
   extension (tpe: Type) def withDependenciesTransformed(f: Formula => Formula): Type = tpe match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withDependenciesTransformed(f)), args.map(f))
@@ -571,7 +585,7 @@ object Types {
       case None => tv
     }
   }
-  
+
   extension (tpe: Type) def mentionsType(target: Type): Boolean = target == tpe || (tpe match {
     case primitiveType: PrimitiveType => false
     case NamedType(typeName, typeArgs, args) => typeArgs.exists(_.mentionsType(target))
@@ -583,7 +597,7 @@ object Types {
     case NullableType(nullatedType) => nullatedType.mentionsType(target)
     case tv: TypeVariable => tv.actualTypeIfResolved.exists(_.mentionsType(target))
   })
-  
+
   extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
     case IntersectionType(types) => types
     case tpe => SeqSet(tpe)

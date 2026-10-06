@@ -366,8 +366,8 @@ final class Typer(
           case Some(expType) =>
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", currScope, heapVarWr.getPosition)
           case None =>
-            // TODO maybe try to save refined types also here, instead of falling back to the range-erased type?
-            heapVarsTypeStore.saveType(heapVar, newValType.ignoreRangesShallow)
+            val dealType = dealiasingCtx.dealiasType(newValType)
+            heapVarsTypeStore.saveType(heapVar, if dealType.asRefinedType.predicateAsSetOfConjuncts.forall(_.isInstanceOf[Equality]) then dealType.baseTypeAssumingNoAlias else newValType)
         }
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
 
