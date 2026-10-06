@@ -123,7 +123,7 @@ final class Backend(
         }
         tSig match {
           case objSig: ObjectSignature => generateObjectConstructor(objSig, cb)
-          case tSig: UserInstantiableTypeSig =>
+          case tSig: UserInstantiableTypeSig if tSig.sigName != arrayTypeId =>
             val fieldsInit = program.constructorFieldsInit.getOrElse(tSig.id, Map.empty)
             generateUserAccessibleConstructor(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
           case _ => ()
@@ -250,7 +250,7 @@ final class Backend(
 
     val ownerId = ownerTypeSig.id
     val functions = ownerTypeSig.functions.values
-    for (funSig <- functions) {
+    for (funSig <- functions if !StdLibFunctions.isExcludedFunc(funSig)) {
       val bodyOpt = program.functions.apply(ownerId, funSig.descriptor).bodyOpt
       generateFunc(funSig, bodyOpt, ownerTypeSig, cb)
       if (funSig.isMain) {
@@ -279,8 +279,10 @@ final class Backend(
     given tpCtx: TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
 
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
-    val funDesc = mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis)
+    val isStaticFunc =
+      StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
+        || StdLib.hasReceiver(arrayTypeId)(funSig)
+    val funDesc = mkFunDesc(funSig, extractParams = if isStaticFunc then _.paramsInclThis else _.paramsWithoutThis)
     var flags = funSig.visibility match {
       case FuncVisibility.Private => ClassFile.ACC_PRIVATE
       case FuncVisibility.Public => ClassFile.ACC_PUBLIC
@@ -288,7 +290,7 @@ final class Backend(
     if (funSig.overridability == Overridability.Abstract) {
       flags |= ClassFile.ACC_ABSTRACT
     }
-    if (isStaticStringFunc) {
+    if (isStaticFunc) {
       flags |= ClassFile.ACC_STATIC
     }
     val funName = if funSig.isMain then "$" + funSig.functionName.stringId else funSig.functionName.stringId
@@ -568,6 +570,8 @@ final class Backend(
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         val funSig = func.getFunSigUnsafe
         val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
+        val isStaticArrayFunc = StdLib.hasReceiver(arrayTypeId)(funSig)
+        val isStaticFunc = isStaticStringFunc || isStaticArrayFunc
         genValueLoad(receiver, currScope, cb)
         val NamedType(receiverTypeId, receiverTypeArgs, _) = funSig.receiverType: @unchecked
         val recTypeSig = resolCtx.resolveTypeSigAs[RuntimeTypeSignature](receiverTypeId).get
@@ -575,10 +579,15 @@ final class Backend(
         generateArgsList(args, funSig, typeArgsSubst, cb, currScope)
         val (targetReceiverDesc, targetFunName, targetFunDesc) = StdLibFunctions.stringFuncRedirectFor(funSig) match {
           case Some(targetFunId, targetFunDesc) => (CD_String, targetFunId, targetFunDesc)
-          case None => (tConv.descriptorFor(receiverTypeId), funSig.functionName.stringId, mkFunDesc(funSig, extractParams = if isStaticStringFunc then _.paramsInclThis else _.paramsWithoutThis))
+          case None => (tConv.descriptorFor(receiverTypeId), funSig.functionName.stringId, mkFunDesc(funSig, extractParams = if isStaticFunc then _.paramsInclThis else _.paramsWithoutThis))
         }
-        if (isStaticStringFunc) {
-          cb.invokestatic(ClassDesc.ofInternalName(licorneCoreStringInternalName), targetFunName, targetFunDesc)
+        if (isStaticFunc) {
+          val ownerTypeDesc = {
+            if isStaticStringFunc then ClassDesc.ofInternalName(licorneCoreStringInternalName)
+            else if isStaticArrayFunc then ClassDesc.of(arrayTypeId.stringId)
+            else throw AssertionError("unknown owner for static method")
+          }
+          cb.invokestatic(ownerTypeDesc, targetFunName, targetFunDesc)
         } else if (recTypeSig.isInstanceOf[ConcreteTypeSig]) {
           cb.invokevirtual(targetReceiverDesc, targetFunName, targetFunDesc)
         } else {

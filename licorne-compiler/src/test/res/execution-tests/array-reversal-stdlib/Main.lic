@@ -1,0 +1,12 @@
+
+object Main {
+
+    fn main() {
+        val a = new Array(size = 10, |2*it + 1|);
+        a.reverse();
+        for (var i = 0; i < a.size(); i += 1) {
+            println(a.get(i));
+        }
+    }
+
+}

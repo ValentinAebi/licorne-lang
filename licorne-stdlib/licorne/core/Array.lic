@@ -14,6 +14,22 @@ class Array[T](public size: Cnt, initializer: fn (Idx(this)) -> T) : Indexed {
         panic "stub, compiled to xSTORE"
     }
 
+    fn reverse() {
+        var i = 0;
+        var j = size() - 1;
+        while (i < j) {
+            swap(i, j);
+            i += 1;
+            j -= 1;
+        }
+    }
+
+    fn swap(i: Idx(this), j: Idx(this)) {
+        val tmp = get(i);
+        set(i, get(j));
+        set(j, tmp);
+    }
+
 }
 
 object Arrays {

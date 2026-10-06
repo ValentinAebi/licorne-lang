@@ -16,12 +16,12 @@ object StdLibFunctions {
     (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadlLine
     // TODO FileWriter::write
   )
-  
+
   private val staticRedirects = Map(
     (stringsTypeId, stringificationFunId) -> (ClassDesc.ofInternalName("java/util/Objects"), "toString", javaSig(CD_String, CD_Object)),
     // TODO conversions (Int to Double, etc.)
   )
-  
+
   private val stringFuncRedirect = Map(
     sizeFunId -> ("length", javaSig(CD_int)),
     stringIsEmptyFunId -> ("isEmpty", javaSig(CD_boolean)),
@@ -43,7 +43,7 @@ object StdLibFunctions {
       intrinsics.get(tid, funSig.functionName)
     case _ => None
   }
-  
+
   def stringFuncRedirectFor(sig: FunctionSignature): Option[(String, MethodTypeDesc)] = sig.receiverType match {
     case NamedType(tid, _, _) if tid == stringTypeId => stringFuncRedirect.get(sig.functionName)
     case _ => None
@@ -53,6 +53,12 @@ object StdLibFunctions {
     case NamedType(typeName, Nil, Nil) => staticRedirects.get(typeName, sig.functionName)
     case _ => None
   }
+
+  def isExcludedFunc(sig: FunctionSignature): Boolean =
+    hasReceiver(arrayTypeId)(sig) && (sig.functionName match {
+      case `arrayGetFunId` | `arraySetFunId` | `arraySizeFunId` => true
+      case _ => false
+    })
 
   private def generateConsolePrint(mb: MethodBuilder): Unit = mb.withCode(cb => {
     val systemDesc = ClassDesc.of("java.lang.System")
