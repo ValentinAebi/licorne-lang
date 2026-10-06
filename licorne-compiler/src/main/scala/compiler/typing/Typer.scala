@@ -1335,7 +1335,7 @@ final class Typer(
       case NothingType => (NothingType, List.empty, List.empty)
       case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
         val targetDesc = FunctionDescriptor(invkTarget.funId, typedCallArgs.size)
-        resolutionCtx.resolveFunSig(typeName, targetDesc) match {
+        resolutionCtx.resolveFunSig(typeName, targetDesc, typedCallArgs.map(_._2)) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
             if (funSig.visibility == FuncVisibility.Private && !receiverIsThisPtr(scope, receiver)) {
               er.reportError(s"illegal access to ${FuncVisibility.Private} method ${funSig.functionName}", posOpt)

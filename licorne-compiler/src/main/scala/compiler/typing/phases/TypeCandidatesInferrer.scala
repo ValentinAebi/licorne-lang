@@ -126,7 +126,7 @@ final class TypeCandidatesInferrer(
               (tSig.id, typesSubst, Map.empty[IdValue, Formula])
             }
         }
-        funSig <- resolutionCtx.resolveFunSig(receiverTypeId, FunctionDescriptor(func.funId, args.size)).asOption
+        funSig <- resolutionCtx.resolveFunSig(receiverTypeId, FunctionDescriptor(func.funId, args.size), args.map(lt.detectDealiasedTypeOf)).asOptionWithoutReceiver
       } {
         val typeParams = funSig.typeParams
         val typesSubst = owTypesSubst ++ createTypeParamsSubst(typeParams, typeArgs)
