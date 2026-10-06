@@ -766,7 +766,9 @@ final class IRcorneGenerator(
         val variablesB = List.newBuilder[DisjunctionVarData]
         for (varId <- allAssignedVars) {
           (thenScope.getLocalValuesContextUnsafe.valueOf(varId), elseScope.getLocalValuesContextUnsafe.valueOf(varId)) match {
-            case (KnownAndInitialized(thenEndVal, _, _, _), KnownAndInitialized(elseEndVal, _, _, _)) if !thenScope.hasExited && !elseScope.hasExited =>
+            case (KnownAndInitialized(thenEndVal, _, _, _), KnownAndInitialized(elseEndVal, _, _, _))
+              if !thenScope.hasExited && !elseScope.hasExited && !thenEndVal.isInstanceOf[HeapVarIdValue] && !elseEndVal.isInstanceOf[HeapVarIdValue]
+            =>
               val joinVal = currScope.newVar(varId, currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt, Some("join"), ite.getPosition)
               variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
               currScope.getLocalValuesContextUnsafe.remap(varId, joinVal)
@@ -810,7 +812,7 @@ final class IRcorneGenerator(
             newScopeIfBlock
           )
         } else {
-          for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
+          for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars if !beforeLoopVal.isInstanceOf[HeapVarIdValue]) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
               init <- proxyStore.developDeepIgnoreAccessors(beforeLoopVal)
