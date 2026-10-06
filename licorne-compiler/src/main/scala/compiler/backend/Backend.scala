@@ -657,7 +657,7 @@ final class Backend(
         val desc = tConv.descriptorFor(classOrRecordName)
         cb.new_(desc)
         cb.dup()
-        for ((fld, (_, argVal, argEval)) <- createdObjTypeSig.fields.values zip fieldsInit) {
+        for ((fld, (_, argVal, argEval)) <- createdObjTypeSig.constructorParams.values zip fieldsInit) {
           for (instr <- argEval) {
             generateInstr(instr, cb, currScope)
           }
