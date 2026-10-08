@@ -18,7 +18,7 @@ import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{countTypeId, stringLTypeId, stringType}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -168,10 +168,11 @@ final class Typer(
             Some(())
           }
         }
-        typeScopeInstructions(condScope, BranchingInfo.empty)
+        typeScopeInstructions(condScope, branchInfo)
         subtypingCtx.enforceIsSubtype(condScope.detectCurrentType(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(bodyScope, infoIfCondTrue)
+        var checkTermination = true
         for {
           varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars
         } {
@@ -183,10 +184,13 @@ final class Typer(
             case _ =>
               s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
           }
-          subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
+          checkTermination &= subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
           val beforeLoopType = currScope.detectCurrentType(beforeLoopVal)
           val afterLoopType = meetJoin.computeJoin(beforeLoopType, typeAtEndOfBody)
           currScope.saveSmartcast(condVal, afterLoopType)
+        }
+        if (checkTermination && !condScope.hasExited && !proxyStore.developNearest(condVal).contains(BoolConst(true)) && solver.canProve(condVal)) {
+          er.warn(s"loop cannot exit, if this is intended please make it explicit by using '${BoolConst(true)}' as the loop condition", loop.getPosition)
         }
         applyBranchInfo(currScope, infoIfCondFalse)
 

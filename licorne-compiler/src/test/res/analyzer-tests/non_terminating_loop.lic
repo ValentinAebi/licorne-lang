@@ -1,0 +1,10 @@
+
+object Main {
+
+    fn foo() {
+        for (var i = 0; i <= 10; i -= 1) {  //> W : loop cannot exit, if this is intended please make it explicit by using 'true' as the loop condition
+            println(i);
+        }
+    }
+
+}
