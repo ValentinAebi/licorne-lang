@@ -76,6 +76,7 @@ final class MeetJoinComputer(
     val expandedTypes = SeqSet(inputTypes.flatMap { tpe =>
       tpe.withTypeVarsExpanded match {
         case UnionType(unitedTypes) => unitedTypes
+        case TernaryType(cond, left, right) => List(left, right)
         case tpe => List(tpe)
       }
     })
@@ -120,9 +121,11 @@ final class MeetJoinComputer(
                 case RefinedType(baseType, predicate) =>
                   throw AssertionError("unexpected refined type")
                 case intRangeType: IntRangeType =>
-                  throw AssertionError(s"unexpected range type")
+                  throw AssertionError("unexpected range type")
                 case unionType: UnionType =>
                   throw AssertionError(s"unexpected ${classOf[UnionType].getSimpleName}: $unionType")
+                case ternaryType: TernaryType =>
+                  throw AssertionError("unexpected ternary type")
                 case nullableType: NullableType =>
                   throw AssertionError(s"unexpected nullable type: $nullableType")
                 case tv: TypeVariable =>

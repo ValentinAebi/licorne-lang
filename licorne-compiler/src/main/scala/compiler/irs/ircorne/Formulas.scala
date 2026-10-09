@@ -60,6 +60,12 @@ object Formulas {
 
     override def children: List[Formula] = List(lhs, rhs)
   }
+  
+  sealed trait NumericFormula extends Formula
+  
+  sealed trait LogicFormula extends Formula
+  
+  sealed trait ComparisonFormula extends LogicFormula
 
   final case class ParamIdValue(id: FunOrVarId, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("p"), LocalIdValue {
     override def name: String = id.stringId
@@ -102,9 +108,9 @@ object Formulas {
     override def children: List[Formula] = List.empty
   }
 
-  final case class IntConst(value: Int) extends ConstFormula
+  final case class IntConst(value: Int) extends ConstFormula, NumericFormula
 
-  final case class BoolConst(value: Boolean) extends ConstFormula
+  final case class BoolConst(value: Boolean) extends ConstFormula, LogicFormula
 
   final case class StringConst(value: String) extends ConstFormula
 
@@ -151,7 +157,7 @@ object Formulas {
     override def children: List[Formula] = params :+ body :+ closureVal
   }
 
-  final case class Plus(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Plus)
+  final case class Plus(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Plus), NumericFormula
 
   final case class Neg(operand: Formula) extends Formula {
     override def isAtomic: Boolean = operand.isAtomic
@@ -159,29 +165,29 @@ object Formulas {
     override def children: List[Formula] = List(operand)
   }
 
-  final case class Times(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Times)
+  final case class Times(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Times), NumericFormula
 
-  final case class DivBy(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Div)
+  final case class DivBy(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Div), NumericFormula
 
-  final case class Modulo(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Modulo)
+  final case class Modulo(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Modulo), NumericFormula
 
-  final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.And)
+  final case class LogicalAnd(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.And), LogicFormula
 
-  final case class LogicalNot(operand: Formula) extends Formula {
+  final case class LogicalNot(operand: Formula) extends Formula, LogicFormula {
     override def isAtomic: Boolean = operand.isAtomic
 
     override def children: List[Formula] = List(operand)
   }
 
-  final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Or)
+  final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Or), LogicFormula
 
-  final case class Equality(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Equality)
+  final case class Equality(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Equality), ComparisonFormula
 
-  final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessOrEq)
+  final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessOrEq), ComparisonFormula
 
-  final case class LessThan(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessThan)
+  final case class LessThan(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessThan), ComparisonFormula
 
-  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula {
+  final case class TypePredicate(subject: Formula, tpe: TypeIdentifier) extends Formula, LogicFormula {
     override def children: List[Formula] = List(subject)
   }
 

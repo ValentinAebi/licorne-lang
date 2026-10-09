@@ -52,25 +52,25 @@ final class SimplificationTests {
   }
 
   @Test def simplifyMinusOneTest(): Unit = usingFreshSimplifier { (simplifier, _) =>
-    assertEquals(IntConst(-1), simplifier.simplifyInt(Neg(IntConst(1))))
+    assertEquals(IntConst(-1), simplifier.simplifyNumeric(Neg(IntConst(1))))
   }
 
   @Test def simplifyLinearFormulaTest1(): Unit = usingFreshSimplifier { (simplifier, _) =>
     // @formatter:off
-    assertEquals(6*a + 5*b + 24, simplifier.simplifyInt(a + 5*b - 3*a - 2 + 25 + 8*a + 1))
+    assertEquals(6*a + 5*b + 24, simplifier.simplifyNumeric(a + 5*b - 3*a - 2 + 25 + 8*a + 1))
     // @formatter:on
   }
 
   @Test def simplifyLinearFormulaTest2(): Unit = usingFreshSimplifier { (simplifier, _) =>
     // @formatter:off
-    assertEquals(9*a - 1, simplifier.simplifyInt(2*4*a + a - 1))
+    assertEquals(9*a - 1, simplifier.simplifyNumeric(2*4*a + a - 1))
     // @formatter:on
   }
 
   @Test def simplifyLinearFormulaTest3(): Unit = usingFreshSimplifier { (simplifier, _) =>
     // @formatter:off
-    assertEquals(a, simplifier.simplifyInt(2*a + 9*b - a - 5*b - 1 - 4*b + 1))
-    assertEquals(IntConst(0), simplifier.simplifyInt(2*a + 9*b - a - 5*b - 1 - 4*b + 1 - a))
+    assertEquals(a, simplifier.simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1))
+    assertEquals(IntConst(0), simplifier.simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1 - a))
     // @formatter:on
   }
 

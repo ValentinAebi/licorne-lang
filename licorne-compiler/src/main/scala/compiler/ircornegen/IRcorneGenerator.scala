@@ -1384,6 +1384,13 @@ final class IRcorneGenerator(
       UnionType(SeqSet(types.map(mkType(_, scope))))
     case Asts.IntersectionTypeTree(types) =>
       IntersectionType(SeqSet(types.map(mkType(_, scope))))
+    case Asts.TernaryTypeTree(cond, leftType, rightType) =>
+      val left = mkType(leftType, scope)
+      val right = mkType(rightType, scope)
+      generateFormula(cond, scope, "condition of ternary type")(using None) match {
+        case Some(cond) => TernaryType(cond, left, right)
+        case None => UnionType(left, right)
+      }
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo, importsCtx: ImportsContext): NamedType = namedTypeTree match {

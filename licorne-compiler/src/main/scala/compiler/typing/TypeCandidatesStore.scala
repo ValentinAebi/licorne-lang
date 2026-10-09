@@ -33,11 +33,6 @@ final class TypeCandidatesStore {
       case None => List.empty
     }
   }
-
-  def getCandidatesIfIdVal(f: Formula): Iterable[Type] = f match {
-    case idVal: IdValue => getCandidates(idVal)
-    case _ => List.empty
-  }
   
   def hasPureClosureCandidateFor(idValue: IdValue): Boolean =
     pureClosureCandidates.contains(idValue)

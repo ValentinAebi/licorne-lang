@@ -1,0 +1,15 @@
+
+object Main {
+
+    fn main() {
+        val array = new Array(1, |100|);
+        printElemUnsafe(array, 0);
+        printElemUnsafe(array, 10);
+    }
+
+    private fn printElemUnsafe(xs: Array[Int], i: Int) {
+        require(0 <= i && i <= xs.size(), "not a valid index");
+        println(xs.get(i)); //> E : first argument of call to get: expected licorne.core.Idx(xs), found i : [0 .. xs.size()]
+    }
+
+}

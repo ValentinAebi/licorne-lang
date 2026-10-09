@@ -129,6 +129,17 @@ object Types {
     def apply(types: Type*): Type =
       apply(SeqSet(types))
   }
+  
+  final case class TernaryType(cond: Formula, left: Type, right: Type) extends Type {
+
+    def toUnion: Type = UnionType(left, right)
+    
+    override def formulaDependencies: List[Formula] = cond +: (left.formulaDependencies ++ right.formulaDependencies)
+
+    override def baseTypeAssumingNoAlias: Type = TernaryType(cond, left.baseTypeAssumingNoAlias, right.baseTypeAssumingNoAlias)
+
+    override def toString: String = s"${Keyword.When} $cond ${Keyword.Then} $left ${Keyword.Else} $right"
+  }
 
   final case class RefinedType(baseType: Type, predicate: Formula) extends Type {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
@@ -252,7 +263,7 @@ object Types {
     override def baseTypeAssumingNoAlias: Type = nullatedType.baseTypeAssumingNoAlias
 
     override def toString: String = nullatedType match {
-      case nullatedType: (RefinedType | UnionType | IntersectionType) => s"($nullatedType)?"
+      case nullatedType: (RefinedType | UnionType | IntersectionType | TernaryType) => s"($nullatedType)?"
       case nullatedType => s"$nullatedType?"
     }
   }
@@ -382,6 +393,8 @@ object Types {
       UnionType(types.map(_.substitute(typesSubst, valsSubst)))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.substitute(typesSubst, valsSubst)))
+    case TernaryType(cond, left, right) =>
+      TernaryType(cond.substitute(valsSubst), left.substitute(typesSubst, valsSubst), right.substitute(typesSubst, valsSubst))
     case RefinedType(baseType, predicate) =>
       RefinedType(baseType.substitute(typesSubst, valsSubst), predicate.substitute(valsSubst))
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
@@ -403,6 +416,8 @@ object Types {
       UnionType(types.map(_.withTypeVarsExpanded))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.withTypeVarsExpanded))
+    case TernaryType(cond, left, right) =>
+      TernaryType(cond, left.withTypeVarsExpanded, right.withTypeVarsExpanded)
     case RefinedType(baseType, predicate) =>
       RefinedType(baseType.withTypeVarsExpanded, predicate)
     case range: IntRangeType => range
@@ -422,6 +437,8 @@ object Types {
       UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
     case IntersectionType(types) =>
       IntersectionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
+    case TernaryType(cond, left, right) =>
+      TernaryType(cond, left.filtered(assignmentTarget, currScopeAndProxyStoreOpt), right.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
     case RefinedType(baseType, predicate) =>
 
       def filterPred(predicate: Formula): List[Formula] = predicate match {
@@ -540,6 +557,11 @@ object Types {
         for {
           types <- substAll(types)
         } yield IntersectionType(types)
+      case TernaryType(cond, left, right) =>
+        for {
+          left <- left.withTypeVarsSubstituted
+          right <- right.withTypeVarsSubstituted
+        } yield TernaryType(cond, left, right)
       case RefinedType(baseType, predicate) =>
         for {
           baseType <- baseType.withTypeVarsSubstituted
@@ -563,6 +585,8 @@ object Types {
       SeqSet(types.flatMap(_.allTypeVariables))
     case IntersectionType(types) =>
       SeqSet(types.flatMap(_.allTypeVariables))
+    case TernaryType(cond, left, right) =>
+      left.allTypeVariables concat right.allTypeVariables
     case RefinedType(baseType, predicate) =>
       baseType.allTypeVariables
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => SeqSet.empty
@@ -577,6 +601,7 @@ object Types {
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(_.withDependenciesTransformed(f)), result.withDependenciesTransformed(f), enforcedPure)
     case UnionType(types) => UnionType(types.map(_.withDependenciesTransformed(f)))
     case IntersectionType(types) => IntersectionType(types.map(_.withDependenciesTransformed(f)))
+    case TernaryType(cond, left, right) => TernaryType(f(cond), left.withDependenciesTransformed(f), right.withDependenciesTransformed(f))
     case RefinedType(baseType, predicate) => RefinedType(baseType.withDependenciesTransformed(f), f(predicate))
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntRangeType(lowerBoundOpt.map(f), upperBoundOpt.map(f))
     case NullableType(nullatedType) => NullableType(nullatedType.withDependenciesTransformed(f))
@@ -592,6 +617,7 @@ object Types {
     case ClosureType(params, result, enforcedPure) => params.exists(_.mentionsType(target)) || result.mentionsType(target)
     case UnionType(types) => types.exists(_.mentionsType(target))
     case IntersectionType(types) => types.exists(_.mentionsType(target))
+    case TernaryType(cond, left, right) => left.mentionsType(target) || right.mentionsType(target)
     case RefinedType(baseType, predicate) => baseType.mentionsType(target)
     case IntRangeType(lowerBoundOpt, upperBoundOpt) => false
     case NullableType(nullatedType) => nullatedType.mentionsType(target)

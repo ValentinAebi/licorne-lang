@@ -126,11 +126,14 @@ object BranchingInfo {
       def tryToSmartcast(tids: List[TypeIdentifier]): Option[Type] =
         tryToSmartcastByExclusion(tids).orElse(tryToSmartcastByInclusion)
 
+      def tryToSmartcastMultiple(types: Iterable[Type]) =
+        types.asIterableOfType[NamedType]
+          .flatMap(namedTypes => tryToSmartcast(namedTypes.map(_.typeName).toList))
+
       originalType match {
         case NamedType(typeName, typeArgs, Nil) => tryToSmartcast(List(typeName))
-        case UnionType(types) =>
-          types.asIterableOfType[NamedType]
-            .flatMap(namedTypes => tryToSmartcast(namedTypes.map(_.typeName).toList))
+        case UnionType(types) => tryToSmartcastMultiple(types)
+        case TernaryType(cond, left, right) => tryToSmartcastMultiple(List(left, right))
         case _ => None
       }
     }

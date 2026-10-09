@@ -1,12 +1,13 @@
 package compiler.typing.phases
 
 import compiler.irs.ircorne.Formulas.FunCall
-import compiler.irs.ircorne.{FieldResolutionTarget, Formulas, IRcorne, InvocationTarget}
-import compiler.irs.ircorne.IRcorne.AssigningInstr
+import compiler.irs.ircorne.IRcorne.{AssigningInstr, Scope}
+import compiler.irs.ircorne.{Formulas, IRcorne, InvocationTarget}
 import compiler.lang.Field.StableField
-import compiler.lang.{FunctionDescriptor, FunctionSignature, RuntimeTypeSignature, UserInstantiableTypeSig}
-import compiler.lang.Types.PrimitiveType.{BoolType, NullType, UnitType}
+import compiler.lang.Types.PrimitiveType.{NullType, UnitType}
+import compiler.lang.Types.TernaryType
 import compiler.lang.Types.Type
+import compiler.lang.{FunctionDescriptor, FunctionSignature, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -131,8 +132,7 @@ final class TypeChecker(
         for ((paramVal, paramType) <- funSig.paramsInclThis) {
           solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType).withTypeVarsExpanded)
         }
-        funcTyper.typeScopeInstructions(funcBody, precondInfos)
-        checkReturns(funSig.retType, funcBody.hasExited, funcBody.getPosition, "method")
+        funcTyper.typeScopeInstructions(funcBody, precondInfos, scopeKind = ScopeKind.FuncBody(funSig.functionName, funSig.retType))
 
         while (closuresCollector.nonEmpty) {
           val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
@@ -142,20 +142,10 @@ final class TypeChecker(
             for ((paramVal, paramType) <- closureParams) {
               solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))
             }
-            closureTyper.typeScopeInstructions(closureBody, branchingInfo)(using typeParamsCtx)
-            if (!closureRetType.isResolved) {
-              closureRetType.resolve(UnitType)
-            }
+            closureTyper.typeScopeInstructions(closureBody, branchingInfo, ScopeKind.ClosureBody(closureRetType))(using typeParamsCtx)
           }
-          checkReturns(closureRetType.withTypeVarsExpanded, closureBody.hasExited, closureBody.getPosition, "closure")
         }
       }
     }
-
-  private def checkReturns(retType: Type, bodyHasExited: Boolean, posOpt: Option[Position], methodOrClosure: String): Unit = {
-    if (retType != UnitType && !bodyHasExited) {
-      er.reportError(s"missing return in non-$UnitType $methodOrClosure", posOpt)
-    }
-  }
 
 }

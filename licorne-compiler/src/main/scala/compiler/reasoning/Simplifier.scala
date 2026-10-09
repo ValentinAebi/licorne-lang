@@ -28,7 +28,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   def simplify(tpe: Type)(using TypeParamsContext): Type = tpe.withTypeVarsExpanded match {
     case primitiveType: PrimitiveType => primitiveType
     case NamedType(typeName, typeArgs, args) =>
-      NamedType(typeName, typeArgs.map(simplify), args.map(simplifyInt))
+      NamedType(typeName, typeArgs.map(simplify), args.map(simplify))
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplify), simplify(result), enforcedPure)
     case variable: TypeVariable => variable
 
@@ -120,6 +120,16 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       then NullableType(nonNullType)
       else nonNullType
 
+    case TernaryType(cond, left, right) if subtypingCtx.canProveEquivalence(left, right) =>
+      simplify(left)
+
+    case TernaryType(cond, left, right) =>
+      val simplifiedLeft = simplify(left)
+      val simplifiedRight = simplify(right)
+      if solver.canProve(cond) then simplifiedLeft
+      else if solver.canDisprove(cond) then simplifiedRight
+      else TernaryType(cond, simplifiedLeft, simplifiedRight)
+
     case refinedType: RefinedType =>
       val RefinedType(base1, pred1) = refinedType.flattenedRefinement
 
@@ -166,7 +176,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       }
 
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      (lowerBoundOpt.map(simplifyInt), upperBoundOpt.map(simplifyInt)) match {
+      (lowerBoundOpt.map(simplifyNumeric), upperBoundOpt.map(simplifyNumeric)) match {
         case (None, None) => IntType
         case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
@@ -176,6 +186,12 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       simplify(nullatedType)
     case NullableType(nullatedType) =>
       NullableType(simplify(nullatedType))
+  }
+  
+  def simplify(formula: Formula): Formula = formula match {
+    case formula: NumericFormula => simplifyNumeric(formula)
+    case formula: LogicFormula => simplifyBool(formula)
+    case _ => formula
   }
 
   def simplifyBool(formula: Formula): Formula = formula match {
@@ -201,14 +217,14 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       // TODO recurse?
       BoolConst(true)
     case LessOrEq(lhs, rhs) =>
-      (simplifyInt(lhs), simplifyInt(rhs)) match {
+      (simplifyNumeric(lhs), simplifyNumeric(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l <= r)
         case (lhs, Plus(pLhs, IntConst(-1))) => LessThan(lhs, pLhs)
         case (Plus(pLhs, IntConst(1)), rhs) => LessThan(pLhs, rhs)
         case (lhs, rhs) => LessOrEq(lhs, rhs)
       }
     case LessThan(lhs, rhs) =>
-      (simplifyInt(lhs), simplifyInt(rhs)) match {
+      (simplifyNumeric(lhs), simplifyNumeric(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l < r)
         case (Plus(pLhs, IntConst(-1)), rhs) => LessOrEq(pLhs, rhs)
         case (lhs, Plus(pLhs, IntConst(1))) => LessOrEq(lhs, pLhs)
@@ -217,7 +233,7 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
     case formula => formula
   }
 
-  def simplifyInt(formula: Formula): Formula = eval(formula).getOrElse {
+  def simplifyNumeric(formula: Formula): Formula = eval(formula).getOrElse {
     var summaryOpt = Option.empty[Formula]
 
     def addToSummary(f: Formula): Unit = {
@@ -360,8 +376,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
       for ((f, coef) <- linearize(operand)) yield (f, -coef)
     case formula: Times => Map(linearizeTimes(formula))
     case DivBy(lhs, rhs) =>
-      val sLhs = simplifyInt(lhs)
-      val sRhs = simplifyInt(rhs)
+      val sLhs = simplifyNumeric(lhs)
+      val sRhs = simplifyNumeric(rhs)
       (sLhs, sRhs) match {
         case (sLhs: Times, IntConst(rc)) =>
           val (resF, resCoef) = linearizeTimes(sLhs)
@@ -385,8 +401,8 @@ final class Simplifier(subtypingCtx: SubtypingContext, solver: Solver, dealiasin
   private def linearizeTimes(times: Times): (Formula, Int) = {
     val Times(lhs, rhs) = times
 
-    val sLhs = simplifyInt(lhs)
-    val sRhs = simplifyInt(rhs)
+    val sLhs = simplifyNumeric(lhs)
+    val sRhs = simplifyNumeric(rhs)
 
     def computeTerm(sLhs: Formula, sRhs: Formula): Option[(Formula, Int)] = (sLhs, sRhs) match {
       case (IntConst(lc), IntConst(rc)) =>

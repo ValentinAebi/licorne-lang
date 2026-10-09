@@ -1,5 +1,6 @@
 package compiler.typing.phases
 
+import compiler.backend.Erasure
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.IdValue
 import compiler.lang.Overridability.Abstract
@@ -107,8 +108,8 @@ final class OverridesChecker(
                   val superTSubst = superTSig.toType(typeParamsSubst)
                   for (((subParamVal, subParamType), (superParamVal, superParamTypeRaw)) <- subFunParams.tail zip superFunParams.tail) {
                     val superParamTypeSubst = superParamTypeRaw.substitute(typeParamsSubst, valsSubst.toMap)
-                    val subParamTypeErased = dealiasingCtx.eraseRefinements(subParamType)
-                    val superParamTypeErased = dealiasingCtx.eraseRefinements(superParamTypeSubst)
+                    val subParamTypeErased = Erasure.getRuntimeType(subParamType)(using fullTypeParamsCtx, dealiasingCtx)
+                    val superParamTypeErased = Erasure.getRuntimeType(superParamTypeSubst)(using fullTypeParamsCtx, dealiasingCtx)
                     if (subParamTypeErased != superParamTypeErased) {
                       er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funDescr: " +
                         s"erased type is $subParamTypeErased but should be $superParamTypeErased since the method overrides $funDescr in $superTSubst", subFunDeclPosOpt)

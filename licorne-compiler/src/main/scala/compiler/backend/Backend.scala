@@ -12,7 +12,7 @@ import compiler.lang
 import compiler.lang.*
 import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
-import compiler.lang.Types.{NamedType, NullableType, Type}
+import compiler.lang.Types.{NamedType, NullableType, TernaryType, Type, UnionType}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
@@ -996,6 +996,8 @@ final class Backend(
       cb.invokevirtual(dstBoxedDesc, unboxingFunc(dstBoxedDesc), MethodTypeDesc.of(dstDesc))
     } else (getRuntimeType(dstType), getRuntimeType(srcType)) match {
       case (NamedType(dstTypeId, _, _), NamedType(srcTypeId, _, _)) if !simplifiedSubtypingCtx.isSubtype(srcTypeId, dstTypeId) =>
+        cb.checkcast(dstDesc)
+      case (NamedType(dstTypeId, _, _), _) =>
         cb.checkcast(dstDesc)
       case _ => ()
     }

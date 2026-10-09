@@ -244,7 +244,7 @@ final class TypeCandidatesInferrer(
       case (cand, RefinedType(shapeBase, _)) =>
         unifyTypes(cand, shapeBase)
       case _ => ()
-      // TODO also handle IntersectionTypes and UnionTypes?
+      // TODO also handle IntersectionTypes / UnionTypes / TernaryTypes?
     }
   }
 

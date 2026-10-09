@@ -3,7 +3,7 @@ package compiler.typing.contexts
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas
-import compiler.irs.ircorne.Formulas.{BoolConst, Equality, Formula, FunCall, IntConst, IntermediateIdValue}
+import compiler.irs.ircorne.Formulas.{BoolConst, Equality, Formula, FunCall, IntConst, IntermediateIdValue, LogicalNot}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
@@ -80,6 +80,7 @@ final class SubtypingContext(
     else dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
       case UnionType(types) => checkMultipleTypes(types)
       case IntersectionType(types) => checkMultipleTypes(types)
+      case TernaryType(cond, left, right) => checkMultipleTypes(SeqSet(left, right))
       case RefinedType(baseType, predicate) => checkDowncastTarget(baseType, targetId, acceptTypeParamTarget) match {
         case CanDowncast(tpe) => CanDowncast(RefinedType(tpe, predicate))
         case cannot: CannotDowncast => cannot
@@ -157,6 +158,20 @@ final class SubtypingContext(
       subtypes.forall(isSubtype(_, superT))
     case (subT, UnionType(supertypes)) =>
       supertypes.exists(isSubtype(subT, _))
+    case (TernaryType(subCond, subLeft, subRight), TernaryType(superCond, superLeft, superRight)) if solver.canProveEquivalence(subCond, superCond) =>
+      isSubtype(subLeft, superLeft) && isSubtype(subRight, superRight)
+    case (TernaryType(cond, left, right), superT) =>
+      lazy val isLeft = solver.canProve(cond)
+      lazy val isRight = solver.canDisprove(cond)
+      lazy val leftIsSubtype = isSubtype(left, superT)
+      lazy val rightIsSubtype = isSubtype(right, superT)
+      isLeft && leftIsSubtype || isRight && rightIsSubtype || leftIsSubtype && rightIsSubtype
+    case (subT, TernaryType(cond, left, right)) =>
+      lazy val isLeft = solver.canProve(cond)
+      lazy val isRight = solver.canDisprove(cond)
+      lazy val leftIsSubtype = isSubtype(subT, left)
+      lazy val rightIsSubtype = isSubtype(subT, right)
+      isLeft && leftIsSubtype || isRight && rightIsSubtype || leftIsSubtype && rightIsSubtype
     case (subT: RefinedType, superT: RefinedType) =>
       val RefinedType(subBaseType, subPredicate) = subT.flattenedRefinement
       val RefinedType(superBaseType, superPredicate) = superT.flattenedRefinement
@@ -184,6 +199,9 @@ final class SubtypingContext(
 
   def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope)(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
     isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope)
+    
+  def canProveEquivalence(type1: Type, type2: Type)(using TypeParamsContext): Boolean =
+    isSubtype(type1, type2) && isSubtype(type2, type1)
 
   def canProveHasType(subject: Formula, knownTypeRaw: Type, targetTypeRaw: Type, scope: Scope)
                      (using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean = solver.onNewFrame {
@@ -222,6 +240,12 @@ final class SubtypingContext(
             || proxyStore.developDeep(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
       case UnionType(types) =>
         types.exists(canProveHasType(subject, knownType, _, scope))
+      case TernaryType(cond, left, right) =>
+        lazy val isLeft = solver.canProve(cond)
+        lazy val isRight = solver.canDisprove(cond)
+        lazy val canProveLeft = canProveHasType(subject, knownType, left, scope)
+        lazy val canProveRight = canProveHasType(subject, knownType, right, scope)
+        isLeft && canProveLeft || isRight && canProveRight || canProveLeft && canProveRight
       case IntersectionType(types) =>
         types.forall(canProveHasType(subject, knownType, _, scope))
       case _ => false

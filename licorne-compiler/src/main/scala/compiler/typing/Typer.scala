@@ -77,7 +77,7 @@ final class Typer(
     meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
     closuresCollectorFuncOpt, allowWriteToIR = false)
 
-  def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
+  def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo, scopeKind: ScopeKind = ScopeKind.NotAFunc)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
@@ -90,6 +90,34 @@ final class Typer(
             stop = true
           } else {
             typeInstr(instr, scope, branchInfo)
+          }
+        }
+
+        def isProvablyUnit(tpe: Type): Boolean = tpe match {
+          case UnitType => true
+          case TernaryType(cond, left, right) if solver.canProve(cond) => isProvablyUnit(left)
+          case TernaryType(cond, left, right) if solver.canDisprove(cond) => isProvablyUnit(right)
+          case _ => false
+        }
+
+        scopeKind match {
+          case ScopeKind.ClosureBody(retType) if !retType.isResolved =>
+            retType.resolve(UnitType)
+          case _ => ()
+        }
+        scopeKind.retTypeOpt.foreach { expRetType =>
+          val methodOrClosureDescr = scopeKind match {
+            case ScopeKind.FuncBody(funId, retType) => s"method $funId"
+            case ScopeKind.ClosureBody(retType) => "closure"
+            case ScopeKind.NotAFunc => throw AssertionError()
+          }
+          expRetType.allTypeVariables.find(!_.isResolved) match {
+            case Some(tv) =>
+              er.reportError(s"type variable $tv in the result type of $methodOrClosureDescr could not be resolved", scope.getPosition)
+            case None =>
+              if (!scope.hasExited && !isProvablyUnit(simplifier.simplify(dealiasingCtx.dealiasType(expRetType.withTypeVarsExpanded)))) {
+                er.reportError(s"missing return in non-$UnitType $methodOrClosureDescr", scope.getPosition)
+              }
           }
         }
       }
@@ -330,6 +358,7 @@ final class Typer(
             er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${StdLib.sizeFunId} is not callable", invk.getPosition)
           }
         }
+        deduceAssumptionFromTernaryType(returnType, currScope)
 
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) =>
         val calleeType = currScope.computeCurrentType(callee, invkClosure.getPosition)
@@ -337,6 +366,7 @@ final class Typer(
         val tpe = typeClosureCall(callee, calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
         tryToResolveTypeVarsUsingCandidates(assigned, tpe)
+        deduceAssumptionFromTernaryType(tpe, currScope)
 
       case fr@FieldRead(assigned, owner, field) =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
@@ -380,11 +410,6 @@ final class Typer(
         ()
 
       case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw, fieldsInit) =>
-        assigned match {
-          case intermIdVal: IntermediateIdValue =>
-            intermIdVal.nameHint = s"new_${classOrRecordName.nonPrefixedId}"
-          case _ => ()
-        }
         resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
           case Some(typeSig) =>
             val (typesSubst, instantiatedTypeArgs) = instantiateTypes(typeSig.typeParams, typeArgsRaw, subtypingCtx, currScope, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
@@ -534,7 +559,7 @@ final class Typer(
     def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
       param match {
         case fld: Field.StableField =>
-          val rhsValExpanded = simplifier.simplifyInt(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
+          val rhsValExpanded = simplifier.simplify(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
           val fldResolTarget = FieldResolutionTarget(fld.id)
           fldResolTarget.resolve(typeSig, substitutedType)
           val itSelect = Select(itValue, fldResolTarget)
@@ -619,7 +644,10 @@ final class Typer(
         val pred = proxyStore.developNearest(rawPred).getOrElse(rawPred)
         RefinedType(newInstanceTypeBase, pred)
       }
-    (newFieldsInitB.result(), newInstanceType)
+    (newFieldsInitB.result(), typeCandidatesStore.getCandidates(assigned).find(_.isInstanceOf[TernaryType]) match {
+      case Some(tCand: TernaryType) if subtypingCtx.isSubtype(newInstanceType, tCand) => tCand
+      case _ => newInstanceType
+    })
   }
 
   private def tryToApplyCandidates(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
@@ -712,6 +740,7 @@ final class Typer(
     if (formula.isPure) {
       solver.takeType(formula, tpe)
     }
+    deduceAssumptionFromTernaryType(tpe, currScope)
     tpe
   }
 
@@ -847,6 +876,11 @@ final class Typer(
         IntersectionType(for tpe <- types yield {
           instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
         })
+      case TernaryType(cond, left, right) =>
+        if (!cond.isPure) {
+          er.reportError("I cannot prove that ternary type condition is pure", posOpt)
+        }
+        TernaryType(cond, instantiateType(left, ambientVarianceOpt, currScope, posOpt), instantiateType(right, ambientVarianceOpt, currScope, posOpt))
       case tpe@RefinedType(baseTypeRaw, predicate) =>
         val baseTypeInst = instantiateType(baseTypeRaw, ambientVarianceOpt, currScope, posOpt)
         val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
@@ -890,8 +924,21 @@ final class Typer(
     }
   }
 
-  def instantiateNamedType(namedType: NamedType, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position], subTIfInSuperTPos: Option[TypeIdentifier])
-                          (using typeParamsCtx: TypeParamsContext): NamedType = {
+  private def deduceAssumptionFromTernaryType(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
+    val smartcasts = simplifier.simplify(dealiasingCtx.dealiasType(tpe)) match {
+      case TernaryType(cond, left, NothingType) =>
+        smartcastsFromAssumption(simplifier.simplifyBool(cond), scope)
+      case TernaryType(cond, NothingType, right) =>
+        smartcastsFromAssumption(simplifier.simplifyBool(LogicalNot(cond)), scope)
+      case _ => List.empty
+    }
+    for ((subject, smartcastType) <- smartcasts) {
+      scope.saveSmartcast(subject, smartcastType)
+    }
+  }
+
+  private def instantiateNamedType(namedType: NamedType, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position], subTIfInSuperTPos: Option[TypeIdentifier])
+                                  (using typeParamsCtx: TypeParamsContext): NamedType = {
     val NamedType(typeName, typeArgs, args) = namedType
     typeParamsCtx.resolve(typeName) match {
       case Some(tpInfo) =>
@@ -1215,31 +1262,35 @@ final class Typer(
     }
   }
 
-  private def smartcastsFromAssumption(assumption: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = {
-    solver.assert(assumption)
-    val smartcasts = assumption match {
-      case LessOrEq(lhs, rhs) =>
-        solver.takeType(lhs, scope.detectCurrentType(lhs))
-        solver.takeType(rhs, scope.detectCurrentType(rhs))
-        leqToSmartcasts(lhs, rhs)
-      case LessThan(lhs, rhs) =>
-        solver.takeType(lhs, scope.detectCurrentType(lhs))
-        solver.takeType(rhs, scope.detectCurrentType(rhs))
-        ltToSmartcasts(lhs, rhs)
-      case developedAssumption =>
-        extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(simplifier.simplify)
-    }
-    val nullVal = scope.valuesCtx.globalCtx.nullVal
-    assumption match {
-      case LogicalNot(Equality(lhs, rhs)) =>
-        if (lhs == nullVal) {
-          scope.saveNonNull(rhs)
-        } else if (rhs == nullVal) {
-          scope.saveNonNull(lhs)
-        }
-      case _ => ()
-    }
-    smartcasts
+  private def smartcastsFromAssumption(assumption: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = assumption match {
+    case LogicalAnd(lhs, rhs) =>
+      smartcastsFromAssumption(lhs, scope) ++ smartcastsFromAssumption(rhs, scope)
+    case assumption =>
+      solver.assert(assumption)
+      val smartcasts = assumption match {
+        case LessOrEq(lhs, rhs) =>
+          solver.takeType(lhs, scope.detectCurrentType(lhs))
+          solver.takeType(rhs, scope.detectCurrentType(rhs))
+          leqToSmartcasts(lhs, rhs)
+        case LessThan(lhs, rhs) =>
+          solver.takeType(lhs, scope.detectCurrentType(lhs))
+          solver.takeType(rhs, scope.detectCurrentType(rhs))
+          ltToSmartcasts(lhs, rhs)
+        case developedAssumption =>
+          extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(simplifier.simplify)
+      }
+      val nullVal = scope.valuesCtx.globalCtx.nullVal
+      // TODO code smell: effects in a method that looks functional
+      assumption match {
+        case LogicalNot(Equality(lhs, rhs)) =>
+          if (lhs == nullVal) {
+            scope.saveNonNull(rhs)
+          } else if (rhs == nullVal) {
+            scope.saveNonNull(lhs)
+          }
+        case _ => ()
+      }
+      smartcasts
   }
 
   private def leqToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {

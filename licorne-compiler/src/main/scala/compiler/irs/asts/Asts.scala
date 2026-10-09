@@ -534,6 +534,10 @@ object Asts {
   final case class IntersectionTypeTree(types: List[TypeTree]) extends TypeTree {
     override def children: List[Ast] = types
   }
+  
+  final case class TernaryTypeTree(cond: Expr, leftType: TypeTree, rightType: TypeTree) extends TypeTree {
+    override def children: List[Ast] = List(cond, leftType, rightType)
+  }
 
   sealed trait NominalTypeTree extends TypeTree
 

@@ -33,34 +33,13 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
       UnionType(types.map(dealiasType))
     case IntersectionType(types) =>
       IntersectionType(types.map(dealiasType))
+    case TernaryType(cond, left, right) =>
+      TernaryType(cond, dealiasType(left), dealiasType(right))
     case RefinedType(baseType, predicate) =>
       RefinedType(dealiasType(baseType), predicate)
     case intRangeType: IntRangeType => intRangeType
     case NullableType(nullatedType) =>
       NullableType(dealiasType(nullatedType))
-  }
-
-  def eraseRefinements(tpe: Type): Type = dealiasType(tpe) match {
-    case primitiveType: PrimitiveType => primitiveType
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntType
-    case NullableType(nullatedType) => nullatedType
-    case NamedType(typeName, typeArgs, args) =>
-      NamedType(typeName, typeArgs.map(eraseRefinements), List.empty)
-    case ClosureType(params, result, enforcedPure) =>
-      ClosureType(params.map(eraseRefinements), eraseRefinements(result), enforcedPure)
-    case tv: TypeVariable => tv.actualTypeIfResolved.orElse(tv.upperBoundOpt) match {
-      case Some(tpe) => eraseRefinements(tpe)
-      case None => AnyType
-    }
-    case RefinedType(baseType, predicate) => eraseRefinements(baseType)
-    case UnionType(types) =>
-      if types.size == 1
-      then eraseRefinements(types.head)
-      else AnyType
-    case IntersectionType(types) =>
-      if types.isEmpty
-      then AnyType
-      else eraseRefinements(types.head)
   }
   
 }

@@ -83,6 +83,8 @@ final class TypeAliasesAnalyzer(
       types.flatMap(findMentionedTypes)
     case IntersectionType(types) =>
       types.flatMap(findMentionedTypes)
+    case TernaryType(cond, left, right) =>
+      findMentionedTypes(left) ++ findMentionedTypes(right)
     case ClosureType(params, resultType, enforcedPure) =>
       params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
     case RefinedType(baseType, predicate) =>

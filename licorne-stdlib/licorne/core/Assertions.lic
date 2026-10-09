@@ -1,0 +1,26 @@
+package licorne.core;
+
+typealias ReturnsWhen(cond: Bool) = when cond then Unit else Nothing
+
+object Assertions {
+
+    fn assert(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
+        if (!cond) {
+            panic mkErrorMsg("assertion failed", msg)
+        }
+    }
+
+    fn assert(cond: Bool) -> ReturnsWhen(cond) = assert(cond, null)
+
+    fn require(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
+        if (!cond) {
+            panic mkErrorMsg("requirement failed", msg)
+        }
+    }
+
+    fn require(cond: Bool) -> ReturnsWhen(cond) = require(cond, null)
+
+    private fn mkErrorMsg(header: String, userMsg: String?) -> String =
+        header ++ (when userMsg == null then "" else ": " ++ userMsg)
+
+}

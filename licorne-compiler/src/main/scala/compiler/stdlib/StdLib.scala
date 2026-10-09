@@ -57,6 +57,11 @@ object StdLib {
   val stringsTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Strings")
   val stringificationFunId: FunOrVarId = NormalFunOrVarId("str")
 
+  // licorne.core.Assertions
+  val assertionsTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Assertions")
+  val assertFunId: FunOrVarId = NormalFunOrVarId("assert")
+  val requireFunId: FunOrVarId = NormalFunOrVarId("require")
+
   // licorne.io
   val licorneIoPkgPrefix: List[String] = licornePkgPrefix :+ "io"
   val consoleTypeId: TypeIdentifier = TypeIdentifier(licorneIoPkgPrefix, "Console")
@@ -78,7 +83,9 @@ object StdLib {
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),
     consolePrintlnFunId -> (consoleTypeId, consolePrintlnFunId),
     consoleReadlineFunId -> (consoleTypeId, consoleReadlineFunId),
-    stringificationFunId -> (stringsTypeId, stringificationFunId)
+    stringificationFunId -> (stringsTypeId, stringificationFunId),
+    assertFunId -> (assertionsTypeId, assertFunId),
+    requireFunId -> (assertionsTypeId, requireFunId)
   )
 
 }

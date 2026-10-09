@@ -1,6 +1,6 @@
 package compiler.reasoning
 
-import compiler.irs.ircorne.Formulas.Formula
+import compiler.irs.ircorne.Formulas.{Formula, LogicalNot}
 import compiler.lang.Types.{IntRangeType, Type}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
@@ -19,7 +19,13 @@ trait Solver {
   
   def canProve(formula: Formula): Boolean
   
+  def canDisprove(formula: Formula): Boolean =
+    canProve(LogicalNot(formula))
+  
   def canProveImplication(premise: Formula, conseq: Formula): Boolean
+  
+  def canProveEquivalence(lhs: Formula, rhs: Formula): Boolean =
+    canProveImplication(lhs, rhs) && canProveImplication(rhs, lhs)
   
   def canProveLeq(lhs: Formula, rhs: Formula): Boolean
   

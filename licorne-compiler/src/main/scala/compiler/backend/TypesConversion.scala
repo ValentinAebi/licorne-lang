@@ -42,6 +42,7 @@ trait TypesConverter {
           case Some(primDesc) => primDesc
           case None => descriptors.head
         }
+      case ternaryType: TernaryType => descriptorFor(ternaryType.toUnion)
       case RefinedType(baseType, predicate) => descriptorFor(baseType)
       case IntRangeType(_, _) => CD_int
       case NullableType(nullatedType) => boxDesc(descriptorFor(nullatedType))
@@ -83,6 +84,7 @@ trait TypesConverter {
         case Some(primType) => kindFor(primType)
         case None => kindFor(types.head)
       }
+    case ternaryType: TernaryType => kindFor(ternaryType.toUnion)
     case tpe: (NamedType | ClosureType) => REFERENCE
     case RefinedType(baseType, predicate) => kindFor(baseType)
     case IntRangeType(_, _) => INT

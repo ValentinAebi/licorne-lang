@@ -324,11 +324,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "unionTypeTree"
 
   private lazy val intersectionTypeTree: P[TypeTree] = recursive {
-    repeatWithSepNonZero(simpleTypeTree, ampersand) map {
+    repeatWithSepNonZero(simpleTypeTree OR ternaryTypeTree, ampersand) map {
       case List(singleType) => singleType
       case types => IntersectionTypeTree(types)
     }
   } setName "typeTree"
+
+  private lazy val ternaryTypeTree: P[TypeTree] = recursive {
+    kw(When).ignored ::: expr ::: kw(Then).ignored ::: typeTree ::: kw(Else).ignored ::: typeTree map {
+      case cond ^: leftType ^: rightType => TernaryTypeTree(cond, leftType, rightType)
+    }
+  } setName "ternaryTypeTree"
 
   private lazy val simpleTypeTree: P[TypeTree] = recursive {
     typeTreeWithoutPredOrQMark ::: opt(op(QuestionMark) OR kw(With).ignored ::: expr) map {

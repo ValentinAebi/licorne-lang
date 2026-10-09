@@ -1,0 +1,20 @@
+
+object Main {
+
+    fn main() {
+        val cat = mkAnimal(false);
+        cat.meow();
+    }
+
+    private fn mkAnimal(trueIfDog: Bool) -> when trueIfDog then Dog else Cat =
+        when trueIfDog then new Dog() else new Cat()
+
+}
+
+interface Animal
+class Dog : Animal
+class Cat : Animal {
+    fn meow() {
+        println("Meow!")
+    }
+}
