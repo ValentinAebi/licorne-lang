@@ -152,7 +152,7 @@ class ExecutionTests(programDirName: String) {
   private def assertMatches(expMsg: String, reqEntries: Seq[(Filename, Int)], actErr: String): Unit = {
     assertTrue("expected an error but stderr is empty", actErr.nonEmpty)
     val lines = actErr.lines().toArray(new Array[String](_))
-    val actMsg = lines.head.split(':')(1)
+    val actMsg = lines.head.dropWhile(_ != ':').tail
     val actualEntries = extractEntriesFromStacktrace(lines.tail)
     assertEquals("Actual stderr: " + actErr, expMsg.trim, actMsg.trim)
     val missingEntries = reqEntries.filterNot { (fn, l) =>
