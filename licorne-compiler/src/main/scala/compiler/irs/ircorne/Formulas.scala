@@ -98,7 +98,7 @@ object Formulas {
     override def posOpt: Option[Position] = None
   }
 
-  final case class IntermediateIdValue(definingScope: Scope, uid: Long, var nameHint: String) extends IdValue
+  final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHint: String) extends IdValue
 
   sealed trait ConstFormula extends AtomicValue {
     def value: Any
