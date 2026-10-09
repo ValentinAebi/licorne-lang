@@ -282,7 +282,7 @@ final class Typer(
         saveEquality(assigned, src)
 
       case AssignIntConst(assigned, src) =>
-        currScope.saveType(assigned, IntRangeType.singleton(src))
+        currScope.saveType(assigned, applyCandidateIfTernary(assigned, IntRangeType.singleton(src)))
         saveEquality(assigned, IntConst(src))
 
       case AssignBoolConst(assigned, src) =>
@@ -290,7 +290,7 @@ final class Typer(
         saveEquality(assigned, BoolConst(src))
 
       case AssignStringConst(assigned, src) =>
-        currScope.saveType(assigned, mkTypeForStringLit(src))
+        currScope.saveType(assigned, applyCandidateIfTernary(assigned, mkTypeForStringLit(src)))
         saveEquality(assigned, StringConst(src))
 
       case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
@@ -644,11 +644,14 @@ final class Typer(
         val pred = proxyStore.developNearest(rawPred).getOrElse(rawPred)
         RefinedType(newInstanceTypeBase, pred)
       }
-    (newFieldsInitB.result(), typeCandidatesStore.getCandidates(assigned).find(_.isInstanceOf[TernaryType]) match {
-      case Some(tCand: TernaryType) if subtypingCtx.isSubtype(newInstanceType, tCand) => tCand
-      case _ => newInstanceType
-    })
+    (newFieldsInitB.result(), applyCandidateIfTernary(assigned, newInstanceType))
   }
+
+  private def applyCandidateIfTernary(assigned: IdValue, regularType: Type)(using TypeParamsContext): Type =
+    typeCandidatesStore.getCandidates(assigned).find(_.isInstanceOf[TernaryType]) match {
+      case Some(tCand: TernaryType) if subtypingCtx.isSubtype(regularType, tCand) => tCand
+      case _ => regularType
+    }
 
   private def tryToApplyCandidates(srcVal: IdValue, regularType: Type, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Type = {
     val validatedCandidates = typeCandidatesStore.getCandidates(srcVal).toList.filter(subtypingCtx.canProveHasType(srcVal, regularType, _, currScope))
@@ -766,10 +769,10 @@ final class Typer(
     case _ => None
   }
 
-  private def assignTarget(assignmentTarget: IdValue, currScope: Scope)
+  private def assignTarget(assigned: IdValue, currScope: Scope)
                           (tpe: Type)
                           (using TypeParamsContext): Unit = {
-    currScope.saveType(assignmentTarget, tpe)
+    currScope.saveType(assigned, applyCandidateIfTernary(assigned, tpe))
   }
 
   private def typeNumericBinop(lhs: Formula, rhs: Formula, currScope: Scope,
