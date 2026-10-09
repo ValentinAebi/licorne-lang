@@ -74,25 +74,14 @@ final class TypeAliasesAnalyzer(
     }
   }
 
-  private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = tpe match {
-    case primitiveType: Types.PrimitiveType => Set.empty
-    case NamedType(typeName, typeParams, params) =>
-      Set(typeName) ++ typeParams.flatMap(findMentionedTypes)
-    case _: TypeVariable => Set.empty
-    case UnionType(types) =>
-      types.flatMap(findMentionedTypes)
-    case IntersectionType(types) =>
-      types.flatMap(findMentionedTypes)
-    case TernaryType(cond, left, right) =>
-      findMentionedTypes(left) ++ findMentionedTypes(right)
-    case ClosureType(params, resultType, enforcedPure) =>
-      params.flatMap(findMentionedTypes).toSet ++ findMentionedTypes(resultType)
-    case RefinedType(baseType, predicate) =>
-      findMentionedTypes(baseType)
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      Set.empty
-    case NullableType(nullatedType) =>
-      findMentionedTypes(nullatedType)
+  private def findMentionedTypes(tpe: Type): Set[TypeIdentifier] = {
+    val tidsB = Set.newBuilder[TypeIdentifier]
+    tpe.traversePreOrder {
+      case NamedType(tid, _, _) =>
+        tidsB.addOne(tid)
+      case _ => ()
+    }
+    tidsB.result()
   }
 
 }

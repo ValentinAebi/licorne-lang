@@ -15,13 +15,24 @@ import compiler.valuesconversion.GlobalValuesContext
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection
 import scala.util.boundary
+import scala.collection.mutable
 
 
 object Types {
 
   sealed trait Type {
     def formulaDependencies: List[Formula]
+
     def baseTypeAssumingNoAlias: Type
+
+    def children: List[Type]
+
+    def traversePreOrder(action: Type => Unit): Unit = {
+      action(this)
+      for (child <- children) {
+        child.traversePreOrder(action)
+      }
+    }
   }
 
   sealed trait NominalType extends Type
@@ -41,6 +52,8 @@ object Types {
 
     override def baseTypeAssumingNoAlias: Type = this
 
+    override def children: List[Type] = List.empty
+
     override def toString: String = str
   }
 
@@ -56,6 +69,8 @@ object Types {
 
     override def baseTypeAssumingNoAlias: Type = this
 
+    override def children: List[Type] = typeArgs
+
     override def toString: String = {
       val typeParamsDescr = if typeArgs.isEmpty then "" else typeArgs.mkString("[", ",", "]")
       val paramsDescr = if args.isEmpty then "" else args.mkString("(", ",", ")")
@@ -68,6 +83,8 @@ object Types {
 
     override def baseTypeAssumingNoAlias: Type = this
 
+    override def children: List[Type] = params :+ result
+
     override def toString: String =
       (if enforcedPure then s"${Keyword.Pure} " else "") ++ s"${Keyword.Fn} (${params.mkString(",")}) -> $result"
   }
@@ -76,6 +93,8 @@ object Types {
     override def formulaDependencies: List[Formula] = types.flatMap(_.formulaDependencies).toList
 
     override def baseTypeAssumingNoAlias: Type = UnionType(types.map(_.baseTypeAssumingNoAlias))
+
+    override def children: List[Type] = types.toList
 
     override def toString: String = types.mkString(" | ")
   }
@@ -106,6 +125,8 @@ object Types {
 
     override def baseTypeAssumingNoAlias: Type = IntersectionType(types.map(_.baseTypeAssumingNoAlias))
 
+    override def children: List[Type] = types.toList
+
     override def toString: String = types.mkString(" & ")
   }
 
@@ -129,14 +150,16 @@ object Types {
     def apply(types: Type*): Type =
       apply(SeqSet(types))
   }
-  
+
   final case class TernaryType(cond: Formula, left: Type, right: Type) extends Type {
 
     def toUnion: Type = UnionType(left, right)
-    
+
     override def formulaDependencies: List[Formula] = cond +: (left.formulaDependencies ++ right.formulaDependencies)
 
     override def baseTypeAssumingNoAlias: Type = TernaryType(cond, left.baseTypeAssumingNoAlias, right.baseTypeAssumingNoAlias)
+
+    override def children: List[Type] = List(left, right)
 
     override def toString: String = s"${Keyword.When} $cond ${Keyword.Then} $left ${Keyword.Else} $right"
   }
@@ -145,6 +168,8 @@ object Types {
     override def formulaDependencies: List[Formula] = baseType.formulaDependencies :+ predicate
 
     override def baseTypeAssumingNoAlias: Type = baseType.baseTypeAssumingNoAlias
+
+    override def children: List[Type] = List(baseType)
 
     def flattenedRefinement(using globalValsCtx: GlobalValuesContext): RefinedType = {
 
@@ -185,6 +210,8 @@ object Types {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
     override def baseTypeAssumingNoAlias: Type = IntType
+
+    override def children: List[Type] = List.empty
 
     def boundsAsPredicate(itValue: IdValue): Formula = (lowerBoundOpt, upperBoundOpt) match {
       case (Some(lb), Some(ub)) => LogicalAnd(LessOrEq(lb, itValue), LessOrEq(itValue, ub))
@@ -262,6 +289,8 @@ object Types {
 
     override def baseTypeAssumingNoAlias: Type = nullatedType.baseTypeAssumingNoAlias
 
+    override def children: List[Type] = List.empty
+
     override def toString: String = nullatedType match {
       case nullatedType: (RefinedType | UnionType | IntersectionType | TernaryType) => s"($nullatedType)?"
       case nullatedType => s"$nullatedType?"
@@ -279,11 +308,11 @@ object Types {
 
   final class TypeVariable private(
                                     val id: Identifier,
-                                   val upperBoundOpt: Option[Type],
-                                   val lowerBoundOpt: Option[Type],
-                                   val typeParamsCtx: TypeParamsContext,
-                                   val instantiationPosOpt: Option[Position],
-                                   ignoreRefinementOnResolve: Boolean
+                                    val upperBoundOpt: Option[Type],
+                                    val lowerBoundOpt: Option[Type],
+                                    val typeParamsCtx: TypeParamsContext,
+                                    val instantiationPosOpt: Option[Position],
+                                    ignoreRefinementOnResolve: Boolean
                                   ) extends Type {
     private val uid = typeVarUidGen.incrementAndGet()
     private var actualTypeOptBackingField = Option.empty[Type]
@@ -309,6 +338,8 @@ object Types {
     override def formulaDependencies: List[Formula] = List.empty
 
     override def baseTypeAssumingNoAlias: Type = this
+
+    override def children: List[Type] = List.empty
 
     def resolve(tpe: Type): Unit = {
       if (isResolved) {
@@ -380,93 +411,71 @@ object Types {
     case _ => false
   }
 
-  extension (tpe: Type) def substitute(typesSubst: collection.Map[TypeIdentifier, Type], valsSubst: collection.Map[IdValue, Formula]): Type = tpe match {
+  extension (tpe: Type) def applyRecursivelyToTypes(tpf: PartialFunction[Type, Type]): Type =
+    tpe.applyRecursively(tpf.applyOrElse(_, identity), identity)
+
+  extension (tpe: Type) def applyToFormulas(fpf: PartialFunction[Formula, Formula]): Type =
+    tpe.applyRecursively(identity, fpf.applyOrElse(_, identity))
+
+  extension (tpe: Type) def applyToFormulas(f: Formula => Formula): Type =
+    tpe.applyRecursively(identity, f)
+
+  extension (tpe: Type) def applyRecursively(tf: Type => Type, ff: Formula => Formula): Type = tf(tpe match {
     case primitiveType: PrimitiveType => primitiveType
-    case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
-      typesSubst.apply(typeName)
     case NamedType(typeName, typeArgs, args) =>
-      NamedType(typeName, typeArgs.map(_.substitute(typesSubst, valsSubst)), args.map(_.substitute(valsSubst)))
-    case tVar: TypeVariable => tVar
+      NamedType(typeName, typeArgs.map(_.applyRecursively(tf, ff)), args.map(ff))
     case ClosureType(params, result, enforcedPure) =>
-      ClosureType(params.map(_.substitute(typesSubst, valsSubst)), result.substitute(typesSubst, valsSubst), enforcedPure)
-    case UnionType(types) =>
-      UnionType(types.map(_.substitute(typesSubst, valsSubst)))
-    case IntersectionType(types) =>
-      IntersectionType(types.map(_.substitute(typesSubst, valsSubst)))
-    case TernaryType(cond, left, right) =>
-      TernaryType(cond.substitute(valsSubst), left.substitute(typesSubst, valsSubst), right.substitute(typesSubst, valsSubst))
-    case RefinedType(baseType, predicate) =>
-      RefinedType(baseType.substitute(typesSubst, valsSubst), predicate.substitute(valsSubst))
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      IntRangeType(
-        lowerBoundOpt.map(_.substitute(valsSubst)),
-        upperBoundOpt.map(_.substitute(valsSubst))
-      )
-    case NullableType(nullatedType) =>
-      NullableType(nullatedType.substitute(typesSubst, valsSubst))
+      ClosureType(params.map(_.applyRecursively(tf, ff)), result.applyRecursively(tf, ff), enforcedPure)
+    case UnionType(types) => UnionType(types.map(_.applyRecursively(tf, ff)))
+    case IntersectionType(types) => IntersectionType(types.map(_.applyRecursively(tf, ff)))
+    case TernaryType(cond, left, right) => TernaryType(ff(cond), left.applyRecursively(tf, ff), right.applyRecursively(tf, ff))
+    case RefinedType(baseType, predicate) => RefinedType(baseType.applyRecursively(tf, ff), ff(predicate))
+    case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntRangeType(lowerBoundOpt.map(ff), upperBoundOpt.map(ff))
+    case NullableType(nullatedType) => NullableType(nullatedType.applyRecursively(tf, ff))
+    case tv: TypeVariable => tv
+  })
+
+  extension (tpe: Type) def substitute(typesSubst: collection.Map[TypeIdentifier, Type], valsSubst: collection.Map[IdValue, Formula]): Type = {
+    val typesSubstPF: PartialFunction[Type, Type] = {
+      case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
+        typesSubst.apply(typeName)
+    }
+    tpe.applyRecursively(typesSubstPF.applyOrElse(_, identity), _.substitute(valsSubst))
   }
 
-  extension (tpe: Type) def withTypeVarsExpanded: Type = tpe match {
-    case primitiveType: PrimitiveType => primitiveType
-    case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withTypeVarsExpanded), args)
-    case ClosureType(params, result, enforcedPure) =>
-      ClosureType(params.map(_.withTypeVarsExpanded), result.withTypeVarsExpanded, enforcedPure)
-    case variable: TypeVariable => variable.substitutedIfResolved
-    case UnionType(types) =>
-      UnionType(types.map(_.withTypeVarsExpanded))
-    case IntersectionType(types) =>
-      IntersectionType(types.map(_.withTypeVarsExpanded))
-    case TernaryType(cond, left, right) =>
-      TernaryType(cond, left.withTypeVarsExpanded, right.withTypeVarsExpanded)
-    case RefinedType(baseType, predicate) =>
-      RefinedType(baseType.withTypeVarsExpanded, predicate)
-    case range: IntRangeType => range
-    case NullableType(nullatedType) =>
-      NullableType(nullatedType.withTypeVarsExpanded)
-  }
+  extension (tpe: Type) def withTypeVarsExpanded: Type =
+    tpe.applyRecursivelyToTypes {
+      case tv: TypeVariable => tv.substitutedIfResolved
+    }
 
   extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using globalValsCtx: GlobalValuesContext, resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type = tpe match {
-    case primitiveType: PrimitiveType => primitiveType
-    case NamedType(typeName, typeArgs, args) =>
-      val newTypeArgs = typeArgs.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
-      NamedType(typeName, newTypeArgs, args)
-    case ClosureType(params, result, enforcedPure) =>
-      ClosureType(params.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)), result.filtered(assignmentTarget, currScopeAndProxyStoreOpt), enforcedPure)
-    case UnionType(types) =>
-      UnionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
-    case IntersectionType(types) =>
-      IntersectionType(types.map(_.filtered(assignmentTarget, currScopeAndProxyStoreOpt)))
-    case TernaryType(cond, left, right) =>
-      TernaryType(cond, left.filtered(assignmentTarget, currScopeAndProxyStoreOpt), right.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
-    case RefinedType(baseType, predicate) =>
+                                    (using globalValsCtx: GlobalValuesContext, resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type =
+    tpe.applyRecursivelyToTypes {
+      case RefinedType(baseType, predicate) =>
 
-      def filterPred(predicate: Formula): List[Formula] = predicate match {
-        case LogicalAnd(lhs, rhs) =>
-          filterPred(lhs) ++ filterPred(rhs)
-        case predicate if assignmentTarget.typeCanMention(predicate) => List(predicate)
-        case _ => List.empty
-      }
+        def filterPred(predicate: Formula): List[Formula] = predicate match {
+          case LogicalAnd(lhs, rhs) =>
+            filterPred(lhs) ++ filterPred(rhs)
+          case predicate if assignmentTarget.typeCanMention(predicate) => List(predicate)
+          case _ => List.empty
+        }
 
-      filterPred(predicate) match {
-        case Nil => baseType
-        case conjuncts =>
-          val newScopeRoot = assignmentTarget.idValsDependencies.map(_.definingScope).maxByOption(_.depth).getOrElse(globalValsCtx.globalScope)
-          val newScope = Scope.nestedInsideNodeOpt(newScopeRoot, None)
-          val newItVal = newScope.newParam(ItId, currScopeAndProxyStoreOpt.flatMap(_._1.getPosition))
-          conjuncts.reduce(LogicalAnd(_, _)).filteredAsCondition(assignmentTarget) match {
-            case Some(newPredicate) => RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), newPredicate)
-            case None => baseType
-          }
-      }
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
-      val newLb = expandBound(lowerBoundOpt, assignmentTarget, _.lowerBoundOpt, currScopeAndProxyStoreOpt)
-      val newUb = expandBound(upperBoundOpt, assignmentTarget, _.upperBoundOpt, currScopeAndProxyStoreOpt)
-      IntRangeType(newLb, newUb)
-    case NullableType(nullatedType) =>
-      NullableType(nullatedType.filtered(assignmentTarget, currScopeAndProxyStoreOpt))
-    case tv: TypeVariable => tv
-  }
+        filterPred(predicate) match {
+          case Nil => baseType
+          case conjuncts =>
+            val newScopeRoot = assignmentTarget.idValsDependencies.map(_.definingScope).maxByOption(_.depth).getOrElse(globalValsCtx.globalScope)
+            val newScope = Scope.nestedInsideNodeOpt(newScopeRoot, None)
+            val newItVal = newScope.newParam(ItId, currScopeAndProxyStoreOpt.flatMap(_._1.getPosition))
+            conjuncts.reduce(LogicalAnd(_, _)).filteredAsCondition(assignmentTarget) match {
+              case Some(newPredicate) => RefinedType(baseType.filtered(assignmentTarget, currScopeAndProxyStoreOpt), newPredicate)
+              case None => baseType
+            }
+        }
+      case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
+        val newLb = expandBound(lowerBoundOpt, assignmentTarget, _.lowerBoundOpt, currScopeAndProxyStoreOpt)
+        val newUb = expandBound(upperBoundOpt, assignmentTarget, _.upperBoundOpt, currScopeAndProxyStoreOpt)
+        IntRangeType(newLb, newUb)
+    }
 
   extension (tpe: Type) def filtered(assignmentTargetOpt: Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
                                     (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext, globalValsCtx: GlobalValuesContext): Type =
@@ -575,54 +584,35 @@ object Types {
     }
   }
 
-  extension (tpe: Type) def allTypeVariables: SeqSet[TypeVariable] = tpe match {
-    case primitiveType: PrimitiveType => SeqSet.empty
-    case NamedType(typeName, typeArgs, args) =>
-      SeqSet(typeArgs.flatMap(_.allTypeVariables))
-    case ClosureType(params, result, enforcedPure) =>
-      SeqSet(params.flatMap(_.allTypeVariables) ++ result.allTypeVariables)
-    case UnionType(types) =>
-      SeqSet(types.flatMap(_.allTypeVariables))
-    case IntersectionType(types) =>
-      SeqSet(types.flatMap(_.allTypeVariables))
-    case TernaryType(cond, left, right) =>
-      left.allTypeVariables concat right.allTypeVariables
-    case RefinedType(baseType, predicate) =>
-      baseType.allTypeVariables
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) => SeqSet.empty
-    case NullableType(nullatedType) => nullatedType.allTypeVariables
-    case tv: TypeVariable if tv.isResolved => tv.withTypeVarsExpanded.allTypeVariables
-    case tv: TypeVariable => SeqSet(tv)
-  }
-
-  extension (tpe: Type) def withDependenciesTransformed(f: Formula => Formula): Type = tpe match {
-    case primitiveType: PrimitiveType => primitiveType
-    case NamedType(typeName, typeArgs, args) => NamedType(typeName, typeArgs.map(_.withDependenciesTransformed(f)), args.map(f))
-    case ClosureType(params, result, enforcedPure) => ClosureType(params.map(_.withDependenciesTransformed(f)), result.withDependenciesTransformed(f), enforcedPure)
-    case UnionType(types) => UnionType(types.map(_.withDependenciesTransformed(f)))
-    case IntersectionType(types) => IntersectionType(types.map(_.withDependenciesTransformed(f)))
-    case TernaryType(cond, left, right) => TernaryType(f(cond), left.withDependenciesTransformed(f), right.withDependenciesTransformed(f))
-    case RefinedType(baseType, predicate) => RefinedType(baseType.withDependenciesTransformed(f), f(predicate))
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) => IntRangeType(lowerBoundOpt.map(f), upperBoundOpt.map(f))
-    case NullableType(nullatedType) => NullableType(nullatedType.withDependenciesTransformed(f))
-    case tv: TypeVariable => tv.actualTypeIfResolved match {
-      case Some(actualType) => actualType.withDependenciesTransformed(f)
-      case None => tv
+  extension (tpe: Type) def allTypeVariables: SeqSet[TypeVariable] = {
+    val typeVars = mutable.LinkedHashSet.empty[TypeVariable]
+    tpe.traversePreOrder {
+      case tv: TypeVariable if tv.isResolved =>
+        typeVars.addAll(tv.withTypeVarsExpanded.allTypeVariables)
+      case tv: TypeVariable =>
+        typeVars.add(tv)
+      case _ => ()
     }
+    SeqSet(typeVars)
   }
 
-  extension (tpe: Type) def mentionsType(target: Type): Boolean = target == tpe || (tpe match {
-    case primitiveType: PrimitiveType => false
-    case NamedType(typeName, typeArgs, args) => typeArgs.exists(_.mentionsType(target))
-    case ClosureType(params, result, enforcedPure) => params.exists(_.mentionsType(target)) || result.mentionsType(target)
-    case UnionType(types) => types.exists(_.mentionsType(target))
-    case IntersectionType(types) => types.exists(_.mentionsType(target))
-    case TernaryType(cond, left, right) => left.mentionsType(target) || right.mentionsType(target)
-    case RefinedType(baseType, predicate) => baseType.mentionsType(target)
-    case IntRangeType(lowerBoundOpt, upperBoundOpt) => false
-    case NullableType(nullatedType) => nullatedType.mentionsType(target)
-    case tv: TypeVariable => tv.actualTypeIfResolved.exists(_.mentionsType(target))
-  })
+  extension (tpe: Type) def withDependenciesTransformed(f: Formula => Formula): Type = {
+    val typesPF: PartialFunction[Type, Type] = {
+      case tv: TypeVariable => tv.actualTypeIfResolved match {
+        case Some(actualType) => actualType.withDependenciesTransformed(f)
+        case None => tv
+      }
+    }
+    tpe.applyRecursively(typesPF.applyOrElse(_, identity), f)
+  }
+
+  extension (tpe: Type) def mentionsType(target: Type): Boolean = boundary {
+    tpe.traversePreOrder {
+      case `target` => boundary.break(true)
+      case _ => ()
+    }
+    false
+  }
 
   extension (tpe: Type) def breakdownIfIntersection: SeqSet[Type] = tpe match {
     case IntersectionType(types) => types

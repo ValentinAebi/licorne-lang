@@ -216,7 +216,7 @@ object Formulas {
   }
 
   extension (formula: Formula) def applyRecursively(pf: PartialFunction[Formula, Formula]): Formula =
-    formula.applyRecursively(f => pf.lift.apply(f).getOrElse(f))
+    formula.applyRecursively(pf.applyOrElse(_, identity))
 
   extension (formula: Formula) def applyRecursively(f: Formula => Formula): Formula = f(formula match {
     case value: AtomicValue => value
