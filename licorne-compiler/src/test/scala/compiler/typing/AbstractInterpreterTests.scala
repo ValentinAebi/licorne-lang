@@ -12,7 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.reasoning.{AbstractInterpreter, ArithIntMode, Reasoning, Simplifier, Solver}
+import compiler.reasoning.{AbstractInterpreter, ArithIntMode, Reasoning, TypeSimplifier, Solver}
 import compiler.typing.contexts.*
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -152,7 +152,7 @@ class AbstractInterpreterTests {
     assertEquals(Some(`[1,a]`), interpretUnderAssumptions(x + 1, Map(x -> `[0,a-1]`), None))
   }
 
-  private def usingFreshInterpreter(action: (AbstractInterpreter, Simplifier, Solver) => Unit): Unit = {
+  private def usingFreshInterpreter(action: (AbstractInterpreter, TypeSimplifier, Solver) => Unit): Unit = {
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())

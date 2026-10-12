@@ -2,7 +2,7 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.irs.ircorne.Formulas.Formula
 import compiler.lang.Types.{IntersectionType, Type}
-import compiler.reasoning.Simplifier
+import compiler.reasoning.TypeSimplifier
 import compiler.typing.contexts.TypeParamsContext
 
 import scala.collection.mutable
@@ -42,8 +42,8 @@ final class EClass(val uid: Long) {
     nonNullFlag = true
   }
 
-  def getSmartcastType(using typeParamsCtx: TypeParamsContext, simplifier: Simplifier): Option[Type] =
-    smartcastTypeOpt.map(simplifier.simplify)
+  def getSmartcastType(using typeParamsCtx: TypeParamsContext, typeSimplifier: TypeSimplifier): Option[Type] =
+    smartcastTypeOpt.map(typeSimplifier.simplifyType)
     
   def getSmartcastTypeNoSimplification: Option[Type] = smartcastTypeOpt
   

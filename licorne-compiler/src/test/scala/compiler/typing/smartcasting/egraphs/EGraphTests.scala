@@ -10,7 +10,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
-import compiler.reasoning.{ArithIntMode, Reasoning, Simplifier}
+import compiler.reasoning.{ArithIntMode, Reasoning, TypeSimplifier}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -112,7 +112,7 @@ class EGraphTests {
     FunCall(rec, invkTarget, List.empty, args.toList)
   }
 
-  private def usingSimplifier(action: Simplifier ?=> Unit): Unit = {
+  private def usingSimplifier(action: TypeSimplifier ?=> Unit): Unit = {
     Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolCtx, proxyStore, globalValuesContext, None) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, globalValuesContext, er, None)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>

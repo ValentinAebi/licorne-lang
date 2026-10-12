@@ -14,11 +14,12 @@ import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reasoning.*
+import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula}
 import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{countTypeId, stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{stringLTypeId, stringType}
 import compiler.typing.contexts.*
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
@@ -44,7 +45,7 @@ final class Typer(
                    typeCandidatesStore: TypeCandidatesStore,
                    heapVarsTypeStore: HeapVarsTypeStore,
                    solver: Solver,
-                   simplifier: Simplifier,
+                   typeSimplifier: TypeSimplifier,
                    absInt: AbstractInterpreter,
                    globalValuesCtx: GlobalValuesContext,
                    er: ErrorReporter,
@@ -62,7 +63,7 @@ final class Typer(
   private given MeetJoinComputer = meetJoin
   private given ProxyStore = proxyStore
   private given Solver = solver
-  private given Simplifier = simplifier
+  private given TypeSimplifier = typeSimplifier
   private given Typer = this
   private given GlobalValuesContext = globalValuesCtx
   // @formatter:on
@@ -74,7 +75,7 @@ final class Typer(
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
-    meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValuesCtx, er,
+    meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValuesCtx, er,
     closuresCollectorFuncOpt, allowWriteToIR = false)
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo, scopeKind: ScopeKind = ScopeKind.NotAFunc)(using TypeParamsContext): Unit = {
@@ -115,7 +116,7 @@ final class Typer(
             case Some(tv) =>
               er.reportError(s"type variable $tv in the result type of $methodOrClosureDescr could not be resolved", scope.getPosition)
             case None =>
-              if (!scope.hasExited && !isProvablyUnit(simplifier.simplify(dealiasingCtx.dealiasType(expRetType.withTypeVarsExpanded)))) {
+              if (!scope.hasExited && !isProvablyUnit(typeSimplifier.simplifyType(dealiasingCtx.dealiasType(expRetType.withTypeVarsExpanded)))) {
                 er.reportError(s"missing return in non-$UnitType $methodOrClosureDescr", scope.getPosition)
               }
           }
@@ -149,7 +150,7 @@ final class Typer(
             val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
             val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
             val preIterationBoundOpt = proxyStore.developDeep(beforeLoopVal)
-            val inferredInBodyType = simplifier.simplify(
+            val inferredInBodyType = typeSimplifier.simplifyType(
               monotonicity match {
                 case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
                 case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
@@ -158,14 +159,14 @@ final class Typer(
               }
             )
             val inBodyType = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt match {
-              case Some(LocalDecl(_, tpe)) => simplifier.simplify(IntersectionType(tpe, inferredInBodyType))
+              case Some(LocalDecl(_, tpe)) => typeSimplifier.simplifyType(IntersectionType(tpe, inferredInBodyType))
               case None => inferredInBodyType
             }
             val feedbackType =
               absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)(using currScope.getLocalValuesContextUnsafe.globalCtx).getOrElse {
                 preIterationBoundOpt match {
                   case Some(preIterationBound) =>
-                    simplifier.simplify(
+                    typeSimplifier.simplifyType(
                       monotonicity match {
                         case Constant => IntRangeType.singleton(preIterationBound)
                         case NonDecreasing => IntRangeType.ofLowerBound(preIterationBound)
@@ -191,7 +192,7 @@ final class Typer(
                   subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
                 })
                 .filterNot(Types.isExtreme)
-                .getOrElse(currScope.detectCurrentType(beforeLoopVal).ignoreRangesShallow)
+                .getOrElse(dealiasingCtx.dealiasType(currScope.detectCurrentType(beforeLoopVal).baseTypeAssumingNoAlias))
             varDefScope.saveType(inCondVal, tpe)
             Some(())
           }
@@ -477,7 +478,7 @@ final class Typer(
             val RefinedType(targetBase, targetPredRaw) = targetType.asRefinedType.flattenedRefinement
             val targetPredSubst = targetPredRaw.substitute(itValue, inValue)
             // TODO maybe check if assertion provably succeeds / fails
-            val assertion = simplifier.simplifyBool(proxyStore.developNearest(targetPredSubst).getOrElse(targetPredSubst))
+            val assertion = simplifyBool(proxyStore.developNearest(targetPredSubst).getOrElse(targetPredSubst))
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
               val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
@@ -506,15 +507,15 @@ final class Typer(
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
-        val inValType = requireNonNullable(currScope.computeCurrentType(inValue, conv.getPosition).ignoreRangesShallow, "converted value", conv.getPosition)
-        TypeConversion.conversionFor(inValType, targetType) match {
-          case _ if inValType == targetType =>
+        val inValTypeBase = requireNonNullable(currScope.computeCurrentType(inValue, conv.getPosition), "converted value", conv.getPosition).baseType
+        TypeConversion.conversionFor(inValTypeBase, targetType) match {
+          case _ if inValTypeBase == targetType =>
             conv.resolveTypeConversion(None)
           case someConv@Some(_) =>
             currScope.saveType(assigned, targetType)
             conv.resolveTypeConversion(someConv)
           case _ =>
-            er.reportError(s"impossible conversion: $inValType to $targetType", conv.getPosition)
+            er.reportError(s"impossible conversion: $inValTypeBase to $targetType", conv.getPosition)
         }
 
       case ret@Return(retVal) =>
@@ -559,7 +560,7 @@ final class Typer(
     def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
       param match {
         case fld: Field.StableField =>
-          val rhsValExpanded = simplifier.simplify(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
+          val rhsValExpanded = simplifyFormula(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
           val fldResolTarget = FieldResolutionTarget(fld.id)
           fldResolTarget.resolve(typeSig, substitutedType)
           val itSelect = Select(itValue, fldResolTarget)
@@ -810,11 +811,7 @@ final class Typer(
                                  (using TypeParamsContext): Type = {
     // TODO warning if result is known (true or false)?
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
-    val expectedOperandType = lhsType.ignoreRangesShallow match {
-      case tpe@(IntType | DoubleType) => tpe
-      // TODO handle Doubles as well
-      case _ => IntType
-    }
+    val expectedOperandType = if dealiasingCtx.dealiasType(lhsType.withTypeVarsExpanded).baseType == DoubleType then DoubleType else IntType
     subtypingCtx.enforceIsSubtypeExpAct(lhsType, expectedOperandType, s"operand of $op", posOpt)
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
     subtypingCtx.enforceIsSubtypeExpAct(rhsType, expectedOperandType, s"operand of $op", posOpt)
@@ -840,7 +837,7 @@ final class Typer(
     BoolType
   }
 
-  private def forceRange(tpe: Type)(using TypeParamsContext): Type = simplifier.simplify(tpe) match {
+  private def forceRange(tpe: Type)(using TypeParamsContext): Type = typeSimplifier.simplifyType(tpe) match {
     case RefinedType(baseType, predicate) =>
       forceRange(baseType)
     case intersection@IntersectionType(types) =>
@@ -920,11 +917,11 @@ final class Typer(
   }
 
   private def deduceAssumptionFromTernaryType(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
-    val smartcasts = simplifier.simplify(dealiasingCtx.dealiasType(tpe)) match {
+    val smartcasts = typeSimplifier.simplifyType(dealiasingCtx.dealiasType(tpe)) match {
       case TernaryType(cond, left, NothingType) =>
-        smartcastsFromAssumption(simplifier.simplifyBool(cond), scope)
+        smartcastsFromAssumption(simplifyBool(cond), scope)
       case TernaryType(cond, NothingType, right) =>
-        smartcastsFromAssumption(simplifier.simplifyBool(LogicalNot(cond)), scope)
+        smartcastsFromAssumption(simplifyBool(LogicalNot(cond)), scope)
       case _ => List.empty
     }
     for ((subject, smartcastType) <- smartcasts) {
@@ -1091,7 +1088,7 @@ final class Typer(
     }
     val paramsInst = for ((paramId, (paramTypeRaw, paramVal)) <- paramsRaw) yield {
       val paramTypeInst = instantiateType(paramTypeRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
-      sigScope.saveType(paramVal, paramTypeInst)(using fullTypeParamsCtx, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
+      sigScope.saveType(paramVal, paramTypeInst)(using fullTypeParamsCtx, dealiasingCtx, typeSimplifier, resolutionCtx, proxyStore)
       (paramId, (paramTypeInst, paramVal))
     }
     val rhsInst = instantiateType(rhsRaw, None, sigScope, declPosOpt)(using fullTypeParamsCtx)
@@ -1223,7 +1220,7 @@ final class Typer(
         originalType <- detectTypeForSmartcast(subject, scope)
         smartcastTypeRaw <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache)
       } {
-        val smartcastType = simplifier.simplify(smartcastTypeRaw)
+        val smartcastType = typeSimplifier.simplifyType(smartcastTypeRaw)
         if (smartcastType == NothingType) {
           scope.markHasExited()
           scope.insertInstrDuringTraversal(Unreachable())
@@ -1271,7 +1268,7 @@ final class Typer(
           solver.takeType(rhs, scope.detectCurrentType(rhs))
           ltToSmartcasts(lhs, rhs)
         case developedAssumption =>
-          extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(simplifier.simplify)
+          extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(typeSimplifier.simplifyType)
       }
       val nullVal = scope.valuesCtx.globalCtx.nullVal
       // TODO code smell: effects in a method that looks functional
@@ -1294,7 +1291,7 @@ final class Typer(
       } else if (rhs.typeCanMention(lhs)) {
         Some(rhs -> IntRangeType.ofLowerBound(lhs))
       } else None
-    val linear = simplifier.linearize(Plus(lhs, Neg(rhs)))
+    val linear = linearize(Plus(lhs, Neg(rhs)))
     var smartcastSubjectOpt = Option.empty[(Formula, Int)]
     val otherTerms = mutable.ListBuffer.empty[(Formula, Int)]
     for (term@(f, idx) <- linear) {
@@ -1310,7 +1307,7 @@ final class Typer(
           case (acc, (f, coef)) =>
             Plus(acc, Times(IntConst(-coef / smartcastSubjectCoef), f))
         }
-        val range = simplifier.simplify(
+        val range = typeSimplifier.simplifyType(
           if smartcastSubjectCoef < 0
           then IntRangeType.ofLowerBound(bound)
           else IntRangeType.ofUpperBound(bound)
@@ -1347,7 +1344,7 @@ final class Typer(
         performSubst(List(lhs, rhs))
       case LogicalNot(operand) =>
         extractPredicateIntoSmartcastType(operand, scope).mapVals {
-          case RefinedType(baseType, predicate) => RefinedType(baseType, simplifier.simplifyBool(LogicalNot(predicate)))
+          case RefinedType(baseType, predicate) => RefinedType(baseType, simplifyBool(LogicalNot(predicate)))
         }
       case FunCall(receiver, func, typeArgs, args) =>
         performSubst(receiver :: args)
@@ -1422,7 +1419,7 @@ final class Typer(
               solver.assert(precondSubst)
             }
             val instantiatedRetType =
-              simplifier.simplify(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst))
+              typeSimplifier.simplifyType(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst))
                 .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
@@ -1438,15 +1435,15 @@ final class Typer(
   }
 
   extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])
-                                                         (using Simplifier, TypeParamsContext): Type =
+                                                         (using TypeSimplifier, TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, Some(posOpt))
 
   extension (scope: Scope) private def detectCurrentType(formula: Formula)
-                                                        (using Simplifier, TypeParamsContext): Type =
+                                                        (using TypeSimplifier, TypeParamsContext): Type =
     doComputeCurrentType(scope, formula, None)
 
   private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]])
-                                  (using Simplifier, TypeParamsContext): Type = {
+                                  (using TypeSimplifier, TypeParamsContext): Type = {
     val tpe = scope.getCurrentTypeOf(formula)
     posOptIfShouldReport.foreach { posOpt =>
       (formula, tpe) match {
@@ -1522,12 +1519,12 @@ final class Typer(
     }
   }
 
-  private def requireNonNullable(possiblyNullable: Type, descr: String, posOpt: Option[Position]) = {
-    possiblyNullable match {
+  private def requireNonNullable(tpe: Type, descr: String, posOpt: Option[Position]) = {
+    dealiasingCtx.dealiasType(tpe.withTypeVarsExpanded).baseTypeAssumingNoAlias match {
       case NullableType(nullatedType) =>
         er.reportError(s"$descr should not be nullable", posOpt)
         nullatedType
-      case nonNullable => nonNullable
+      case _ => tpe
     }
   }
 
@@ -1696,14 +1693,14 @@ final class Typer(
       }
       tryToResolveTypeVars(paramRes, argRes)
     case (tv: TypeVariable, argType) if !tv.isResolved =>
-      tv.resolve(simplifier.simplify(argType))
+      tv.resolve(typeSimplifier.simplifyType(argType))
     case (tv: TypeVariable, argType) if tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
       tv.remapIfNotLocked(argType)
     case (paramType, tv: TypeVariable) if tvResolMode == TypeVarsResolMode.ParamsAndArgs && !tv.isResolved =>
-      tv.resolve(simplifier.simplify(paramType))
+      tv.resolve(typeSimplifier.simplifyType(paramType))
     case _ => ()
   }
-  
+
   private def enforcePurity(f: Formula, descr: String, posOpt: Option[Position]): Unit = if (!f.isPure) {
     er.reportError(s"I cannot prove that $descr ${proxyStore.developNearest(f).getOrElse(f)} is pure", posOpt)
   }

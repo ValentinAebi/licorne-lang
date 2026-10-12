@@ -4,7 +4,7 @@ import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
-import compiler.reasoning.Simplifier
+import compiler.reasoning.TypeSimplifier
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.typing.smartcasting.egraphs.EGraph.closureInvkFunId
 import compiler.valproxies.ProxyStore
@@ -39,11 +39,11 @@ final class EGraph private[egraphs](startClId: Long) {
   def areEqual(f1: Formula, f2: Formula): Boolean =
     classOf(f1) eq classOf(f2)
 
-  def merge(f1: Formula, f2: Formula)(using TypeParamsContext, ResolutionContext, ProxyStore, Simplifier): Unit = {
+  def merge(f1: Formula, f2: Formula)(using TypeParamsContext, ResolutionContext, ProxyStore, TypeSimplifier): Unit = {
     doMerge(f1, f2, recurseOnProxies = true)
   }
 
-  private def doMerge(f1: Formula, f2: Formula, recurseOnProxies: Boolean)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+  private def doMerge(f1: Formula, f2: Formula, recurseOnProxies: Boolean)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore, typeSimplifier: TypeSimplifier): Unit = {
     val cl1 = classOf(f1)
     val cl2 = classOf(f2)
     merge(cl1, cl2)
@@ -53,7 +53,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  private def mergeWithProxy(f: Formula)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore, simplifier: Simplifier): Unit = {
+  private def mergeWithProxy(f: Formula)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore, typeSimplifier: TypeSimplifier): Unit = {
     proxyStore.developNearest(f) match {
       case Some(proxy) if proxy != f && proxy.isPure =>
         doMerge(f, proxy, recurseOnProxies = false)
@@ -61,7 +61,7 @@ final class EGraph private[egraphs](startClId: Long) {
     }
   }
 
-  private def merge(cl1Arg: EClass, cl2Arg: EClass)(using TypeParamsContext, Simplifier): Unit = {
+  private def merge(cl1Arg: EClass, cl2Arg: EClass)(using TypeParamsContext, TypeSimplifier): Unit = {
     val cl1 = canonicalize(cl1Arg)
     val cl2 = canonicalize(cl2Arg)
     if (cl1 == cl2) {
@@ -99,7 +99,7 @@ final class EGraph private[egraphs](startClId: Long) {
     classOf(formula).markNonNull()
   }
 
-  def smartcastFor(formula: Formula)(using TypeParamsContext, Simplifier): Option[Type] =
+  def smartcastFor(formula: Formula)(using TypeParamsContext, TypeSimplifier): Option[Type] =
     classOf(formula).getSmartcastType
   
   def isKnownNonNull(formula: Formula): Boolean =

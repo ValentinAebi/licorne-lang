@@ -11,8 +11,9 @@ import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
+import compiler.reasoning.FormulasSimplification.simplifyNumeric
 import compiler.reporting.Errors.ErrorReporter
-import compiler.reasoning.{ArithIntMode, Reasoning, Simplifier, Solver}
+import compiler.reasoning.{ArithIntMode, Reasoning, Solver, TypeSimplifier}
 import compiler.typing.contexts.*
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -39,42 +40,42 @@ final class SimplificationTests {
 
   @Test def simplifyImpossibleTypeTest(): Unit = usingFreshSimplifier { (simplifier, solver) =>
     solver.assert(b + 2 <= a)
-    assertEquals(NothingType, simplifier.simplify(`[a,b]`))
+    assertEquals(NothingType, simplifier.simplifyType(`[a,b]`))
   }
 
   @Test def doNotSimplifyTest1(): Unit = usingFreshSimplifier { (simplifier, _) =>
-    assertEquals(`[a,b]`, simplifier.simplify(`[a,b]`))
+    assertEquals(`[a,b]`, simplifier.simplifyType(`[a,b]`))
   }
 
   @Test def doNotSimplifyTest2(): Unit = usingFreshSimplifier { (simplifier, solver) =>
     solver.assert(a + 2 <= b)
-    assertEquals(`[a,b]`, simplifier.simplify(`[a,b]`))
+    assertEquals(`[a,b]`, simplifier.simplifyType(`[a,b]`))
   }
 
-  @Test def simplifyMinusOneTest(): Unit = usingFreshSimplifier { (simplifier, _) =>
-    assertEquals(IntConst(-1), simplifier.simplifyNumeric(Neg(IntConst(1))))
+  @Test def simplifyMinusOneTest(): Unit = {
+    assertEquals(IntConst(-1), simplifyNumeric(Neg(IntConst(1))))
   }
 
-  @Test def simplifyLinearFormulaTest1(): Unit = usingFreshSimplifier { (simplifier, _) =>
+  @Test def simplifyLinearFormulaTest1(): Unit = {
     // @formatter:off
-    assertEquals(6*a + 5*b + 24, simplifier.simplifyNumeric(a + 5*b - 3*a - 2 + 25 + 8*a + 1))
+    assertEquals(6*a + 5*b + 24, simplifyNumeric(a + 5*b - 3*a - 2 + 25 + 8*a + 1))
     // @formatter:on
   }
 
-  @Test def simplifyLinearFormulaTest2(): Unit = usingFreshSimplifier { (simplifier, _) =>
+  @Test def simplifyLinearFormulaTest2(): Unit = {
     // @formatter:off
-    assertEquals(9*a - 1, simplifier.simplifyNumeric(2*4*a + a - 1))
+    assertEquals(9*a - 1, simplifyNumeric(2*4*a + a - 1))
     // @formatter:on
   }
 
-  @Test def simplifyLinearFormulaTest3(): Unit = usingFreshSimplifier { (simplifier, _) =>
+  @Test def simplifyLinearFormulaTest3(): Unit = {
     // @formatter:off
-    assertEquals(a, simplifier.simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1))
-    assertEquals(IntConst(0), simplifier.simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1 - a))
+    assertEquals(a, simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1))
+    assertEquals(IntConst(0), simplifyNumeric(2*a + 9*b - a - 5*b - 1 - 4*b + 1 - a))
     // @formatter:on
   }
 
-  private def usingFreshSimplifier(action: (Simplifier, Solver) => Unit): Unit = {
+  private def usingFreshSimplifier(action: (TypeSimplifier, Solver) => Unit): Unit = {
     given CompilationStep = TypeChecking
 
     val er = ErrorReporter(_ => fail(), _ => fail())

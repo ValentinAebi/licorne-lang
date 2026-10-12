@@ -4,10 +4,10 @@ import compiler.identifiers.{Identifier, ItId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.PrimitiveType.*
-import compiler.reasoning.Simplifier
+import compiler.reasoning.TypeSimplifier
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -24,6 +24,9 @@ object Types {
     def formulaDependencies: List[Formula]
 
     def baseTypeAssumingNoAlias: Type
+    
+    def baseType(using dealiasingCtx: DealiasingContext): Type =
+      dealiasingCtx.dealiasType(this).baseTypeAssumingNoAlias
 
     def children: List[Type]
 
@@ -287,7 +290,7 @@ object Types {
   final case class NullableType private(nullatedType: Type) extends Type {
     override def formulaDependencies: List[Formula] = nullatedType.formulaDependencies
 
-    override def baseTypeAssumingNoAlias: Type = nullatedType.baseTypeAssumingNoAlias
+    override def baseTypeAssumingNoAlias: Type = NullableType(nullatedType.baseTypeAssumingNoAlias)
 
     override def children: List[Type] = List.empty
 
@@ -449,7 +452,7 @@ object Types {
     }
 
   extension (tpe: Type) def filtered(assignmentTarget: Formula, currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using globalValsCtx: GlobalValuesContext, resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Type =
+                                    (using globalValsCtx: GlobalValuesContext, resolutionCtx: ResolutionContext, typeSimplifier: TypeSimplifier, typeParamsCtx: TypeParamsContext): Type =
     tpe.applyRecursivelyToTypes {
       case RefinedType(baseType, predicate) =>
 
@@ -478,7 +481,7 @@ object Types {
     }
 
   extension (tpe: Type) def filtered(assignmentTargetOpt: Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                                    (using resolutionCtx: ResolutionContext, simplifier: Simplifier, typeParamsCtx: TypeParamsContext, globalValsCtx: GlobalValuesContext): Type =
+                                    (using resolutionCtx: ResolutionContext, typeSimplifier: TypeSimplifier, typeParamsCtx: TypeParamsContext, globalValsCtx: GlobalValuesContext): Type =
     assignmentTargetOpt match {
       case Some(assignmentTarget) =>
         tpe.filtered(assignmentTarget, currScopeAndProxyStoreOpt)
@@ -494,11 +497,6 @@ object Types {
         case (None, None) => None
       }
     case formula => Option.when(assignmentTarget.typeCanMention(formula))(formula)
-  }
-
-  extension (tpe: Type) def ignoreRangesShallow: Type = tpe match {
-    case IntRangeType(_, _) => IntType
-    case tpe => tpe
   }
 
   extension (tpe: Type) def ignoreNullabilityShallow(using GlobalValuesContext): Type = tpe match {
@@ -625,7 +623,7 @@ object Types {
   }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])
-                         (using simplifier: Simplifier, typeParamsCtx: TypeParamsContext): Option[Formula] = boundOpt match {
+                         (using typeSimplifier: TypeSimplifier, typeParamsCtx: TypeParamsContext): Option[Formula] = boundOpt match {
     case None => None
     case sb@Some(bound) if bound.idValsDependencies.forall(assignmentTarget.typeCanMention) => sb
     case Some(bound) =>

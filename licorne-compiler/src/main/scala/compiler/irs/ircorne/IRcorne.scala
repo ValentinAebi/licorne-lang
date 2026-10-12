@@ -10,7 +10,7 @@ import compiler.lang.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.pipeline.CompilationStep
-import compiler.reasoning.{Recurrence, Simplifier, Solver}
+import compiler.reasoning.{Recurrence, TypeSimplifier, Solver}
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
@@ -379,7 +379,7 @@ object IRcorne {
 
     def persistingEqualities: Iterable[(Formula, Formula)] = _persistingEqualities
 
-    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, simplifier: Simplifier): Unit = {
+    def eMerge(f1: Formula, f2: Formula, persist: Boolean = false)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, typeSimplifier: TypeSimplifier): Unit = {
       smartcastsEGraph.merge(f1, f2)(using typeParamsCtx, resolCtx, proxyStore)
       if (persist) {
         outScopeOpt.foreach { outScope =>
@@ -395,7 +395,7 @@ object IRcorne {
           (outScopeOpt.isDefined && outScopeOpt.get.isNestedIn(outerScope)))
 
     def saveType(idVal: IdValue, rawType: Type)
-                (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, simplifier: Simplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
+                (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, typeSimplifier: TypeSimplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
       val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
@@ -424,7 +424,7 @@ object IRcorne {
       smartcastsEGraph.saveNonNull(f)
     }
 
-    def getCurrentTypeOf(formula: Formula)(using ProxyStore, Simplifier, TypeParamsContext): Type = {
+    def getCurrentTypeOf(formula: Formula)(using ProxyStore, TypeSimplifier, TypeParamsContext): Type = {
       val maybeNullableType = smartcastFor(formula)
         .orElse(typeOfNoSmartcastIfIdVal(formula))
         .getOrElse(NothingType)
@@ -438,7 +438,7 @@ object IRcorne {
       smartcastsEGraphOpt = src.smartcastsEGraphOpt
     }
 
-    def smartcastFor(f: Formula)(using Simplifier, TypeParamsContext): Option[Type] = {
+    def smartcastFor(f: Formula)(using TypeSimplifier, TypeParamsContext): Option[Type] = {
       smartcastsEGraph.smartcastFor(f) match {
         case someType@Some(_) => someType
         case None => None

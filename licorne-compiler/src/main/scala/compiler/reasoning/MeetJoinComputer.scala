@@ -7,7 +7,7 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
-import compiler.reasoning.{Simplifier, Solver}
+import compiler.reasoning.{TypeSimplifier, Solver}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valproxies.ProxyStore
@@ -27,7 +27,7 @@ final class MeetJoinComputer(
                               globalValuesContext: GlobalValuesContext
                             ) {
 
-  private[reasoning] val simplifier = Simplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
+  private[reasoning] val simplifier = TypeSimplifier(subtypingCtx, solver, dealiasingCtx, this, globalValuesContext)
 
   private given GlobalValuesContext = globalValuesContext
 
@@ -151,7 +151,7 @@ final class MeetJoinComputer(
                 else AnyType
               }
 
-              simplifier.simplify(RefinedType(unrefinedJoin, joinPredicates(predicates)))
+              simplifier.simplifyType(RefinedType(unrefinedJoin, joinPredicates(predicates)))
             }
           }
       }
@@ -308,7 +308,7 @@ final class MeetJoinComputer(
             }
         }
       }
-      simplifier.simplify {
+      simplifier.simplifyType {
         if nullableFlag
         then NullableType(rawMeet)
         else rawMeet

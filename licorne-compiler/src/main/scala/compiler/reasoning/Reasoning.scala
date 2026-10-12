@@ -12,7 +12,7 @@ object Reasoning {
 
   def usingFreshReasoningToolkit[T](ihm: IntHandlingMode[?], dealiasingCtx: DealiasingContext, resolutionCtx: ResolutionContext, proxyStore: ProxyStore, globalValuesContext: GlobalValuesContext, counterExBoxOpt: Option[CounterexampleBox])
                                    (mkSubtypingCtx: Solver => SubtypingContext)
-                                   (f: (Solver, SubtypingContext, Simplifier, MeetJoinComputer, AbstractInterpreter) => T): T =
+                                   (f: (Solver, SubtypingContext, TypeSimplifier, MeetJoinComputer, AbstractInterpreter) => T): T =
     usingFreshSolver(ihm, dealiasingCtx, resolutionCtx, globalValuesContext, proxyStore, counterExBoxOpt) { solver =>
       val subtypingCtx = mkSubtypingCtx(solver)
       val meetJoin = MeetJoinComputer(dealiasingCtx, resolutionCtx, subtypingCtx, solver, proxyStore, globalValuesContext)

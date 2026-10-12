@@ -68,7 +68,7 @@ final class TypeChecker(
     input
   }
 
-  private def saveTypesOfGlobalConstants(resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, simplifier: Simplifier)
+  private def saveTypesOfGlobalConstants(resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, typeSimplifier: TypeSimplifier)
                                         (using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit = {
 
     // @formatter:off
@@ -76,7 +76,7 @@ final class TypeChecker(
     given ResolutionContext = resolCtx
     given ProxyStore = proxyStore
     given Solver = solver
-    given Simplifier = simplifier
+    given TypeSimplifier = typeSimplifier
     // @formatter:on
 
     globalValsCtx.globalScope.saveType(globalValsCtx.unitVal, UnitType)
@@ -91,21 +91,21 @@ final class TypeChecker(
                          meetJoin: MeetJoinComputer,
                          heapVarsTypeStore: HeapVarsTypeStore,
                          solver: Solver,
-                         simplifier: Simplifier,
+                         typeSimplifier: TypeSimplifier,
                          absInt: AbstractInterpreter
                        )(using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit =
     func.bodyOpt.foreach { funcBody =>
 
       val closuresCollector = mutable.Queue.empty[ClosureInfo]
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
       val ownerSig = resolCtx.resolveTypeSigAs(funSig.ownerName).get
 
       given TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
 
       given ResolutionContext = resolCtx
 
-      given Simplifier = simplifier
+      given TypeSimplifier = typeSimplifier
 
       val precondInfos = funSig.precondOpt match {
         case Some(precond) =>
@@ -137,7 +137,7 @@ final class TypeChecker(
         while (closuresCollector.nonEmpty) {
           val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
           val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-            proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+            proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
           solver.onNewFrame {
             for ((paramVal, paramType) <- closureParams) {
               solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))

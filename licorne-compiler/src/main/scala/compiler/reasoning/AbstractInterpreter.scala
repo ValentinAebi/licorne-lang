@@ -6,14 +6,14 @@ import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
 import compiler.reasoning.AbstractInterpreter.someZero
-import compiler.reasoning.{Simplifier, Solver}
+import compiler.reasoning.{TypeSimplifier, Solver}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.valuesconversion.GlobalValuesContext
 
-final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalValsCtx: GlobalValuesContext) {
+final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, globalValsCtx: GlobalValuesContext) {
 
   //> @formatter:off
-  private given Simplifier = simplifier
+  private given TypeSimplifier = typeSimplifier
   private given GlobalValuesContext = globalValsCtx
   //> @formatter:on
 
@@ -148,16 +148,16 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
     import compiler.irs.ircorne.FormulasDsl.*
     (rawTypeOpt, rhsOpt) match {
       case (Some(rawType), Some(rhs)) =>
-        Some(simplifier.simplify(IntersectionType(rawType, IntRangeType(-rhs + 1, rhs - 1))))
+        Some(typeSimplifier.simplifyType(IntersectionType(rawType, IntRangeType(-rhs + 1, rhs - 1))))
       case (None, Some(rhs)) => Some(IntRangeType(-rhs + 1, rhs - 1))
       case (rawTypeOpt, None) => rawTypeOpt
     }
   }
 
-  def unaryNegType(operand: Type)(using TypeParamsContext): Option[Type] = simplifier.simplify(operand) match {
+  def unaryNegType(operand: Type)(using TypeParamsContext): Option[Type] = typeSimplifier.simplifyType(operand) match {
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       val rawRange = IntRangeType(upperBoundOpt.map(Neg(_)), lowerBoundOpt.map(Neg(_)))
-      Some(simplifier.simplify(rawRange))
+      Some(typeSimplifier.simplifyType(rawRange))
     case operand =>
       operand.asRefinedType.baseType match {
         case IntType => Some(IntType)
@@ -194,10 +194,10 @@ final class AbstractInterpreter(solver: Solver, simplifier: Simplifier, globalVa
 
   private def typeArithBinopType(l: Type, r: Type)
                                 (mergeRanges: ((Option[Formula], Option[Formula]), (Option[Formula], Option[Formula])) => (Option[Formula], Option[Formula]))
-                                (using TypeParamsContext): Option[Type] = (simplifier.simplify(l), simplifier.simplify(r)) match {
+                                (using TypeParamsContext): Option[Type] = (typeSimplifier.simplifyType(l), typeSimplifier.simplifyType(r)) match {
     case (IntRangeType(llb, lub), IntRangeType(rlb, rub)) =>
       val (lb, ub) = mergeRanges((llb, lub), (rlb, rub))
-      Some(simplifier.simplify(IntRangeType(lb, ub)))
+      Some(typeSimplifier.simplifyType(IntRangeType(lb, ub)))
     case (l, r) =>
       (l.asRefinedType.baseType, r.asRefinedType.baseType) match {
         case (IntType | IntRangeType(_, _), IntType | IntRangeType(_, _)) => Some(IntType)

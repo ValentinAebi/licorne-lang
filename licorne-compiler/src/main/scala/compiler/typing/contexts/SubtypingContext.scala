@@ -10,6 +10,7 @@ import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, TypeParamInfo, TypeTypeParamInfo}
 import compiler.pipeline.CompilationStep
+import compiler.reasoning.FormulasSimplification.simplifyFormula
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.reasoning.{CounterexampleBox, MeetJoinComputer, Solver}
@@ -69,15 +70,16 @@ final class SubtypingContext(
       targets.size match {
         case 0 => CannotDowncast(s"no valid downcast target found for source type $originalType")
         case 1 =>
-          val (baseType, pred) = targets.head
-          CanDowncast(if pred == BoolConst(true) then baseType else RefinedType(baseType, pred))
+          val (baseType, rawPred) = targets.head
+          val simplifiedPred = simplifyFormula(rawPred)
+          CanDowncast(if simplifiedPred == BoolConst(true) then baseType else RefinedType(baseType, simplifiedPred))
         case _ => CannotDowncast(s"ambiguous downcast target for source type $originalType: candidates are: ${targets.mkString(", ")}")
       }
     }
 
     if targetId == StdLib.arrayTypeId
     then CannotDowncast(s"implementation restriction: type tests against type ${StdLib.arrayTypeId} are not supported")
-    else dealiasingCtx.dealiasType(originalType).ignoreRangesShallow.withTypeVarsExpanded match {
+    else dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded match {
       case UnionType(types) => checkMultipleTypes(types)
       case IntersectionType(types) => checkMultipleTypes(types)
       case TernaryType(cond, left, right) => checkMultipleTypes(SeqSet(left, right))
