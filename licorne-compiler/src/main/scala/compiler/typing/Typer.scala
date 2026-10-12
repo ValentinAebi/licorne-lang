@@ -880,9 +880,7 @@ final class Typer(
           instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
         })
       case TernaryType(cond, left, right) =>
-        if (!cond.isPure) {
-          er.reportError("I cannot prove that ternary type condition is pure", posOpt)
-        }
+        enforcePurity(cond, "ternary type condition", posOpt)
         TernaryType(cond, instantiateType(left, ambientVarianceOpt, currScope, posOpt), instantiateType(right, ambientVarianceOpt, currScope, posOpt))
       case tpe@RefinedType(baseTypeRaw, predicate) =>
         val baseTypeInst = instantiateType(baseTypeRaw, ambientVarianceOpt, currScope, posOpt)
@@ -892,9 +890,7 @@ final class Typer(
         if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
           er.reportError(s"predicate should have type $BoolType", posOpt)
         }
-        if (!predicate.isPure) {
-          er.reportError(s"I cannot prove that predicate $predicate is pure", posOpt)
-        }
+        enforcePurity(predicate, "predicate", posOpt)
         RefinedType(baseTypeInst, predicate)
       case tpe@IntRangeType(lbOpt, ubOpt) =>
         lbOpt.foreach { lb =>
@@ -902,18 +898,14 @@ final class Typer(
           if (!subtypingCtx.isSubtype(lbType, IntType)) {
             er.reportError(s"lower bound of $tpe should be an integer", posOpt)
           }
-          if (!lb.isPure) {
-            er.reportError(s"I cannot prove that lower bound of $tpe is pure", posOpt)
-          }
+          enforcePurity(lb, s"range type bound", posOpt)
         }
         ubOpt.foreach { ub =>
           val rbType = typeFormula(ub, currScope, posOpt)
           if (!subtypingCtx.isSubtype(rbType, IntType)) {
             er.reportError(s"upper bound of $tpe should be an integer", posOpt)
           }
-          if (!ub.isPure) {
-            er.reportError(s"I cannot prove that upper bound of $tpe is pure", posOpt)
-          }
+          enforcePurity(ub, "range type bound", posOpt)
         }
         tpe
       case tpe@NullableType(nullatedTypeRaw) =>
@@ -970,6 +962,9 @@ final class Typer(
           }
           val (typeArgsSubst, _) = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, Some(s"application of type $typeName"))
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
+          for (arg <- args) {
+            enforcePurity(arg, "type alias argument", posOpt)
+          }
           val paramsWithType = sig.params.map { case (paramId, (paramType, paramVal)) =>
             Some(paramVal) -> paramType.substitute(typeArgsSubst, Map.empty)
           }
@@ -1029,9 +1024,7 @@ final class Typer(
   private def typeInitializer(fieldId: FunOrVarId, fieldType: Type, init: Formula, sigScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     val defaultInitType = typeFormula(init, sigScope, posOpt)
     subtypingCtx.enforceIsSubtype(init, defaultInitType, fieldType, s"type $defaultInitType of default initializer of field $fieldId does not conform to field type $fieldType", sigScope, posOpt)
-    if (!init.isPure) {
-      er.reportError(s"I cannot prove that the default initializer of field $fieldId is pure", posOpt)
-    }
+    enforcePurity(init, "default initializer of field $fieldId", posOpt)
   }
 
   def typeTypeTypeParam(typeTypeParamInfo: TypeTypeParamInfo, currScope: Scope, posOpt: Option[Position])
@@ -1080,9 +1073,7 @@ final class Typer(
       if (!subtypingCtx.isSubtype(precondType, BoolType)(using fullTypeParamsCtx)) {
         er.reportError(s"precondition must have type $BoolType", declPosOpt)
       }
-      if (!precond.isPure) {
-        er.reportError("I cannot prove that precondition is pure", declPosOpt)
-      }
+      enforcePurity(precond, "precondition", declPosOpt)
       solver.assert(precond)
     }
     val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
@@ -1711,6 +1702,10 @@ final class Typer(
     case (paramType, tv: TypeVariable) if tvResolMode == TypeVarsResolMode.ParamsAndArgs && !tv.isResolved =>
       tv.resolve(simplifier.simplify(paramType))
     case _ => ()
+  }
+  
+  private def enforcePurity(f: Formula, descr: String, posOpt: Option[Position]): Unit = if (!f.isPure) {
+    er.reportError(s"I cannot prove that $descr ${proxyStore.developNearest(f).getOrElse(f)} is pure", posOpt)
   }
 
   private def nthArgument(i: Int): String = i match {
