@@ -1,7 +1,0 @@
-package licorne.io;
-
-interface InStream {
-
-    fn readLine() -> String
-
-}

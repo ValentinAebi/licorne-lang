@@ -15,7 +15,7 @@ import compiler.typing.phases.*
 import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 
-import java.nio.file.Path
+import java.nio.file.{Files, Path, StandardCopyOption}
 
 /**
  * Contains methods producing pipelines for different tasks, indicated by their name
@@ -27,6 +27,7 @@ object TasksPipelines {
 
   def compiler(
                 outputDirectoryPath: Path,
+                stdLibRootPath: Path,
                 irDirectoryPathOpt: Option[Path],
                 ihm: IntHandlingMode[?],
                 counterExBoxOpt: Option[CounterexampleBox],
@@ -36,6 +37,7 @@ object TasksPipelines {
     val closuresNamer = new ClosuresNamer
     typeCheckerImpl(ihm, er, counterExBoxOpt, closuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, er))
+      .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath))
   }
 
   def typeChecker(
@@ -90,6 +92,19 @@ object TasksPipelines {
   private def defaultExit(exitCode: ExitCode): Nothing = {
     System.exit(exitCode)
     throw new AssertionError("cannot happen")
+  }
+
+  private final class CopyAdditionalClasses(outputDirectoryPath: Path, additionalClassesPath: Path) extends CompilerStep[List[String], List[String]] {
+    override def apply(input: List[String]): List[String] = {
+      Files.walk(additionalClassesPath)
+        .filter(p => p.toFile.isFile && p.toString.endsWith(".class"))
+        .forEach { srcPath =>
+          val relPath = additionalClassesPath.relativize(srcPath)
+          val dstPath = outputDirectoryPath.resolve(relPath)
+          Files.copy(srcPath, dstPath, StandardCopyOption.REPLACE_EXISTING)
+        }
+      input
+    }
   }
 
   private final class MaybePrintIRcorne[T](

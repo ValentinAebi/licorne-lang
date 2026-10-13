@@ -1,0 +1,14 @@
+package licorne.io;
+
+// replaced with the Java implementation by the compiler
+object FilePrimitives {
+
+    fn readAllLines(path: String) -> Array[String] {
+        panic "implemented in Java"
+    }
+
+    fn writeFile(path: String, content: String) -> Int {
+        panic "implemented in Java"
+    }
+
+}

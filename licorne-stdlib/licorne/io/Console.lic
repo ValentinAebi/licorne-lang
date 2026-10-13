@@ -1,6 +1,6 @@
 package licorne.io;
 
-object Console : InStream, OutStream {
+object Console {
 
     fn print(o: Any?) {
         panic "compiler stub"
@@ -13,10 +13,6 @@ object Console : InStream, OutStream {
     fn println(o: Any?) {
         print(o);
         println();
-    }
-
-    fn write(s: String) {
-        print(s)
     }
 
     fn readLine() -> String {

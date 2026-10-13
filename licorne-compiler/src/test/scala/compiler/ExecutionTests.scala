@@ -58,7 +58,7 @@ class ExecutionTests(programDirName: String) {
 
     val mainClasses = try {
       TasksPipelines
-        .compiler(testOutSubdirPath, Some(testOutSubdirPath), ArithIntMode, None, None, er)
+        .compiler(testOutSubdirPath, TestDirectories.stdLibRootPath, Some(testOutSubdirPath), ArithIntMode, None, None, er)
         .apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {
       case e: Throwable =>

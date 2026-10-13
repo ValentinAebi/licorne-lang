@@ -138,8 +138,8 @@ object Main {
     Paths.get(getValuedArg("out-dir", argsMap, Some(defaultClassOutDir)))
   }
 
-  private def getLicorneRootDirArg(argsMap: MutArgsMap): Path = {
-    Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome()))
+  private def getLicorneStdLibRootDirArg(argsMap: MutArgsMap): Path = {
+    Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome()), "licorne-stdlib")
   }
 
   private def getIRDirArg(argsMap: MutArgsMap): Option[Path] = {
@@ -200,9 +200,10 @@ object Main {
       val isDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val stdLibSources = collectStdLib(argsMap)
+      val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
+      val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, isDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, isDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources ++ stdLibSources)
@@ -228,9 +229,10 @@ object Main {
       val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val stdLibSources = collectStdLib(argsMap)
+      val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
+      val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       compiler.apply(sources ++ stdLibSources)
     }
@@ -244,7 +246,8 @@ object Main {
       val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
-      val stdLibSources = collectStdLib(argsMap)
+      val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
+      val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
       val typeChecker = TasksPipelines.typeChecker(irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
@@ -253,9 +256,8 @@ object Main {
     }
   }
   
-  private def collectStdLib(argsMap: MutArgsMap): List[SourceCodeProvider] = {
-    val licorneRoot = getLicorneRootDirArg(argsMap)
-    Files.walk(licorneRoot.resolve("licorne-stdlib"))
+  private def collectStdLib(stdLibRoot: Path): List[SourceCodeProvider] = {
+    Files.walk(stdLibRoot)
       .map(_.toAbsolutePath.toString)
       .filter(_.endsWith(dot(_.licorne)))
       .map(SourceFile(_, isStdLib = true))

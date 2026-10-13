@@ -1,9 +1,0 @@
-package licorne.io;
-
-class FileWriter(path: String) : OutStream {
-
-    fn write(s: String) {
-        panic "compiler stub"
-    }
-
-}
