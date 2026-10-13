@@ -13,7 +13,7 @@ object StdLibFunctions {
 
   private val intrinsics = Map(
     (consoleTypeId, consolePrintFunId) -> generateConsolePrint,
-    (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadlLine
+    (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadLine
     // TODO FileWriter::write
   )
 
@@ -69,7 +69,7 @@ object StdLibFunctions {
     cb.return_()
   })
 
-  private def generateConsoleReadlLine(mb: MethodBuilder): Unit = mb.withCode(cb => {
+  private def generateConsoleReadLine(mb: MethodBuilder): Unit = mb.withCode(cb => {
     val systemDesc = ClassDesc.of("java.lang.System")
     val javaConsoleDesc = ClassDesc.of("java.io.Console")
     cb.invokestatic(systemDesc, "console", MethodTypeDesc.of(javaConsoleDesc))
