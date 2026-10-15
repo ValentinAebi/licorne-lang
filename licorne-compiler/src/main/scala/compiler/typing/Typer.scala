@@ -1612,7 +1612,7 @@ final class Typer(
         case superTDealiased =>
           er.reportError(s"$superTDealiased cannot be a supertype of ${sig.id}", sig.declPosOpt)
       }
-      if (superTInst.typeName == StdLib.indexedTypeId && sig.sigName != StdLib.arrayTypeId && sig.id != StdLib.stringTypeId && sig.sigName != StdLib.indexableTypeId) {
+      if (superTInst.typeName == StdLib.indexedTypeId && sig.sigName != StdLib.arrayTypeId && sig.sigName != StdLib.indexableTypeId) {
         er.reportError(s"implementation restriction: extending ${StdLib.indexedTypeId} is not allowed, use ${StdLib.indexableTypeId} instead", sig.declPosOpt)
       }
       superTInst

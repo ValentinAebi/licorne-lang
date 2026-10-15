@@ -39,6 +39,7 @@ object StdLib {
   // licorne.core.String
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
   val stringType: NamedType = NamedType(StdLib.stringTypeId, List.empty, List.empty)
+  val stringLengthFunId: FunOrVarId = NormalFunOrVarId("length")
   val stringIsEmptyFunId: FunOrVarId = NormalFunOrVarId("isEmpty")
   val stringConcatFunId: FunOrVarId = NormalFunOrVarId("concat")
   val stringStartsWithFunId: FunOrVarId = NormalFunOrVarId("startsWith")

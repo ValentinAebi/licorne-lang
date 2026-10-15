@@ -5,11 +5,13 @@ package licorne.core;
 typealias StringL(len: Cnt) = String with it.size() == len
 typealias StringLMin(minLen: Cnt) = String with it.size() >= minLen
 
-class String : Indexed {
+class String : Indexable {
 
-    pure fn size() -> Cnt {
+    pure fn length() -> Cnt {
         panic "compiler stub"
     }
+
+    pure fn size() -> Cnt = length()
 
     pure fn isEmpty() -> Bool {
         panic "compiler stub"
@@ -100,9 +102,7 @@ class String : Indexed {
         };
         return parts;
     }
-
-    // TODO maybe add split (but it uses regexes, maybe it can be implemented in Licorne directly)
-
+    
     private pure fn javaIndexOf(s: String) -> [-1 ..< size()] {
         panic "compiler stub"
     }
