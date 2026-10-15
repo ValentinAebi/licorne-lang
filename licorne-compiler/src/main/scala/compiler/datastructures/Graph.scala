@@ -1,11 +1,14 @@
 package compiler.datastructures
 
+import compiler.util.{SeqSet, mapVals}
+
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.collection.immutable.SeqMap
 import scala.reflect.ClassTag
 import scala.util.boundary
 
-final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
+final class Graph[N] private(verticesToAdjSets: SeqMap[N, SeqSet[N]]) {
 
   def adjSetOf(n: N): Set[N] = verticesToAdjSets.getOrElse(n, Set.empty)
 
@@ -312,14 +315,14 @@ final class Graph[N] private(verticesToAdjSets: Map[N, Set[N]]) {
 
 object Graph {
   
-  def empty[T]: Graph[T] = new Graph[T](Map.empty)
+  def empty[T]: Graph[T] = new Graph[T](SeqMap.empty)
 
   final class Builder[N] {
-    private val adjSets = mutable.Map.empty[N, mutable.Set[N]]
+    private val adjSets = mutable.Map.empty[N, mutable.LinkedHashSet[N]]
 
     def addVertex(n: N): this.type = {
       if (!adjSets.contains(n)) {
-        adjSets(n) = mutable.Set.empty
+        adjSets(n) = mutable.LinkedHashSet.empty
       }
       this
     }
@@ -341,11 +344,11 @@ object Graph {
     }
 
     def build(): Graph[N] = {
-      val adjSetsB = Map.newBuilder[N, Set[N]]
+      val adjSetsB = SeqMap.newBuilder[N, Set[N]]
       for ((n, as) <- adjSets) {
         adjSetsB.addOne(n -> as.toSet)
       }
-      Graph(adjSetsB.result())
+      Graph(adjSetsB.result().mapVals(SeqSet(_)))
     }
 
   }
