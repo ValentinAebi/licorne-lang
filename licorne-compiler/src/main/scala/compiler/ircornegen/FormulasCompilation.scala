@@ -38,6 +38,10 @@ object FormulasCompilation {
         save(AssignBoolConst(res, value))
       }
 
+      case Formulas.CharConst(value) => withIntermediateValue { res =>
+        save(AssignCharConst(res, value))
+      }
+
       case Formulas.StringConst(value) => withIntermediateValue { res =>
         save(AssignStringConst(res, value))
       }

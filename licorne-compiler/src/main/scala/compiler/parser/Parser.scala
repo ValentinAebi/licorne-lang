@@ -169,10 +169,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   } setName "recordDef"
 
   private lazy val typeAliasDef: P[TypeAliasDef] = {
-    kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
+    opt(kw(Opaque)) ::: kw(Typealias).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
       ::: opt(openParenth ::: repeatWithSep(typeAliasParam, comma) ::: closeParenth)
       ::: assig ::: typeTree map {
-      case typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs, TypeVisibility.Public)
+      case opaqueOpt ^: typeName ^: typeParams ^: paramsOpt ^: rhs => TypeAliasDef(typeName, typeParams, paramsOpt.getOrElse(List.empty), rhs, TypeVisibility.Public, isOpaque = opaqueOpt.isDefined)
     }
   } setName "typeAliasDef"
 

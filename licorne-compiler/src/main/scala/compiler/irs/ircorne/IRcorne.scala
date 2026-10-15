@@ -145,7 +145,7 @@ object IRcorne {
 
   sealed trait ControlFlowInstr extends RealInstr
 
-  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, variables: List[LoopVarData]) extends ControlFlowInstr {
+  final case class Loop(cond: Scope, condVal: IdValue, body: Scope, var variables: List[LoopVarData]) extends ControlFlowInstr {
     override def consumedVals: List[IdValue] = condVal :: variables.flatMap(vd => List(vd.beforeLoopVal, vd.bodyLastVal))
 
     override def producedVals: List[IdValue] = variables.map(_.inCondVal)
@@ -197,6 +197,8 @@ object IRcorne {
   final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
   final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
+  
+  final case class AssignCharConst(assigned: IdValue, src: Char) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
   final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 

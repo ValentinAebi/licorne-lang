@@ -53,7 +53,7 @@ trait Solver {
   
   def intMax(formulas: Iterable[Formula]): Option[Formula]
 
-  def discardNonMax(formulas: Iterable[Formula]): Iterable[Formula]
+  def discardNonMaxs(formulas: Iterable[Formula]): Iterable[Formula]
 
   def assert(formula: Formula): Unit
 

@@ -1,0 +1,15 @@
+
+object Main {
+
+    fn main() {
+        val s = "This is an 5-words sentence";
+        val words = s.split(' ');
+        for (var i = 0; i < words.size(); i += 1) {
+            val word = words.get(i);
+            if !word.contains("a") && word.size() <= 7 {
+                println(word);
+            }
+        }
+    }
+
+}

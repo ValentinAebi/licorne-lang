@@ -28,6 +28,7 @@ trait TypesConverter {
   def descriptorFor(tpe: Type)(using tpCtx: TypeParamsContext): ClassDesc =
     getRuntimeType(tpe)(using tpCtx, dealiasingCtx) match {
       case tpe: PrimitiveType => descriptorForPrimitive(tpe)
+      case StdLib.charType => charDesc
       case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>
         boxingConverter.descriptorFor(elemType).arrayType()
       case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
@@ -52,7 +53,6 @@ trait TypesConverter {
   def descriptorForPrimitive(tpe: PrimitiveType): ClassDesc = tpe match {
     case IntType => intDesc
     case DoubleType => doubleDesc
-    case CharType => charDesc
     case BoolType => boolDesc
     case NullType => CD_Object
     case AnyType => CD_Object
@@ -69,7 +69,7 @@ trait TypesConverter {
   def kindFor(tpe: Type)(using tpCtx: TypeParamsContext): TypeKind = getRuntimeType(tpe)(using tpCtx, dealiasingCtx) match {
     case IntType => INT
     case DoubleType => DOUBLE
-    case CharType => CHAR
+    case StdLib.charType => CHAR
     case BoolType => BOOLEAN
     case NullType => REFERENCE
     case AnyType => REFERENCE

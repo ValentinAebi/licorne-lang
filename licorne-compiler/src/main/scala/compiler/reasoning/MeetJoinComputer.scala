@@ -317,7 +317,7 @@ final class MeetJoinComputer(
   }
 
   def computeMeetOfRanges(types: Iterable[IntRangeType])(using TypeParamsContext): Type = {
-    val lowerBounds = solver.discardNonMax(types.flatMap(_.lowerBoundOpt))
+    val lowerBounds = solver.discardNonMaxs(types.flatMap(_.lowerBoundOpt))
     val upperBounds = solver.discardNonMins(types.flatMap(_.upperBoundOpt))
     val minMaxTypes = rangesFromBounds(lowerBounds, upperBounds)
     val rawMeet = IntersectionType(minMaxTypes)

@@ -111,6 +111,8 @@ object Formulas {
   final case class IntConst(value: Int) extends ConstFormula, NumericFormula
 
   final case class BoolConst(value: Boolean) extends ConstFormula, LogicFormula
+  
+  final case class CharConst(value: Char) extends ConstFormula
 
   final case class StringConst(value: String) extends ConstFormula
 
@@ -339,7 +341,16 @@ object Formulas {
         tSig.fields.get(func.funId).map(_.value).getOrElse(funCall)
     }
 
-  extension (subject: Formula) def typeCanMention(dep: Formula): Boolean =
-    !subject.isInstanceOf[ConstFormula] && subject.idValsDependencies.forall(_.typeCanMention(dep))
+  extension (formula: Formula) def typeCanMention(dep: Formula): Boolean =
+    !formula.isInstanceOf[ConstFormula] && formula.idValsDependencies.forall(_.typeCanMention(dep))
+    
+  extension (f: Formula) def flattenPhis: List[Formula] = f match {
+    case Phi(terms) =>
+      terms.toList.flatMap {
+        case Phi(terms) => terms.flatMap(_.flattenPhis)
+        case term => List(term)
+      }
+    case f => List(f)
+  }
 
 }

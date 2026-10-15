@@ -59,7 +59,10 @@ final class IRcornePrinter(
 
   private def printTypeAlias(typealiasSig: TypeAliasSignature)
                             (using pps: PrettyPrintString, program: Program): Unit = {
-    val TypeAliasSignature(id, typeParams, params, rhs, visibility, sigScope, declPosOpt) = typealiasSig
+    val TypeAliasSignature(id, typeParams, params, rhs, visibility, isOpaque, sigScope, declPosOpt) = typealiasSig
+    if (isOpaque) {
+      pps.add("OPAQUE ")
+    }
     pps.add(s"TYPEALIAS ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkTypeAliasParamsDescr(params))
@@ -245,6 +248,8 @@ final class IRcornePrinter(
         pps.add(s"INTC ${maybeTyped(assigned, scope)} := $src")
       case AssignBoolConst(assigned, src) =>
         pps.add(s"BOOLC ${maybeTyped(assigned, scope)} := $src")
+      case AssignCharConst(assigned, src) =>
+        pps.add(s"CHARC ${maybeTyped(assigned, scope)} := $src")
       case AssignStringConst(assigned, src) =>
         pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"$src\"")
       case NumNeg(assigned, operand) =>

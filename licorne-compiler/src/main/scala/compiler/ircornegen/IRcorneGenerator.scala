@@ -229,7 +229,7 @@ final class IRcorneGenerator(
               datatypeSubtypes.getOrElseUpdate(superTId, mutable.LinkedHashSet.empty).addOne(typeId)
             }
 
-          case df@Asts.TypeAliasDef(_, typeParamTrees, paramTrees, rhsTrees, visibility) =>
+          case df@Asts.TypeAliasDef(_, typeParamTrees, paramTrees, rhsTrees, visibility, isOpaque) =>
 
             given ImportsContext = createImportsCtx(src, None)
 
@@ -249,7 +249,7 @@ final class IRcorneGenerator(
                 typeAliasSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramValue, typeAliasSigScope, ReassigPermission.Val, Some(paramType))
             }
             val sig = TypeAliasSignature(typeId, typeParams, SeqMap.from(typeAliasParams),
-              mkType(rhsTrees, typeAliasSigScope)(using Map.empty), visibility, typeAliasSigScope, df.getPosition)
+              mkType(rhsTrees, typeAliasSigScope)(using Map.empty), visibility, isOpaque, typeAliasSigScope, df.getPosition)
             programBuilder.saveSignature(sig, df.getPosition)
         }
       }
@@ -817,7 +817,7 @@ final class IRcorneGenerator(
             varData.recurrenceOpt = for {
               init <- proxyStore.developDeepIgnoreAccessors(beforeLoopVal)
               induct <- proxyStore.developDeepIgnoreAccessors(bodyLastLocalVal, acceptPhis = true)
-            } yield Recurrence(init, induct, condVal)
+            } yield Recurrence.computeFrom(init, induct, condVal)
             bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
             proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
@@ -926,7 +926,9 @@ final class IRcorneGenerator(
         currScope.saveInstr(AssignIntConst(resultVal, value), expr)
         Some(IntConst(value))
       case Asts.DoubleLit(value) => ???
-      case Asts.CharLit(value) => ???
+      case Asts.CharLit(value) =>
+        currScope.saveInstr(AssignCharConst(resultVal, value), expr)
+        Some(CharConst(value))
       case Asts.BoolLit(value) =>
         currScope.saveInstr(AssignBoolConst(resultVal, value), expr)
         Some(BoolConst(value))
@@ -1192,7 +1194,7 @@ final class IRcorneGenerator(
         case Asts.IntLit(value) => Some(IntConst(value))
         case Asts.DoubleLit(value) => ???
         case Asts.UnitLit() => failIllegalConstruct("unit literal")
-        case Asts.CharLit(value) => ???
+        case Asts.CharLit(value) => Some(CharConst(value))
         case Asts.BoolLit(value) => Some(BoolConst(value))
         case Asts.StringLit(value) => Some(StringConst(value))
         case Asts.NullRef() => Some(currScope.valuesCtx.globalCtx.nullVal)

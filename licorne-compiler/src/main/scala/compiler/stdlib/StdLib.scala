@@ -25,14 +25,16 @@ object StdLib {
   val licorneCorePkgPrefix: List[String] = licornePkgPrefix :+ "core"
   val indexedTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Indexed")
   val indexableTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Indexable")
+  val getFunId: FunOrVarId = NormalFunOrVarId("get")
   val sizeFunId: FunOrVarId = NormalFunOrVarId("size")
   val arrayTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Array")
-  val arrayGetFunId: FunOrVarId = NormalFunOrVarId("get")
   val arraySetFunId: FunOrVarId = NormalFunOrVarId("set")
   val arraySizeFunId: FunOrVarId = NormalFunOrVarId("size")
   val countTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Cnt")
   val indexTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Idx")
   val nonZeroIntTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "NonZeroInt")
+  val charTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Char")
+  val charType: NamedType = NamedType(charTypeId, List.empty, List.empty)
 
   // licorne.core.String
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
@@ -47,6 +49,7 @@ object StdLib {
   val stringSubstringFunId: FunOrVarId = NormalFunOrVarId("substring")
   val stringToUpperCaseFunId: FunOrVarId = NormalFunOrVarId("toUpperCase")
   val stringToLowerCaseFunId: FunOrVarId = NormalFunOrVarId("toLowerCase")
+  val stringCharAtFunId: FunOrVarId = NormalFunOrVarId("charAt")
   val stringJavaIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaIndexOf")
   val stringJavaLastIndexOfFunId: FunOrVarId = NormalFunOrVarId("javaLastIndexOf")
   

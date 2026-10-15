@@ -1,5 +1,6 @@
 package compiler.typing
 
+import compiler.datastructures.Graph
 import compiler.ircornegen.FormulasCompilation.convertFormulaToIR
 import compiler.identifiers.*
 import compiler.irs.ircorne.*
@@ -15,7 +16,6 @@ import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reasoning.*
 import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula}
-import compiler.reasoning.Recurrence.Monotonicity.*
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
@@ -25,7 +25,7 @@ import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolRe
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{BidirectionalIterator, SeqSet, findUnique, mapVals}
-import compiler.valproxies.{BoundMode, BranchingInfo, ProxyStore}
+import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 
@@ -140,49 +140,41 @@ final class Typer(
 
     instr match {
 
-      case loop@Loop(condScope, condVal, bodyScope, loopUpdatedVars) =>
+      case loop@Loop(condScope, condVal, bodyScope, unsortedLoopVars) =>
+        val sortedLoopVars = sortLoopVarsAccordingToDependencies(unsortedLoopVars)
+        loop.variables = sortedLoopVars
         val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-        for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- loopUpdatedVars) {
+        val feedbackTypeAssumptions = mutable.Map.from(sortedLoopVars.map(lvd => lvd.beforeLoopVal -> bodyScope.getCurrentTypeOf(lvd.beforeLoopVal)))
+        for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           (for {
             recurrence <- varData.recurrenceOpt
-            monotonicity <- Some(recurrence.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, currScope)).filter(_ != NonMonotonous)
+            if subtypingCtx.isSubtype(currScope.getCurrentTypeOf(beforeLoopVal), IntType)
+            (monotonicityLowerBounds, monotonicityUpperBounds) <- recurrence.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
           } yield {
-            val boundMode = if monotonicity == NonDecreasing then BoundMode.Upper else BoundMode.Lower
-            val inferredBound = infoIfCondTrueFirstGuess.boundFor(inCondVal, boundMode, solver)
-            val preIterationBoundOpt = proxyStore.developDeep(beforeLoopVal)
-            val inferredInBodyType = typeSimplifier.simplifyType(
-              monotonicity match {
-                case Constant => preIterationBoundOpt.map(IntRangeType.singleton).getOrElse(IntType)
-                case NonDecreasing => IntRangeType(preIterationBoundOpt, inferredBound)
-                case NonIncreasing => IntRangeType(inferredBound, preIterationBoundOpt)
-                case NonMonotonous => IntType
-              }
-            )
+
+            def boundsToRange(lbs: Iterable[Formula], ubs: Iterable[Formula]): IntRangeType = {
+              val lowerBounds = solver.discardNonMins(lbs)
+              val upperBounds = solver.discardNonMaxs(ubs)
+              val lb = Option.when(lowerBounds.size == 1)(lowerBounds.head)
+              val ub = Option.when(upperBounds.size == 1)(upperBounds.head)
+              IntRangeType(lb, ub)
+            }
+
+            val (smartcastLowerBounds, smartcastUpperBounds) = infoIfCondTrueFirstGuess.boundsFor(inCondVal, solver)
+            val inferredInBodyType = boundsToRange(monotonicityLowerBounds ++ smartcastLowerBounds, monotonicityUpperBounds ++ smartcastUpperBounds)
             val inBodyType = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt match {
               case Some(LocalDecl(_, tpe)) => typeSimplifier.simplifyType(IntersectionType(tpe, inferredInBodyType))
               case None => inferredInBodyType
             }
+            feedbackTypeAssumptions(inCondVal) = inBodyType
             val feedbackType =
-              absInt.interpretUnderAssumptions(recurrence.induct, Map(recurrence.inductVal -> inBodyType), None)(using currScope.getLocalValuesContextUnsafe.globalCtx).getOrElse {
-                preIterationBoundOpt match {
-                  case Some(preIterationBound) =>
-                    typeSimplifier.simplifyType(
-                      monotonicity match {
-                        case Constant => IntRangeType.singleton(preIterationBound)
-                        case NonDecreasing => IntRangeType.ofLowerBound(preIterationBound)
-                        case NonIncreasing => IntRangeType.ofUpperBound(preIterationBound)
-                        case NonMonotonous => IntType
-                      }
-                    )
-                  case None => IntType
-                }
-              }
+              absInt.interpretUnderAssumptions(recurrence.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
+                .getOrElse(boundsToRange(smartcastLowerBounds, smartcastUpperBounds))
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
             varDefScope.saveType(inCondVal, inCondType) // after loop
             condScope.saveSmartcast(inCondVal, inCondType) // inside condition
             bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
           }) orElse {
-            // TODO lookup proxy of bodyLastVal to see if we can infer its type (maybe this can be unified with the "next step" interpretation in the previous case)
             val tpe =
               currScope.getLocalValuesContextUnsafe
                 .valueOf(varId)
@@ -202,9 +194,7 @@ final class Typer(
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(bodyScope, infoIfCondTrue)
         var checkTermination = true
-        for {
-          varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars
-        } {
+        for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           val typeAtEndOfBody = bodyScope.detectCurrentType(bodyLastVal)
           val typeInCond = condScope.detectCurrentType(condVal)
           lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
@@ -289,6 +279,10 @@ final class Typer(
       case AssignBoolConst(assigned, src) =>
         currScope.saveType(assigned, BoolType)
         saveEquality(assigned, BoolConst(src))
+
+      case AssignCharConst(assigned, src) =>
+        currScope.saveType(assigned, StdLib.charType)
+        saveEquality(assigned, CharConst(src))
 
       case AssignStringConst(assigned, src) =>
         currScope.saveType(assigned, applyCandidateIfTernary(assigned, mkTypeForStringLit(src)))
@@ -593,7 +587,7 @@ final class Typer(
           .substitute(typesSubst, fieldsInitArgsSubst)
         (expType, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
           case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
-            absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType)).toMap, None) match {
+            absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType(_))).toMap, None) match {
               case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
                 resultTV.resolve(absIntResult)
               case _ => ()
@@ -673,6 +667,7 @@ final class Typer(
         case value: IdValue => currScope.computeCurrentType(value, posOpt)
         case IntConst(value) => IntType
         case BoolConst(value) => BoolType
+        case CharConst(value) => StdLib.charType
         case StringConst(value) => mkTypeForStringLit(value)
         case sel@Select(owner, field) if field.isResolved =>
           field.getInstantiatedTypeUnsafe
@@ -768,6 +763,21 @@ final class Typer(
         case _ => None
       }
     case _ => None
+  }
+
+  private def sortLoopVarsAccordingToDependencies(vars: List[LoopVarData]): List[LoopVarData] = {
+    val gb = Graph.Builder[IdValue]()
+    val backB = Map.newBuilder[IdValue, LoopVarData]
+    for (loopVar@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- vars) {
+      backB.addOne(inCondVal, loopVar)
+      gb.addVertex(inCondVal)
+      loopVar.recurrenceOpt.foreach { case Recurrence(bases, induct, inductVal) =>
+        assert(inductVal == inCondVal)
+        gb.addDescendants(inductVal, induct.idValsDependencies)
+      }
+    }
+    val back = backB.result()
+    gb.build().topologicalSort().distinct.flatMap(back.get).reverse
   }
 
   private def assignTarget(assigned: IdValue, currScope: Scope)
@@ -890,20 +900,8 @@ final class Typer(
         enforcePurity(predicate, "predicate", posOpt)
         RefinedType(baseTypeInst, predicate)
       case tpe@IntRangeType(lbOpt, ubOpt) =>
-        lbOpt.foreach { lb =>
-          val lbType = typeFormula(lb, currScope, posOpt)
-          if (!subtypingCtx.isSubtype(lbType, IntType)) {
-            er.reportError(s"lower bound of $tpe should be an integer", posOpt)
-          }
-          enforcePurity(lb, s"range type bound", posOpt)
-        }
-        ubOpt.foreach { ub =>
-          val rbType = typeFormula(ub, currScope, posOpt)
-          if (!subtypingCtx.isSubtype(rbType, IntType)) {
-            er.reportError(s"upper bound of $tpe should be an integer", posOpt)
-          }
-          enforcePurity(ub, "range type bound", posOpt)
-        }
+        lbOpt.foreach(checkIntRangeBound(_, "lower", currScope, posOpt))
+        ubOpt.foreach(checkIntRangeBound(_, "upper", currScope, posOpt))
         tpe
       case tpe@NullableType(nullatedTypeRaw) =>
         val nullatedTypeInst = instantiateType(nullatedTypeRaw, ambientVarianceOpt, currScope, posOpt)
@@ -914,6 +912,14 @@ final class Typer(
         }
         NullableType(nullatedTypeInst)
     }
+  }
+
+  private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
+    val tpe = typeFormula(bound, currScope, posOpt)
+    if (!subtypingCtx.isSubtype(tpe, IntType)) {
+      er.reportError(s"$upperOrLower bound of range has type $tpe, however only integers and chars can be used as bounds for a '[ .. ]' range", posOpt)
+    }
+    enforcePurity(bound, s"range type bound", posOpt)
   }
 
   private def deduceAssumptionFromTernaryType(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
@@ -1080,7 +1086,7 @@ final class Typer(
   }
 
   def typeTypeAliasSig(typealiasSig: TypeAliasSignature): TypeAliasSignature = {
-    val TypeAliasSignature(id, typeParamsRaw, paramsRaw, rhsRaw, visibility, sigScope, declPosOpt) = typealiasSig
+    val TypeAliasSignature(id, typeParamsRaw, paramsRaw, rhsRaw, visibility, isOpaque, sigScope, declPosOpt) = typealiasSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
@@ -1098,7 +1104,7 @@ final class Typer(
       case _ => ()
     }
     checkingAllTypeVarsResolved {
-      TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, visibility, sigScope, declPosOpt)
+      TypeAliasSignature(id, typeParamsInst, paramsInst, rhsInst, visibility, isOpaque, sigScope, declPosOpt)
     }
   }
 

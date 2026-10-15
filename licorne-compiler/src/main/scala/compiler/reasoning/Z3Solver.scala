@@ -128,7 +128,7 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
 
   def intMax(formulas: Iterable[Formula]): Option[Formula] = findMinOrMax(formulas, intMax)
 
-  override def discardNonMax(formulas: Iterable[Formula]): Iterable[Formula] = {
+  override def discardNonMaxs(formulas: Iterable[Formula]): Iterable[Formula] = {
     var wipFormula = formulas.filterNot(cand => formulas.exists(canProveLt(cand, _)))
     var continue = true
     while (continue) {

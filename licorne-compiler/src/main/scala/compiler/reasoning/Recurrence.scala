@@ -1,62 +1,62 @@
 package compiler.reasoning
 
-import compiler.irs.ircorne.Formulas.{Formula, IdValue}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue, Phi}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.reasoning.Solver
-import Recurrence.Monotonicity
-import Recurrence.Monotonicity.*
+import compiler.irs.ircorne.Formulas
 import compiler.typing.Typer
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 
 
-final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) {
-  private var monotonicityOpt: Option[Monotonicity] = None
+final case class Recurrence private(bases: SeqSet[Formula], induct: Formula, inductVal: IdValue) {
+  private var boundsOpt: Option[Option[(Iterable[Formula], Iterable[Formula])]] = None
 
-  def computeMonotonicity(typer: Typer, solver: Solver, scope: Scope)(using TypeParamsContext, ResolutionContext, ProxyStore): Monotonicity = monotonicityOpt match {
-    case Some(monotonicity) => monotonicity
+  def computeMonotonicity(typer: Typer, solver: Solver, body: Scope)
+                         (using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Option[(Iterable[Formula], Iterable[Formula])] = boundsOpt match {
+    case Some(bounds) => bounds
     case None =>
-      val nonIncreasing = isProvablyNonIncreasing(typer, solver, scope)
-      val nonDecreasing = isProvablyNonDecreasing(typer, solver, scope)
-      val monotonicity =
-        if nonIncreasing && nonDecreasing then Constant
-        else if nonDecreasing then NonDecreasing
-        else if nonIncreasing then NonIncreasing
-        else NonMonotonous
-      monotonicityOpt = Some(monotonicity)
-      monotonicity
+      val expandedBases = bases.map(b => proxyStore.developDeep(b).getOrElse(b))
+      val nonDecreasing = inductIsProvablyNonDecreasing(typer, solver, body)
+      val nonIncreasing = inductIsProvablyNonIncreasing(typer, solver, body)
+      val mins = if nonDecreasing then solver.discardNonMins(expandedBases) else List.empty
+      val maxs = if nonIncreasing then solver.discardNonMaxs(expandedBases) else List.empty
+      val bounds = Option.when(nonIncreasing || nonDecreasing)(mins, maxs)
+      boundsOpt = Some(bounds)
+      bounds
   }
 
-  private def isProvablyNonDecreasing(typer: Typer, solver: Solver, scope: Scope)
+  private def inductIsProvablyNonDecreasing(typer: Typer, solver: Solver, body: Scope)
                                      (using TypeParamsContext, ResolutionContext, ProxyStore): Boolean =
     solver.checkSat() && solver.onNewFrame {
       solver.acceptingPhisForInts {
-        typeAllSubformulas(induct, typer, scope)
-        solver.assertLt(induct, inductVal)
+        solver.assertLt(expandedAndTyped(induct, typer, body), inductVal)
         solver.checkUnsat()
       }
     }
 
-  private def isProvablyNonIncreasing(typer: Typer, solver: Solver, scope: Scope)
+  private def inductIsProvablyNonIncreasing(typer: Typer, solver: Solver, body: Scope)
                                      (using TypeParamsContext, ResolutionContext, ProxyStore): Boolean =
     solver.checkSat() && solver.onNewFrame {
       solver.acceptingPhisForInts {
-        typeAllSubformulas(induct, typer, scope)
-        solver.assertLt(inductVal, induct)
+        solver.assertLt(inductVal, expandedAndTyped(induct, typer, body))
         solver.checkUnsat()
       }
     }
 
-  private def typeAllSubformulas(formula: Formula, typer: Typer, scope: Scope)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore) = {
-    typer.typeFormula(proxyStore.developDeep(formula, acceptPhis = true).getOrElse(formula), scope, None, suspendReporting = true)
+  private def expandedAndTyped(formula: Formula, typer: Typer, body: Scope)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Formula = {
+    val expanded = proxyStore.developDeep(formula, acceptPhis = true).getOrElse(formula)
+    typer.typeFormula(expanded, body, None, suspendReporting = true)
+    expanded
   }
 
   override def toString: String = {
-    val baseStr = s"[init = $init, induct($inductVal) = $induct]"
-    monotonicityOpt match {
-      case Some(monotonicity) =>
-        s"$baseStr ($monotonicity)"
-      case None => baseStr
+    val invariantDescr = s"[bases = ${bases.mkString(",")}, induct($inductVal) = $induct]"
+    boundsOpt match {
+      case Some(Some(lowerBounds, upperBounds)) =>
+        s"$invariantDescr (lower: ${lowerBounds.mkString(",")} ; upper: ${upperBounds.mkString(",")})"
+      case _ => invariantDescr
     }
   }
 
@@ -64,8 +64,12 @@ final case class Recurrence(init: Formula, induct: Formula, inductVal: IdValue) 
 
 object Recurrence {
 
-  enum Monotonicity {
-    case Constant, NonDecreasing, NonIncreasing, NonMonotonous
+  def computeFrom(init: Formula, induct: Formula, inductVal: IdValue): Recurrence = {
+    val (inducts, otherInits) = induct.flattenPhis.partition(_.idValsDependencies.contains(inductVal))
+    Recurrence(SeqSet(init :: otherInits).filter(_ != inductVal), inducts.filter(_ != inductVal) match {
+      case List(singleInduct) => singleInduct
+      case inducts => Phi(inducts)
+    }, inductVal)
   }
 
 }

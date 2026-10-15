@@ -159,6 +159,7 @@ final case class TypeAliasSignature(
                                      params: SeqMap[FunOrVarId, (Type, IdValue)],
                                      rhs: Type,
                                      visibility: TypeVisibility,
+                                     isOpaque: Boolean,
                                      sigScope: Scope,
                                      declPosOpt: Option[Position]
                                    ) extends TypeSignature {

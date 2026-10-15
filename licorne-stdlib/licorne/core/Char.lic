@@ -1,0 +1,7 @@
+package licorne.core;
+
+opaque typealias Char = [0 .. 65535]
+
+typealias UpperCase = ['A' .. 'Z']
+typealias LowerCase = ['a' .. 'z']
+typealias Digit = ['0' .. '9']

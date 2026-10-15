@@ -43,7 +43,6 @@ object Types {
   enum PrimitiveType(val str: String) extends NominalType {
     case IntType extends PrimitiveType("Int")
     case DoubleType extends PrimitiveType("Double")
-    case CharType extends PrimitiveType("Char")
     case BoolType extends PrimitiveType("Bool")
 
     case NullType extends PrimitiveType("Null")
@@ -208,13 +207,15 @@ object Types {
 
     override def toString: String = s"$baseType ${Keyword.With} $predicate"
   }
-
+  
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
     override def baseTypeAssumingNoAlias: Type = IntType
 
     override def children: List[Type] = List.empty
+    
+    def isMereInt: Boolean = lowerBoundOpt.isEmpty && upperBoundOpt.isEmpty
 
     def boundsAsPredicate(itValue: IdValue): Formula = (lowerBoundOpt, upperBoundOpt) match {
       case (Some(lb), Some(ub)) => LogicalAnd(LessOrEq(lb, itValue), LessOrEq(itValue, ub))

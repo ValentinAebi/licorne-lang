@@ -194,14 +194,14 @@ final class SubtypingContext(
       subTE != subT && isSubtype(subTE, superT) || superTE != superT && isSubtype(subT, superTE)
   }
 
-  private def dealiaseAndExpandNullables(tpe: Type): Type = dealiasingCtx.dealiasType(tpe) match {
+  private def dealiaseAndExpandNullables(tpe: Type): Type = dealiasingCtx.dealiasType(tpe, dealiasOpaque = true) match {
     case NullableType(nullatedType) => UnionType(nullatedType, NullType)
     case tpe => tpe
   }
 
   def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope)(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
     isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope)
-    
+
   def canProveEquivalence(type1: Type, type2: Type)(using TypeParamsContext): Boolean =
     isSubtype(type1, type2) && isSubtype(type2, type1)
 
@@ -210,11 +210,11 @@ final class SubtypingContext(
     val knownType = expandIfTypeParam(_.upperBoundOpt)(dealiaseAndExpandNullables(knownTypeRaw))
     val targetType = expandIfTypeParam(_.lowerBoundOpt)(dealiaseAndExpandNullables(targetTypeRaw))
     for (t <- knownType.breakdownIfIntersection) {
-      val tRefined = dealiasingCtx.dealiasType(t.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
+      val tRefined = dealiasingCtx.dealiasType(t.withTypeVarsExpanded, dealiasOpaque = true).withTypeVarsExpanded.asRefinedType
       solver.takeType(subject, tRefined)
       typer.typeFormula(tRefined.predicate, scope, None, suspendReporting = true)
     }
-    dealiasingCtx.dealiasType(targetType.withTypeVarsExpanded).withTypeVarsExpanded match {
+    dealiasingCtx.dealiasType(targetType.withTypeVarsExpanded, dealiasOpaque = true).withTypeVarsExpanded match {
       case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
         // pass the types of all subformulas of the predicate to the solver
         lowerBoundOpt.foreach { lb =>
@@ -319,7 +319,7 @@ final class SubtypingContext(
     val unstabilityCollector = mutable.LinkedHashSet.empty[Formula]
     lazy val subTDev = developTypeDepsForErrorMsg(subT.withTypeVarsExpanded, unstabilityCollector)
     lazy val superTDev = developTypeDepsForErrorMsg(superT.withTypeVarsExpanded, unstabilityCollector)
-    enforceIsSubtype(dealiasingCtx.dealiasType(subT), dealiasingCtx.dealiasType(superT), s"$posDescr: expected $superTDev, found $subTDev" ++ mkUnstabilityMsg(unstabilityCollector) ++ counterexampleMessage(), posOpt)
+    enforceIsSubtype(dealiasingCtx.dealiasType(subT, dealiasOpaque = true), dealiasingCtx.dealiasType(superT, dealiasOpaque = true), s"$posDescr: expected $superTDev, found $subTDev" ++ mkUnstabilityMsg(unstabilityCollector) ++ counterexampleMessage(), posOpt)
   }
 
   def enforceIsSubtypeExpAct(subject: Formula, subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
@@ -373,7 +373,7 @@ final class SubtypingContext(
       proxyStore.developNearest(f) == proxyStore.developNearest(f, bypassPurityChecks = true)
 
     formula.children.iterator.map(findMinimalUnstable).find(_.isDefined).flatten.orElse {
-      Option.when(!isStable(formula)){
+      Option.when(!isStable(formula)) {
         formula
       }
     }

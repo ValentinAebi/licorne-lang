@@ -17,6 +17,7 @@ trait FormulaPrinter {
     case value: NamedIdValue => printIdVal(value)
     case Formulas.IntConst(value) => value.toString
     case Formulas.BoolConst(value) => value.toString
+    case Formulas.CharConst(value) => s"'$value'"
     case Formulas.StringConst(value) => s"\"$value\""
     case Formulas.Select(owner, field) =>
       s"${prettyprint(owner)}.${field.fieldId}"

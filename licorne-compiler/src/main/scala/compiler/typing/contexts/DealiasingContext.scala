@@ -10,11 +10,11 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
 
   // TODO memoize recursive multi-step dealiasing (update the signatures in the mapping)
 
-  def dealiasType(tpe: Type): Type =
+  def dealiasType(tpe: Type, dealiasOpaque: Boolean = false): Type =
     tpe.applyRecursivelyToTypes {
       case NamedType(typeName, typeArgs, args) =>
         typeAliases.get(typeName) match {
-          case Some(TypeAliasSignature(id, typeParams, params, rhs, visibility, sigScope, declPosOpt)) =>
+          case Some(TypeAliasSignature(id, typeParams, params, rhs, visibility, isOpaque, sigScope, declPosOpt)) if !isOpaque || dealiasOpaque =>
             val typesSubst =
               typeParams.map(_.tid)
                 .zip(typeArgs)
@@ -23,7 +23,7 @@ final case class DealiasingContext(typeAliases: Map[TypeIdentifier, TypeAliasSig
               case (paramId, (paramType, paramVal)) => paramVal
             }.zip(args).toMap
             dealiasType(rhs.substitute(typesSubst, valsSubst))
-          case None => NamedType(typeName, typeArgs, args)
+          case _ => NamedType(typeName, typeArgs, args)
         }
     }
   

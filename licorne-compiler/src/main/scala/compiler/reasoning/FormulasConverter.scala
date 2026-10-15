@@ -60,6 +60,7 @@ final class FormulasConverter[IntSort <: KSort](
         }
       case IntConst(value) => Some(ihm.const(value))
       case BoolConst(value) => None
+      case CharConst(value) => Some(ihm.const(value.toInt))
       case StringConst(value) => None
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, ihm.iSort)
@@ -128,6 +129,7 @@ final class FormulasConverter[IntSort <: KSort](
         }
       case IntConst(value) => None
       case BoolConst(value) => Some(kCtx.mkBool(value))
+      case CharConst(value) => None
       case StringConst(value) => None
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, kCtx.mkBoolSort())

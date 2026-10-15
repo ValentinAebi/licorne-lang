@@ -11,7 +11,7 @@ import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne, SourceLev
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
-import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
+import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType, UnitType}
 import compiler.lang.Types.{NamedType, NullableType, TernaryType, Type, UnionType}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
@@ -447,6 +447,10 @@ final class Backend(
         cb.loadConstant(srcAsInt)
         genValueStore(assigned, currScope, cb)
 
+      case IRcorne.AssignCharConst(assigned, src) =>
+        cb.loadConstant(src)
+        genValueStore(assigned, currScope, cb)
+
       case IRcorne.AssignStringConst(assigned, src) =>
         val cstEntry = cb.constantPool().stringEntry(src)
         cb.ldc(cstEntry)
@@ -538,7 +542,7 @@ final class Backend(
         genValueStore(assigned, currScope, cb)
 
       // Array methods
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arrayGetFunId, 1)(func.getFunSigUnsafe) =>
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, getFunId, 1)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
         cb.aaload()
@@ -749,9 +753,7 @@ final class Backend(
             conversion match {
               case Int2Double => cb.i2d()
               case Double2Int => cb.d2i()
-              case IntToChar => cb.i2c()
-              case CharToInt => ()
-              case IntToString | BoolToString | CharToString | DoubleToString =>
+              case IntToString | BoolToString | DoubleToString =>
                 val fromDesc = tConv.descriptorFor(conversion.from)
                 cb.invokestatic(boxDesc(fromDesc), "toString", MethodTypeDesc.of(CD_String, fromDesc))
             }
@@ -995,6 +997,7 @@ final class Backend(
       }
       cb.invokevirtual(dstBoxedDesc, unboxingFunc(dstBoxedDesc), MethodTypeDesc.of(dstDesc))
     } else (getRuntimeType(dstType), getRuntimeType(srcType)) match {
+      case (drt, srt) if drt == srt => ()
       case (NamedType(dstTypeId, _, _), NamedType(srcTypeId, _, _)) if !simplifiedSubtypingCtx.isSubtype(srcTypeId, dstTypeId) =>
         cb.checkcast(dstDesc)
       case (NamedType(dstTypeId, _, _), _) =>

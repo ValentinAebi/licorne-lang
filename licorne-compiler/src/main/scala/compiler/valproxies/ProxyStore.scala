@@ -160,7 +160,7 @@ final class ProxyStore {
           for {
             acc <- accOpt
             d <- dev(curr, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission)
-          } yield flattenPhis(d) ++ acc
+          } yield d.flattenPhis ++ acc
         }
         flattenedTermsOpt.map(Phi(_))
       case _ => None
@@ -229,15 +229,6 @@ final class ProxyStore {
       case (curr, Some(acc)) => dev(curr, developLocals, bypassPurityChecks, acceptPhis, allowConjunctsOmission).map(_ :: acc)
       case _ => None
     }
-  }
-
-  private def flattenPhis(f: Formula): List[Formula] = f match {
-    case Phi(terms) =>
-      terms.toList.flatMap {
-        case Phi(terms) => terms.flatMap(flattenPhis)
-        case term => List(term)
-      }
-    case f => List(f)
   }
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)

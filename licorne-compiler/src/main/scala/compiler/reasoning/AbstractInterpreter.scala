@@ -6,11 +6,12 @@ import compiler.lang.Types
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
 import compiler.reasoning.AbstractInterpreter.someZero
-import compiler.reasoning.{TypeSimplifier, Solver}
+import compiler.reasoning.{Solver, TypeSimplifier}
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
+import compiler.util.asIterableOfType
 import compiler.valuesconversion.GlobalValuesContext
 
-final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, globalValsCtx: GlobalValuesContext) {
+final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, meetJoin: MeetJoinComputer, globalValsCtx: GlobalValuesContext) {
 
   //> @formatter:off
   private given TypeSimplifier = typeSimplifier
@@ -166,7 +167,7 @@ final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, 
       }
   }
 
-  def interpretUnderAssumptions(formula: Formula, typeAssumptions: Map[IdValue, Type], assignmentTargetOpt: Option[IdValue])
+  def interpretUnderAssumptions(formula: Formula, typeAssumptions: collection.Map[IdValue, Type], assignmentTargetOpt: Option[IdValue])
                                (using GlobalValuesContext, ResolutionContext, TypeParamsContext): Option[Type] = {
 
     def interpretBinop(lhs: Formula, rhs: Formula, interpretationFunc: (Type, Type) => Option[Type]) = for {
@@ -186,6 +187,9 @@ final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, 
       case Times(lhs, rhs) => interpretBinop(lhs, rhs, typeTimesType)
       case DivBy(lhs, rhs) => interpretBinop(lhs, rhs, typeDivType)
       case Modulo(lhs, rhs) => interpretBinop(lhs, rhs, typeModuloType(Some(rhs)))
+      case Phi(terms) => terms.map(interpretUnderAssumptions).asIterableOfType[Some[Type]].map { wrappedTypes =>
+        meetJoin.computeJoin(wrappedTypes.map(_.value))
+      }
       case _ => None
     }
 

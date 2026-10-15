@@ -14,7 +14,6 @@ object StdLibFunctions {
   private val intrinsics = Map(
     (consoleTypeId, consolePrintFunId) -> generateConsolePrint,
     (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadLine
-    // TODO FileWriter::write
   )
 
   private val staticRedirects = Map(
@@ -35,7 +34,8 @@ object StdLibFunctions {
     stringReplaceFunId -> ("replace", javaSig(CD_String, CD_String, CD_String)),
     stringSubstringFunId -> ("substring", javaSig(CD_String, CD_int, CD_int)),
     stringToLowerCaseFunId -> ("toLowerCase", javaSig(CD_String)),
-    stringToUpperCaseFunId -> ("toUpperCase", javaSig(CD_String))
+    stringToUpperCaseFunId -> ("toUpperCase", javaSig(CD_String)),
+    stringCharAtFunId -> ("charAt", javaSig(CD_char, CD_int))
   )
 
   def intrinsicFor(funSig: FunctionSignature): Option[MethodBuilder => Unit] = funSig.receiverType match {
@@ -56,7 +56,7 @@ object StdLibFunctions {
 
   def isExcludedFunc(sig: FunctionSignature): Boolean =
     hasReceiver(arrayTypeId)(sig) && (sig.functionName match {
-      case `arrayGetFunId` | `arraySetFunId` | `arraySizeFunId` => true
+      case `getFunId` | `arraySetFunId` | `arraySizeFunId` => true
       case _ => false
     })
 

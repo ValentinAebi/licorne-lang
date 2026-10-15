@@ -57,7 +57,50 @@ class String : Indexed {
         panic "compiler stub"
     }
 
-    // TODO charAt and toCharArray when Chars are supported
+    pure fn charAt(i: Idx(this)) -> Char {
+        panic "compiler stub"
+    }
+
+    pure fn get(i: Idx(this)) -> Char = charAt(i)
+
+    pure fn count(c: Char) -> Cnt {
+        var cnt = 0;
+        for (var i = 0; i < size(); i += 1) {
+            if charAt(i) == c {
+                cnt += 1;
+            }
+        };
+        return cnt;
+    }
+
+    pure fn contains(substring: String) -> Bool {
+        var i = 0;
+        var j = 0;
+        while (i < size() && j < substring.size()) {
+            if this.charAt(i) == substring.charAt(j) {
+                j += 1;
+            } else {
+                j = 0;
+            };
+            i += 1;
+        };
+        return j == substring.size();
+    }
+
+    fn split(c: Char) -> Array[String] {
+        val parts = new Array(count(c) + 1, |""|);
+        var partsIdx = 0;
+        for (var i = 0; i < size(); i += 1) {
+            val curr = charAt(i);
+            if (curr == c) {
+                partsIdx += 1;
+            } else {
+                parts.set(partsIdx, parts.get(partsIdx!!) ++ str(curr));
+            }
+        };
+        return parts;
+    }
+
     // TODO maybe add split (but it uses regexes, maybe it can be implemented in Licorne directly)
 
     private pure fn javaIndexOf(s: String) -> [-1 ..< size()] {

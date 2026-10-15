@@ -100,6 +100,7 @@ final class TypeCandidatesInferrer(
       }
     case AssignIntConst(assigned, src) => ()
     case AssignBoolConst(assigned, src) => ()
+    case AssignCharConst(assigned, src) => ()
     case AssignStringConst(assigned, src) => ()
     case NumNeg(assigned, operand) => ()
     case Add(assigned, lhs, rhs) => ()

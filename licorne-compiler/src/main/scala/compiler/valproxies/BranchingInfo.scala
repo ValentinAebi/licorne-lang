@@ -27,21 +27,22 @@ final case class BranchingInfo(
     this.assumptions.concat(that.assumptions)
   )
 
-  def boundFor(subject: IdValue, boundMode: BoundMode, solver: Solver): Option[Formula] = boundary {
+  def boundsFor(subject: IdValue, solver: Solver): (Iterable[Formula], Iterable[Formula]) = {
     import compiler.irs.ircorne.FormulasDsl.*
-    // TODO try to find best bound instead of stopping at first bound found?
+    val lowerBoundsB = List.newBuilder[Formula]
+    val upperBoundsB = List.newBuilder[Formula]
     assumptions.foreach {
-      case LessOrEq(lhs, rhs) if boundMode == Upper && lhs == subject =>
-        boundary.break(Some(rhs))
-      case LessThan(lhs, rhs) if boundMode == Upper && lhs == subject =>
-        boundary.break(Some(rhs - 1))
-      case LessOrEq(lhs, rhs) if boundMode == Lower && rhs == subject =>
-        boundary.break(Some(lhs))
-      case LessThan(lhs, rhs) if boundMode == Lower && rhs == subject =>
-        boundary.break(Some(lhs + 1))
+      case LessOrEq(`subject`, rhs) =>
+        upperBoundsB.addOne(rhs)
+      case LessThan(`subject`, rhs) =>
+        upperBoundsB.addOne(rhs - 1)
+      case LessOrEq(lhs, `subject`) =>
+        lowerBoundsB.addOne(lhs)
+      case LessThan(lhs, `subject`) =>
+        lowerBoundsB.addOne(lhs + 1)
       case _ => ()
     }
-    None
+    (lowerBoundsB.result(), upperBoundsB.result())
   }
 
   def crossData(using globalValsCtx: GlobalValuesContext): BranchingInfo = {

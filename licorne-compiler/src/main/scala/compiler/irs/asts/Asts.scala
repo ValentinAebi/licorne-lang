@@ -203,7 +203,8 @@ object Asts {
                                  typeParams: List[TypeParamWithVariance],
                                  params: List[TypeAliasParam],
                                  rhs: TypeTree,
-                                 var visibility: TypeVisibility
+                                 var visibility: TypeVisibility,
+                                 isOpaque: Boolean
                                ) extends TopLevelDef {
     override def children: List[Ast] = typeParams ++ params :+ rhs
   }
