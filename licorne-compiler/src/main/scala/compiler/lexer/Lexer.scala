@@ -76,12 +76,16 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
       str => CharLitToken('\n')
     },
 
+    char('\'') ++ char('\\') ++ char('t') ++ char('\'') into {
+      str => CharLitToken('\t')
+    },
+
     char('\'') ++ anyChar ++ char('\'') into {
       str => CharLitToken(str(1))
     },
 
     char('"') ++ repeat(anyCharBut('"')) ++ char('"') into {
-      str => StringLitToken(str.drop(1).dropRight(1).replace("\\n", "\n"))
+      str => StringLitToken(str.drop(1).dropRight(1).replace("\\n", "\n").replace("\\t", "\t"))
     },
 
     string("//") ++ repeat(anyChar) into {
