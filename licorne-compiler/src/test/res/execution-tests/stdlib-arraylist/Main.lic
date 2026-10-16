@@ -6,8 +6,8 @@ object Main {
 
     fn main() {
         val al1 = new ArrayList();
-        al1.addLast(25);
-        al1.addLast(32);
+        al1.add(25);
+        al1.add(32);
         println(al1);   // expects [25,32]
         al1.mapInPlace|it / 2|;
         println(al1);   // expects [12,16]

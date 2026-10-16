@@ -5,7 +5,7 @@ interface MutSeq[T] : Collection[T] {
 
     fn get(i: Int) -> T?
 
-    fn addLast(elem: T)
+    fn add(elem: T)
 
     fn reverse()
     

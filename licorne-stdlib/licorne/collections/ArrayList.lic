@@ -22,7 +22,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fn addLast(elem: T) {
+    fn add(elem: T) {
         val insertionIdx = this.currSize;
         prepareForSingleAddition();
         array.set(insertionIdx!!, elem);
@@ -96,7 +96,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         val filtered = new ArrayList(currSize);
         foreach(fn (elem) -> {
             if pred(elem) {
-                filtered.addLast(elem);
+                filtered.add(elem);
             }
         });
         return filtered;
