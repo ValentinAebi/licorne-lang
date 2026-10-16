@@ -7,11 +7,11 @@ typealias StringLMin(minLen: Cnt) = String with it.size() >= minLen
 
 class String : Indexable {
 
-    pure fn length() -> Cnt {
+    pure fn size() -> Cnt = length()
+
+    private pure fn length() -> Cnt {
         panic "compiler stub"
     }
-
-    pure fn size() -> Cnt = length()
 
     pure fn isEmpty() -> Bool {
         panic "compiler stub"
