@@ -12,9 +12,9 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
   private var instantiatedReturnTypeOpt = Option.empty[Type]
   private var cannotResolveFlag = false
 
-  override def isResolved: Boolean = receiverSigOpt.isDefined
+  override def isResolved: Boolean = instantiatedReturnTypeOpt.isDefined
 
-  override def isResolvedAndPure: Boolean = funSigOpt.exists(_.isPure)
+  override def isProvablyPure: Boolean = funSigOpt.exists(_.isPure)
 
   override def isUnresolvable: Boolean = cannotResolveFlag
 
@@ -34,6 +34,10 @@ final class InvocationTarget(val funId: FunOrVarId) extends CallableTarget {
     receiverSigOpt = Some(receiverSig)
     funSigOpt = Some(funSig)
     instantiatedReturnTypeOpt = Some(instantiatedReturnType)
+  }
+
+  def preResolveAsPure(funSig: FunctionSignature): Unit = {
+    funSigOpt = Some(funSig)
   }
 
   def getReceiverSigUnsafe: RuntimeTypeSignature = receiverSigOpt.get

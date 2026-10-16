@@ -65,10 +65,10 @@ final class FormulasConverter[IntSort <: KSort](
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, ihm.iSort)
       case Select(owner, field) => None
-      case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      case FunCall(receiver, func, typeArgs, args) if func.isProvablyPure =>
         mkFunApp(receiver, func, args, ihm.iSort)
       case FunCall(receiver, func, typeArgs, args) => None
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isProvablyPure =>
         mkClosureApp(callee, closureTypingTarget, args, ihm.iSort)
       case ClosureCall(callee, closureTypingTarget, args) => None
       case PureClosureValue(params, body, closureVal) => None
@@ -134,10 +134,10 @@ final class FormulasConverter[IntSort <: KSort](
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, kCtx.mkBoolSort())
       case Select(owner, field) => None
-      case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      case FunCall(receiver, func, typeArgs, args) if func.isProvablyPure =>
         mkFunApp(receiver, func, args, kCtx.mkBoolSort())
       case FunCall(receiver, func, typeArgs, args) => None
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isProvablyPure =>
         mkClosureApp(callee, closureTypingTarget, args, kCtx.mkBoolSort())
       case ClosureCall(callee, closureTypingTarget, args) => None
       case PureClosureValue(params, body, closureVal) => None
@@ -193,9 +193,9 @@ final class FormulasConverter[IntSort <: KSort](
       case formula: ConstFormula => None
       case Select(owner, field) if field.isResolvedAndPure =>
         mkSelect(owner, field, anySort)
-      case FunCall(receiver, func, typeArgs, args) if func.isResolvedAndPure =>
+      case FunCall(receiver, func, typeArgs, args) if func.isProvablyPure =>
         mkFunApp(receiver, func, args, anySort)
-      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isResolvedAndPure =>
+      case ClosureCall(callee, closureTypingTarget, args) if closureTypingTarget.isProvablyPure =>
         mkClosureApp(callee, closureTypingTarget, args, anySort)
       case PureClosureValue(params, body, closureVal) => None
       case WrappedScope(resVal, scope) => convertObj(resVal)
@@ -222,7 +222,7 @@ final class FormulasConverter[IntSort <: KSort](
     val funSig = func.getFunSigUnsafe
     for {
       rec <- convertObj(receiver)
-      if func.isResolvedAndPure && funSig.paramsWithoutThis.size == args.size
+      if func.isProvablyPure && funSig.paramsWithoutThis.size == args.size
     } yield {
       val paramsList = new util.ArrayList[KSort]()
       val argsList = new util.ArrayList[KExpr[?]]()
@@ -237,7 +237,7 @@ final class FormulasConverter[IntSort <: KSort](
   private def mkClosureApp[S <: KSort](callee: Formula, closureTypingTarget: ClosureTypingTarget, args: List[Formula], sort: S): Iterable[KExpr[S]] = boundary {
     for {
       cal <- convertObj(callee)
-      if closureTypingTarget.isResolvedAndPure
+      if closureTypingTarget.isProvablyPure
     } yield {
       val paramsList = new util.ArrayList[KSort]()
       val argsList = new util.ArrayList[KExpr[?]]()

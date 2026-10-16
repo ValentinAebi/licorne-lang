@@ -4,7 +4,7 @@ trait CallableTarget {
   
   def isResolved: Boolean
   
-  def isResolvedAndPure: Boolean
+  def isProvablyPure: Boolean
 
   def isUnresolvable: Boolean
 

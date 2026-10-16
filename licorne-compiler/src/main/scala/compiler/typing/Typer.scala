@@ -20,7 +20,7 @@ import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.{stringLTypeId, stringType}
-import compiler.typing.contexts.*
+import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
@@ -143,6 +143,7 @@ final class Typer(
       case loop@Loop(condScope, condVal, bodyScope, unsortedLoopVars) =>
         val sortedLoopVars = sortLoopVarsAccordingToDependencies(unsortedLoopVars)
         loop.variables = sortedLoopVars
+        preResolvePureFunCalls(condScope, condScope)
         val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         val feedbackTypeAssumptions = mutable.Map.from(sortedLoopVars.map(lvd => lvd.beforeLoopVal -> bodyScope.getCurrentTypeOf(lvd.beforeLoopVal)))
         for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
@@ -167,6 +168,10 @@ final class Typer(
               case None => inferredInBodyType
             }
             feedbackTypeAssumptions(inCondVal) = inBodyType
+            feedbackTypeAssumptions.addAll(recurrence.induct.idValsDependencies.flatMap(idVal => if feedbackTypeAssumptions.contains(idVal) then None else {
+              val currType = currScope.detectCurrentType(proxyStore.developDeep(idVal).getOrElse(idVal))
+              Option.when(currType != NothingType)(idVal -> currType)
+            }))
             val feedbackType =
               absInt.interpretUnderAssumptions(recurrence.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
                 .getOrElse(boundsToRange(smartcastLowerBounds, smartcastUpperBounds))
@@ -342,7 +347,7 @@ final class Typer(
           invk.typeArgs = instFunTypeArgs
         }
         val returnType =
-          if func.isResolvedAndPure
+          if func.isProvablyPure
           then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor).getOrElse(returnTypeRaw)
           else returnTypeRaw
         currScope.saveType(assigned, returnType)
@@ -1704,6 +1709,21 @@ final class Typer(
       tv.remapIfNotLocked(argType)
     case (paramType, tv: TypeVariable) if tvResolMode == TypeVarsResolMode.ParamsAndArgs && !tv.isResolved =>
       tv.resolve(typeSimplifier.simplifyType(paramType))
+    case _ => ()
+  }
+
+  private def preResolvePureFunCalls(instr: Instr, currScope: Scope)(using TypeParamsContext): Unit = instr.traverse {
+    case invokeFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+      dealiasingCtx.dealiasType(currScope.detectCurrentType(proxyStore.developDeep(receiver).getOrElse(receiver)).withTypeVarsExpanded).baseTypeAssumingNoAlias match {
+        case NamedType(tid, _, _) =>
+          val argTypes = args.map(arg => currScope.detectCurrentType(proxyStore.developDeep(arg).getOrElse(arg)))
+          resolutionCtx.resolveFunSig(tid, FunctionDescriptor(func.funId, args.size), argTypes) match {
+            case ResolutionContext.FuncResolResult.Success(ownerSig, funSig) if funSig.isPure =>
+              func.preResolveAsPure(funSig)
+            case _ => ()
+          }
+        case _ => ()
+      }
     case _ => ()
   }
 

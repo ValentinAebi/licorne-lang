@@ -268,7 +268,7 @@ object Formulas {
     case FunCall(receiver, func, typeArgs, args) =>
       typeCanMention(receiver) && func.isResolved && func.getFunSigUnsafe.isPure && args.forall(typeCanMention)
     case ClosureCall(callee, target, args) =>
-      typeCanMention(callee) && target.isResolvedAndPure && args.forall(typeCanMention)
+      typeCanMention(callee) && target.isProvablyPure && args.forall(typeCanMention)
     case PureClosureValue(params, body, closureVal) => typeCanMention(body)
     case Plus(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Neg(operand) => typeCanMention(operand)
@@ -293,9 +293,9 @@ object Formulas {
     case _: Select => false
     case formula: ConstFormula => true
     case FunCall(receiver, func, typeArgs, args) =>
-      receiver.isPure && func.isResolvedAndPure && func.getFunSigUnsafe.isPure && args.forall(_.isPure)
+      receiver.isPure && func.isProvablyPure && func.getFunSigUnsafe.isPure && args.forall(_.isPure)
     case ClosureCall(callee, target, args) =>
-      callee.isPure && target.isResolvedAndPure && args.forall(_.isPure)
+      callee.isPure && target.isProvablyPure && args.forall(_.isPure)
     case PureClosureValue(params, body, closureVal) => true
     case Plus(lhs, rhs) => lhs.isPure && rhs.isPure
     case Neg(operand) => operand.isPure

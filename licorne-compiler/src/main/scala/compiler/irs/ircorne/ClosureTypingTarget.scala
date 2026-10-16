@@ -10,7 +10,7 @@ final class ClosureTypingTarget extends CallableTarget {
 
   override def isResolved: Boolean = typeIfResolved.isDefined
   
-  override def isResolvedAndPure: Boolean =
+  override def isProvablyPure: Boolean =
     typeIfResolved.exists(_.enforcedPure)
 
   override def isUnresolvable: Boolean = unresolvableFlag
