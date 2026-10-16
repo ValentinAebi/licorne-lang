@@ -1,12 +1,12 @@
 package licorne.io;
 
-import licorne.collections.SinglyLinkedList;
-import licorne.collections.SinglyLinkedLists;
+import licorne.collections.LList;
+import licorne.collections.LLists;
 
 object Files {
 
-    fn readAllLines(path: String) -> SinglyLinkedList[String] =
-        SinglyLinkedLists.listFromArray(FilePrimitives.readAllLines(path))
+    fn readAllLines(path: String) -> LList[String] =
+        LLists.listFromArray(FilePrimitives.readAllLines(path))
 
     fn write(path: String, content: String) {
         FilePrimitives.writeFile(path, content);

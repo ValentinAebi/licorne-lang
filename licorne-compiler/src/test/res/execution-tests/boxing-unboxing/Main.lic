@@ -1,4 +1,4 @@
-import licorne.collections.SinglyLinkedLists.*;
+import licorne.collections.LLists.*;
 
 
 object Main {

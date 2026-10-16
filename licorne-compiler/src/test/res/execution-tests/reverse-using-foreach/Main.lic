@@ -1,4 +1,4 @@
-import licorne.collections.SinglyLinkedList;
+import licorne.collections.LList;
 import licorne.collections.Cons;
 import licorne.collections.Nil;
 
@@ -9,8 +9,8 @@ object Main {
         println((ls as Cons).head());
     }
 
-    private fn reverse[T](ls: SinglyLinkedList[T]) -> SinglyLinkedList[T] {
-        var res: SinglyLinkedList[T] = new Nil();
+    private fn reverse[T](ls: LList[T]) -> LList[T] {
+        var res: LList[T] = new Nil();
         ls.foreach(fn (e) -> {
             res = new Cons(head = e, tail = res);
         });

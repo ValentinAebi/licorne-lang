@@ -1,5 +1,5 @@
-import licorne.collections.SinglyLinkedList;
-import licorne.collections.SinglyLinkedLists.listFromArray;
+import licorne.collections.LList;
+import licorne.collections.LLists.listFromArray;
 
 
 object Main {

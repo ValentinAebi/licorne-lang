@@ -1,7 +1,7 @@
 package licorne.collections;
 
 
-datatype SinglyLinkedList[+T] : ImmutSeq[T] {
+datatype LList[+T] : ImmutSeq[T] {
 
     pure fn get(i: Idx(this)) -> T {
         var j = i;
@@ -15,7 +15,7 @@ datatype SinglyLinkedList[+T] : ImmutSeq[T] {
         panic "out of bounds";
     }
 
-    fn map[U](f: fn (T) -> U) -> SinglyLinkedList[U] {
+    fn map[U](f: fn (T) -> U) -> LList[U] {
         var rev = new Nil();
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             rev = new Cons(head = f(ls.head()), tail = rev);
@@ -23,7 +23,7 @@ datatype SinglyLinkedList[+T] : ImmutSeq[T] {
         return rev.reversed();
     }
 
-    fn filter(pred: pure fn (T) -> Bool) -> SinglyLinkedList[T with pred(it)] {
+    fn filter(pred: pure fn (T) -> Bool) -> LList[T with pred(it)] {
         var rev = new Nil();
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             if (pred(ls.head())) {
@@ -39,7 +39,7 @@ datatype SinglyLinkedList[+T] : ImmutSeq[T] {
         }
     }
 
-    pure fn reversed() -> SinglyLinkedList[T] {
+    pure fn reversed() -> LList[T] {
         var res = new Nil();
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             res = new Cons(head = ls.head(), tail = res);
@@ -49,18 +49,18 @@ datatype SinglyLinkedList[+T] : ImmutSeq[T] {
 
 }
 
-record Cons[+T](head: T, tail: SinglyLinkedList[T]) : SinglyLinkedList[T] {
+record Cons[+T](head: T, tail: LList[T]) : LList[T] {
     pure fn size() -> Cnt = tail.size() + 1
 }
 
-record Nil : SinglyLinkedList[Nothing] {
+record Nil : LList[Nothing] {
     pure fn size() -> Cnt = 0
 }
 
 
-object SinglyLinkedLists {
+object LLists {
 
-    fn listFromArray[T](a: Array[T]) -> SinglyLinkedList[T] with it.size() == a.size() {
+    fn listFromArray[T](a: Array[T]) -> LList[T] with it.size() == a.size() {
         var ls = new Nil();
         for (var i = a.size() - 1; i >= 0; i -= 1) {
             ls = new Cons(head = a.get(i), tail = ls);
