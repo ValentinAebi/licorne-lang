@@ -815,8 +815,8 @@ final class IRcorneGenerator(
           for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars if !beforeLoopVal.isInstanceOf[HeapVarIdValue]) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
             varData.recurrenceOpt = for {
-              init <- proxyStore.developDeepIgnoreAccessors(beforeLoopVal)
-              induct <- proxyStore.developDeepIgnoreAccessors(bodyLastLocalVal, acceptPhis = true)
+              init <- proxyStore.developDeepIgnoreAccessorsOpt(beforeLoopVal)
+              induct <- proxyStore.developDeepIgnoreAccessorsOpt(bodyLastLocalVal, acceptPhis = true)
             } yield Recurrence.computeFrom(init, induct, condVal)
             bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
             proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
@@ -839,7 +839,7 @@ final class IRcorneGenerator(
         returnedTreeOpt match {
           case Some(returnedTree) =>
             generateIRExpr(retVal, returnedTree, currScope)
-            proxyStore.developDeepIgnoreAccessors(retVal, bypassPurityChecks = true) match {
+            proxyStore.developDeepIgnoreAccessorsOpt(retVal, bypassPurityChecks = true) match {
               case Some(retValProxy) =>
                 returnCollector.offerReturn(retValProxy)
               case None =>
@@ -1098,9 +1098,9 @@ final class IRcorneGenerator(
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
         ), ternaryTree)
         // retrieve info from lowering
-        proxyStore.developDeepIgnoreAccessors(thenVal) match {
+        proxyStore.developDeepIgnoreAccessorsOpt(thenVal) match {
           case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
-          case _ => proxyStore.developDeepIgnoreAccessors(elseVal) match {
+          case _ => proxyStore.developDeepIgnoreAccessorsOpt(elseVal) match {
             case Some(BoolConst(false)) => Some(LogicalAnd(condVal, thenVal))
             case _ => None
           }

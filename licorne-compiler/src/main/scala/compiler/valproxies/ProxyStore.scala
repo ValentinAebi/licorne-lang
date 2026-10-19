@@ -72,16 +72,22 @@ final class ProxyStore {
     }
   }.flatten
 
-  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Option[Formula] =
+  def developDeep(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Formula =
+    developDeepOpt(formula, bypassPurityChecks, acceptPhis, termsOmissionMode).getOrElse(formula)
+
+  def developDeepOpt(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Option[Formula] =
     dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, termsOmissionMode)(using expandSelectIfAccessor)
 
-  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Option[Formula] =
+  def developNearest(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Formula =
+    developNearestOpt(formula, bypassPurityChecks, acceptPhis, termsOmissionMode).getOrElse(formula)
+
+  def developNearestOpt(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict)(using ResolutionContext): Option[Formula] =
     dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, termsOmissionMode)(using expandSelectIfAccessor)
 
-  def developDeepIgnoreAccessors(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict): Option[Formula] =
+  def developDeepIgnoreAccessorsOpt(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict): Option[Formula] =
     dev(formula, developLocals = true, bypassPurityChecks, acceptPhis, termsOmissionMode)(using Select(_, _))
 
-  def developNearestIgnoreAccessors(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict): Option[Formula] =
+  def developNearestIgnoreAccessorsOpt(formula: Formula, bypassPurityChecks: Boolean = false, acceptPhis: Boolean = false, termsOmissionMode: TermsOmissionMode = Strict): Option[Formula] =
     dev(formula, developLocals = false, bypassPurityChecks, acceptPhis, termsOmissionMode)(using Select(_, _))
 
   // TODO memoize
@@ -237,10 +243,10 @@ final class ProxyStore {
 
   def extractRawBranchingInfos(cond: IdValue, ambientBranchingInfo: BranchingInfo, outerScope: Scope)
                               (using tpCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, subtypingCtx: SubtypingContext): (BranchingInfo, BranchingInfo) = {
-    val infoIfTrueNearest = developNearest(cond, termsOmissionMode = AllowConjunctsOmission).map(infosFor(_)(using outerScope)).map(_._1).getOrElse(BranchingInfo.empty)
-    val infoIfTrueDeep = developDeep(cond, termsOmissionMode = AllowConjunctsOmission).map(infosFor(_)(using outerScope)).map(_._1).getOrElse(BranchingInfo.empty)
-    val infoIfFalseNearest = developNearest(cond, termsOmissionMode = AllowDisjunctsOmission).map(infosFor(_)(using outerScope)).map(_._2).getOrElse(BranchingInfo.empty)
-    val infoIfFalseDeep = developDeep(cond, termsOmissionMode = AllowDisjunctsOmission).map(infosFor(_)(using outerScope)).map(_._2).getOrElse(BranchingInfo.empty)
+    val infoIfTrueNearest = developNearestOpt(cond, termsOmissionMode = AllowConjunctsOmission).map(infosFor(_)(using outerScope)).map(_._1).getOrElse(BranchingInfo.empty)
+    val infoIfTrueDeep = developDeepOpt(cond, termsOmissionMode = AllowConjunctsOmission).map(infosFor(_)(using outerScope)).map(_._1).getOrElse(BranchingInfo.empty)
+    val infoIfFalseNearest = developNearestOpt(cond, termsOmissionMode = AllowDisjunctsOmission).map(infosFor(_)(using outerScope)).map(_._2).getOrElse(BranchingInfo.empty)
+    val infoIfFalseDeep = developDeepOpt(cond, termsOmissionMode = AllowDisjunctsOmission).map(infosFor(_)(using outerScope)).map(_._2).getOrElse(BranchingInfo.empty)
     (ambientBranchingInfo ++ infoIfTrueNearest ++ infoIfTrueDeep,
       ambientBranchingInfo ++ infoIfFalseNearest ++ infoIfFalseDeep)
   }

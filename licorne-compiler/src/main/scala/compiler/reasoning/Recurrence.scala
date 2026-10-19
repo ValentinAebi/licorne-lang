@@ -17,7 +17,7 @@ final case class Recurrence private(bases: SeqSet[Formula], induct: Formula, ind
                          (using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Option[(Iterable[Formula], Iterable[Formula])] = boundsOpt match {
     case Some(bounds) => bounds
     case None =>
-      val expandedBases = bases.map(b => proxyStore.developDeep(b).getOrElse(b))
+      val expandedBases = bases.map(b => proxyStore.developDeep(b))
       val nonDecreasing = inductIsProvablyNonDecreasing(typer, solver, body)
       val nonIncreasing = inductIsProvablyNonIncreasing(typer, solver, body)
       val mins = if nonDecreasing then solver.discardNonMins(expandedBases) else List.empty
@@ -46,7 +46,7 @@ final case class Recurrence private(bases: SeqSet[Formula], induct: Formula, ind
     }
 
   private def expandedAndTyped(formula: Formula, typer: Typer, body: Scope)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore): Formula = {
-    val expanded = proxyStore.developDeep(formula, acceptPhis = true).getOrElse(formula)
+    val expanded = proxyStore.developDeep(formula, acceptPhis = true)
     typer.typeFormula(expanded, body, None, suspendReporting = true)
     expanded
   }

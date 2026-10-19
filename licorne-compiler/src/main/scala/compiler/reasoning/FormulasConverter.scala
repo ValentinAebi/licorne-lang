@@ -53,7 +53,7 @@ final class FormulasConverter[IntSort <: KSort](
     formula match {
       case value: IdValue =>
         val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), ihm.iSort))
-        proxyStore.developDeep(value) match {
+        proxyStore.developDeepOpt(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertInt(proxy)
           case _ => base
@@ -122,7 +122,7 @@ final class FormulasConverter[IntSort <: KSort](
     formula match {
       case value: IdValue =>
         val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), kCtx.mkBoolSort()))
-        proxyStore.developDeep(value) match {
+        proxyStore.developDeepOpt(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertBool(proxy)
           case _ => base
@@ -185,7 +185,7 @@ final class FormulasConverter[IntSort <: KSort](
     formula match {
       case value: IdValue =>
         val base = Some(kCtx.mkConst(IRLevelFormulaPrinter.prettyprint(value), anySort))
-        proxyStore.developDeep(value) match {
+        proxyStore.developDeepOpt(value) match {
           case Some(proxy) if proxy != value && proxy.isPure =>
             base ++ convertObj(proxy)
           case _ => base

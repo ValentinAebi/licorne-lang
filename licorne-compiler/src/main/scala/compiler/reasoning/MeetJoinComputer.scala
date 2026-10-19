@@ -39,7 +39,7 @@ final class MeetJoinComputer(
   def computeJoinUsingVals(typedVals: Iterable[(IdValue, Type)])(using TypeParamsContext): Type = {
     val itValue = globalValuesContext.itValue
     val expandedTypes = typedVals.map { (idValRaw, tpe) =>
-      val idValDev = proxyStore.developNearest(idValRaw).getOrElse(idValRaw)
+      val idValDev = proxyStore.developNearest(idValRaw)
       val RefinedType(baseType, originalPredicate) = dealiasingCtx.dealiasType(tpe.withTypeVarsExpanded).withTypeVarsExpanded.asRefinedType
       baseType match {
         case NamedType(tid, typeArgs, Nil) =>

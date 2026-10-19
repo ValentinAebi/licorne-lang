@@ -226,12 +226,12 @@ final class SubtypingContext(
         isSubtype(knownType, IntType)
           && lowerBoundOpt.forall { lb =>
           solver.canProveLeq(lb, subject)
-            || proxyStore.developNearest(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
-            || proxyStore.developDeep(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
+            || proxyStore.developNearestOpt(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
+            || proxyStore.developDeepOpt(subject).exists(subjectProxy => solver.canProveLeq(lb, subjectProxy))
         } && upperBoundOpt.forall { ub =>
           solver.canProveLeq(subject, ub)
-            || proxyStore.developNearest(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
-            || proxyStore.developDeep(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
+            || proxyStore.developNearestOpt(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
+            || proxyStore.developDeepOpt(subject).exists(subjectProxy => solver.canProveLeq(subjectProxy, ub))
         }
       case refinedType: RefinedType =>
         val RefinedType(baseType, predicate) = refinedType.flattenedRefinement
@@ -239,7 +239,7 @@ final class SubtypingContext(
         typer.typeFormula(predicate, scope, None, suspendReporting = true)
         isSubtype(knownType, baseType) && (
           solver.canProve(predicate.substitute(itValue, subject))
-            || proxyStore.developDeep(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
+            || proxyStore.developDeepOpt(subject).exists(proxy => solver.canProve(predicate.substitute(itValue, proxy))))
       case UnionType(types) =>
         types.exists(canProveHasType(subject, knownType, _, scope))
       case TernaryType(cond, left, right) =>
@@ -337,7 +337,7 @@ final class SubtypingContext(
 
     lazy val foundDescr = subject match {
       case subject: IntermediateIdValue =>
-        proxyStore.developNearest(subject) match {
+        proxyStore.developNearestOpt(subject) match {
           case Some(proxy) if proxy.isPure => toStringAlongSubT(proxy)
           case _ => subTDev.toString
         }
@@ -358,8 +358,8 @@ final class SubtypingContext(
   }
 
   private def developTypeDepsForErrorMsg(tpe: Type, unstabilityCollector: mutable.LinkedHashSet[Formula]): Type = tpe.withDependenciesTransformed { dep =>
-    proxyStore.developNearest(dep).orElse {
-      val devOpt = proxyStore.developNearest(dep, bypassPurityChecks = true)
+    proxyStore.developNearestOpt(dep).orElse {
+      val devOpt = proxyStore.developNearestOpt(dep, bypassPurityChecks = true)
       devOpt.foreach { devDep =>
         unstabilityCollector.add(findMinimalUnstable(devDep).getOrElse(devDep))
       }
@@ -370,7 +370,7 @@ final class SubtypingContext(
   private def findMinimalUnstable(formula: Formula): Option[Formula] = {
 
     def isStable(f: Formula): Boolean =
-      proxyStore.developNearest(f) == proxyStore.developNearest(f, bypassPurityChecks = true)
+      proxyStore.developNearestOpt(f) == proxyStore.developNearestOpt(f, bypassPurityChecks = true)
 
     formula.children.iterator.map(findMinimalUnstable).find(_.isDefined).flatten.orElse {
       Option.when(!isStable(formula)) {

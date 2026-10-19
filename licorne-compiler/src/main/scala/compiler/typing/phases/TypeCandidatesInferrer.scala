@@ -252,7 +252,7 @@ final class TypeCandidatesInferrer(
   private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {
 
     def detectDealiasedTypeOf(formula: Formula): Type = {
-      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true, acceptPhis = true)(using resolCtx).getOrElse(formula)
+      val dev = proxyStore.developDeep(formula, bypassPurityChecks = true, acceptPhis = true)(using resolCtx)
       val typeRaw = typer.typeFormula(dev, funSigScope, None)(using typeParamsCtx)
       dealiasingCtx.dealiasType(typeRaw)
     }

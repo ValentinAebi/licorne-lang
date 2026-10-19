@@ -398,7 +398,7 @@ object IRcorne {
 
     def saveType(idVal: IdValue, rawType: Type)
                 (using tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, typeSimplifier: TypeSimplifier, resolCtx: ResolutionContext, proxyStore: ProxyStore, solver: Solver, globalValsCtx: GlobalValuesContext): Unit = {
-      val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+      val tpe = rawType.withDependenciesTransformed(d => proxyStore.developNearest(d))
       smartcastsEGraph.saveSmartcast(idVal, tpe)
       if (idVal.definingScope == this) {
         if (types.contains(idVal) && idVal != globalValsCtx.itValue) {

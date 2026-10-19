@@ -4,6 +4,7 @@ package licorne.core;
 
 typealias StringL(len: Cnt) = String with it.size() == len
 typealias StringLMin(minLen: Cnt) = String with it.size() >= minLen
+typealias NonEmptyString = StringLMin(1)
 
 class String : Indexable {
 
@@ -47,7 +48,7 @@ class String : Indexable {
         panic "compiler stub"
     }
 
-    pure fn substring(begin: Idx(this), end: Idx(this) where begin <= end) -> StringLMin(end - begin) {
+    pure fn substring(begin: [0 .. this.size()], end: [0 .. this.size()] where begin <= end) -> StringLMin(end - begin) {
         panic "compiler stub"
     }
 
@@ -102,6 +103,23 @@ class String : Indexable {
         };
         return parts;
     }
+
+    fn toCharArray() -> Array[Char] = new Array(size(), |charAt(it)|)
+
+    fn trim() -> String {
+        var startIdx = 0;
+        while (startIdx < size() && isBlankChar(charAt(startIdx))) {
+            startIdx += 1;
+        };
+        var endIdx = size() - 1;
+        while (endIdx >= startIdx && isBlankChar(charAt(endIdx))) {
+            endIdx -= 1;
+        };
+        return substring(startIdx, endIdx + 1);
+    }
+
+    private fn isBlankChar(c: Char) -> Bool =
+        c == ' ' || c == '\t'
     
     private pure fn javaIndexOf(s: String) -> [-1 ..< size()] {
         panic "compiler stub"

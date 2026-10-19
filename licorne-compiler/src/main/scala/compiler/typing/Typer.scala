@@ -169,7 +169,7 @@ final class Typer(
             }
             feedbackTypeAssumptions(inCondVal) = inBodyType
             feedbackTypeAssumptions.addAll(recurrence.induct.idValsDependencies.flatMap(idVal => if feedbackTypeAssumptions.contains(idVal) then None else {
-              val currType = currScope.detectCurrentType(proxyStore.developDeep(idVal).getOrElse(idVal))
+              val currType = currScope.detectCurrentType(proxyStore.developDeep(idVal))
               Option.when(currType != NothingType)(idVal -> currType)
             }))
             val feedbackType =
@@ -213,7 +213,7 @@ final class Typer(
           val afterLoopType = meetJoin.computeJoin(beforeLoopType, typeAtEndOfBody)
           currScope.saveSmartcast(condVal, afterLoopType)
         }
-        if (checkTermination && !condScope.hasExited && !proxyStore.developNearest(condVal).contains(BoolConst(true)) && solver.canProve(condVal)) {
+        if (checkTermination && !condScope.hasExited && proxyStore.developNearest(condVal) != BoolConst(true) && solver.canProve(condVal)) {
           er.warn(s"loop cannot exit, if this is intended please make it explicit by using '${BoolConst(true)}' as the loop condition", loop.getPosition)
         }
         applyBranchInfo(currScope, infoIfCondFalse)
@@ -314,7 +314,7 @@ final class Typer(
       }
 
       case rem@Rem(assigned, lhs, rhs) => assignTarget(assigned, currScope) {
-        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(proxyStore.developDeep(rhs)), Operator.Modulo, rem.getPosition)
+        typeNumericBinop(lhs, rhs, currScope, absInt.typeModuloType(Some(proxyStore.developDeep(rhs))), Operator.Modulo, rem.getPosition)
       }
 
       case neg@LogicNeg(assigned, operand) => assignTarget(assigned, currScope) {
@@ -348,7 +348,7 @@ final class Typer(
         }
         val returnType =
           if func.isProvablyPure
-          then proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor).getOrElse(returnTypeRaw)
+          then proxyStore.developDeepOpt(assigned).flatMap(currScope.smartcastFor).getOrElse(returnTypeRaw)
           else returnTypeRaw
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
@@ -371,7 +371,7 @@ final class Typer(
       case fr@FieldRead(assigned, owner, field) =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
         val tpe = resolveFieldAccess(owner, ownerType, field, currScope, needsWriteAccess = false, fr.getPosition)
-        currScope.saveType(assigned, proxyStore.developDeep(assigned).flatMap(currScope.smartcastFor).getOrElse(tpe))
+        currScope.saveType(assigned, proxyStore.developDeepOpt(assigned).flatMap(currScope.smartcastFor).getOrElse(tpe))
 
       case fw@FieldWrite(owner, fieldResolTarget, rhs) =>
         val ownerType = currScope.computeCurrentType(owner, fw.getPosition)
@@ -436,7 +436,7 @@ final class Typer(
           paramTypesB.addOne(paramType)
         }
         uniqueRetOpt.foreach { uniqueRet =>
-          val closureSummary = proxyStore.developDeep(uniqueRet, bypassPurityChecks = true, acceptPhis = true).getOrElse(uniqueRet)
+          val closureSummary = proxyStore.developDeep(uniqueRet, bypassPurityChecks = true, acceptPhis = true)
           val tpe = this.copyNotAllowedToWriteToIR.typeFormula(closureSummary, body, None, suspendReporting = true).withTypeVarsExpanded
           if (!Types.isExtreme(tpe)) {
             resultTypeVar.setResolutionCandidate(tpe)
@@ -456,7 +456,7 @@ final class Typer(
       case cast@Cast(inValue, target) =>
         checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
           currScope.saveSmartcast(inValue, assertedType)
-          proxyStore.developDeep(inValue).foreach { proxy =>
+          proxyStore.developDeepOpt(inValue).foreach { proxy =>
             currScope.saveSmartcast(proxy, assertedType)
           }
         }
@@ -477,7 +477,7 @@ final class Typer(
             val RefinedType(targetBase, targetPredRaw) = targetType.asRefinedType.flattenedRefinement
             val targetPredSubst = targetPredRaw.substitute(itValue, inValue)
             // TODO maybe check if assertion provably succeeds / fails
-            val assertion = simplifyBool(proxyStore.developNearest(targetPredSubst).getOrElse(targetPredSubst))
+            val assertion = simplifyBool(proxyStore.developNearest(targetPredSubst))
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
               val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
@@ -521,7 +521,7 @@ final class Typer(
         executionEnvirOpt match {
           case Some(executionEnvir) =>
             val unitVal = currScope.getLocalValuesContextUnsafe.globalCtx.unitVal
-            if (executionEnvir.expectedResultType == UnitType && retVal != unitVal && !proxyStore.developDeep(retVal).contains(unitVal)) {
+            if (executionEnvir.expectedResultType == UnitType && proxyStore.developDeep(retVal) != unitVal) {
               er.warn(s"returned value has no effect, since return type is $UnitType", ret.getPosition)
             }
             val retValType = currScope.computeCurrentType(retVal, ret.getPosition)
@@ -559,7 +559,7 @@ final class Typer(
     def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
       param match {
         case fld: Field.StableField =>
-          val rhsValExpanded = simplifyFormula(proxyStore.developNearest(rhsValRaw).getOrElse(rhsValRaw))
+          val rhsValExpanded = simplifyFormula(proxyStore.developNearest(rhsValRaw))
           val fldResolTarget = FieldResolutionTarget(fld.id)
           fldResolTarget.resolve(typeSig, substitutedType)
           val itSelect = Select(itValue, fldResolTarget)
@@ -590,7 +590,7 @@ final class Typer(
         val expType = dealiasingCtx.dealiasType(fld.tpe.withTypeVarsExpanded).withTypeVarsExpanded
           .withDependenciesTransformed(_.convertThisDotFieldToFieldVal(typeSig))
           .substitute(typesSubst, fieldsInitArgsSubst)
-        (expType, proxyStore.developDeep(rhsVal).getOrElse(rhsVal)) match {
+        (expType, proxyStore.developDeep(rhsVal)) match {
           case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
             absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType(_))).toMap, None) match {
               case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
@@ -641,7 +641,7 @@ final class Typer(
       if returnTypePredParts.isEmpty then newInstanceTypeBase
       else {
         val rawPred = returnTypePredParts.reduce(LogicalAnd(_, _))
-        val pred = proxyStore.developNearest(rawPred).getOrElse(rawPred)
+        val pred = proxyStore.developNearest(rawPred)
         RefinedType(newInstanceTypeBase, pred)
       }
     (newFieldsInitB.result(), applyCandidateIfTernary(assigned, newInstanceType))
@@ -739,7 +739,7 @@ final class Typer(
           typeScopeInstructions(wrappedScope, BranchingInfo.empty)
           typeFormula(resVal, currScope, posOpt, suspendReporting)
       }
-      rawType.withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+      rawType.withDependenciesTransformed(proxyStore.developNearest(_))
     }
     if (formula.isPure) {
       solver.takeType(formula, tpe)
@@ -802,7 +802,7 @@ final class Typer(
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
         && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope)
     if (mayBeDivByZero) {
-      val rhsDescr = proxyStore.developNearest(rhs).getOrElse(rhs).toString
+      val rhsDescr = proxyStore.developNearest(rhs).toString
       er.reportError(s"I cannot prove that right-hand side $rhsDescr of operator '$op' cannot be zero", posOpt)
     }
     absIntFunc(forceRange(lhsType.withTypeVarsExpanded), forceRange(rhsType.withTypeVarsExpanded)) match {
@@ -1252,8 +1252,8 @@ final class Typer(
       solver.assert(assumption)
       val smartcasts =
         smartcastsFromAssumption(assumption, scope)
-          ++ proxyStore.developNearest(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
-          ++ proxyStore.developDeep(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
+          ++ proxyStore.developNearestOpt(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
+          ++ proxyStore.developDeepOpt(assumption).toList.flatMap(smartcastsFromAssumption(_, scope))
       smartcasts.foreach { (subject, smartcastType) =>
         scope.saveSmartcast(subject, smartcastType)
       }
@@ -1401,7 +1401,7 @@ final class Typer(
             val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val absIntSubst =
-              funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg).getOrElse(arg)))
+              funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg)))
                 .flatMap {
                   case ((_, ClosureType(closureParams, closureResultType@NamedType(closureResultTypeId, Nil, Nil), _)), PureClosureValue(params, body, _))
                     if composedTypeSubst.get(closureResultTypeId).exists(_.isInstanceOf[TypeVariable])
@@ -1431,7 +1431,7 @@ final class Typer(
             }
             val instantiatedRetType =
               typeSimplifier.simplifyType(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst))
-                .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+                .withDependenciesTransformed(proxyStore.developNearest(_))
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
             }
@@ -1478,7 +1478,7 @@ final class Typer(
           forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
         }
         if (enforcedPure) {
-          proxyStore.developDeep(callee).getOrElse(callee) match {
+          proxyStore.developDeep(callee) match {
             case PureClosureValue(params, body, closureVal) =>
               val absIntAssumptions = params.zip(argsAndTypes.map(_._2)).toMap
               absInt.interpretUnderAssumptions(body, absIntAssumptions, None).getOrElse(rawResultType)
@@ -1512,7 +1512,7 @@ final class Typer(
             val instantiatedFieldType =
               field.tpe.substitute(typeSubst, Map.empty)
                 .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner, ownerSig))
-                .withDependenciesTransformed(d => proxyStore.developNearest(d).getOrElse(d))
+                .withDependenciesTransformed(proxyStore.developNearest(_))
             irModif {
               fieldResolTarget.resolve(ownerSig, instantiatedFieldType)
             }
@@ -1540,11 +1540,8 @@ final class Typer(
   }
 
   private def receiverIsThisPtr(currScope: Scope, receiver: Formula)
-                               (using TypeParamsContext, ResolutionContext, SubtypingContext): Boolean = {
-    currScope.getLocalValuesContextUnsafe.getThisValue.exists { thisVal =>
-      receiver == thisVal || proxyStore.developDeep(receiver).contains(thisVal)
-    }
-  }
+                               (using TypeParamsContext, ResolutionContext, SubtypingContext): Boolean =
+    currScope.getLocalValuesContextUnsafe.getThisValue.contains(proxyStore.developDeep(receiver))
 
   private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, scope: Scope,
                                posOpt: Option[Position], ctxDescrForReportingOpt: Option[String])
@@ -1667,8 +1664,7 @@ final class Typer(
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula])
                                (using TypeParamsContext, ResolutionContext, SubtypingContext): Unit = {
     argOpt.foreach { rawArg =>
-      val repl = proxyStore.developNearest(rawArg).getOrElse(rawArg)
-      subst.put(paramVal, repl)
+      subst.put(paramVal, proxyStore.developNearest(rawArg))
     }
   }
 
@@ -1714,9 +1710,9 @@ final class Typer(
 
   private def preResolvePureFunCalls(instr: Instr, currScope: Scope)(using TypeParamsContext): Unit = instr.traverse {
     case invokeFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
-      dealiasingCtx.dealiasType(currScope.detectCurrentType(proxyStore.developDeep(receiver).getOrElse(receiver)).withTypeVarsExpanded).baseTypeAssumingNoAlias match {
+      dealiasingCtx.dealiasType(currScope.detectCurrentType(proxyStore.developDeep(receiver)).withTypeVarsExpanded).baseTypeAssumingNoAlias match {
         case NamedType(tid, _, _) =>
-          val argTypes = args.map(arg => currScope.detectCurrentType(proxyStore.developDeep(arg).getOrElse(arg)))
+          val argTypes = args.map(arg => currScope.detectCurrentType(proxyStore.developDeep(arg)))
           resolutionCtx.resolveFunSig(tid, FunctionDescriptor(func.funId, args.size), argTypes) match {
             case ResolutionContext.FuncResolResult.Success(ownerSig, funSig) if funSig.isPure =>
               func.preResolveAsPure(funSig)
@@ -1728,7 +1724,7 @@ final class Typer(
   }
 
   private def enforcePurity(f: Formula, descr: String, posOpt: Option[Position]): Unit = if (!f.isPure) {
-    er.reportError(s"I cannot prove that $descr ${proxyStore.developNearest(f).getOrElse(f)} is pure", posOpt)
+    er.reportError(s"I cannot prove that $descr ${proxyStore.developNearest(f)} is pure", posOpt)
   }
 
   private def nthArgument(i: Int): String = i match {

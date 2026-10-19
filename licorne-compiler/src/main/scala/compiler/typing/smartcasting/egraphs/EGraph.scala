@@ -54,7 +54,7 @@ final class EGraph private[egraphs](startClId: Long) {
   }
 
   private def mergeWithProxy(f: Formula)(using typeParamsCtx: TypeParamsContext, resolCtx: ResolutionContext, proxyStore: ProxyStore, typeSimplifier: TypeSimplifier): Unit = {
-    proxyStore.developNearest(f) match {
+    proxyStore.developNearestOpt(f) match {
       case Some(proxy) if proxy != f && proxy.isPure =>
         doMerge(f, proxy, recurseOnProxies = false)
       case _ => ()
