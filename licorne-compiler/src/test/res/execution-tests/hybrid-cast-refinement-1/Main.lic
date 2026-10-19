@@ -4,6 +4,10 @@ object Main {
     fn main() {
         val z = 7 + 9;
         val t = z - 1;
+        bar(z, t);  //>STACKTRACE
+    }
+
+    fn bar(z: Int, t: Int) {
         foo(t, z!!);    //>STACKTRACE
     }
     

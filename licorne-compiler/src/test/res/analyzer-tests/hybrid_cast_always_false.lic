@@ -1,0 +1,14 @@
+
+object Main {
+
+    fn main() {
+        val z = 7 + 9;
+        val t = z - 1;
+        foo(t, z!!);    //> W : !! will always fail: it asserts 0 <= z && z <= t, which is always false
+    }
+    
+    private fn foo(x: [0..], y: [0..x]) -> [0..] {
+        return x - y;
+    }
+
+}

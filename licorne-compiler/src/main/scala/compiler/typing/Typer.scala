@@ -465,7 +465,13 @@ final class Typer(
         val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, hybridCast.getPosition)).withTypeVarsExpanded
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
-          case (NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
+          case (preType@NullableType(nullatedType), Some(targetType)) if subtypingCtx.isSubtype(nullatedType, targetType) =>
+            if (subtypingCtx.isSubtype(NullType, targetType)) {
+              er.warn(s"!! was interpreted as a non-null assertion, but its target type $targetType is nullable as well", hybridCast.getPosition)
+            }
+            if (solver.canProveEquivalence(inValue, globalValuesCtx.nullVal)) {
+              er.warn(s"!! will always fail: ${proxyStore.developNearest(inValue)} is null", hybridCast.getPosition)
+            }
             irModif {
               hybridCast.setMode(AssertNonNull)
             }
@@ -476,9 +482,11 @@ final class Typer(
             val RefinedType(inBase, inPred) = preType.asRefinedType.flattenedRefinement
             val RefinedType(targetBase, targetPredRaw) = targetType.asRefinedType.flattenedRefinement
             val targetPredSubst = targetPredRaw.substitute(itValue, inValue)
-            // TODO maybe check if assertion provably succeeds / fails
             val assertion = simplifyBool(proxyStore.developNearest(targetPredSubst))
             if (subtypingCtx.isSubtype(inBase, targetBase)) {
+              if (solver.canDisprove(assertion)) {
+                er.warn(s"!! will always fail: it asserts ${SourceLevelFormulaPrinter.prettyprint(assertion)}, which is always false", hybridCast.getPosition)
+              }
               val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
                 case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
@@ -486,11 +494,11 @@ final class Typer(
                 case _ => false
               } match {
                 case Some(_) =>
-                  er.reportError(s"implementation restriction: hybrid cast is impossible because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+                  er.reportError(s"implementation restriction: !! cannot be used because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
                 case None =>
                   targetBase match {
                     case NamedType(StdLib.arrayTypeId, _, _) =>
-                      er.reportError(s"hybrid cast target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
+                      er.reportError(s"!!'s target has been resolved to an array type, which is forbidden", hybridCast.getPosition)
                     case _ => ()
                   }
                   irModif {
@@ -499,10 +507,10 @@ final class Typer(
               }
               currScope.saveSmartcast(inValue, targetType)
             } else {
-              er.reportError(s"hybrid cast is not sufficient to cast $inBase to $targetBase", hybridCast.getPosition)
+              er.reportError(s"!! is not sufficient to cast $inBase to $targetBase", hybridCast.getPosition)
             }
           case (preType, None) =>
-            er.reportError("hybrid cast target type could not be resolved, please provide a type annotation", hybridCast.getPosition)
+            er.reportError("!!'s target type could not be resolved, please provide a type annotation", hybridCast.getPosition)
         }
 
       case conv@Conversion(assigned, inValue, targetType) =>
