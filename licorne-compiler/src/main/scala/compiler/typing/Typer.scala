@@ -141,6 +141,7 @@ final class Typer(
     instr match {
 
       case loop@Loop(condScope, condVal, bodyScope, unsortedLoopVars) =>
+        removeIrrelevantVarEvolutions(currScope, unsortedLoopVars)
         val sortedLoopVars = sortLoopVarsAccordingToDependencies(unsortedLoopVars)
         loop.variables = sortedLoopVars
         preResolvePureFunCalls(condScope, condScope)
@@ -148,9 +149,9 @@ final class Typer(
         val feedbackTypeAssumptions = mutable.Map.from(sortedLoopVars.map(lvd => lvd.beforeLoopVal -> bodyScope.getCurrentTypeOf(lvd.beforeLoopVal)))
         for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           (for {
-            recurrence <- varData.recurrenceOpt
+            varEvol <- varData.variableEvolutionOpt
             if subtypingCtx.isSubtype(currScope.getCurrentTypeOf(beforeLoopVal), IntType)
-            (monotonicityLowerBounds, monotonicityUpperBounds) <- recurrence.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
+            (monotonicityLowerBounds, monotonicityUpperBounds) <- varEvol.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
           } yield {
 
             def boundsToRange(lbs: Iterable[Formula], ubs: Iterable[Formula]): IntRangeType = {
@@ -168,12 +169,12 @@ final class Typer(
               case None => inferredInBodyType
             }
             feedbackTypeAssumptions(inCondVal) = inBodyType
-            feedbackTypeAssumptions.addAll(recurrence.induct.idValsDependencies.flatMap(idVal => if feedbackTypeAssumptions.contains(idVal) then None else {
+            feedbackTypeAssumptions.addAll(varEvol.induct.idValsDependencies.flatMap(idVal => if feedbackTypeAssumptions.contains(idVal) then None else {
               val currType = currScope.detectCurrentType(proxyStore.developDeep(idVal))
               Option.when(currType != NothingType)(idVal -> currType)
             }))
             val feedbackType =
-              absInt.interpretUnderAssumptions(recurrence.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
+              absInt.interpretUnderAssumptions(varEvol.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
                 .getOrElse(boundsToRange(smartcastLowerBounds, smartcastUpperBounds))
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
             varDefScope.saveType(inCondVal, inCondType) // after loop
@@ -194,10 +195,20 @@ final class Typer(
             Some(())
           }
         }
-        typeScopeInstructions(condScope, branchInfo)
+        val loopIdxVal = sortedLoopVars.flatMap(_.variableEvolutionOpt).find(_.isTrivialIncByOne) match {
+          case Some(rec) => rec.inductVal
+          case None => currScope.newIntermediate(s"loopidx@${loop.getPosition.map(_.lineColonColumn).getOrElse("??")}")
+        }
+        val closedFormsAssumptions = for {
+          lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars
+          rec <- lvd.variableEvolutionOpt
+          closedForm <- rec.asClosedForm(loopIdxVal)
+        } yield Equality(inCondVal, closedForm)
+        val closedFormInfo = BranchingInfo(SeqMap.empty, SeqSet(closedFormsAssumptions))
+        typeScopeInstructions(condScope, branchInfo ++ closedFormInfo)
         subtypingCtx.enforceIsSubtype(condScope.detectCurrentType(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-        typeScopeInstructions(bodyScope, infoIfCondTrue)
+        typeScopeInstructions(bodyScope, infoIfCondTrue ++ closedFormInfo)
         var checkTermination = true
         for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           val typeAtEndOfBody = bodyScope.detectCurrentType(bodyLastVal)
@@ -216,7 +227,7 @@ final class Typer(
         if (checkTermination && !condScope.hasExited && proxyStore.developNearest(condVal) != BoolConst(true) && solver.canProve(condVal)) {
           er.warn(s"loop cannot exit, if this is intended please make it explicit by using '${BoolConst(true)}' as the loop condition", loop.getPosition)
         }
-        applyBranchInfo(currScope, infoIfCondFalse)
+        applyBranchInfo(currScope, infoIfCondFalse ++ closedFormInfo)
 
       case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
         val condType = currScope.computeCurrentType(condVal, disjunction.getPosition)
@@ -554,6 +565,14 @@ final class Typer(
     }
   }
 
+  private def removeIrrelevantVarEvolutions(currScope: Scope, unsortedLoopVars: List[LoopVarData])(using TypeParamsContext): Unit = {
+    for (lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- unsortedLoopVars) {
+      if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)) {
+        lvd.variableEvolutionOpt = None
+      }
+    }
+  }
+
   private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type], branchInfo: BranchingInfo)
                                   (using TypeParamsContext): (newFieldsInit: List[(Option[FunOrVarId], IdValue, Iterable[RealInstr])], newInstanceType: Type) = {
     val newFieldsInitB = List.newBuilder[(Option[FunOrVarId], IdValue, Iterable[RealInstr])]
@@ -784,7 +803,7 @@ final class Typer(
     for (loopVar@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- vars) {
       backB.addOne(inCondVal, loopVar)
       gb.addVertex(inCondVal)
-      loopVar.recurrenceOpt.foreach { case Recurrence(bases, induct, inductVal) =>
+      loopVar.variableEvolutionOpt.foreach { case VariableEvolution(bases, induct, inductVal, initIsSingleBase) =>
         assert(inductVal == inCondVal)
         gb.addDescendants(inductVal, induct.idValsDependencies)
       }

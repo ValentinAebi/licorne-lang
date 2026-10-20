@@ -193,7 +193,7 @@ object FormulasSimplification {
         None
     }
 
-    computeTerm(sLhs, sRhs).getOrElse(times -> 1)
+    computeTerm(sLhs, sRhs).getOrElse(Times(sLhs, sRhs) -> 1)
   }
 
   private def evalNumericBinop(lhs: Formula, rhs: Formula, intBinop: (Int, Int) => Int, doubleBinop: (Double, Double) => Double, rhsCanBeZero: Boolean): Option[IntConst] =

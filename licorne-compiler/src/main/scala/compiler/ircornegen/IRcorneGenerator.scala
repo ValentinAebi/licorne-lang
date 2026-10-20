@@ -13,7 +13,7 @@ import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
-import compiler.reasoning.Recurrence
+import compiler.reasoning.VariableEvolution
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.ircornegen.ImportsScanner.PackagesInfo
@@ -814,10 +814,10 @@ final class IRcorneGenerator(
         } else {
           for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars if !beforeLoopVal.isInstanceOf[HeapVarIdValue]) {
             val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
-            varData.recurrenceOpt = for {
+            varData.variableEvolutionOpt = for {
               init <- proxyStore.developDeepIgnoreAccessorsOpt(beforeLoopVal)
               induct <- proxyStore.developDeepIgnoreAccessorsOpt(bodyLastLocalVal, acceptPhis = true)
-            } yield Recurrence.computeFrom(init, induct, condVal)
+            } yield VariableEvolution.computeFrom(init, induct, condVal)
             bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
             proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
             currScope.getLocalValuesContextUnsafe.remap(varId, condVal)

@@ -10,7 +10,7 @@ import compiler.lang.*
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.NothingType
 import compiler.pipeline.CompilationStep
-import compiler.reasoning.{Recurrence, TypeSimplifier, Solver}
+import compiler.reasoning.{VariableEvolution, TypeSimplifier, Solver}
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
@@ -91,12 +91,12 @@ object IRcorne {
   trait VarData
 
   final case class LoopVarData(varId: FunOrVarId, beforeLoopVal: IdValue, inCondVal: VarIdValue, bodyLastVal: VarIdValue, varDefScope: Scope) extends VarData {
-    var recurrenceOpt: Option[Recurrence] = None
+    var variableEvolutionOpt: Option[VariableEvolution] = None
 
     def recurDescr: String = {
-      recurrenceOpt match {
-        case Some(recurrence) =>
-          s"RECUR: $recurrence"
+      variableEvolutionOpt match {
+        case Some(varEvol) =>
+          s"EVOL: $varEvol"
         case None => ""
       }
     }
