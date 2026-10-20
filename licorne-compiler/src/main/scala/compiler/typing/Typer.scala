@@ -153,15 +153,6 @@ final class Typer(
             if subtypingCtx.isSubtype(currScope.getCurrentTypeOf(beforeLoopVal), IntType)
             (monotonicityLowerBounds, monotonicityUpperBounds) <- varEvol.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
           } yield {
-
-            def boundsToRange(lbs: Iterable[Formula], ubs: Iterable[Formula]): IntRangeType = {
-              val lowerBounds = solver.discardNonMins(lbs)
-              val upperBounds = solver.discardNonMaxs(ubs)
-              val lb = Option.when(lowerBounds.size == 1)(lowerBounds.head)
-              val ub = Option.when(upperBounds.size == 1)(upperBounds.head)
-              IntRangeType(lb, ub)
-            }
-
             val (smartcastLowerBounds, smartcastUpperBounds) = infoIfCondTrueFirstGuess.boundsFor(inCondVal, solver)
             val inferredInBodyType = boundsToRange(monotonicityLowerBounds ++ smartcastLowerBounds, monotonicityUpperBounds ++ smartcastUpperBounds)
             val inBodyType = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt match {
@@ -797,6 +788,14 @@ final class Typer(
     case _ => None
   }
 
+  private def boundsToRange(lbs: Iterable[Formula], ubs: Iterable[Formula]): IntRangeType = {
+    val lowerBounds = solver.discardNonMins(lbs)
+    val upperBounds = solver.discardNonMaxs(ubs)
+    val lb = Option.when(lowerBounds.size == 1)(lowerBounds.head)
+    val ub = Option.when(upperBounds.size == 1)(upperBounds.head)
+    IntRangeType(lb, ub)
+  }
+
   private def sortLoopVarsAccordingToDependencies(vars: List[LoopVarData]): List[LoopVarData] = {
     val gb = Graph.Builder[IdValue]()
     val backB = Map.newBuilder[IdValue, LoopVarData]
@@ -899,8 +898,7 @@ final class Typer(
   }
 
   def instantiateType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
-                     (using tParamsCtx: TypeParamsContext): Type = {
-    tpe match {
+                     (using tParamsCtx: TypeParamsContext): Type = tpe match {
       case primitiveType: PrimitiveType => primitiveType
       case namedType: NamedType => instantiateNamedType(namedType, ambientVarianceOpt, currScope, posOpt, subTIfInSuperTPos = None)
       case ClosureType(paramTypesRaw, resultTypeRaw, enforcedPure) =>
@@ -944,7 +942,6 @@ final class Typer(
         }
         NullableType(nullatedTypeInst)
     }
-  }
 
   private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     val tpe = typeFormula(bound, currScope, posOpt)
