@@ -5,6 +5,7 @@ import compiler.ircornegen.FormulasCompilation.convertFormulaToIR
 import compiler.identifiers.*
 import compiler.irs.ircorne.*
 import compiler.irs.ircorne.Formulas.*
+import compiler.irs.ircorne.FormulasDsl.-
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.IRcorne.HybridCastMode.{AssertNonNull, AssertPredicate}
 import compiler.lang
@@ -15,7 +16,7 @@ import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reasoning.*
-import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula}
+import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula, simplifyNumeric}
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
@@ -24,7 +25,7 @@ import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
-import compiler.util.{BidirectionalIterator, SeqSet, findUnique, mapVals}
+import compiler.util.{BidirectionalIterator, SeqSet, asIterableOfType, findUnique, mapVals}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
@@ -32,6 +33,7 @@ import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
 import scala.collection.immutable.SeqMap
 import scala.collection.mutable
 import scala.reflect.ClassTag
+import scala.util.boundary
 
 
 final class Typer(
@@ -146,7 +148,28 @@ final class Typer(
         loop.variables = sortedLoopVars
         preResolvePureFunCalls(condScope, condScope)
         val (infoIfCondTrueFirstGuess, _) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-        val feedbackTypeAssumptions = mutable.Map.from(sortedLoopVars.map(lvd => lvd.beforeLoopVal -> bodyScope.getCurrentTypeOf(lvd.beforeLoopVal)))
+        val initValsSubst = sortedLoopVars.map(lvd => lvd.inCondVal -> lvd.beforeLoopVal).toMap[IdValue, Formula]
+        val canProveLoopEntered = solver.canProve(proxyStore.developDeep(condVal).substitute(initValsSubst))
+        if (canProveLoopEntered) {
+          loop.markProvablyEntered()
+        }
+        val loopIdxVal = sortedLoopVars.flatMap(_.variableEvolutionOpt).find(_.isTrivialIncByOne) match {
+          case Some(rec) => rec.inductVal
+          case None => currScope.newIntermediate(s"loopidx@${loop.getPosition.map(_.lineColonColumn).getOrElse("??")}")
+        }
+        val iterCntOpt = proxyStore.developNearest(condVal).splitConjuncts
+          .map(inferIterationsCnt(_, sortedLoopVars, loopIdxVal))
+          .asIterableOfType[Some[Formula]]
+          .flatMap { individualCounts =>
+            val mins = solver.discardNonMins(individualCounts.map(_.value))
+            Option.when(mins.size == 1)(mins.head)
+          }
+        iterCntOpt.foreach { iterCnt =>
+          loop.setInferredIterCnt(iterCnt)
+        }
+        val beforeLoopValAssumptions = sortedLoopVars.map(lvd => lvd.beforeLoopVal -> bodyScope.getCurrentTypeOf(lvd.beforeLoopVal)).toMap
+        val feedbackTypeAssumptions = mutable.Map.from(beforeLoopValAssumptions)
+        val deferredAfterLoopTypes = mutable.ListBuffer.empty[(Scope, IdValue, Type)]
         for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           (for {
             varEvol <- varData.variableEvolutionOpt
@@ -154,7 +177,11 @@ final class Typer(
             (monotonicityLowerBounds, monotonicityUpperBounds) <- varEvol.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
           } yield {
             val (smartcastLowerBounds, smartcastUpperBounds) = infoIfCondTrueFirstGuess.boundsFor(inCondVal, solver)
-            val inferredInBodyType = boundsToRange(monotonicityLowerBounds ++ smartcastLowerBounds, monotonicityUpperBounds ++ smartcastUpperBounds)
+            val (closedFormLowerBoundsBody, closedFormUpperBoundsBody) = inferBoundsFromLoopClosedFormAnalysis(varEvol, iterCntOpt, loopIdxVal, cnt => IntRangeType(0, cnt - 1))
+            val inferredInBodyType = boundsToRange(
+              monotonicityLowerBounds ++ smartcastLowerBounds ++ closedFormLowerBoundsBody,
+              monotonicityUpperBounds ++ smartcastUpperBounds ++ closedFormUpperBoundsBody
+            )
             val inBodyType = currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt match {
               case Some(LocalDecl(_, tpe)) => typeSimplifier.simplifyType(IntersectionType(tpe, inferredInBodyType))
               case None => inferredInBodyType
@@ -165,12 +192,19 @@ final class Typer(
               Option.when(currType != NothingType)(idVal -> currType)
             }))
             val feedbackType =
-              absInt.interpretUnderAssumptions(varEvol.induct, feedbackTypeAssumptions.toMap, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
-                .getOrElse(boundsToRange(monotonicityLowerBounds, monotonicityUpperBounds))
+              absInt.interpretUnderAssumptions(varEvol.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
+                .getOrElse {
+                  val (closedFormLowerBoundsFeedback, closedFormUpperBoundsFeedback) = inferBoundsFromLoopClosedFormAnalysis(varEvol, iterCntOpt, loopIdxVal, cnt => IntRangeType(1, cnt))
+                  boundsToRange(
+                    monotonicityLowerBounds ++ closedFormLowerBoundsFeedback,
+                    monotonicityUpperBounds ++ closedFormUpperBoundsFeedback
+                  )
+                }
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
-            varDefScope.saveType(inCondVal, inCondType) // after loop
-            condScope.saveSmartcast(inCondVal, inCondType) // inside condition
-            bodyScope.saveSmartcast(inCondVal, inBodyType) // inside body
+            condScope.saveSmartcast(inCondVal, inCondType)
+            bodyScope.saveSmartcast(inCondVal, inBodyType)
+            val afterLoopType = if canProveLoopEntered then feedbackType else inCondType
+            deferredAfterLoopTypes.addOne(varDefScope, inCondVal, afterLoopType)
           }) orElse {
             val tpe =
               currScope.getLocalValuesContextUnsafe
@@ -186,20 +220,16 @@ final class Typer(
             Some(())
           }
         }
-        val loopIdxVal = sortedLoopVars.flatMap(_.variableEvolutionOpt).find(_.isTrivialIncByOne) match {
-          case Some(rec) => rec.inductVal
-          case None => currScope.newIntermediate(s"loopidx@${loop.getPosition.map(_.lineColonColumn).getOrElse("??")}")
-        }
         val closedFormsAssumptions = for {
           lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars
           rec <- lvd.variableEvolutionOpt
           closedForm <- rec.asClosedForm(loopIdxVal)
         } yield Equality(inCondVal, closedForm)
-        val closedFormInfo = BranchingInfo(SeqMap.empty, SeqSet(closedFormsAssumptions))
-        typeScopeInstructions(condScope, branchInfo ++ closedFormInfo)
+        typeScopeInstructions(condScope, branchInfo ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
         subtypingCtx.enforceIsSubtype(condScope.detectCurrentType(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
-        typeScopeInstructions(bodyScope, infoIfCondTrue ++ closedFormInfo)
+        typeScopeInstructions(bodyScope, infoIfCondTrue ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
+        deferredAfterLoopTypes.foreach(_.saveType(_, _))
         var checkTermination = true
         for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           val typeAtEndOfBody = bodyScope.detectCurrentType(bodyLastVal)
@@ -218,7 +248,7 @@ final class Typer(
         if (checkTermination && !condScope.hasExited && proxyStore.developNearest(condVal) != BoolConst(true) && solver.canProve(condVal)) {
           er.warn(s"loop cannot exit, if this is intended please make it explicit by using '${BoolConst(true)}' as the loop condition", loop.getPosition)
         }
-        applyBranchInfo(currScope, infoIfCondFalse ++ closedFormInfo)
+        applyBranchInfo(currScope, infoIfCondFalse ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
 
       case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
         val condType = currScope.computeCurrentType(condVal, disjunction.getPosition)
@@ -564,6 +594,57 @@ final class Typer(
     }
   }
 
+  private def inferBoundsFromLoopClosedFormAnalysis(varEvol: VariableEvolution, iterCntOpt: Option[Formula], loopIdxVal: IdValue, mkRangeFromIterCnt: Formula => IntRangeType)
+                                                   (using TypeParamsContext): (Iterable[Formula], Iterable[Formula]) =
+    (for {
+      iterCnt <- iterCntOpt
+      closedForm <- varEvol.asClosedForm(loopIdxVal)
+      absIntRes <- absInt.interpretUnderAssumptions(closedForm, Map(loopIdxVal -> mkRangeFromIterCnt(iterCnt)), None)
+    } yield absIntRes) match {
+      case Some(IntRangeType(lowerBoundOpt, upperBoundOpt)) => (lowerBoundOpt, upperBoundOpt)
+      case Some(IntersectionType(types)) => types.asIterableOfType[IntRangeType] match {
+        case Some(ranges) => (ranges.flatMap(_.lowerBoundOpt), ranges.flatMap(_.upperBoundOpt))
+        case None => (List.empty, List.empty)
+      }
+      case _ => (List.empty, List.empty)
+    }
+
+  private def inferIterationsCnt(condConjunct: Formula, loopVars: List[LoopVarData], loopIdxVal: IdValue): Option[Formula] = boundary {
+    import FormulasDsl.*
+
+    def applyMeasure(measure: Formula): Option[Formula] = {
+      val terms = linearize(measure)
+      if (terms.findUnique(_._1.idValsDependencies.contains(loopIdxVal)).exists(_._1 == loopIdxVal)) {
+        val loopVarIdxCoef = terms.apply(loopIdxVal)
+        val otherTerms = terms - loopIdxVal
+        Option.when(otherTerms.forall((t, coef) => coef % loopVarIdxCoef == 0)) {
+          val otherTermsScaled = otherTerms.mapVals(_ / -loopVarIdxCoef)
+          if otherTermsScaled.isEmpty then IntConst(0)
+          else {
+            val rawIterCnt = otherTermsScaled.map((t, coef) => Times(t, IntConst(coef))).reduceLeft[Formula](Plus(_, _))
+            simplifyFormula(proxyStore.developDeep(rawIterCnt))
+          }
+        }
+      } else None
+    }
+
+    val closedFormsSubst = loopVars.map(ldv => ldv.inCondVal -> ldv.variableEvolutionOpt.flatMap(_.asClosedForm(loopIdxVal))).toMap[IdValue, Option[Formula]]
+    val pf: PartialFunction[Formula, Formula] = {
+      case currVal: IdValue => closedFormsSubst.get(currVal) match {
+        case Some(Some(closedForm)) => closedForm
+        case Some(None) =>
+          boundary.break(None)
+        case None => currVal
+      }
+    }
+    val condConjunctWithClosedForms = condConjunct.applyRecursively(pf)
+    condConjunctWithClosedForms match {
+      case LessOrEq(lhs, rhs) => applyMeasure(rhs - lhs + 1)
+      case LessThan(lhs, rhs) => applyMeasure(rhs - lhs)
+      case _ => None
+    }
+  }
+
   private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type], branchInfo: BranchingInfo)
                                   (using TypeParamsContext): (newFieldsInit: List[(Option[FunOrVarId], IdValue, Iterable[RealInstr])], newInstanceType: Type) = {
     val newFieldsInitB = List.newBuilder[(Option[FunOrVarId], IdValue, Iterable[RealInstr])]
@@ -899,49 +980,49 @@ final class Typer(
 
   def instantiateType(tpe: Type, ambientVarianceOpt: Option[Variance], currScope: Scope, posOpt: Option[Position])
                      (using tParamsCtx: TypeParamsContext): Type = tpe match {
-      case primitiveType: PrimitiveType => primitiveType
-      case namedType: NamedType => instantiateNamedType(namedType, ambientVarianceOpt, currScope, posOpt, subTIfInSuperTPos = None)
-      case ClosureType(paramTypesRaw, resultTypeRaw, enforcedPure) =>
-        val paramTypesInst = for paramType <- paramTypesRaw yield {
-          instantiateType(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
-        }
-        val resultTypeInst = instantiateType(resultTypeRaw, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
-        ClosureType(paramTypesInst, resultTypeInst, enforcedPure)
-      case tv: TypeVariable => tv
-      case UnionType(types) =>
-        UnionType(for tpe <- types yield {
-          instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
-        })
-      case IntersectionType(types) =>
-        IntersectionType(for tpe <- types yield {
-          instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
-        })
-      case TernaryType(cond, left, right) =>
-        enforcePurity(cond, "ternary type condition", posOpt)
-        TernaryType(cond, instantiateType(left, ambientVarianceOpt, currScope, posOpt), instantiateType(right, ambientVarianceOpt, currScope, posOpt))
-      case tpe@RefinedType(baseTypeRaw, predicate) =>
-        val baseTypeInst = instantiateType(baseTypeRaw, ambientVarianceOpt, currScope, posOpt)
-        val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
-        tmpPredScope.saveSmartcast(itValue, baseTypeRaw)
-        val predicateType = typeFormula(predicate, tmpPredScope, posOpt)
-        if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
-          er.reportError(s"predicate should have type $BoolType", posOpt)
-        }
-        enforcePurity(predicate, "predicate", posOpt)
-        RefinedType(baseTypeInst, predicate)
-      case tpe@IntRangeType(lbOpt, ubOpt) =>
-        lbOpt.foreach(checkIntRangeBound(_, "lower", currScope, posOpt))
-        ubOpt.foreach(checkIntRangeBound(_, "upper", currScope, posOpt))
-        tpe
-      case tpe@NullableType(nullatedTypeRaw) =>
-        val nullatedTypeInst = instantiateType(nullatedTypeRaw, ambientVarianceOpt, currScope, posOpt)
-        nullatedTypeInst match {
-          case nullatedType@(NothingType | NullType) =>
-            er.warn(s"useless '${Operator.QuestionMark}': $tpe is equivalent to $nullatedType", posOpt)
-          case _ => ()
-        }
-        NullableType(nullatedTypeInst)
-    }
+    case primitiveType: PrimitiveType => primitiveType
+    case namedType: NamedType => instantiateNamedType(namedType, ambientVarianceOpt, currScope, posOpt, subTIfInSuperTPos = None)
+    case ClosureType(paramTypesRaw, resultTypeRaw, enforcedPure) =>
+      val paramTypesInst = for paramType <- paramTypesRaw yield {
+        instantiateType(paramType, ambientVarianceOpt.map(_ * Contravariant), currScope, posOpt)
+      }
+      val resultTypeInst = instantiateType(resultTypeRaw, ambientVarianceOpt.map(_ * Covariant), currScope, posOpt)
+      ClosureType(paramTypesInst, resultTypeInst, enforcedPure)
+    case tv: TypeVariable => tv
+    case UnionType(types) =>
+      UnionType(for tpe <- types yield {
+        instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
+      })
+    case IntersectionType(types) =>
+      IntersectionType(for tpe <- types yield {
+        instantiateType(tpe, ambientVarianceOpt, currScope, posOpt)
+      })
+    case TernaryType(cond, left, right) =>
+      enforcePurity(cond, "ternary type condition", posOpt)
+      TernaryType(cond, instantiateType(left, ambientVarianceOpt, currScope, posOpt), instantiateType(right, ambientVarianceOpt, currScope, posOpt))
+    case tpe@RefinedType(baseTypeRaw, predicate) =>
+      val baseTypeInst = instantiateType(baseTypeRaw, ambientVarianceOpt, currScope, posOpt)
+      val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
+      tmpPredScope.saveSmartcast(itValue, baseTypeRaw)
+      val predicateType = typeFormula(predicate, tmpPredScope, posOpt)
+      if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
+        er.reportError(s"predicate should have type $BoolType", posOpt)
+      }
+      enforcePurity(predicate, "predicate", posOpt)
+      RefinedType(baseTypeInst, predicate)
+    case tpe@IntRangeType(lbOpt, ubOpt) =>
+      lbOpt.foreach(checkIntRangeBound(_, "lower", currScope, posOpt))
+      ubOpt.foreach(checkIntRangeBound(_, "upper", currScope, posOpt))
+      tpe
+    case tpe@NullableType(nullatedTypeRaw) =>
+      val nullatedTypeInst = instantiateType(nullatedTypeRaw, ambientVarianceOpt, currScope, posOpt)
+      nullatedTypeInst match {
+        case nullatedType@(NothingType | NullType) =>
+          er.warn(s"useless '${Operator.QuestionMark}': $tpe is equivalent to $nullatedType", posOpt)
+        case _ => ()
+      }
+      NullableType(nullatedTypeInst)
+  }
 
   private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
     val tpe = typeFormula(bound, currScope, posOpt)

@@ -313,6 +313,11 @@ object Formulas {
     case WrappedScope(resVal, scope) => scope.isObviouslyPure
   }
 
+  extension (formula: Formula) def splitConjuncts: List[Formula] = formula match {
+    case LogicalAnd(lhs, rhs) => lhs.splitConjuncts ++ rhs.splitConjuncts
+    case formula => List(formula)
+  }
+
   extension (formula: Formula) def idValsDependencies: Set[IdValue] = {
     val deps = Set.newBuilder[IdValue]
     formula.traversePreOrder {

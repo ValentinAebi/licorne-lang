@@ -15,7 +15,7 @@ final case class VariableEvolution private(bases: SeqSet[Formula], induct: Formu
   require(!isRecurrence || bases.size == 1)
 
   private var boundsOpt: Option[Option[(Iterable[Formula], Iterable[Formula])]] = None
-  private var lastClosedFormCacheForToString: Option[(IdValue, Formula)] = None
+  private var lastClosedFormCache: Option[(IdValue, Formula)] = None
 
   def isTrivialIncByOne: Boolean = isRecurrence && bases.head == IntConst(0) && {
     val lin = FormulasSimplification.linearize(induct)
@@ -36,12 +36,14 @@ final case class VariableEvolution private(bases: SeqSet[Formula], induct: Formu
       bounds
   }
 
-  def asClosedForm(iterIdx: IdValue): Option[Formula] = {
-    val closedFormOpt = computeClosedForm(iterIdx)
-    closedFormOpt.foreach { closedForm =>
-      lastClosedFormCacheForToString = Some(iterIdx, closedForm)
-    }
-    closedFormOpt
+  def asClosedForm(iterIdx: IdValue): Option[Formula] = lastClosedFormCache match {
+    case Some(oldIdx, oldClosedForm) if oldIdx == iterIdx => Some(oldClosedForm)
+    case _ =>
+      val closedFormOpt = computeClosedForm(iterIdx)
+      closedFormOpt.foreach { closedForm =>
+        lastClosedFormCache = Some(iterIdx, closedForm)
+      }
+      closedFormOpt
   }
 
   private def computeClosedForm(iterIdx: IdValue): Option[Formula] = if (isRecurrence) {
@@ -89,7 +91,7 @@ final case class VariableEvolution private(bases: SeqSet[Formula], induct: Formu
       case Some(Some(lowerBounds, upperBounds)) =>
         s" (lower: ${lowerBounds.mkString(",")} ; upper: ${upperBounds.mkString(",")})"
       case _ => ""
-    }) ++ (lastClosedFormCacheForToString match {
+    }) ++ (lastClosedFormCache match {
       case Some(iterIdx, closedForm) => s" closed-form($iterIdx): $closedForm"
       case _ => ""
     })

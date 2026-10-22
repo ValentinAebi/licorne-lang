@@ -214,7 +214,7 @@ final class IRcornePrinter(
 
   private def printInstr(instr: Instr, scope: Scope)(using pps: PrettyPrintString): Unit = {
     instr match {
-      case IRcorne.Loop(cond, condVal, body, variables) =>
+      case loop@IRcorne.Loop(cond, condVal, body, variables) =>
         pps.add("LOOP").indentln {
           pps.add(s"cond [as ${maybeTyped(condVal, scope)}]: ")
           printScope(cond)
@@ -227,6 +227,12 @@ final class IRcornePrinter(
           }
         }
         pps.add("END LOOP")
+        loop.getInferredIterCnt.foreach { inferredIterCnt =>
+          pps.add(s" [#iter == $inferredIterCnt]")
+        }
+        if (loop.isProvablyEntered) {
+          pps.add(s" (always entered)")
+        }
       case IRcorne.Disjunction(condVal, thenBr, elseBr, variables) =>
         pps.add("IF [cond = ").add(maybeTyped(condVal, scope)).add("]").indentln {
           pps.add("then: ")
@@ -251,7 +257,7 @@ final class IRcornePrinter(
       case AssignCharConst(assigned, src) =>
         pps.add(s"CHARC ${maybeTyped(assigned, scope)} := $src")
       case AssignStringConst(assigned, src) =>
-        pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"$src\"")
+        pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"${src.replace("\n", "\\n").replace("\t", "\\t")}\"")
       case NumNeg(assigned, operand) =>
         pps.add(s"NEG ${maybeTyped(assigned, scope)} := -$operand")
       case Add(assigned, lhs, rhs) =>

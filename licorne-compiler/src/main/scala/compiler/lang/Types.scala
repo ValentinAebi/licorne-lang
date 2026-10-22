@@ -195,15 +195,7 @@ object Types {
       RefinedType(base, pred)
     }
 
-    def predicateAsSetOfConjuncts: SeqSet[Formula] = {
-
-      def splitPredicate(pred: Formula): List[Formula] = pred match {
-        case LogicalAnd(lhs, rhs) => splitPredicate(lhs) ++ splitPredicate(rhs)
-        case pred => List(pred)
-      }
-
-      SeqSet(splitPredicate(predicate))
-    }
+    def predicateAsSetOfConjuncts: SeqSet[Formula] = SeqSet(predicate.splitConjuncts)
 
     override def toString: String = s"$baseType ${Keyword.With} $predicate"
   }

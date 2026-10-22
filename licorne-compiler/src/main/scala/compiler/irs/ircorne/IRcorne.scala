@@ -146,6 +146,24 @@ object IRcorne {
   sealed trait ControlFlowInstr extends RealInstr
 
   final case class Loop(cond: Scope, condVal: IdValue, body: Scope, var variables: List[LoopVarData]) extends ControlFlowInstr {
+    private var inferredIterCntOpt: Option[Formula] = None
+    private var loopProvablyEnteredFlag: Boolean = false
+    
+    def getInferredIterCnt: Option[Formula] = inferredIterCntOpt
+
+    def setInferredIterCnt(cnt: Formula): Unit = {
+      if (inferredIterCntOpt.isDefined) {
+        throw IllegalStateException("iteration count has already been set")
+      }
+      inferredIterCntOpt = Some(cnt)
+    }
+    
+    def markProvablyEntered(): Unit = {
+      loopProvablyEnteredFlag = true
+    }
+    
+    def isProvablyEntered: Boolean = loopProvablyEnteredFlag
+    
     override def consumedVals: List[IdValue] = condVal :: variables.flatMap(vd => List(vd.beforeLoopVal, vd.bodyLastVal))
 
     override def producedVals: List[IdValue] = variables.map(_.inCondVal)

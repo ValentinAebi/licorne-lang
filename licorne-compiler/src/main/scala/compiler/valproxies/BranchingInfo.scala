@@ -87,6 +87,9 @@ object BranchingInfo {
 
   def ofAssumption(assumption: Formula): BranchingInfo =
     BranchingInfo(SeqMap.empty, SeqSet(assumption))
+    
+  def ofAssumptions(assumptions: Iterable[Formula]): BranchingInfo =
+    BranchingInfo(SeqMap.empty, SeqSet(assumptions))
 
   final case class SmartcastData(knownIs: SeqSet[TypeIdentifier], knownIsNot: SeqSet[TypeIdentifier]) {
 
