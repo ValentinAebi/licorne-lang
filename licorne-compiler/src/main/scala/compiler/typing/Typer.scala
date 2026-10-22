@@ -165,8 +165,8 @@ final class Typer(
               Option.when(currType != NothingType)(idVal -> currType)
             }))
             val feedbackType =
-              absInt.interpretUnderAssumptions(varEvol.induct, feedbackTypeAssumptions, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
-                .getOrElse(boundsToRange(smartcastLowerBounds, smartcastUpperBounds))
+              absInt.interpretUnderAssumptions(varEvol.induct, feedbackTypeAssumptions.toMap, None)(using currScope.getLocalValuesContextUnsafe.globalCtx)
+                .getOrElse(boundsToRange(monotonicityLowerBounds, monotonicityUpperBounds))
             val inCondType = meetJoin.computeJoin(inBodyType, feedbackType)
             varDefScope.saveType(inCondVal, inCondType) // after loop
             condScope.saveSmartcast(inCondVal, inCondType) // inside condition
