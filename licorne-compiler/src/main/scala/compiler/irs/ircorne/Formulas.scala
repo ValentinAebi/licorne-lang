@@ -161,7 +161,7 @@ object Formulas {
 
   final case class Plus(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Plus), NumericFormula
 
-  final case class Neg(operand: Formula) extends Formula {
+  final case class Neg(operand: Formula) extends NumericFormula {
     override def isAtomic: Boolean = operand.isAtomic
 
     override def children: List[Formula] = List(operand)
