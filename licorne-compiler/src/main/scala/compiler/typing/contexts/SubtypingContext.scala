@@ -3,7 +3,7 @@ package compiler.typing.contexts
 import compiler.datastructures.Graph
 import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas
-import compiler.irs.ircorne.Formulas.{BoolConst, Equality, Formula, FunCall, IntConst, IntermediateIdValue, LogicalNot}
+import compiler.irs.ircorne.Formulas.{BoolConst, Formula, IntConst, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.*
@@ -23,7 +23,6 @@ import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.collection.mutable
-import scala.runtime.BooleanRef
 
 final class SubtypingContext(
                               subtypingGraph: Graph[TypeIdentifier],
@@ -186,7 +185,11 @@ final class SubtypingContext(
       superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
     case (ClosureType(subParams, subResult, subIsEnforcedPure), ClosureType(superParams, superResult, superIsEnforcedPure)) =>
-      logicalImplies(superIsEnforcedPure, subIsEnforcedPure) && subParams.size == superParams.size && subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP)) && isSubtype(subResult, superResult)
+      val purityMatches = logicalImplies(superIsEnforcedPure, subIsEnforcedPure)
+      val paramListSizeMatches = subParams.size == superParams.size
+      val paramsMatch = subParams.zip(superParams).forall((subP, superP) => isSubtype(superP, subP))
+      val resultMatches = isSubtype(subResult, superResult)
+      purityMatches && paramListSizeMatches && paramsMatch && resultMatches
     case (subT, AnyType) if subT != NullType && !typeParamsCtx.isTypeParam(subT) => true
     case (subT, superT) =>
       val subTE = expandIfTypeParam(_.upperBoundOpt)(subT)
