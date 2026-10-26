@@ -16,7 +16,7 @@ import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Variance.*
 import compiler.pipeline.CompilationStep
 import compiler.reasoning.*
-import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula, simplifyNumeric}
+import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simplifyFormula}
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
@@ -84,7 +84,7 @@ final class Typer(
     solver.onNewFrame {
       scope.resetHasExited()
       scope.forTraversal { instrIter =>
-        applyBranchInfo(scope, branchInfo)
+        applyBranchInfo(scope, branchInfo, checkDeadCode = scopeKind == ScopeKind.NotAFunc)
         var stop = false
         while (instrIter.hasNext && !stop) {
           val instr = instrIter.next()
@@ -1329,7 +1329,7 @@ final class Typer(
     sig
   }
 
-  private def applyBranchInfo(scope: Scope, rawBranchInfo: BranchingInfo)(using TypeParamsContext): Unit = {
+  private def applyBranchInfo(scope: Scope, rawBranchInfo: BranchingInfo, checkDeadCode: Boolean = true)(using TypeParamsContext): Unit = {
     val branchInfo = rawBranchInfo.crossData
     for ((subject, smartcastData) <- branchInfo.smartcasts) {
       for {
@@ -1363,7 +1363,7 @@ final class Typer(
         scope.saveSmartcast(subject, smartcastType)
       }
     }
-    if (solver.checkUnsat()) {
+    if (checkDeadCode && solver.checkUnsat()) {
       scope.markHasExited()
       scope.insertInstrDuringTraversal(Unreachable())
     }
