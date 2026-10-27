@@ -215,7 +215,7 @@ final class Typer(
                   subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
                 })
                 .filterNot(Types.isExtreme)
-                .getOrElse(dealiasingCtx.dealiasType(currScope.detectCurrentType(beforeLoopVal).baseTypeAssumingNoAlias))
+                .getOrElse(discardPredicateIfOnlyEqualities(currScope.detectCurrentType(beforeLoopVal).baseType))
             varDefScope.saveType(inCondVal, tpe)
             Some(())
           }
@@ -432,8 +432,7 @@ final class Typer(
           case Some(expType) =>
             subtypingCtx.enforceIsSubtypeExpAct(newValue, newValType, expType, "heap-allocated variable assignment", currScope, heapVarWr.getPosition)
           case None =>
-            val dealType = dealiasingCtx.dealiasType(newValType)
-            heapVarsTypeStore.saveType(heapVar, if dealType.asRefinedType.predicateAsSetOfConjuncts.forall(_.isInstanceOf[Equality]) then dealType.baseTypeAssumingNoAlias else newValType)
+            heapVarsTypeStore.saveType(heapVar, discardPredicateIfOnlyEqualities(newValType))
         }
         forbiddenIfImpure(s"illegal access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
 
@@ -584,6 +583,13 @@ final class Typer(
       case scope: Scope =>
         typeScopeInstructions(scope, BranchingInfo.empty)
     }
+  }
+
+  private def discardPredicateIfOnlyEqualities(tpe: Type): Type = {
+    val dealType = dealiasingCtx.dealiasType(tpe)
+    if dealType.asRefinedType.predicateAsSetOfConjuncts.forall(_.isInstanceOf[Equality])
+    then dealType.baseTypeAssumingNoAlias
+    else tpe
   }
 
   private def removeIrrelevantVarEvolutions(currScope: Scope, unsortedLoopVars: List[LoopVarData])(using TypeParamsContext): Unit = {
