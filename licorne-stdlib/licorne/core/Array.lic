@@ -43,4 +43,16 @@ object Arrays {
         }
     }
 
+    fn toString[T](array: Array[T]) -> String {
+        var s = "[";
+        for (var i = 0; i < array.size(); i += 1) {
+            if (i > 0) {
+                s ++= ",";
+            };
+            s ++= str(array.get(i));
+        };
+        s ++= "]";
+        return s;
+    }
+
 }
