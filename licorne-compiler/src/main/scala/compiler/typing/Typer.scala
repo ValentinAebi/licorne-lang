@@ -28,7 +28,7 @@ import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{BidirectionalIterator, SeqSet, asIterableOfType, findUnique, mapVals}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
-import compiler.valuesconversion.LocalValuesContext.KnownAndInitialized
+import compiler.valuesconversion.LocalValuesContext.*
 
 import scala.collection.immutable.SeqMap
 import scala.collection.mutable
@@ -237,8 +237,12 @@ final class Typer(
           lazy val msg = currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
             case KnownAndInitialized(value, defScope, reassigStatus, Some(declTypeAnnot)) =>
               s"update of variable $varId in loop violate its type annotation $declTypeAnnot"
-            case _ =>
-              s"inferred incorrect type $typeInCond for variable $varId at loop body start, please provide a type annotation at variable declaration site"
+            case vqr =>
+              val varDeclPosDescr = vqr.declInfoOpt match {
+                case Some(pos: Position) => s" (on line ${pos.line})"
+                case _ => ""
+              }
+              s"I could not find a type for variable $varId that stays valid for all iterations of the loop (I attempted with $typeInCond), please provide a type annotation at variable declaration" ++ varDeclPosDescr
           }
           checkTermination &= subtypingCtx.enforceIsSubtype(typeAtEndOfBody, typeInCond, msg, loop.getPosition)
           val beforeLoopType = currScope.detectCurrentType(beforeLoopVal)

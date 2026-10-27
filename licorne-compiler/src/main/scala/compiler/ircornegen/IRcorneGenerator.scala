@@ -678,7 +678,8 @@ final class IRcorneGenerator(
             warn(s"value of type $UnitType", localDef.getPosition)
           case _ => ()
         }
-        if (currScope.getLocalValuesContextUnsafe.knows(localName)) {
+        val localValsCtx = currScope.getLocalValuesContextUnsafe
+        if (localValsCtx.knows(localName)) {
           reportError(s"$localName is already defined in this scope", stat.getPosition)
         } else rhsOpt match {
           case Some(rhs) =>
@@ -686,12 +687,17 @@ final class IRcorneGenerator(
             generateIR(Asts.VarAssig(Asts.VariableRef(localName).withDesugaringSource(localDef), typeAnnotTreeOpt, rhs)
               .withDesugaringSource(localDef), currScope, newScopeIfBlock)
           case None =>
-            currScope.getLocalValuesContextUnsafe.saveNewLocal(localName, None, currScope, reassigPermission, typeAnnotOpt)
+            localValsCtx.saveNewLocal(localName, None, currScope, reassigPermission, typeAnnotOpt)
             typeAnnotOpt.foreach { typeAnnot =>
               val localDecl = LocalDecl(localName, typeAnnot)
               currScope.saveInstr(localDecl, localDef)
-              currScope.getLocalValuesContextUnsafe.valueOf(localName).setDecl(localDecl)
+              localValsCtx.valueOf(localName).setDeclInfo(localDecl)
             }
+          localDef.getPosition.foreach { pos =>
+            if (localValsCtx.valueOf(localName).declInfoOpt.isEmpty) {
+              localValsCtx.valueOf(localName).setDeclInfo(pos)
+            }
+          }
         }
 
       case assig@Asts.VarAssig(varRefTree@Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhsTree) if !currScope.getLocalValuesContextUnsafe.knows(lhsLocalId) =>

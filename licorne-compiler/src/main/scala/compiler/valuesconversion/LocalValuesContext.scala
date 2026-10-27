@@ -109,17 +109,22 @@ object LocalValuesContext {
       case _ => None
     }
 
-    def declOpt: Option[LocalDecl] = this match {
-      case found: KnownAndInitialized => found.localInfo.declaration
-      case found: KnownButUninitialized => found.localInfo.declaration
+    def declInfoOpt: Option[LocalDecl | Position] = this match {
+      case found: KnownAndInitialized => found.localInfo.declarationInfo
+      case found: KnownButUninitialized => found.localInfo.declarationInfo
+      case _ => None
+    }
+
+    def declOpt: Option[LocalDecl] = declInfoOpt match {
+      case Some(decl: LocalDecl) => Some(decl)
       case _ => None
     }
     
-    def setDecl(localDecl: LocalDecl): Unit = this match {
+    def setDeclInfo(declInfo: LocalDecl | Position): Unit = this match {
       case found: KnownAndInitialized =>
-        found.localInfo.declaration = localDecl
+        found.localInfo.declarationInfo = declInfo
       case found: KnownButUninitialized =>
-        found.localInfo.declaration = localDecl
+        found.localInfo.declarationInfo = declInfo
       case _ => ()
     }
 

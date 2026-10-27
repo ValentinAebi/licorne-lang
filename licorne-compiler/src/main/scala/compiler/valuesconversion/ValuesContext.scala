@@ -5,6 +5,7 @@ import compiler.irs.ircorne.Formulas.{IdValue, UninterpretedConstIdValue}
 import compiler.irs.ircorne.IRcorne.{LocalDecl, Scope}
 import compiler.lang.ReassigPermission
 import compiler.lang.Types.Type
+import compiler.reporting.Position
 import compiler.valuesconversion.ValuesContext.LocalInfo
 
 trait ValuesContext {
@@ -28,13 +29,17 @@ object ValuesContext {
                                                         reassigPermission: ReassigPermission,
                                                         var declarationTypeAnnotOpt: Option[Type]
                                                       ){
-    private var declOpt: Option[LocalDecl] = None
+    private var declInfoOpt: Option[LocalDecl | Position] = None
 
-    def declaration_=(decl: LocalDecl): Unit = {
-      declOpt = Some(decl)
-      declarationTypeAnnotOpt = Some(decl.tpe)
+    def declarationInfo_=(declInfo: LocalDecl | Position): Unit = {
+      declInfoOpt = Some(declInfo)
+      declInfo match {
+        case decl: LocalDecl =>
+          declarationTypeAnnotOpt = Some(decl.tpe)
+        case _ => ()
+      }
     }
 
-    def declaration: Option[LocalDecl] = declOpt
+    def declarationInfo: Option[LocalDecl | Position] = declInfoOpt
   }
 }

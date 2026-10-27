@@ -41,7 +41,7 @@ object Lists {
 
    fn sum_bad(var ls: List[[..1000]]) -> [0..] {
       var s = 0;
-      while ls is Cons {    //> E : inferred incorrect type [0..] for variable s at loop body start, please provide a type annotation at variable declaration site
+      while ls is Cons {    //> E : I could not find a type for variable s that stays valid for all iterations of the loop (I attempted with [0..]), please provide a type annotation at variable declaration (on line 43)
          s += ls.head();
          ls = ls.tail();
       };
