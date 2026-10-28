@@ -3,6 +3,7 @@ package compiler.runners
 import compiler.gennames.FileExtensions.dot
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reasoning.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
 import compiler.setup.EnvironmentVariables
 
@@ -156,6 +157,19 @@ object Main {
     }
   }
 
+  private def getTimeoutConfigArgs(argsMap: MutArgsMap): TimeoutConfig = {
+    getValuedArg("timeout", argsMap, Some("2")).toIntOption match {
+      case None =>
+        error("invalid timeout value: not parsable as an integer")
+      case Some(timeoutSeconds) =>
+        getValuedArg("timeouts-count", argsMap, Some("10")).toIntOption match {
+          case None =>
+            error("timeouts count is not a valid number")
+          case Some(timeoutsCnt) => TimeoutConfig(timeoutSeconds, timeoutsCnt)
+        }
+    }
+  }
+
   private def getIndentGranularityArg(argsMap: MutArgsMap): Int = {
     val argStr = getValuedArg("indent", argsMap, Some("2"))
     val indent = argStr.toIntOption.getOrElse(error(s"could not convert $argStr to an integer"))
@@ -164,7 +178,7 @@ object Main {
     }
     indent
   }
-  
+
   private def getPkgCheckDir(argsMap: MutArgsMap): Option[Path] = {
     val check = !getUnvalArg("dont-check-pkg", argsMap)
     Option.when(check)(currentWorkingDir())
@@ -182,7 +196,7 @@ object Main {
     }
     if arrayStr == emptyArrStr then Array.empty else arrayStr.tail.init.split(' ')
   }
-  
+
   private def currentWorkingDir(): Path = Paths.get("").toAbsolutePath
 
   // Actions, i.e. description of commands to the cmdline program -----------------------------------------------
@@ -199,11 +213,12 @@ object Main {
       val outDirPath = getOutDirArg(argsMap)
       val isDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
+      val timeoutConfig = getTimeoutConfigArgs(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, isDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, isDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources ++ stdLibSources)
@@ -228,11 +243,12 @@ object Main {
       val outDirPath = getOutDirArg(argsMap)
       val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
+      val timeoutConfig = getTimeoutConfigArgs(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       compiler.apply(sources ++ stdLibSources)
     }
@@ -245,17 +261,18 @@ object Main {
     override def run(sources: List[SourceCodeProvider]): Unit = {
       val irDir = getIRDirArg(argsMap)
       val ihm = getIntHandlingModeArg(argsMap)
+      val timeoutConfig = getTimeoutConfigArgs(argsMap)
       val counterExBoxOpt = getCounterExBoxArg(argsMap)
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, counterExBoxOpt, pkgCheckRootDir)
+      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")
     }
   }
-  
+
   private def collectStdLib(stdLibRoot: Path): List[SourceCodeProvider] = {
     Files.walk(stdLibRoot)
       .map(_.toAbsolutePath.toString)
@@ -289,6 +306,8 @@ object Main {
          | args: -out-dir=...: required, directory where to write the output file
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
+         |       -timeout: SMT solver timeout, in seconds (default is 2)
+         |       -timeouts-count: number of tolerated SMT timeouts before aborting (default is 10)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
@@ -297,6 +316,8 @@ object Main {
          | args: -out-dir=...: required, directory where to write the output file
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
+         |       -timeout: SMT solver timeout, in seconds (default is 2)
+         |       -timeouts-count: number of tolerated SMT timeouts before aborting (default is 10)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy

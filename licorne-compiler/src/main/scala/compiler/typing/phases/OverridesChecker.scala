@@ -9,6 +9,7 @@ import compiler.lang.{AbstractTypeSig, FunctionSignature, Overridability, Runtim
 import compiler.pipeline.CompilationStep.OverridesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
 import compiler.typing.SubtypingInfo
@@ -21,6 +22,7 @@ import scala.collection.mutable
 
 final class OverridesChecker(
                               ihm: IntHandlingMode[?],
+                              timeoutConfig: TimeoutConfig,
                               proxyStore: ProxyStore,
                               er: ErrorReporter,
                               counterExBoxOpt: Option[CounterexampleBox],
@@ -36,7 +38,7 @@ final class OverridesChecker(
 
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, er)
-    Reasoning.usingFreshSolver(ihm, dealiasingCtx, resolCtx, globalValsCtx, proxyStore, counterExBoxOpt) { solver =>
+    Reasoning.usingFreshSolver(ihm, timeoutConfig, dealiasingCtx, resolCtx, globalValsCtx, proxyStore, counterExBoxOpt, er) { solver =>
       val resolutionCtx = ResolutionContext(program, er)
       val subtypingCtx = SubtypingContext(subtypingGraph, flattenedSubtypingMaps, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
       analyzeOverrides(flattenedSubtypingMaps, resolutionCtx, subtypingCtx, dealiasingCtx, solver)

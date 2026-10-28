@@ -6,6 +6,7 @@ import compiler.pipeline.TasksPipelines
 import compiler.reporting.Errors.*
 import compiler.reasoning.{ArithIntMode, CounterexampleBox}
 import compiler.ircornegen.{ClosuresNamer, IRcorneGenerator, ImportsScanner}
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
 import compiler.typing.{HeapVarsTypeStore, TypeCandidatesStore}
@@ -29,6 +30,8 @@ object AnalyzerTests {
   private val matcherSep: String = "<//>"
   private val colMarker: String = "@col="
   private val ignoreAdditionalErrorsMarker: String = "allow-more-errors"
+  
+  private val timeoutConfig = TimeoutConfig(5000, 0)
 
   @Parameters(name = "{0}")
   def allFiles(): java.lang.Iterable[Array[String]] = {
@@ -123,11 +126,11 @@ class AnalyzerTests(fileName: String) {
       .andThen(ImportsScanner())
       .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, new ClosuresNamer, er, srcRootForPkgMismatchCheckOpt = None))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, counterExBoxOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
+      .andThen(TypeAliasesAnalyzer(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, counterExBoxOpt, er))
+      .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt))
     try {
       pipeline.apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {

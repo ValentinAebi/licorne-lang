@@ -6,6 +6,7 @@ import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.solver.KSolverStatus
 import io.ksmt.sort.KSort
+import kotlin.time.Duration
 
 trait Solver {
 
@@ -71,4 +72,10 @@ trait Solver {
 
   def canProveIsOutsideRange(formula: Formula, range: IntRangeType): Boolean
 
+}
+
+object Solver {
+  
+  final case class TimeoutConfig(timeoutSeconds: Int, toleratedTimeoutsCnt: Int)
+  
 }

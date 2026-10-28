@@ -5,6 +5,7 @@ import compiler.gennames.FileExtensions
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
 import compiler.reasoning.ArithIntMode
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.runners.Runner
 import org.junit.Assert.{assertEquals, assertNotEquals, assertTrue, fail}
@@ -28,6 +29,8 @@ object ExecutionTests {
   private val stacktraceFileName: String = "error-trace.exp"
   private val testOutSubdirName: String = "testout"
   private val stackTraceCommentMarker = "//>STACKTRACE"
+
+  private val timeoutConfig = TimeoutConfig(5000, 0)
 
   @Parameters(name = "{0}")
   def allDirectories(): java.lang.Iterable[Array[String]] = {
@@ -58,7 +61,7 @@ class ExecutionTests(programDirName: String) {
 
     val mainClasses = try {
       TasksPipelines
-        .compiler(testOutSubdirPath, TestDirectories.stdLibRootPath, Some(testOutSubdirPath), ArithIntMode, None, None, er)
+        .compiler(testOutSubdirPath, TestDirectories.stdLibRootPath, Some(testOutSubdirPath), ArithIntMode, timeoutConfig, None, None, er)
         .apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {
       case e: Throwable =>

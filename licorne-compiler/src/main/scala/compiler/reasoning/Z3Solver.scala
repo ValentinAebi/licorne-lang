@@ -4,6 +4,8 @@ import compiler.irs.ircorne.Formulas
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
+import compiler.pipeline.CompilationStep.UnknownCompilationStep
+import compiler.reporting.Errors.{ErrorReporter, Fatal}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
 import io.ksmt.KContext
@@ -11,12 +13,16 @@ import io.ksmt.expr.KExpr
 import io.ksmt.solver.KSolverStatus
 import io.ksmt.solver.z3.KZ3Solver
 import io.ksmt.sort.{KBoolSort, KSort}
+import kotlin.time.{Duration, DurationKt, DurationUnit}
 
 import scala.collection.mutable
 
 
-final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Solver: KZ3Solver, ihm: IntHandlingMode[IntSort], converter: FormulasConverter[IntSort], counterExBoxOpt: Option[CounterexampleBox]) extends Solver {
+final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Solver: KZ3Solver, ihm: IntHandlingMode[IntSort], timeoutConfig: Solver.TimeoutConfig, converter: FormulasConverter[IntSort], counterExBoxOpt: Option[CounterexampleBox], er: ErrorReporter) extends Solver {
   import converter.{convertBool, convertInt, convertObj}
+
+  private var remainingToleratedTimeouts = timeoutConfig.toleratedTimeoutsCnt
+  private var timeoutSeconds = timeoutConfig.timeoutSeconds
 
   private given KContext = kCtx
 
@@ -25,7 +31,20 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
   
   export converter.acceptingPhisForInts
 
-  def check(): KSolverStatus = kZ3Solver.check()
+  def check(): KSolverStatus = {
+    val status = kZ3Solver.check(DurationKt.toDuration(timeoutSeconds, DurationUnit.SECONDS))
+    status match {
+      case KSolverStatus.UNKNOWN =>
+        timeoutSeconds = (timeoutSeconds / 2) max 1
+        er.warn(s"the SMT solver encountered a timeout, timeout for next check: $timeoutSeconds s", None)(using UnknownCompilationStep)
+        remainingToleratedTimeouts -= 1
+        if (remainingToleratedTimeouts < 0) {
+          er.reportFatal(Fatal(UnknownCompilationStep, "too many timeouts", None))
+        }
+      case knownStatus => ()
+    }
+    status
+  }
 
   def checkSat(): Boolean = check() == KSolverStatus.SAT
 

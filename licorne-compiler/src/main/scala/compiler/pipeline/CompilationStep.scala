@@ -14,4 +14,6 @@ enum CompilationStep {
   case OverridesAnalysis
   case CodeGen
   case StringWriting
+  
+  case UnknownCompilationStep
 }

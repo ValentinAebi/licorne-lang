@@ -9,6 +9,7 @@ import compiler.lang.{ExecutionEnvironment, FunctionDescriptor, RuntimeTypeSigna
 import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
 import compiler.typing.contexts.*
@@ -20,9 +21,11 @@ import scala.collection.mutable
 
 final class TypeCandidatesInferrer(
                                     ihm: IntHandlingMode[?],
+                                    timeoutConfig: TimeoutConfig,
                                     proxyStore: ProxyStore,
                                     typeCandidatesStore: TypeCandidatesStore,
-                                    counterExBoxOpt: Option[CounterexampleBox]
+                                    counterExBoxOpt: Option[CounterexampleBox],
+                                    er: ErrorReporter
                                   ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
 
   private given CompilationStep = TypeCandidatesInference
@@ -41,7 +44,7 @@ final class TypeCandidatesInferrer(
     )
     val dealiasingCtx = DealiasingContext(program.typeAliases)
     val resolCtx = ResolutionContext(program, fakeEr)
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt, er) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, fakeEr, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false, closuresCollectorFuncOpt = None)

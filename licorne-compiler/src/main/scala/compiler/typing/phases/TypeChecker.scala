@@ -12,6 +12,7 @@ import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reasoning.*
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.*
@@ -23,6 +24,7 @@ import scala.collection.mutable
 
 final class TypeChecker(
                          ihm: IntHandlingMode[?],
+                         timeoutConfig: TimeoutConfig,
                          typeVarsCtx: TypeVariablesContext,
                          proxyStore: ProxyStore,
                          typeCandidatesStore: TypeCandidatesStore,
@@ -43,7 +45,7 @@ final class TypeChecker(
 
     val resolCtx = ResolutionContext(program, er)
 
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt, er) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 

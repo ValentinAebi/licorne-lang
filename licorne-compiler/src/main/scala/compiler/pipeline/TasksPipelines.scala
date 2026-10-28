@@ -8,6 +8,7 @@ import compiler.irs.asts.Asts
 import compiler.lexer.Lexer
 import compiler.parser.Parser
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reasoning.{BvInt32Mode, CounterexampleBox, IntHandlingMode}
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.typing.contexts.TypeVariablesContext
@@ -30,12 +31,13 @@ object TasksPipelines {
                 stdLibRootPath: Path,
                 irDirectoryPathOpt: Option[Path],
                 ihm: IntHandlingMode[?],
+                timeoutConfig: TimeoutConfig,
                 counterExBoxOpt: Option[CounterexampleBox],
                 srcRootForPkgMismatchCheckOpt: Option[Path],
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
     val closuresNamer = new ClosuresNamer
-    typeCheckerImpl(ihm, er, counterExBoxOpt, closuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, er))
       .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath))
   }
@@ -43,12 +45,13 @@ object TasksPipelines {
   def typeChecker(
                    irDirectoryPathOpt: Option[Path],
                    ihm: IntHandlingMode[?],
+                   timeoutConfig: TimeoutConfig,
                    counterExBoxOpt: Option[CounterexampleBox],
                    srcRootForPkgMismatchCheckOpt: Option[Path],
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, er, counterExBoxOpt, new ClosuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
       .andThen(_ => ())
   }
 
@@ -60,6 +63,7 @@ object TasksPipelines {
 
   private def typeCheckerImpl(
                                ihm: IntHandlingMode[?],
+                               timeoutConfig: TimeoutConfig,
                                er: ErrorReporter,
                                counterExBoxOpt: Option[CounterexampleBox],
                                closuresNamer: ClosuresNamer,
@@ -75,14 +79,14 @@ object TasksPipelines {
       .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, closuresNamer, er, srcRootForPkgMismatchCheckOpt))
       .andThen(MaybePrintIRcorne("ir1-after-ir-gen.ircorne", proxyStore, typeCandidatesStore, identity, er, irDirPathOpt))
       .andThen(SubtypingChecker(proxyStore, er))
-      .andThen(TypeAliasesAnalyzer(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(DeclarationsChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeCandidatesInferrer(ihm, proxyStore, typeCandidatesStore, counterExBoxOpt))
+      .andThen(TypeAliasesAnalyzer(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, counterExBoxOpt, er))
       .andThen(MaybePrintIRcorne("ir2-after-candidates-inference.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
-      .andThen(TypeChecker(ihm, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()))
+      .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()))
       .andThen(MaybePrintIRcorne("ir3-after-typecheck.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
       .andThen(DisplayAndTerminateIfErrors(er))
-      .andThen(OverridesChecker(ihm, proxyStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt))
       .andThen(MaybePrintIRcorne("ir4-after-overrides-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
   }
 

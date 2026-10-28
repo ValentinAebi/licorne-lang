@@ -11,8 +11,9 @@ import compiler.lang.Types.IntRangeType
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
-import compiler.reasoning.{AbstractInterpreter, ArithIntMode, Reasoning, TypeSimplifier, Solver}
+import compiler.reasoning.{AbstractInterpreter, ArithIntMode, Reasoning, Solver, TypeSimplifier}
 import compiler.typing.contexts.*
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -24,6 +25,8 @@ import scala.collection.mutable
 import scala.collection.immutable.SeqMap
 
 class AbstractInterpreterTests {
+
+  private val timeoutConfig = TimeoutConfig(5000, 0)
 
   private given TypeParamsContext = TypeParamsContext.empty
 
@@ -160,7 +163,7 @@ class AbstractInterpreterTests {
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, er)
 
-    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx, None) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ArithIntMode, timeoutConfig, dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx, None, er) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValuesCtx, er, None)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(absInt, simplifier, solver)

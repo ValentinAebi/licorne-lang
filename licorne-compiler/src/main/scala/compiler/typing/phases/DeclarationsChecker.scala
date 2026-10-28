@@ -6,6 +6,7 @@ import compiler.lang.UserInstantiableTypeSig
 import compiler.pipeline.CompilationStep.DeclarationsAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
@@ -18,6 +19,7 @@ import scala.collection.mutable
 
 final class DeclarationsChecker(
                                  ihm: IntHandlingMode[?],
+                                 timeoutConfig: TimeoutConfig,
                                  typeVarsCtx: TypeVariablesContext,
                                  proxyStore: ProxyStore,
                                  typeCandidatesStore: TypeCandidatesStore,
@@ -37,7 +39,7 @@ final class DeclarationsChecker(
 
     val resolCtx = ResolutionContext(programOld, er)
 
-    Reasoning.usingFreshReasoningToolkit(ihm, dealiasingCtx, resolCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, dealiasingCtx, resolCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt, er) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 

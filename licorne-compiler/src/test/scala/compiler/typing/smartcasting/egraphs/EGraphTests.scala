@@ -9,6 +9,7 @@ import compiler.irs.ircorne.IRcorne.Scope
 import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{ArithIntMode, Reasoning, TypeSimplifier}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
@@ -21,6 +22,8 @@ import scala.collection.immutable.SeqMap
 import scala.collection.mutable
 
 class EGraphTests {
+
+  private val timeoutConfig = TimeoutConfig(5000, 0)
 
   private given TypeParamsContext = TypeParamsContext.empty
 
@@ -113,7 +116,7 @@ class EGraphTests {
   }
 
   private def usingSimplifier(action: TypeSimplifier ?=> Unit): Unit = {
-    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolCtx, proxyStore, globalValuesContext, None) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ArithIntMode, timeoutConfig, dealiasingCtx, resolCtx, proxyStore, globalValuesContext, None, er) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolCtx, solver, proxyStore, globalValuesContext, er, None)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(using simplifier)

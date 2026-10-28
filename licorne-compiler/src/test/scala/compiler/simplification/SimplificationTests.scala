@@ -12,6 +12,7 @@ import compiler.pipeline.CompilationStep
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.program.Program
 import compiler.reasoning.FormulasSimplification.simplifyNumeric
+import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{ArithIntMode, Reasoning, Solver, TypeSimplifier}
 import compiler.typing.contexts.*
@@ -24,6 +25,8 @@ import scala.collection.mutable
 import scala.collection.immutable.SeqMap
 
 final class SimplificationTests {
+
+  private val timeoutConfig = TimeoutConfig(5000, 0)
   
   private given TypeParamsContext = TypeParamsContext.empty
 
@@ -83,7 +86,7 @@ final class SimplificationTests {
     val program = Program(globalValuesCtx, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, SeqMap.empty, Map.empty)
     val dealiasingCtx = DealiasingContext(Map.empty)
     val resolutionCtx = ResolutionContext(program, er)
-    Reasoning.usingFreshReasoningToolkit(ArithIntMode, dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx, None) { solver =>
+    Reasoning.usingFreshReasoningToolkit(ArithIntMode, timeoutConfig, dealiasingCtx, resolutionCtx, proxyStore, globalValuesCtx, None, er) { solver =>
       SubtypingContext(Graph.empty, mutable.SeqMap.empty, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValuesCtx, er, None)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
       action(simplifier, solver)
