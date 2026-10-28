@@ -30,8 +30,8 @@ object AnalyzerTests {
   private val matcherSep: String = "<//>"
   private val colMarker: String = "@col="
   private val ignoreAdditionalErrorsMarker: String = "allow-more-errors"
-  
-  private val timeoutConfig = TimeoutConfig(5000, 0)
+
+  private val timeoutConfig = TimeoutConfig(5, 0)
 
   @Parameters(name = "{0}")
   def allFiles(): java.lang.Iterable[Array[String]] = {

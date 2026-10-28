@@ -23,7 +23,7 @@ import scala.collection.mutable
 
 class EGraphTests {
 
-  private val timeoutConfig = TimeoutConfig(5000, 0)
+  private val timeoutConfig = TimeoutConfig(5, 0)
 
   private given TypeParamsContext = TypeParamsContext.empty
 

@@ -26,7 +26,7 @@ import scala.collection.immutable.SeqMap
 
 final class SimplificationTests {
 
-  private val timeoutConfig = TimeoutConfig(5000, 0)
+  private val timeoutConfig = TimeoutConfig(5, 0)
   
   private given TypeParamsContext = TypeParamsContext.empty
 

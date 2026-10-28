@@ -30,7 +30,7 @@ object ExecutionTests {
   private val testOutSubdirName: String = "testout"
   private val stackTraceCommentMarker = "//>STACKTRACE"
 
-  private val timeoutConfig = TimeoutConfig(5000, 0)
+  private val timeoutConfig = TimeoutConfig(5, 0)
 
   @Parameters(name = "{0}")
   def allDirectories(): java.lang.Iterable[Array[String]] = {
