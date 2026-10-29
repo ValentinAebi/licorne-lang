@@ -35,8 +35,7 @@ object ArithIntMode extends IntHandlingMode[KIntSort] {
 
   override def div(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkArithDiv(l, r)
 
-  override def modulo(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] =
-    kCtx.mkIte(kCtx.le(kCtx.mkIntNum(0), l), kCtx.mkIntMod(l, r), kCtx.unaryMinus(kCtx.mkIntMod(kCtx.unaryMinus(l), r)))
+  override def modulo(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KIntSort] = kCtx.mkFreshConst("modulores", kCtx.mkIntSort())
 
   override def leq(l: KExpr[KIntSort], r: KExpr[KIntSort])(using kCtx: KContext): KExpr[KBoolSort] = kCtx.mkArithLe(l, r)
 
