@@ -72,8 +72,6 @@ final class Typer(
 
   import globalValuesCtx.itValue
 
-  private val nonZeroIntType = RefinedType(IntType, LogicalNot(Equality(itValue, IntConst(0))))
-
   private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
@@ -917,7 +915,7 @@ final class Typer(
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
     val mayBeDivByZero =
       isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
-        && !subtypingCtx.isSubtype(rhs, rhsType, nonZeroIntType, currScope)
+        && !solver.canDisprove(Equality(rhs, IntConst(0)))
     if (mayBeDivByZero) {
       val rhsDescr = proxyStore.developNearest(rhs).toString
       er.reportError(s"I cannot prove that right-hand side $rhsDescr of operator '$op' cannot be zero", posOpt)
