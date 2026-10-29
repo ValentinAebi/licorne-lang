@@ -65,6 +65,11 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
     checkUnsat()
   }
 
+  def canDisprove(formula: Formula): Boolean = onNewFrame {
+    assert(formula)
+    checkUnsat()
+  }
+
   def canProveImplication(premise: Formula, conseq: Formula): Boolean = onNewFrame {
     assert(premise)
     assert(LogicalNot(conseq))

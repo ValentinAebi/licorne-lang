@@ -19,9 +19,8 @@ trait Solver {
   def checkUnsat(): Boolean
   
   def canProve(formula: Formula): Boolean
-  
-  def canDisprove(formula: Formula): Boolean =
-    canProve(LogicalNot(formula))
+
+  def canDisprove(formula: Formula): Boolean
   
   def canProveImplication(premise: Formula, conseq: Formula): Boolean
   
