@@ -387,12 +387,11 @@ final class Typer(
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
         if (func.isResolved) {
-          currScope.markHasExitedIfNothing(returnType)
           if (StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)(func.getFunSigUnsafe)) {
             er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${StdLib.sizeFunId} is not callable", invk.getPosition)
           }
+          makeDeductionsIfNothing(returnType, currScope)
         }
-        deduceAssumptionFromTernaryType(returnType, currScope)
 
       case invkClosure@InvokeClosure(assigned, callee, closureTypingTarget, args) =>
         val calleeType = currScope.computeCurrentType(callee, invkClosure.getPosition)
@@ -400,7 +399,9 @@ final class Typer(
         val tpe = typeClosureCall(callee, calleeType, closureTypingTarget, argsValsAndTypes, currScope, invkClosure.getPosition)
         currScope.saveType(assigned, tpe)
         tryToResolveTypeVarsUsingCandidates(assigned, tpe)
-        deduceAssumptionFromTernaryType(tpe, currScope)
+        if (closureTypingTarget.isResolved) {
+          makeDeductionsIfNothing(tpe, currScope)
+        }
 
       case fr@FieldRead(assigned, owner, field) =>
         val ownerType = currScope.computeCurrentType(owner, fr.getPosition)
@@ -851,7 +852,6 @@ final class Typer(
     if (formula.isPure) {
       solver.takeType(formula, tpe)
     }
-    deduceAssumptionFromTernaryType(tpe, currScope)
     tpe
   }
 
@@ -1040,8 +1040,11 @@ final class Typer(
     enforcePurity(bound, s"range type bound", posOpt)
   }
 
-  private def deduceAssumptionFromTernaryType(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
-    val smartcasts = typeSimplifier.simplifyType(dealiasingCtx.dealiasType(tpe)) match {
+  private def makeDeductionsIfNothing(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
+    val smartcasts = dealiasingCtx.dealiasType(tpe) match {
+      case NothingType =>
+        scope.markHasExited()
+        List.empty
       case TernaryType(cond, left, NothingType) =>
         smartcastsFromAssumption(simplifyBool(cond), scope)
       case TernaryType(cond, NothingType, right) =>

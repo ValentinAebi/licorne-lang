@@ -510,12 +510,6 @@ object IRcorne {
       getLocalValuesContextUnsafe.markHasExited()
     }
 
-    def markHasExitedIfNothing(tpe: Type): Unit = {
-      if (tpe == NothingType) {
-        markHasExited()
-      }
-    }
-
     def hasExited: Boolean = getLocalValuesContextOpt match {
       case Some(localValsCtx) => localValsCtx.hasExited
       case None => false
