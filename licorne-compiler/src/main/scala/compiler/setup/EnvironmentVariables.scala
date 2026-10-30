@@ -4,10 +4,12 @@ object EnvironmentVariables {
   
   val licorneHome: String = "LICORNE_HOME"
   
-  def envGetLicorneHome(): Option[String] = {
+  def envGetLicorneHome(displayErrorIfNotSet: Boolean): Option[String] = {
     val envVar = System.getenv(licorneHome)
     if (envVar == null) {
-      System.err.println(s"environment variable $licorneHome is not set")
+      if (displayErrorIfNotSet) {
+        System.err.println(s"environment variable $licorneHome is not set")
+      }
       None
     } else Some(envVar)
   }

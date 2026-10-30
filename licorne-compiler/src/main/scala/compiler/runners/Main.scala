@@ -75,6 +75,10 @@ object Main {
       case cmd :: tail => {
         if (cmd == "help") {
           displayHelp()
+          println(EnvironmentVariables.envGetLicorneHome(displayErrorIfNotSet = false) match {
+            case Some(licHome) => s"${EnvironmentVariables.licorneHome} is set and points to $licHome"
+            case None => s"${EnvironmentVariables.licorneHome} is not set"
+          })
           System.exit(0)
           throw new AssertionError() // should never happen because exit occurred before
         }
@@ -140,7 +144,7 @@ object Main {
   }
 
   private def getLicorneStdLibRootDirArg(argsMap: MutArgsMap): Path = {
-    Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome()), "licorne-stdlib")
+    Paths.get(getValuedArg("licorne-root", argsMap, EnvironmentVariables.envGetLicorneHome(displayErrorIfNotSet = true)), "licorne-stdlib")
   }
 
   private def getIRDirArg(argsMap: MutArgsMap): Option[Path] = {
@@ -309,7 +313,7 @@ object Main {
          |       -timeout: SMT solver timeout, in seconds (default is 2)
          |       -timeouts-count: number of tolerated SMT timeouts before aborting (default is 10)
          |       -counter-ex: displays the counter-examples found by the SMT solver
-         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |compile: compile the program
@@ -319,13 +323,13 @@ object Main {
          |       -timeout: SMT solver timeout, in seconds (default is 2)
          |       -timeouts-count: number of tolerated SMT timeouts before aborting (default is 10)
          |       -counter-ex: displays the counter-examples found by the SMT solver
-         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |typecheck: parse and typecheck the program
          | args: -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
-         |       -licorne-root: optional, root directory for Licorne standard library (default is ${"$"}${EnvironmentVariables.licorneHome})
+         |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
          |help: displays help (this)
          |""".stripMargin)
