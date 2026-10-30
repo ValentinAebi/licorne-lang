@@ -3,12 +3,12 @@
 object Client {
 
     fn clearIndex1[T](a: ArrayWrapper[T?], i: Idx(a)) {
-        a.set(i, null);
+        a.set(i, null)
     }
 
     fn clearIndex2[T](a: ArrayWrapper[T?], i: Int) {
         if (0 <= i && i < a.size()) {
-            a.set(i, null);
+            a.set(i, null)
         }
     }
 
@@ -20,11 +20,11 @@ class ArrayWrapper[T] (
 ) : Sized {
 
     fn set(i: Idx(this), elem: T) {
-        this.wrapped.set(i, elem);
+        this.wrapped.set(i, elem)
     }
 
     fn get(i: Idx(this)) -> T {
-        return this.wrapped.at(i);
+        return this.wrapped.at(i)
     }
 
 }
@@ -32,8 +32,8 @@ class ArrayWrapper[T] (
 object ArrayWrappers {
 
     fn mkNew[T](size: Length) -> ArrayWrapper[T] {
-        val wrapped = new Array(size);
-        return new ArrayWrapper(size, wrapped);
+        val wrapped = new Array(size)
+        return new ArrayWrapper(size, wrapped)
     }
 
 }

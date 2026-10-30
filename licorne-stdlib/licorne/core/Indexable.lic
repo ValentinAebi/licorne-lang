@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 interface Indexable : Indexed {
     pure fn size() -> Cnt

@@ -3,8 +3,8 @@ object Test {
 
     fn iterate[T](arr: Array[T], start: [0..], inc: [0..], f: fn (T) -> Unit) {
         for (var i = start; i < arr.length(); i += inc) {
-            f(arr.at(i));
-        };
+            f(arr.at(i))
+        }
     }
 
 }

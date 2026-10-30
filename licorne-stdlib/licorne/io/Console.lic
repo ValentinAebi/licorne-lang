@@ -1,4 +1,4 @@
-package licorne.io;
+package licorne.io
 
 object Console {
 
@@ -7,12 +7,12 @@ object Console {
     }
 
     fn println() {
-        print("\n");
+        print("\n")
     }
 
     fn println(o: Any?) {
-        print(o);
-        println();
+        print(o)
+        println()
     }
 
     fn readLine() -> String {

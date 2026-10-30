@@ -1,25 +1,25 @@
-import licorne.core.Arrays.toString;
+import licorne.core.Arrays.toString
 
 object Main {
 
     fn main(args: Array[String]) {
-        val xs = new Array(10, |when it <= 3 then it else 1|);
-        println(toString(xs));
-        println(toString(keepUpToMax(xs)));
+        val xs = new Array(10, |when it <= 3 then it else 1|)
+        println(toString(xs))
+        println(toString(keepUpToMax(xs)))
     }
 
     fn keepUpToMax(xs: Array[Int]) -> Array[Int] {
         if xs.size() == 0 {
             return new Array(0, |0|)
-        };
-        var maxIdx = 0;
+        }
+        var maxIdx = 0
         for (var i = 1; i < xs.size(); i += 1) {
             // TODO with inlining one could use max here
             if (xs.get(i) > xs.get(maxIdx)) {
-                maxIdx = i;
-            };
-        };
-        return new Array(maxIdx + 1, |xs.get(it)|);
+                maxIdx = i
+            }
+        }
+        return new Array(maxIdx + 1, |xs.get(it)|)
     }
 
 }

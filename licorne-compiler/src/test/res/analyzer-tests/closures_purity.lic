@@ -7,27 +7,27 @@ interface Collection[T] {
 object Test {
 
    fn useCollection(coll: Collection[Int], maybePureClosure: fn (Int) -> Int) {
-      var sum = 0;
+      var sum = 0
 
-      val pureClosure = fn (x) -> x*x;  // inferred as pure
-      val impureClosure: fn (Int) -> Unit = fn (x) -> { sum += x };
+      val pureClosure = fn (x) -> x*x// inferred as pure
+      val impureClosure: fn (Int) -> Unit = fn (x) -> { sum += x }
 
-      coll.foreach(pureClosure);        // OK
-      coll.foreach(maybePureClosure);   // OK
-      coll.foreach(impureClosure);      // OK
+      coll.foreach(pureClosure)      // OK
+      coll.foreach(maybePureClosure) // OK
+      coll.foreach(impureClosure)    // OK
 
-      coll.map(pureClosure);            // OK
-      coll.map(maybePureClosure);       //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
-      coll.map(impureClosure);          //> E : first argument of call to map: expected pure fn (Int) -> Unit, found impureClosure : fn (Int) -> Unit
+      coll.map(pureClosure)          // OK
+      coll.map(maybePureClosure)     //> E : first argument of call to map: expected pure fn (Int) -> Int, found maybePureClosure : fn (Int) -> Int
+      coll.map(impureClosure)        //> E : first argument of call to map: expected pure fn (Int) -> Unit, found impureClosure : fn (Int) -> Unit
    }
 
    pure fn useClosure(cl: fn (String) -> String) -> String {
-      val s = "Hello world!";
-      return cl(s);     //> E : illegal invocation of an impure closure in a pure method or closure
+      val s = "Hello world!"
+      return cl(s)   //> E : illegal invocation of an impure closure in a pure method or closure
    }
 
    pure fn dontUseClosure(cl: fn (String) -> String) -> String {
-      return "Hello!";  // OK
+      return "Hello!"// OK
    }
 
    fn useClosureInPureClosure(cl: fn (String) -> String) -> pure fn () -> String {
@@ -40,15 +40,15 @@ object Test {
    }
 
    fn createPureClosures() {
-      (fn (x) -> x) : pure fn (Int) -> Int;                                 // OK, purity detected
-      (pure fn (p) -> p.right()) : pure fn (Pair[Int, String]) -> String;     // OK, explicit "pure" keyword
+      (fn (x) -> x) : pure fn (Int) -> Int;                                // OK, purity detected     TODO get rid of the semicolon
+      (pure fn (p) -> p.right()) : pure fn (Pair[Int, String]) -> String   // OK, explicit "pure" keyword
    }
 
 }
 
 class Container[T](var value: T) {
    fn set(newVal: T) {
-      this.value = newVal;
+      this.value = newVal
    }
 }
 

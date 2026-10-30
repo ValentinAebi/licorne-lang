@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 opaque typealias Char = [0 .. 65535]
 

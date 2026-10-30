@@ -1,20 +1,20 @@
-import licorne.collections.LList;
-import licorne.collections.LLists.listFromArray;
+import licorne.collections.LList
+import licorne.collections.LLists.listFromArray
 
 
 object Main {
 
     fn main() {
-        val array = new Array[[0..]](size = 10, |0|);
+        val array = new Array[[0..]](size = 10, |0|)
         for (var i = 0; i < 10; i += 1) {
-            array.set(i, 2*i);
-        };
-        val ls = listFromArray(array);
+            array.set(i, 2*i)
+        }
+        val ls = listFromArray(array)
         ls.map|it + 1|
           .filter|it < array.size()|
           .foreach(fn (i) -> {
             println(array.get(i))
-          });
+          })
     }
 
 }

@@ -1,12 +1,12 @@
-import licorne.io.Files.readAllLines;
-import licorne.core.Assertions.assert;
+import licorne.io.Files.readAllLines
+import licorne.core.Assertions.assert
 
 object Main {
 
     fn main() {
-        val lines = readAllLines("../file-to-read.txt");
-        assert(lines.size() == 4);
-        println(lines.get(3));
+        val lines = readAllLines("../file-to-read.txt")
+        assert(lines.size() == 4)
+        println(lines.get(3))
     }
 
 }

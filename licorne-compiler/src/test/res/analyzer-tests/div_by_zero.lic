@@ -6,13 +6,13 @@ object DivByZero {
 
    fn ok2(x: Int, var y: Int) -> Int {
       if y == 0 {
-         y += 1;
-      };
-      return x / y;                 // OK
+         y += 1
+      }
+      return x / y               // OK
    }
 
    fn ok3(x: Int, y: [1..]) -> Int {
-      return x / y;
+      return x / y
    }
 
    fn ok4(x: [0..], y: Int) -> Int =
@@ -31,9 +31,9 @@ object DivByZero {
 
    fn wrong2(x: Int, y: [1..]) -> Int {
       if x % 100 == 0 {
-         return x % y;              // OK
-      };
-      return x / (y - 1);           //> E : I cannot prove that right-hand side y - 1 of operator '/' cannot be zero
+         return x % y            // OK
+      }
+      return x / (y - 1)         //> E : I cannot prove that right-hand side y - 1 of operator '/' cannot be zero
    }
 
    fn wrong3(x: Int, y: Int with it >= 0) -> Int =

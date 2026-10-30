@@ -1,6 +1,6 @@
 // adapted from the Java Checker Framework manual: https://checkerframework.org/manual/#index-checker
 
-import StringOpsPlaceholder.*;
+import StringOpsPlaceholder.*
 
 
 typealias Length = [0..]
@@ -8,46 +8,46 @@ typealias Length = [0..]
 object IC7 {
 
     fn removeSubstring_correct_1(original: String, removed: String) -> String {
-        val i = indexOf(original, removed);
+        val i = indexOf(original, removed)
         if (i != -1) {    // checking using !=
             return concat(
                 substring(original, 0, i),
                 substring(original, i + length(removed), length(original))
-            );
-        };
-        return original;
+            )
+        }
+        return original
     }
 
     fn removeSubstring_correct_2(original: String, removed: String) -> String {
-        val i = indexOf(original, removed);
+        val i = indexOf(original, removed)
         if (i > -1) {      // <- checking using >
             return concat(
                 substring(original, 0, i),
                 substring(original, i + length(removed), length(original))
-            );
-        };
-        return original;
+            )
+        }
+        return original
     }
 
     fn removeSubstring_buggy(original: String, removed: String) -> String {
-        val i = indexOf(original, removed);
+        val i = indexOf(original, removed)
         // ERROR: missing check for i == -1
         return concat(
             substring(original, 0, i),  //> E : third argument of call to substring: expected Position(original) & [0..], found i : [-1 ..< StringOpsPlaceholder.length(original) - StringOpsPlaceholder.length(removed)]
             substring(original, i + length(removed), length(original))  //> E : second argument of call to substring: expected Position(original), found i + StringOpsPlaceholder.length(removed) : [-1..]
-        );
+        )
     }
 
     // alternative using explicit precondition
     fn removeSubstring_precond(original: String, removed: String) -> String {
-        val i = indexOf(original, removed);
+        val i = indexOf(original, removed)
         if (i != -1) {
             return concat(
                 substring(original, 0, i),
                 substring(original, i + length(removed), length(original))
-            );
-        };
-        return original;
+            )
+        }
+        return original
     }
 
 }

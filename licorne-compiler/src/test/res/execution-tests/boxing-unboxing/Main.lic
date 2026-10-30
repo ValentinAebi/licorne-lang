@@ -1,12 +1,12 @@
-import licorne.collections.LLists.*;
+import licorne.collections.LLists.*
 
 
 object Main {
 
     fn main() {
-        val array = new Array(4, |2*it + 1|);
-        val ls = listFromArray(array);
-        println(ls.get(2) - 1);
+        val array = new Array(4, |2*it + 1|)
+        val ls = listFromArray(array)
+        println(ls.get(2) - 1)
     }
 
 }

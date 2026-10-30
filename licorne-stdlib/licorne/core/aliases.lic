@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 typealias NonZeroInt = Int with it != 0
 

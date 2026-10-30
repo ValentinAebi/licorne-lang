@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 typealias ReturnsWhen(cond: Bool) = when cond then Unit else Nothing
 

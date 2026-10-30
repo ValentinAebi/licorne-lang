@@ -1,7 +1,5 @@
 package compiler.lexer
 
-import compiler.ExprToStringMacro.exprToString
-
 import scala.annotation.tailrec
 
 object Matchers {
@@ -46,11 +44,7 @@ object Matchers {
   /**
    * Matches a char according to the given predicate
    */
-  inline def char(inline predicate: Char => Boolean): Matcher =
-    PredicateSingleCharMatcher(
-      predicate,
-      removeUselessPredicateStringPart(exprToString(predicate))
-    )
+  inline def char(inline predicate: Char => Boolean): Matcher = PredicateSingleCharMatcher(predicate)
 
   extension (left: Matcher){
     /**
@@ -150,41 +144,30 @@ object Matchers {
       if str.startsWith(target) then Some(target.length)
       else None
     }
-
-    override def toString: String = s"$target"
   }
 
   private final case class CharMatcher(target: Char) extends Matcher {
     override def matches(str: String): Option[Int] = {
       str.headOption.filter(_ == target).map(_ => 1)
     }
-
-    override def toString: String = s"'$target'"
   }
   
   private final case class BlacklistedCharsMatcher(blacklistedChars: Set[Char]) extends Matcher {
     override def matches(str: String): Option[Int] = {
       str.headOption.filter(!blacklistedChars.contains(_)).map(_ => 1)
     }
-
-    override def toString: String = s"? != ${blacklistedChars.mkString(",")}"
   }
 
   private final case class CharRangeMatcher(min: Char, max: Char) extends Matcher {
     override def matches(str: String): Option[Int] = {
       str.headOption.filter(c => min <= c && c <= max).map(_ => 1)
     }
-
-    override def toString: String = s"['$min','$max']"
   }
 
-  private final case class PredicateSingleCharMatcher(predicate: Char => Boolean, predStr: String) extends Matcher {
-
+  private final case class PredicateSingleCharMatcher(predicate: Char => Boolean) extends Matcher {
     override def matches(str: String): Option[Int] = {
       str.headOption.flatMap(c => if predicate(c) then Some(1) else None)
     }
-
-    override def toString: String = s"$predStr?"
   }
 
   private final case class SeqMatcher(matchers: List[Matcher]) extends Matcher {
@@ -204,16 +187,12 @@ object Matchers {
 
       matchesRem(str, matchers, 0)
     }
-
-    override def toString: String = matchers.mkString("( ", " ) ++ ( ", " )")
   }
 
   private final case class DisjunctionMatcher(matchers: LazyList[Matcher]) extends Matcher {
     override def matches(str: String): Option[Int] = {
       matchers.map(_.matches(str)).find(_.isDefined).flatten
     }
-
-    override def toString: String = matchers.mkString("( ", " ) | ( ", " )")
   }
 
   private final case class RepetitionMatcher(repeatedMatcher: Matcher) extends Matcher {
@@ -231,34 +210,6 @@ object Matchers {
       }
 
       matchesRem(str, 0)
-    }
-
-    override def toString: String = s"($repeatedMatcher)*"
-  }
-
-  private def removeUselessPredicateStringPart(str: String): String = {
-    try {
-
-      // this one is not inlined, which avoids endless expansion
-      def char(pred: Char => Boolean): Matcher = PredicateSingleCharMatcher(pred, "<unavailable>")
-
-      def stringPred(pred: Char => Boolean): Matcher = repeatNon0(char(pred))
-
-      def string(target: String): Matcher = StringMatcher(target)
-
-      val matcher =
-        string("((_$")
-          ++ stringPred(_.isDigit)
-          ++ string(": scala.Char) => ")
-          ++ opt(string("scala.Predef.charWrapper(_$")
-          ++ stringPred(_.isDigit)
-          ++ string(")."))
-      matcher.split(str) match {
-        case Some((_, rem)) => "(" ++ rem
-        case None => str
-      }
-    } catch {
-      case _: Throwable => "<description not available>"
     }
   }
 

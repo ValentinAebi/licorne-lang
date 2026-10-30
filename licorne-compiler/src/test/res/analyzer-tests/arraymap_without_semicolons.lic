@@ -1,0 +1,109 @@
+// inspired from https://github.com/plume-lib/plume-util/blob/master/src/main/java/org/plumelib/util/ArrayMap.java
+
+interface Map[K, V] {
+
+    fn get(k: K) -> V?
+
+    fn put(k: K, v: V)
+
+}
+
+// A (fixed-capacity) implementation of an ArrayMap
+class ArrayMap[K sub Any, V sub Any](
+    val keys: Array[K?],
+    val values: ArrayOfSameLength[V?](keys),
+    var currSize: [0 .. capacity()]
+) : Map[K, V] {
+
+    pure fn capacity() -> Length =
+        this.keys.size()
+
+    fn currentSize() -> [0 .. capacity()] =
+        this.currSize
+
+    fn get(k: K) -> V? {
+        val idx = this.keys.indexOf(k)
+        if (idx == null) {
+            return null
+        } else {
+            return this.values.get(idx)
+        }
+    }
+
+    fn put(k: K, v: V) -> Bool {
+        val preSize = currentSize()
+        val canAdd = preSize < capacity()
+        if canAdd {
+            var stop = false
+            // ERROR: should be < instead of <=
+            for (var i = 0; i <= this.keys.size() && !stop; i += 1) {
+                if (this.keys.get(i) == null) {     //> E : first argument of call to get: expected Idx[T](this.keys()), found i : [0 .. this.keys().size()]
+                    this.keys.set(i, k)          //> E : first argument of call to set: expected Idx[T](this.keys()), found i : [0 .. this.keys().size()]
+                    this.values.set(i, v)        //> E : first argument of call to set: expected Idx[T](this.values()), found i : [0 .. this.keys().size()]
+                    stop = true
+                }
+            }
+            this.currSize = preSize + 1
+        }
+        return canAdd
+    }
+
+    fn remove(k: K) -> Bool {
+        val preSize = currentSize()
+        if (preSize > 0) {
+            val idx = this.keys.indexOf(k)
+            if idx == null {
+                return false
+            }
+            this.keys.set(idx, null)
+            this.values.set(idx, null)
+            this.currSize = preSize - 1
+            return true
+        }
+        return false
+    }
+
+}
+
+object ArrayMaps {
+
+    fn newEmptyOfCapacity[K sub Any, V sub Any](capacity: Length) -> ArrayMap[K, V] =
+        new ArrayMap(keys = new Array(size = capacity), values = new Array(size = capacity), currSize = 0)
+
+}
+
+interface OrderedCollection[T] {
+
+    pure fn size() -> Length
+
+    fn get(i: Idx(this)) -> T
+
+}
+
+class Array[T](public size: Length) : OrderedCollection[T] {
+
+    fn get(i: Idx(this)) -> T {
+        panic "compile to bytecode xALOAD"
+    }
+
+    fn set(i: Idx(this), value: T) {
+        panic "compile to bytecode xASTORE"
+    }
+
+    fn indexOf(t: T) -> Idx(this)? {
+        for (var i = 0; i < size(); i += 1) {
+            if (get(i) == t) {
+                return i
+            }
+        }
+        return null
+    }
+
+}
+
+typealias ArrayOfSameLength[T, U](a: Array[U]) = Array[T] with it.size() == a.size()
+
+typealias Length = [0..]
+
+typealias Idx[T](c: OrderedCollection[T]) = [0 ..< c.size()]
+

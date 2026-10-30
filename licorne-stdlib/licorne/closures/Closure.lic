@@ -1,4 +1,4 @@
-package licorne.closures;
+package licorne.closures
 
 interface Closure[R] {
     fn run(args: Array[Any?]) -> R

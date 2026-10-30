@@ -1,6 +1,6 @@
-package examples.texts;
+package examples.texts
 
-import examples.texts.InternetPages.isValidUrl;
+import examples.texts.InternetPages.isValidUrl
 
 typealias Cnt = [0..]
 
@@ -13,9 +13,9 @@ object Example {
             author = "Béla Bollobás",
             pagesCnt = 394,
             currPage = null
-        );
-        book.openAtPage(399);   //> E : first argument of call to openAtPage: expected examples.texts.PageNumber(book), found 399
-        book.openAtPage(104);
+        )
+        book.openAtPage(399)   //> E : first argument of call to openAtPage: expected examples.texts.PageNumber(book), found 399
+        book.openAtPage(104)
     }
 }
 

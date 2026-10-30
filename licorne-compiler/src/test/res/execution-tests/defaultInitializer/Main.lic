@@ -2,12 +2,12 @@
 object Main {
 
     fn main() {
-        println(new Foo(27, 38));
-        println(new Foo(59));
-        println(new Bar(21, 11, 27));
-        println(new Bar(32, b = 28, 11));
-        println(new Bar(88, c = 14));
-        println(new Bar(a = 101, 25, c = -1));
+        println(new Foo(27, 38))
+        println(new Foo(59))
+        println(new Bar(21, 11, 27))
+        println(new Bar(32, b = 28, 11))
+        println(new Bar(88, c = 14))
+        println(new Bar(a = 101, 25, c = -1))
     }
 
 }

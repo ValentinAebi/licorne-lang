@@ -4,10 +4,11 @@ typealias AtLeast(i: Int) = [i..]
 object Main {
 
    pure fn clamp(x: Int, min: Int, max: [min..]) -> [min..max] {
-      return
+      return (
         when x < min then min
         else when x < max then x
         else max
+      )
    }
 
    fn foo(a: Int, x: AtLeast(a)) -> String {

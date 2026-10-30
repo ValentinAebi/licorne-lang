@@ -1,4 +1,4 @@
-package example.lib;
+package example.lib
 
 private(example) interface I
 private(example.lib) interface J

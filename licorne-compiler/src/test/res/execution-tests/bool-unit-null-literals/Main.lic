@@ -2,28 +2,28 @@
 object Main {
 
     fn main() {
-        takeAnimal(new Tiger());
-        takeAnimal(new Dolphin());
+        takeAnimal(new Tiger())
+        takeAnimal(new Dolphin())
         return unit
     }
 
     private fn takeAnimal(a: Animal) {
-        val descr = describe(a);
+        val descr = describe(a)
         if (descr == null) {
-            println();
+            println()
         } else {
-            display(descr);
-        };
-        val u = unit;
-        return u;
+            display(descr)
+        }
+        val u = unit
+        return u
     }
 
     private fn describe(a: Animal) -> String? =
-        when a.isMarine() then "marine" else null;
+        when a.isMarine() then "marine" else null
 
     private fn display(s: String) {
-        println(s);
-        return;     // implicit unit literal
+        println(s)
+        return   // implicit unit literal
     }
 
 }

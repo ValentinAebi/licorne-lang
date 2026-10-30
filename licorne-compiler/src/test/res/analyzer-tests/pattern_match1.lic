@@ -8,29 +8,29 @@ object Trees {
 
       fn sum1(tree: Tree[Int]) -> Int {
          if tree is Fork {
-            return sum1(tree.left()) + tree.value() + sum1(tree.right());
+            return sum1(tree.left()) + tree.value() + sum1(tree.right())
          } else if tree is Leaf {
-            return 0;
+            return 0
          } else if tree is Binary {
-            return sum1(tree.l()) + sum1(tree.r());
+            return sum1(tree.l()) + sum1(tree.r())
          }
       }
 
       fn sum2(tree: Tree[Int]) -> Int {
          if tree is Fork {
-            return sum2(tree.left()) + tree.value() + sum2(tree.right());
+            return sum2(tree.left()) + tree.value() + sum2(tree.right())
          } else if tree is Leaf {
-            return 0;
+            return 0
          } else {
-            return sum2(tree.l()) + sum2(tree.r());
+            return sum2(tree.l()) + sum2(tree.r())
          }
       }
 
       fn sum3(tree: Tree[Int]) -> Int {   //> E : missing return in non-Unit method sum3
          if tree is Fork {
-            return sum3(tree.left()) + tree.value() + sum3(tree.right());
+            return sum3(tree.left()) + tree.value() + sum3(tree.right())
          } else if tree is Leaf {
-            return 0;
+            return 0
          }
       }
 

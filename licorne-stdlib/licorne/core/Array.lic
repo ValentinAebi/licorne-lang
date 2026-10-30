@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 
 typealias ArrayL[T](len: Cnt) = Array[T] with it.size() == len
@@ -15,19 +15,19 @@ class Array[T](public size: Cnt, initializer: fn (Idx(this)) -> T) : Indexed {
     }
 
     fn reverse() {
-        var i = 0;
-        var j = size() - 1;
+        var i = 0
+        var j = size() - 1
         while (i < j) {
-            swap(i, j);
-            i += 1;
-            j -= 1;
+            swap(i, j)
+            i += 1
+            j -= 1
         }
     }
 
     fn swap(i: Idx(this), j: Idx(this)) {
-        val tmp = get(i);
-        set(i, get(j));
-        set(j, tmp);
+        val tmp = get(i)
+        set(i, get(j))
+        set(j, tmp)
     }
 
 }
@@ -39,20 +39,20 @@ object Arrays {
 
     fn copy[T](src: Array[T], dst: Array[T] where dst.size() >= src.size()) {
         for (var i = 0; i < src.size(); i += 1) {
-            dst.set(i, src.get(i));
+            dst.set(i, src.get(i))
         }
     }
 
     fn toString[T](array: Array[T]) -> String {
-        var s = "[";
+        var s = "["
         for (var i = 0; i < array.size(); i += 1) {
             if (i > 0) {
-                s ++= ",";
-            };
-            s ++= str(array.get(i));
-        };
-        s ++= "]";
-        return s;
+                s ++= ","
+            }
+            s ++= str(array.get(i))
+        }
+        s ++= "]"
+        return s
     }
 
 }

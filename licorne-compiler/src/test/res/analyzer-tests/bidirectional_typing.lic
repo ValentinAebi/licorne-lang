@@ -14,21 +14,21 @@ class MutableStack[T] {
 object Test {
 
    fn m1() {
-      val stack = new MutableStack();
-      stack.push(42);           // OK, resolve the type variable to Int
-      stack.push("Hi");         //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.StringL(2)
+      val stack = new MutableStack()
+      stack.push(42)         // OK, resolve the type variable to Int
+      stack.push("Hi")       //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.StringL(2)
    }
 
    fn m2() {
-      val stack = new MutableStack[String]();
-      stack.push(42);           //> E : first argument of call to push: expected licorne.core.String, found 42
-      stack.push("Hi");         // OK
+      val stack = new MutableStack[String]()
+      stack.push(42)         //> E : first argument of call to push: expected licorne.core.String, found 42
+      stack.push("Hi")       // OK
    }
 
    fn m3(x: Int) -> [0..] {
-      val stack = new MutableStack();
-      stack.push(when x >= 0 then x else null);     //> E : first argument of call to push: expected [0..], found [0..]?
-      return stack.pop();
+      val stack = new MutableStack()
+      stack.push(when x >= 0 then x else null)   //> E : first argument of call to push: expected [0..], found [0..]?
+      return stack.pop()
    }
 
 }

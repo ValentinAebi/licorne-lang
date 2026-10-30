@@ -11,16 +11,16 @@ object Test {
 
     fn bar1(x: Int) -> (Int with foo1(it))? {
         if (foo1(x)) {
-            return x;
-        };
-        return null;
+            return x
+        }
+        return null
     }
 
     fn bar2(x: Int) -> (Int with foo2(it))? {
         if (foo1(x)) {
-            return x;   //> E : return value: expected (Int with Test.foo2(it))?, found x : Int with Test.foo1(it)
-        };
-        return null;
+            return x //> E : return value: expected (Int with Test.foo2(it))?, found x : Int with Test.foo1(it)
+        }
+        return null
     }
 
 }

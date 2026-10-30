@@ -2,10 +2,10 @@
 object Main {
 
     fn main() {
-        val a = new A();
-        a.foo(new Dog());       // invokes the method in A
-        a.foo(new Dog(), 0);    // falls back to the method in I
-        a.bar(42);              // invokes the method in A: do not resolve to the more precise (refinement) type in the supertype method
+        val a = new A()
+        a.foo(new Dog())     // invokes the method in A
+        a.foo(new Dog(), 0)  // falls back to the method in I
+        a.bar(42)            // invokes the method in A: do not resolve to the more precise (refinement) type in the supertype method
     }
 
 }

@@ -1,4 +1,4 @@
-package licorne.core;
+package licorne.core
 
 // TODO maybe redefine String as String[C sub Char], to constrain the characters a String may contain?
 
@@ -67,55 +67,55 @@ class String : Indexable {
     pure fn get(i: Idx(this)) -> Char = charAt(i)
 
     pure fn count(c: Char) -> Cnt {
-        var cnt = 0;
+        var cnt = 0
         for (var i = 0; i < size(); i += 1) {
             if charAt(i) == c {
-                cnt += 1;
+                cnt += 1
             }
-        };
-        return cnt;
+        }
+        return cnt
     }
 
     pure fn contains(substring: String) -> Bool {
-        var i = 0;
-        var j = 0;
+        var i = 0
+        var j = 0
         while (i < size() && j < substring.size()) {
             if this.charAt(i) == substring.charAt(j) {
-                j += 1;
+                j += 1
             } else {
-                j = 0;
-            };
-            i += 1;
-        };
-        return j == substring.size();
+                j = 0
+            }
+            i += 1
+        }
+        return j == substring.size()
     }
 
     fn split(c: Char) -> Array[String] {
-        val parts = new Array(count(c) + 1, |""|);
-        var partsIdx = 0;
+        val parts = new Array(count(c) + 1, |""|)
+        var partsIdx = 0
         for (var i = 0; i < size(); i += 1) {
-            val curr = charAt(i);
+            val curr = charAt(i)
             if (curr == c) {
-                partsIdx += 1;
+                partsIdx += 1
             } else {
-                parts.set(partsIdx, parts.get(partsIdx!!) ++ str(curr));
+                parts.set(partsIdx, parts.get(partsIdx!!) ++ str(curr))
             }
-        };
-        return parts;
+        }
+        return parts
     }
 
     fn toCharArray() -> Array[Char] = new Array(size(), |charAt(it)|)
 
     fn trim() -> String {
-        var startIdx = 0;
+        var startIdx = 0
         while (startIdx < size() && isBlankChar(charAt(startIdx))) {
-            startIdx += 1;
-        };
-        var endIdx = size() - 1;
+            startIdx += 1
+        }
+        var endIdx = size() - 1
         while (endIdx >= startIdx && isBlankChar(charAt(endIdx))) {
-            endIdx -= 1;
-        };
-        return substring(startIdx, endIdx + 1);
+            endIdx -= 1
+        }
+        return substring(startIdx, endIdx + 1)
     }
 
     private fn isBlankChar(c: Char) -> Bool =

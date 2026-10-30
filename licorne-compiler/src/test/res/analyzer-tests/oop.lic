@@ -18,8 +18,8 @@ class Insect
 object Main {
 
    fn main() {
-      feed1(new Glasworm(), new Insect());
-      feed2(new Glasworm(), new Insect());
+      feed1(new Glasworm(), new Insect())
+      feed2(new Glasworm(), new Insect())
    }
 
    private fn feed1(lizard: Lizard, insect: Insect){

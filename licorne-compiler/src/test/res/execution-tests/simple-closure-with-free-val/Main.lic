@@ -2,10 +2,10 @@
 object Main {
 
     fn main() {
-        val one = 1;
-        val five = 5;
-        val r = foo(fn (x) -> x*x + five*x + one);
-        println(r);
+        val one = 1
+        val five = 5
+        val r = foo(fn (x) -> x*x + five*x + one)
+        println(r)
     }
 
     private fn foo(f: fn (Int) -> Int) -> Int = f(2)

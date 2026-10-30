@@ -1,10 +1,10 @@
-package compiler.parser
+package compiler.parser.primitives
 
 import compiler.irs.asts.Asts.{BinaryOp, Expr}
 import compiler.irs.tokens.Tokens.OperatorToken
 import compiler.lang.Operator
-import compiler.parser.ParseTree.^:
-import compiler.parser.TreeParsers.*
+import ParseTree.^:
+import TreeParsers.*
 import compiler.reporting.Errors.ErrorReporter
 
 import scala.annotation.tailrec
@@ -12,10 +12,9 @@ import scala.annotation.tailrec
 object BinaryOperatorsParser {
 
   private def op(operators: List[Operator])(implicit errorReporter: ErrorReporter): FinalTreeParser[Operator] = {
-    val descr = s"operator(s) ${operators.mkString(",")}"
-    treeParser(descr) {
+    treeParser(operators.map(op => s"'${op.str}'")) {
       case OperatorToken(operator) if operators.contains(operator) => operator
-    } setName descr
+    }
   }
 
   /**
@@ -40,7 +39,6 @@ object BinaryOperatorsParser {
                 }
             }
           }
-          newParser.setName(s"priority $priorityLevel expression")
           recurse(newParser, tailOps, priorityLevel - 1)
       }
     }

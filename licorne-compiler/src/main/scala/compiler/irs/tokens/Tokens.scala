@@ -15,6 +15,16 @@ object Tokens {
   sealed trait Token {
     def strValue: String
     final def show: String = s"[$strValue]"
+
+    def isOperator(operators: Operator*): Boolean = this match {
+      case OperatorToken(operator) => operators.contains(operator)
+      case _ => false
+    }
+    
+    def isKeyword(keywords: Keyword*): Boolean = this match {
+      case KeywordToken(keyword) => keywords.contains(keyword)
+      case _ => false
+    }
   }
 
   /**
@@ -57,7 +67,7 @@ object Tokens {
     override def strValue: String = " "
   }
   case object EndlToken extends Token {
-    override def strValue: String = "<endl>"
+    override def strValue: String = "end of line"
   }
   
   final case class ErrorToken(strValue: String) extends Token
@@ -65,7 +75,7 @@ object Tokens {
   final case class CommentToken(strValue: String) extends Token
 
   case object EndOfFileToken extends Token {
-    override def strValue: String = "<file-end>"
+    override def strValue: String = "end of file"
   }
 
 }

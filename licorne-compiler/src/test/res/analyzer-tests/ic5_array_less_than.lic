@@ -7,23 +7,23 @@ object Ex_11_5 {
     fn lessThan_v1(arr1: Array[Int], arr2: SameLength(arr1)) -> Bool {
         for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
-                return true;
+                return true
             } else if (arr1.at(i) > arr2.at(i)) {
-                return false;
+                return false
             }
-        };
-        return false;
+        }
+        return false
     }
 
     fn lessThan_v2(arr1: Array[Int], arr2: Array[Int] with it.length() == arr1.length()) -> Bool {
         for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
-                return true;
+                return true
             } else if (arr1.at(i) > arr2.at(i)) {
-                return false;
+                return false
             }
-        };
-        return false;
+        }
+        return false
     }
 
 }
@@ -34,7 +34,7 @@ typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
 class Array[T] {
 
     pure fn length() -> Length {
-        panic "compile to bytecode ARRAYLENGTH";
+        panic "compile to bytecode ARRAYLENGTH"
     }
 
     fn at(i: Idx(this)) -> T {

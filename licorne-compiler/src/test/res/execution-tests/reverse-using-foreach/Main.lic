@@ -1,20 +1,20 @@
-import licorne.collections.LList;
-import licorne.collections.Cons;
-import licorne.collections.Nil;
+import licorne.collections.LList
+import licorne.collections.Cons
+import licorne.collections.Nil
 
 object Main {
 
     fn main() {
-        val ls = reverse(new Cons(head = 1, tail = new Cons(head = 2, tail = new Nil())));
-        println((ls as Cons).head());
+        val ls = reverse(new Cons(head = 1, tail = new Cons(head = 2, tail = new Nil())))
+        println((ls as Cons).head())
     }
 
     private fn reverse[T](ls: LList[T]) -> LList[T] {
-        var res: LList[T] = new Nil();
+        var res: LList[T] = new Nil()
         ls.foreach(fn (e) -> {
-            res = new Cons(head = e, tail = res);
-        });
-        return res;
+            res = new Cons(head = e, tail = res)
+        })
+        return res
     }
 
 }

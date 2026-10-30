@@ -2,14 +2,14 @@
 object Test {
 
     fn test(t: [0..]) {
-        var a = 0;
-        var b = 0;
+        var a = 0
+        var b = 0
         while a < t {
-            foo(a, b);  // OK
-            bar(a, b);  //> E : illegal call to bar: I cannot prove that its precondition a + 1 <= b holds
-            a += 1;
-            b += 2;
-            foo(a, b);  // OK
+            foo(a, b)// OK
+            bar(a, b)//> E : illegal call to bar: I cannot prove that its precondition a + 1 <= b holds
+            a += 1
+            b += 2
+            foo(a, b)// OK
         }
     }
 

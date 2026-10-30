@@ -24,31 +24,31 @@ object Clamp {
 
    fn clamp5(min: Int, max: [min..], x: Int) -> [min..max] {
       if x < min {
-         return min;
+         return min
       } else if x < max {
-         return x;
+         return x
       } else {
-         return max;
+         return max
       }
    }
 
    fn clamp6(min: Int, max: [min..], x: Int) -> [min..max] {
       if x < min {
-         return min - 1;    //> E : return value: expected [min..max], found min - 1 : Int
+         return min - 1  //> E : return value: expected [min..max], found min - 1 : Int
       } else if x < max {
-         return x;
+         return x
       } else {
-         return max;
+         return max
       }
    }
 
    fn foo(in: Array[Int], a: [-2..]) -> Array[[0..a]] {
-      val out = new Array(len = in.length());
+      val out = new Array(len = in.length())
       for var i = 0; i < in.length(); i += 1 {
-         val c = clamp1(0, a, in.at(i));    //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
-         out.set(i, c);
-      };
-      return out;
+         val c = clamp1(0, a, in.at(i))  //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
+         out.set(i, c)
+      }
+      return out
    }
 
 }

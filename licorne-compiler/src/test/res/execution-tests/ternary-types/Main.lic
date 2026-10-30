@@ -2,8 +2,8 @@
 object Main {
 
     fn main() {
-        val cat = mkAnimal(false);
-        cat.meow();
+        val cat = mkAnimal(false)
+        cat.meow()
     }
 
     private fn mkAnimal(trueIfDog: Bool) -> when trueIfDog then Dog else Cat =

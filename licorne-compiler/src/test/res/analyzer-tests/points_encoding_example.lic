@@ -1,4 +1,4 @@
-import Lists.*;
+import Lists.*
 
 typealias NonZeroLength = [1..]
 typealias Coord(axisSize: NonZeroLength) = [0..<axisSize]
@@ -6,17 +6,17 @@ typealias Coord(axisSize: NonZeroLength) = [0..<axisSize]
 object Encoder {
 
     fn decodeAll(data: List[Int], xSize: NonZeroLength, ySize: NonZeroLength) -> List[Point[Coord(xSize), Coord(ySize)]] {
-        val validData = removeOutliers(data);
-        return map(validData, fn (d) -> decode(d, xSize, ySize));
+        val validData = removeOutliers(data)
+        return map(validData, fn (d) -> decode(d, xSize, ySize))
     }
 
     private fn removeOutliers(data: List[Int]) -> List[[0..]] =
         filter(data, fn (d) -> d >= 0)
 
     private fn decode(datapoint: [0..], xSize: NonZeroLength, ySize: NonZeroLength) -> Point[Coord(xSize), Coord(ySize)] {
-        val x = (datapoint / 64) % xSize;
-        val y = datapoint % ySize;
-        return new Point(x, y);
+        val x = (datapoint / 64) % xSize
+        val y = datapoint % ySize
+        return new Point(x, y)
     }
 
 }
@@ -30,29 +30,29 @@ record Nil() : List[Nothing]
 object Lists {
 
     fn map[T, U](ls: List[T], f: fn (T) -> U) -> List[U] {
-        var resultReversed = new Nil();
+        var resultReversed = new Nil()
         for var rem = ls; rem is Cons; rem = rem.rest() {
-            resultReversed = new Cons(first = f(rem.first()), rest = resultReversed);
-        };
-        return reverse(resultReversed);
+            resultReversed = new Cons(first = f(rem.first()), rest = resultReversed)
+        }
+        return reverse(resultReversed)
     }
 
     fn filter[T](ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
-        var filteredReversed = new Nil();
+        var filteredReversed = new Nil()
         for var rem = ls; rem is Cons; rem = rem.rest() {
             if p(rem.first()) {
-                filteredReversed = new Cons(first = rem.first(), rest = filteredReversed);
+                filteredReversed = new Cons(first = rem.first(), rest = filteredReversed)
             }
-        };
-        return reverse(filteredReversed);
+        }
+        return reverse(filteredReversed)
     }
 
     fn reverse[T](ls: List[T]) -> List[T] {
-        var rev = new Nil();
+        var rev = new Nil()
         for var rem = ls; rem is Cons; rem = rem.rest() {
-            rev = new Cons(first = rem.first(), rest = rev);
-        };
-        return rev;
+            rev = new Cons(first = rem.first(), rest = rev)
+        }
+        return rev
     }
 
 }

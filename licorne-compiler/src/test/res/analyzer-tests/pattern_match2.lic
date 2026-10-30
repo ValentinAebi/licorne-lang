@@ -6,12 +6,12 @@ record Nil : List[Nothing]
 object Lists {
 
    fn length[A](var ls: List[A]) -> Int {
-      var len = 0;
+      var len = 0
       while ls is Cons {
-         len += 1;
-         ls = ls.tail();
-      };
-      return ls.head();   //> E : method head not found in type Nil
+         len += 1
+         ls = ls.tail()
+      }
+      return ls.head() //> E : method head not found in type Nil
    }
 
    fn tail[U](ls: List[U]) -> List[U] =

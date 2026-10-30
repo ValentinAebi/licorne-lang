@@ -1,10 +1,10 @@
 object Main {
 
     fn main() {
-        val s1 = new FixedLenSeq(5, 0);
-        s1.set(1, 42);
-        s1.set(2, 100);
-        println(s1.get(2));
+        val s1 = new FixedLenSeq(5, 0)
+        s1.set(1, 42)
+        s1.set(2, 100)
+        println(s1.get(2))
     }
 
 }

@@ -1,20 +1,20 @@
-import licorne.collections.LLists.*;
+import licorne.collections.LLists.*
 
 object Main {
 
     fn main() {
-        val array = new Array(size = 5, |0|);
-        array.set(0, 7);
-        array.set(1, 5);
-        array.set(2, 8);
-        array.set(3, 0);
-        array.set(4, 25);
-        val list = listFromArray(array);
-        var sum = 0;
+        val array = new Array(size = 5, |0|)
+        array.set(0, 7)
+        array.set(1, 5)
+        array.set(2, 8)
+        array.set(3, 0)
+        array.set(4, 25)
+        val list = listFromArray(array)
+        var sum = 0
         list.foreach(fn (i) -> {
-            println(i);
-            sum += i;
-        });
+            println(i)
+            sum += i
+        })
         println("Sum: " ++ str(sum))
     }
 

@@ -1,6 +1,6 @@
 
 class Foo {
-    val bar = 0;
+    val bar = 0
 
     fn func() {
         if bar == 0 {

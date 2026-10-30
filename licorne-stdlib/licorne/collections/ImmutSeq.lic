@@ -1,4 +1,4 @@
-package licorne.collections;
+package licorne.collections
 
 interface ImmutSeq[+T] : Collection[T], Indexable {
     pure fn get(i: Idx(this)) -> T

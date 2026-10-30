@@ -1,7 +1,7 @@
-package licorne.io;
+package licorne.io
 
-import licorne.collections.LList;
-import licorne.collections.LLists;
+import licorne.collections.LList
+import licorne.collections.LLists
 
 object Files {
 
@@ -9,7 +9,7 @@ object Files {
         LLists.listFromArray(FilePrimitives.readAllLines(path))
 
     fn write(path: String, content: String) {
-        FilePrimitives.writeFile(path, content);
+        FilePrimitives.writeFile(path, content)
     }
 
 }

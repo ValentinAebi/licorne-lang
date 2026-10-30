@@ -3,7 +3,7 @@ object Test {
 
    fn abc(a: Int){
       if a + 1 >= 1 {
-         bar(1, a);    //> E : second argument of call to bar: expected [1..], found a : [0..]
+         bar(1, a)  //> E : second argument of call to bar: expected [1..], found a : [0..]
       }
    }
 

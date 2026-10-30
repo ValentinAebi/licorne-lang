@@ -1,4 +1,4 @@
-package compiler.parser
+package compiler.parser.primitives
 
 /**
  * Composite containing the results of individual parsers, while keeping info on their types

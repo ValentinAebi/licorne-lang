@@ -1,4 +1,4 @@
-package licorne.io;
+package licorne.io
 
 // replaced with the Java implementation by the compiler
 private(licorne.io) object FilePrimitives {

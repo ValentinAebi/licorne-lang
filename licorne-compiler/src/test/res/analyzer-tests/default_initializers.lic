@@ -3,16 +3,16 @@ object Main {
 
     fn main() {
         // see the corresponding test in ExecutionTests for cases that work
-        new Foo(0, 1, 2);           //> E : unexpected unlabeled initializer
-        new Foo(0, b = 1, 2);       //> E : unexpected unlabeled initializer
-        new Foo(0, 1, b = 2);       //> E : unexpected initializer of label b
-        new Foo(0, b = 1, b = 2);   //> E : unexpected initializer of label b
-        new Bar(b = 0, 1, 2);       //> E : expected initializer of field a, found label b
-        new Bar(0, 1, 2, 3);        //> E : unexpected unlabeled initializer
-        new Baz(0, 1);              //> E : missing initializer for field c
+        new Foo(0, 1, 2)         //> E : unexpected unlabeled initializer
+        new Foo(0, b = 1, 2)     //> E : unexpected unlabeled initializer
+        new Foo(0, 1, b = 2)     //> E : unexpected initializer of label b
+        new Foo(0, b = 1, b = 2) //> E : unexpected initializer of label b
+        new Bar(b = 0, 1, 2)     //> E : expected initializer of field a, found label b
+        new Bar(0, 1, 2, 3)      //> E : unexpected unlabeled initializer
+        new Baz(0, 1)            //> E : missing initializer for field c
 
-        val f = new Foo(1);
-        f : Nothing;                //> E : type ascription: expected Nothing, found f : Foo with it.a == 1 && it.b == 2
+        val f = new Foo(1)
+        f : Nothing              //> E : type ascription: expected Nothing, found f : Foo with it.a == 1 && it.b == 2
     }
 
 }

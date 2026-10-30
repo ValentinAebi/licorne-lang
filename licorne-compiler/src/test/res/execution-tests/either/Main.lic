@@ -1,19 +1,19 @@
-import Eithers.*;
+import Eithers.*
 
 object Main {
 
     fn main() {
-        val x = left(new Dog());
-        val y = right(new Car());
-        display(x);
-        display(y);
+        val x = left(new Dog())
+        val y = right(new Car())
+        display(x)
+        display(y)
     }
 
     private fn display(e: Either[Animal, Car]) {
         if (e is Left) {
-            println(e.l().speak().toUpperCase());
+            println(e.l().speak().toUpperCase())
         } else {
-            println(e.r().maxPassengers());
+            println(e.r().maxPassengers())
         }
     }
 

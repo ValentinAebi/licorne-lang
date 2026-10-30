@@ -1,13 +1,13 @@
-package licorne.closures;
+package licorne.closures
 
 class HeapVar(var value: Any?) {
 
     fn get() -> Any? {
-        return value;
+        return value
     }
 
     fn set(newVal: Any?) {
-        this.value = newVal;
+        this.value = newVal
     }
 
 }

@@ -8,7 +8,7 @@ class Car(
 ) {
 
     fn setYear(year: CarAcceptableYears) {
-        this.year = year;
+        this.year = year
     }
 
     fn getYear() -> CarAcceptableYears = year
@@ -18,7 +18,7 @@ class Car(
 object Cars {
 
     fn newCarWithDefaultValues() -> Car {
-        return new Car(year = 2026, seats = 5);
+        return new Car(year = 2026, seats = 5)
     }
 
 }
@@ -28,21 +28,21 @@ object Test {
     fn getYear() -> [2021..] = 2024
 
     fn test_correct() {
-        val a = 1998;
-        val c = Cars.newCarWithDefaultValues();
-        c.setYear(a);
+        val a = 1998
+        val c = Cars.newCarWithDefaultValues()
+        c.setYear(a)
 
-        val j: [1801..] = c.getYear();      // we ignore these annotations, they are needed only for testing
-        val k: [2021..] = getYear();
+        val j: [1801..] = c.getYear()      // we ignore these annotations, they are needed only for testing
+        val k: [2021..] = getYear()
     }
 
     fn test_buggy() {
-        val a = 998;
-        val c = Cars.newCarWithDefaultValues();
-        c.setYear(a);        //> E : first argument of call to setYear: expected CarAcceptableYears, found a : [998..998]
+        val a = 998
+        val c = Cars.newCarWithDefaultValues()
+        c.setYear(a)        //> E : first argument of call to setYear: expected CarAcceptableYears, found a : [998..998]
 
-        val j: [1801..] = c.getYear();      // we ignore these annotations, they are needed only for testing
-        val k: [2021..] = getYear();
+        val j: [1801..] = c.getYear()    // we ignore these annotations, they are needed only for testing
+        val k: [2021..] = getYear()
     }
 
 }

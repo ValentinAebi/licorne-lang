@@ -1,21 +1,21 @@
-package licorne.collections;
+package licorne.collections
 
 // TODO ternary types (#28) would help modularize index checks
 // TODO negative casts (#30) would make NoElems checks more concise
 
 class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
-    var array = new Array[T | NoElem](initialCapacity, |NoElem|);
-    var currSize: Cnt = 0;
+    var array = new Array[T | NoElem](initialCapacity, |NoElem|)
+    var currSize: Cnt = 0
 
     fn size() -> Cnt = currSize
 
     fn get(i: Int) -> T {
         if (0 <= i && i < currSize) {
-            val elem = array.get(i!!);
+            val elem = array.get(i!!)
             if elem == NoElem {
                 panic "ArrayList consistency error"
             } else {
-                return elem;
+                return elem
             }
         } else {
             panic "access to ArrayList is out of bounds"
@@ -23,134 +23,134 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     }
 
     fn add(elem: T) {
-        val insertionIdx = this.currSize;
-        prepareForSingleAddition();
-        array.set(insertionIdx!!, elem);
-        this.currSize = insertionIdx + 1;
+        val insertionIdx = this.currSize
+        prepareForSingleAddition()
+        array.set(insertionIdx!!, elem)
+        this.currSize = insertionIdx + 1
     }
 
     fn add(idx: Int, elem: T) {
-        prepareForSingleAddition();
-        val array = this.array;
+        prepareForSingleAddition()
+        val array = this.array
         if !(0 <= idx && idx <= currSize) {
-            panic "insertion index out of bounds";
-        };
+            panic "insertion index out of bounds"
+        }
         for (var i = currSize; i > idx; i -= 1) {
-            array.set(i!!, array.get((i - 1)!!));
-        };
-        array.set(idx!!, elem);
-        currSize = currSize + 1;
+            array.set(i!!, array.get((i - 1)!!))
+        }
+        array.set(idx!!, elem)
+        currSize = currSize + 1
     }
 
     fn remove(idx: Int) {
-        val currSize = this.currSize;
+        val currSize = this.currSize
         if !(0 <= idx && idx < currSize) {
             panic "removal index is out of bounds"
-        };
-        val array = this.array;
+        }
+        val array = this.array
         for (var i = idx; i + 1 < array.size(); i += 1) {
-            val elem = array.get(i + 1);
-            array.set(i + 1, NoElem);
+            val elem = array.get(i + 1)
+            array.set(i + 1, NoElem)
             if elem is NoElem {
-                return;
-            };
-            array.set(i, elem);
-        };
-        this.currSize = currSize - 1;
+                return
+            }
+            array.set(i, elem)
+        }
+        this.currSize = currSize - 1
     }
 
     fn removeLast() {
-        val deletionIdx = this.currSize - 1;
+        val deletionIdx = this.currSize - 1
         if deletionIdx < 0 {
             panic "cannot remove from empty ArrayList"
-        };
-        this.array.set(deletionIdx!!, NoElem);
-        this.currSize = deletionIdx;
+        }
+        this.array.set(deletionIdx!!, NoElem)
+        this.currSize = deletionIdx
     }
 
     fn map[U](f: fn (T) -> U) -> ArrayList[U] {
-        val mapped = new ArrayList(currSize);
-        val array = this.array;
+        val mapped = new ArrayList(currSize)
+        val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
-            val elem = array.get(i);
+            val elem = array.get(i)
             if elem is NoElem {
-                return mapped;
-            };
-            mapped.add(i, f(elem));
-        };
-        return mapped;
+                return mapped
+            }
+            mapped.add(i, f(elem))
+        }
+        return mapped
     }
 
     fn mapInPlace(f: fn (T) -> T) {
-        val array = this.array;
+        val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
-            val elem = array.get(i);
+            val elem = array.get(i)
             if elem is NoElem {
-                return;
-            };
-            array.set(i, f(elem));
-        };
+                return
+            }
+            array.set(i, f(elem))
+        }
     }
 
     fn filter(pred: pure fn (T) -> Bool) -> ArrayList[T with pred(it)] {
-        val filtered = new ArrayList(currSize);
+        val filtered = new ArrayList(currSize)
         foreach(fn (elem) -> {
             if pred(elem) {
-                filtered.add(elem);
+                filtered.add(elem)
             }
-        });
-        return filtered;
+        })
+        return filtered
     }
 
     fn reverse() {
-        var i = 0;
-        var j = currSize - 1;
+        var i = 0
+        var j = currSize - 1
         while (i < j) {
-            swap(i, j);
-            i += 1;
-            j -= 1;
+            swap(i, j)
+            i += 1
+            j -= 1
         }
     }
 
     fn foreach(f: fn (T) -> Unit) {
-        val array = this.array;
+        val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
-            val elem = array.get(i);
+            val elem = array.get(i)
             if elem is NoElem {
-                return;
-            };
-            f(elem);
-        };
+                return
+            }
+            f(elem)
+        }
     }
 
     fn toString() -> String {
-        var s = "[";
-        var isFirst = true;
+        var s = "["
+        var isFirst = true
         foreach(fn (elem) -> {
             if !isFirst {
-                s ++= ",";
-            };
-            s ++= str(elem);
-            isFirst = false;
-        });
-        s ++= "]";
-        return s;
+                s ++= ","
+            }
+            s ++= str(elem)
+            isFirst = false
+        })
+        s ++= "]"
+        return s
     }
 
     private fn prepareForSingleAddition() {
-        val array = this.array;
+        val array = this.array
         if (currSize + 1 < array.size()) {
-            return;
-        };
+            return
+        }
         this.array = new Array(2*array.size() + 1,
-                        |when it < array.size() then array.get(it) else NoElem|);
+                        |when it < array.size() then array.get(it) else NoElem|)
     }
 
     private fn swap(i: Int, j: Int) {
-        val array = this.array;
-        val tmp = array.get(i!!);
-        array.set(i, array.get(j!!));
-        array.set(j, tmp);
+        val array = this.array
+        val tmp = array.get(i!!)
+        array.set(i, array.get(j!!))
+        array.set(j, tmp)
     }
 
 }
