@@ -250,7 +250,7 @@ final class Typer(
         if (checkTermination && !condScope.hasExited && proxyStore.developNearest(condVal) != BoolConst(true) && solver.canProve(condVal)) {
           er.warn(s"loop cannot exit, if this is intended please make it explicit by using '${BoolConst(true)}' as the loop condition", loop.getPosition)
         }
-        applyBranchInfo(currScope, infoIfCondFalse ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
+        applyBranchInfo(currScope, infoIfCondFalse ++ BranchingInfo.ofAssumptions(closedFormsAssumptions), checkDeadCode = false)
 
       case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
         val condType = currScope.computeCurrentType(condVal, disjunction.getPosition)
@@ -1042,7 +1042,7 @@ final class Typer(
 
   private def makeDeductionsIfNothing(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
     val smartcasts = dealiasingCtx.dealiasType(tpe) match {
-      case NothingType =>
+      case NothingType | TernaryType(_, NothingType, NothingType) =>
         scope.markHasExited()
         List.empty
       case TernaryType(cond, left, NothingType) =>
@@ -1545,16 +1545,19 @@ final class Typer(
               }
               solver.assert(precondSubst)
             }
-            val instantiatedRetType =
-              typeSimplifier.simplifyType(funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst))
-                .withDependenciesTransformed(proxyStore.developNearest(_))
+            val instantiatedRetTypeBeforeSimplification = funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst ++ absIntSubst, argsSubst).withDependenciesTransformed(proxyStore.developNearest(_))
+            val instantiatedRetTypeDealiased = dealiasingCtx.dealiasType(instantiatedRetTypeBeforeSimplification)
+            val instantiatedRetTypeSimplified = typeSimplifier.simplifyType(instantiatedRetTypeDealiased match {
+              case instantiatedRetTypeDealiased: TernaryType => instantiatedRetTypeDealiased
+              case _ => instantiatedRetTypeBeforeSimplification
+            })
             irModif {
-              invkTarget.resolve(ownerSig, funSig, instantiatedRetType)
+              invkTarget.resolve(ownerSig, funSig, instantiatedRetTypeSimplified)
             }
             if (isPurityRequired && !funSig.isPure) {
               er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
             }
-            (instantiatedRetType, instRecTypeArgs, instFunTypeArgs)
+            (instantiatedRetTypeSimplified, instRecTypeArgs, instFunTypeArgs)
           case _ => errorCase()
         }
       case _ => errorCase()

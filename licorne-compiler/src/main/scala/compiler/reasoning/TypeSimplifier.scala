@@ -9,7 +9,7 @@ import compiler.reasoning.Solver
 import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.*
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext, TypeParamsContext}
-import compiler.util.{SeqSet, asIterableOfType}
+import compiler.util.{SeqSet, asIterableOfType, findUnique}
 import compiler.valuesconversion.GlobalValuesContext
 
 import scala.reflect.ClassTag
@@ -126,8 +126,9 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
     case TernaryType(cond, left, right) =>
       val simplifiedLeft = simplifyType(left)
       val simplifiedRight = simplifyType(right)
-      if solver.canProve(cond) then simplifiedLeft
-      else if solver.canDisprove(cond) then simplifiedRight
+      val nonDegenerate = solver.checkSat()
+      if nonDegenerate && solver.canProve(cond) then simplifiedLeft
+      else if nonDegenerate && solver.canDisprove(cond) then simplifiedRight
       else TernaryType(cond, simplifiedLeft, simplifiedRight)
 
     case refinedType: RefinedType =>
@@ -148,8 +149,8 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
       val (base4, pred4) = b.withTypeVarsExpanded match {
         case IntType =>
           val (lowerBounds, upperBounds, pred4PartsBeforeReadd) = searchBounds(pred3)
-          val lbOpt = solver.intMax(lowerBounds)
-          val ubOpt = solver.intMin(upperBounds)
+          val lbOpt = if solver.checkSat() then solver.intMax(lowerBounds) else lowerBounds.findUnique(_ => true)
+          val ubOpt = if solver.checkSat() then solver.intMin(upperBounds) else upperBounds.findUnique(_ => true)
           val pred4PartsAfterReadd =
             (if lbOpt.isEmpty then lowerBounds.map(LessOrEq(_, itValue)) else List.empty) ++
               (if ubOpt.isEmpty then upperBounds.map(LessOrEq(itValue, _)) else List.empty) ++
@@ -178,7 +179,7 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
     case IntRangeType(lowerBoundOpt, upperBoundOpt) =>
       (lowerBoundOpt.map(simplifyNumeric), upperBoundOpt.map(simplifyNumeric)) match {
         case (None, None) => IntType
-        case (Some(lb), Some(ub)) if solver.canProveLt(ub, lb) => NothingType
+        case (Some(lb), Some(ub)) if solver.checkSat() && solver.canProveLt(ub, lb) => NothingType
         case (lb, ub) => IntRangeType(lb, ub)
       }
     // FIXME improve simplification of nullable types

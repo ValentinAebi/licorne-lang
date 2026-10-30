@@ -59,8 +59,7 @@ object PositiveMax {
                 k += incOdd    // ERROR: incOdd may be negative
             }
         }
-        // the dead code report here seems to be a spurious error caused by the one earlier in the function, the corresponding annotation can be removed if we modify the type-checker and this error disappears
-        return max   //> E : dead code
+        return max
     }
 
 }
