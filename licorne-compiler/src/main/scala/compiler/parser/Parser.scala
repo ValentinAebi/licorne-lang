@@ -12,8 +12,8 @@ import compiler.lang.{FuncVisibility, Keyword, Operator, Operators, Overridabili
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.*
 import compiler.lang.Types.PrimitiveType
-import compiler.lang.Types.PrimitiveType.{DoubleType, IntType, UnitType}
-import compiler.parser.primitives.{BinaryOperatorsParser, LL1Iterator}
+import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
+import compiler.parser.primitives.{BinaryOperatorsParser, LL1Iterator, ParsingMismatchSignal}
 
 import scala.compiletime.uninitialized
 
@@ -293,15 +293,17 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     case paramTree ^: defaultOpt => (paramTree, defaultOpt)
   }
 
+  private lazy val functions = repeat((funDef ::: maybeSemicolon).recover(_.isKeyword(Fn), _ => false)).map(_.flatten)
+
   private lazy val methodsListOpt: P[List[FunDef]] = {
-    opt(openBrace ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {
+    opt(openBrace ::: functions ::: closeBrace) map {
       case None => List.empty
       case Some(methods) => methods
     }
   }
 
   private lazy val fieldsAndMethodsListOpt: P[(List[EncapsulatedFieldDef], List[FunDef])] = {
-    opt(openBrace ::: repeatWithEnd(encapsulatedFieldDef, statementSep) ::: repeat(funDef ::: maybeSemicolon) ::: closeBrace) map {
+    opt(openBrace ::: repeatWithEnd(encapsulatedFieldDef, statementSep) ::: functions ::: closeBrace) map {
       case None => (List.empty, List.empty)
       case Some(fields ^: methods) => (fields, methods)
     }
@@ -403,7 +405,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val block: P[Block] = withDescription("a block") {
     recursive {
-      openBrace ::: repeatWithEnd(stat, statementSep) ::: closeBrace map {
+      openBrace ::: repeatWithEnd(stat.recover(isSeparator, _.isOperator(ClosingBrace)), statementSep).map(_.flatten) ::: closeBrace map {
         stats => Block(stats)
       }
     }
@@ -638,6 +640,8 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     params.map { case id ^: tpe => (id, tpe) }
   }
 
+  private def isSeparator(tok: Token): Boolean = tok.isOperator(Semicolon) || tok == EndlToken
+
 
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input
@@ -645,11 +649,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       Source(None, List.empty, List.empty)
     } else {
       ll1Iterator = LL1Iterator.from(positionedTokens)
-      source.extract(ll1Iterator) match {
-        case Some(source) =>
-          errorReporter.displayAndTerminateIfErrors()
-          source.setName(srcName)
-        case None => errorReporter.displayErrorsAndTerminate()
+      try {
+        val srcUnit = source.extract(ll1Iterator)
+        srcUnit.setName(srcName)
+      } catch {
+        case ParsingMismatchSignal() => Source(None, List.empty, List.empty)
       }
     }
   }

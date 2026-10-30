@@ -180,7 +180,7 @@ object TreeParsers {
      *                    @param suffixDescr description of the next parser (potentially considering the following ones recursively)
      *                    @return the `U` produced by parsing, wrapped in a `Some`, if parsing succeeded, `None` o.w.
      */
-    def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): Option[U]
+    def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): U
 
     /**
      * @param suffixDescr description of the following parser(s)
@@ -218,16 +218,43 @@ object TreeParsers {
       new AnyTreeParser[T] {
         export original.admits
 
-        override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean,
-                             suffixDescr: => List[String]): Option[T] = {
+        override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): T = {
           val pos = ll1Iterator.current.position
-          val res = original.extract(ll1Iterator, suffixAdmits, suffixDescr).map(f)
+          val res = f(original.extract(ll1Iterator, suffixAdmits, suffixDescr))
           setPositionIfAst(res, pos)
           res
         }
 
         export original.firstExpectedDescrImpl
       }
+    }
+
+    infix def recover(skipUntil: Token => Boolean, giveUpWhen: Token => Boolean): AnyTreeParser[Option[U]] = {
+      val original = this
+      new AnyTreeParser[Option[U]] {
+        export original.admits
+
+        override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): Option[U] =
+          tryRecover(ll1Iterator, skipUntil, giveUpWhen)(original.extract(ll1Iterator, suffixAdmits, suffixDescr))
+
+        export original.firstExpectedDescrImpl
+      }
+    }
+
+    protected def tryRecover[T](ll1Iterator: LL1Iterator, skipUntil: Token => Boolean, giveUpWhen: Token => Boolean)(extract: => T): Option[T] = try {
+      Some(extract)
+    } catch {
+      case sig@ParsingMismatchSignal() =>
+        while (!skipUntil(ll1Iterator.current.token)) {
+          ll1Iterator.moveForward()
+          if (giveUpWhen(ll1Iterator.current.token)) {
+            if (ll1Iterator.current.token != EndlToken) {
+              ll1Iterator.moveForward()
+            }
+            throw sig
+          }
+        }
+        None
     }
 
   }
@@ -239,14 +266,14 @@ object TreeParsers {
 
     def admits(ll1Iterator: LL1Iterator): Boolean
 
-    def extract(ll1Iterator: LL1Iterator): Option[U]
+    def extract(ll1Iterator: LL1Iterator): U
 
     def firstExpectedDescr: List[String]
 
     override def admits(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean): Boolean = admits(ll1Iterator)
 
     override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean,
-                         suffixDescr: => List[String]): Option[U] = extract(ll1Iterator)
+                         suffixDescr: => List[String]): U = extract(ll1Iterator)
 
     override private[primitives] def firstExpectedDescrImpl(suffixDescr: => List[String]): List[String] = firstExpectedDescr
 
@@ -255,12 +282,24 @@ object TreeParsers {
       new FinalTreeParser[T] {
         export original.admits
 
-        override def extract(ll1Iterator: LL1Iterator): Option[T] = {
+        override def extract(ll1Iterator: LL1Iterator): T = {
           val pos = ll1Iterator.current.position
-          val res = original.extract(ll1Iterator).map(f)
+          val res = f(original.extract(ll1Iterator))
           setPositionIfAst(res, pos)
           res
         }
+
+        export original.firstExpectedDescr
+      }
+    }
+
+    final override infix def recover(skipUntil: Token => Boolean, giveUpWhen: Token => Boolean): FinalTreeParser[Option[U]] = {
+      val original = this
+      new FinalTreeParser[Option[U]] {
+        export original.admits
+
+        override def extract(ll1Iterator: LL1Iterator): Option[U] =
+          tryRecover(ll1Iterator, skipUntil, giveUpWhen)(original.extract(ll1Iterator))
 
         export original.firstExpectedDescr
       }
@@ -339,12 +378,8 @@ object TreeParsers {
 
     override def admits(ll1Iterator: LL1Iterator): Boolean = left.admits(ll1Iterator, right.admits(ll1Iterator))
 
-    override def extract(ll1Iterator: LL1Iterator): Option[L ^: R] = {
-      for
-        l <- left.extract(ll1Iterator, right.admits(ll1Iterator), right.firstExpectedDescr)
-        r <- right.extract(ll1Iterator)
-      yield
-        l ^: r
+    override def extract(ll1Iterator: LL1Iterator): L ^: R = {
+      left.extract(ll1Iterator, right.admits(ll1Iterator), right.firstExpectedDescr) ^: right.extract(ll1Iterator)
     }
 
     override def firstExpectedDescr: List[String] = left.firstExpectedDescr(right.firstExpectedDescr)
@@ -359,12 +394,8 @@ object TreeParsers {
     }
 
     override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean,
-                         suffixDescr: => List[String]): Option[L ^: R] = {
-      for
-        l <- left.extract(ll1Iterator, right.admits(ll1Iterator, suffixAdmits), right.firstExpectedDescr(suffixDescr))
-        r <- right.extract(ll1Iterator, suffixAdmits, suffixDescr)
-      yield
-        l ^: r
+                         suffixDescr: => List[String]): L ^: R = {
+      left.extract(ll1Iterator, right.admits(ll1Iterator, suffixAdmits), right.firstExpectedDescr(suffixDescr)) ^: right.extract(ll1Iterator, suffixAdmits, suffixDescr)
     }
 
     override private[primitives] def firstExpectedDescrImpl(suffixDescr: => List[String]): List[String] = left.firstExpectedDescr(right.firstExpectedDescr(suffixDescr))
@@ -377,7 +408,7 @@ object TreeParsers {
       left.admits(ll1Iterator) || right.admits(ll1Iterator)
     }
 
-    override def extract(ll1Iterator: LL1Iterator): Option[L | R] = {
+    override def extract(ll1Iterator: LL1Iterator): L | R = {
       val leftAdmits = left.admits(ll1Iterator)
       val rightAdmits = right.admits(ll1Iterator)
       if (leftAdmits && rightAdmits) {
@@ -388,7 +419,6 @@ object TreeParsers {
       else {
         reportMismatch(errorReporter, firstExpectedDescr,
           ll1Iterator.current.token.strValue, ll1Iterator.current.position)
-        None
       }
     }
 
@@ -402,7 +432,7 @@ object TreeParsers {
       left.admits(ll1Iterator, suffixAdmits) || right.admits(ll1Iterator, suffixAdmits)
     }
 
-    override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): Option[L | R] = {
+    override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): L | R = {
       val leftAdmits = left.admits(ll1Iterator, suffixAdmits)
       val rightAdmits = right.admits(ll1Iterator, suffixAdmits)
       if (leftAdmits && rightAdmits) {
@@ -416,7 +446,6 @@ object TreeParsers {
       else {
         reportMismatch(errorReporter, firstExpectedDescr(suffixDescr),
           ll1Iterator.current.token.strValue, ll1Iterator.current.position)
-        None
       }
     }
 
@@ -439,13 +468,12 @@ object TreeParsers {
 
     private val liftedPf = pf.lift
 
-    override def extract(ll1Iterator: LL1Iterator): Option[U] = {
+    override def extract(ll1Iterator: LL1Iterator): U = {
       val extractedPosTok = ll1Iterator.moveForward()
       liftedPf.apply(extractedPosTok.token) match {
         case None =>
           reportMismatch(errorReporter, firstExpectedDescr, extractedPosTok.token.strValue, extractedPosTok.position)
-          None
-        case s@Some(_) => s
+        case Some(u) => u
       }
     }
   }
@@ -456,13 +484,12 @@ object TreeParsers {
 
     private val liftedPf = pf.lift
 
-    override def extract(ll1Iterator: LL1Iterator): Option[(U, Position)] = {
+    override def extract(ll1Iterator: LL1Iterator): (U, Position) = {
       val extractedPosTok = ll1Iterator.moveForward()
       liftedPf.apply(extractedPosTok.token) match {
         case None =>
           reportMismatch(errorReporter, firstExpectedDescr, extractedPosTok.token.strValue, extractedPosTok.position)
-          None
-        case Some(u) => Some((u, extractedPosTok.position))
+        case Some(u) => (u, extractedPosTok.position)
       }
     }
   }
@@ -475,18 +502,17 @@ object TreeParsers {
     }
 
     override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean,
-                         suffixDescr: => List[String]): Option[Option[T]] = {
+                         suffixDescr: => List[String]): Option[T] = {
       val optAdmitsVal = optional.admits(ll1Iterator, suffixAdmits)
       val suffixAdmitsVal = suffixAdmits
       if (optAdmitsVal && suffixAdmitsVal) {
         reportNonLL1Error(ll1Iterator, optional.firstExpectedDescr(suffixDescr), suffixDescr, "OptionalTreeParser")
       }
-      else if optAdmitsVal then optional.extract(ll1Iterator, suffixAdmits, suffixDescr).map(Some(_))
-      else if suffixAdmitsVal then Some(None)
+      else if optAdmitsVal then Some(optional.extract(ll1Iterator, suffixAdmits, suffixDescr))
+      else if suffixAdmitsVal then None
       else {
         reportMismatch(errorReporter, firstExpectedDescr(suffixDescr), ll1Iterator.current.token.strValue,
           ll1Iterator.current.position)
-        None
       }
     }
 
@@ -494,14 +520,15 @@ object TreeParsers {
   }
 
   private def reportMismatch(errorReporter: ErrorReporter, expectedDescr: List[String],
-                             found: String, pos: Position): Unit = {
+                             found: String, pos: Position): Nothing = {
     val thresholdForDisplayExp = 3
     val msg = s"unexpected token: '$found'" ++ {
-      if expectedDescr.size == 1 then s", ${expectedDescr.head}"
+      if expectedDescr.size == 1 then s", expected ${expectedDescr.head}"
       else if 0 <= expectedDescr.size && expectedDescr.size <= thresholdForDisplayExp then s", expected ${expectedDescr.mkString(" or ")}"
       else ""
     }
     errorReporter.report(Err(CompilationStep.Parsing, msg, Some(pos)))
+    throw ParsingMismatchSignal()
   }
 
   private def reportNonLL1Error(ll1Iterator: LL1Iterator, opt1: Any, opt2: Any, situationDescr: String): Nothing = {
@@ -513,10 +540,10 @@ object TreeParsers {
       s"Option 1 expected: $opt1\n" + s"Option 2 expected: $opt2")
   }
 
-  private def setPositionIfAst(optObj: Option[Any], pos: Position, maxPropagationDepth: Int = 2): Unit = {
+  private def setPositionIfAst(optObj: Any, pos: Position, maxPropagationDepth: Int = 2): Unit = {
     if (maxPropagationDepth >= 0) {
       optObj match {
-        case Some(ast: Ast) =>
+        case ast: Ast =>
           if (ast.getPosition.isEmpty) {
             ast.setPosition(pos)
           }
