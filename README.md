@@ -3,10 +3,7 @@
 Licorne is an experimental programming language exploring refinement types and language-based support for lightweight verification.
 It is primarily inspired from Kotlin and Scala.
 
-The compiler is still only partially implemented. It supports parsing, IR generation, type inference, and type-checking. 
-A backend to JVM bytecode is work in progress.
-
-Some features that are already supported:
+Some of its features:
  - General refinement types: `Int with it % 2 == 0`
  - Dependent integer range types, treated as a restricted form of refinement types: `[0 ..< array.length()]`
  - Nullability aware types (non-nullability is partly treated as a refinement): `T?`
@@ -17,54 +14,30 @@ Some features that are already supported:
  - Union and intersection types (like Scala): `A | B`, `A & B`
  - Explicit method preconditions
 
+
 ## Code examples
 
-The following code example gives a high-level idea of what Licorne is about 
-(only to a limited extent, for instance it makes little use of Licorne's type inference capabilities). 
+Code examples can be found in the test resource directories 
+[here (typecheck tests)](licorne-compiler/src/test/res/analyzer-tests) and 
+[here (full compilation tests)](licorne-compiler/src/test/res/execution-tests).
 
-More code examples can be found in the [test resources directory](licorne-compiler/src/test/res/analyzer-tests).
-
-```
-package examples.books;
-
-// counts are represented using a half-open interval that forbids negative numbers
-typealias Cnt = [0..]
-
-// page numbers of a book range from 1 to the number of pages in that book
-typealias PageNumber(b: Book) = [1 .. b.pagesCnt()]
-
-object Example {
-    main fn example() {
-
-        val book = new Book(title = "Modern Graph Theory",
-                            pagesCnt = 394,
-                            currPage = null);
-
-        // Licorne detects that the given page (399) is greater than book.pagesCnt() (= 394).
-        // Error message: first argument of call to openAtPage: expected PageNumber(book), found 399
-        book.openAtPage(399);
-
-        // This call is valid.
-        book.openAtPage(104);
-    }
-}
-
-class Book(
-    public title: String,
-    public pagesCnt: Cnt,
-    var currPage: PageNumber(this)?
-) {
-    fn openAtPage(this, p: PageNumber(this)) {
-        currPage = p
-    }
-}
-```
 
 ## Build and run
+
+*These instructions are best effort and might not be up-to-date. In case of doubt you can also refer to the [CI workflow file](./.github/workflows/ci.yml).*
 
 To build the compiler, run `sbt clean assembly` in the [`licorne-compiler` directory](./licorne-compiler). The Licorne compiler can then be found as a jar file in the [`licorne-compiler/target/scala-<version>` directory](./licorne-compiler/target/scala-3.8.0).
 
 To type-check a program using the (jar of the) compiler, run `java -jar licorne-compiler.jar compile src_file.lic` (or `java -jar licorne-compiler.jar compile src/*` to compile all files in `./src`).
+
+In order for the compiler to be able to find the sources of the standard library, you need to set the `LICORNE_HOME` 
+environment variable on the host machine, which should point to this directory. 
+Alternatively, you can use the `licorne-root` compiler flag.
+
+If you want to use the parts of the standard library that are written in Java, you need to compile them separately, using `javac`. 
+For those, Licorne expects the class files to be in the same directory as the corresponding Java source files.
+
+Compiler help command: `java -jar .\licorne-compiler.jar help`
 
 
 ## SMT solver integration
@@ -75,6 +48,7 @@ Licorne uses [Z3](https://github.com/z3prover/z3) via the [KSMT](https://github.
 ## Papers
 
 [Practical range refinement types with inference](https://arxiv.org/abs/2607.00824) (SEFM 2026)
+
 
 ## What's that name?
 
