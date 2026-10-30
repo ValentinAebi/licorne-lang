@@ -40,7 +40,7 @@ object Test {
    }
 
    fn createPureClosures() {
-      (fn (x) -> x) : pure fn (Int) -> Int;                                // OK, purity detected     TODO get rid of the semicolon
+      (fn (x) -> x) : pure fn (Int) -> Int                                 // OK, purity detected
       (pure fn (p) -> p.right()) : pure fn (Pair[Int, String]) -> String   // OK, explicit "pure" keyword
    }
 

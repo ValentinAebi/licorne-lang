@@ -63,6 +63,7 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
       case FirstLowercaseIdentifierToken(_) => true
       case KeywordToken(It | This | Null | Return | Panic | If | When | While | For | Val | Var | New) => true
       case KeywordToken(_) => false
+      case OperatorToken(OpeningParenthesis | OpeningBrace) => true
       case OperatorToken(_) => false
       case Tokens.UnitLitToken => true
       case IntLitToken(_) => true
