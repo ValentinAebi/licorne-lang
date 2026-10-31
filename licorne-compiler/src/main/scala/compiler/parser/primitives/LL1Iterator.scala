@@ -23,7 +23,7 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
     while (move) {
       _remTokens match {
         case Nil =>
-          _curr = PositionedToken(EndOfFileToken, _curr.position)
+          _curr = PositionedToken(EndOfFileToken, _curr.endPosition)
           move = false
         case first :: follow =>
           first.token match {

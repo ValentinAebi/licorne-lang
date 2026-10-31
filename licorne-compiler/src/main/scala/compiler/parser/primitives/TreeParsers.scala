@@ -229,30 +229,24 @@ object TreeParsers {
       }
     }
 
-    infix def recover(skipUntil: Token => Boolean, giveUpWhen: Token => Boolean): AnyTreeParser[Option[U]] = {
+    infix def recover(skipUntil: Token => Boolean): AnyTreeParser[Option[U]] = {
       val original = this
       new AnyTreeParser[Option[U]] {
         export original.admits
 
         override def extract(ll1Iterator: LL1Iterator, suffixAdmits: => Boolean, suffixDescr: => List[String]): Option[U] =
-          tryRecover(ll1Iterator, skipUntil, giveUpWhen)(original.extract(ll1Iterator, suffixAdmits, suffixDescr))
+          tryRecover(ll1Iterator, skipUntil)(original.extract(ll1Iterator, suffixAdmits, suffixDescr))
 
         export original.firstExpectedDescrImpl
       }
     }
 
-    protected def tryRecover[T](ll1Iterator: LL1Iterator, skipUntil: Token => Boolean, giveUpWhen: Token => Boolean)(extract: => T): Option[T] = try {
+    protected def tryRecover[T](ll1Iterator: LL1Iterator, skipUntil: Token => Boolean)(extract: => T): Option[T] = try {
       Some(extract)
     } catch {
-      case sig@ParsingMismatchSignal() =>
-        while (!skipUntil(ll1Iterator.current.token)) {
+      case ParsingMismatchSignal() =>
+        while (ll1Iterator.current.token != EndOfFileToken && !skipUntil(ll1Iterator.current.token)) {
           ll1Iterator.moveForward()
-          if (giveUpWhen(ll1Iterator.current.token)) {
-            if (ll1Iterator.current.token != EndlToken) {
-              ll1Iterator.moveForward()
-            }
-            throw sig
-          }
         }
         None
     }
@@ -293,13 +287,13 @@ object TreeParsers {
       }
     }
 
-    final override infix def recover(skipUntil: Token => Boolean, giveUpWhen: Token => Boolean): FinalTreeParser[Option[U]] = {
+    final override infix def recover(skipUntil: Token => Boolean): FinalTreeParser[Option[U]] = {
       val original = this
       new FinalTreeParser[Option[U]] {
         export original.admits
 
         override def extract(ll1Iterator: LL1Iterator): Option[U] =
-          tryRecover(ll1Iterator, skipUntil, giveUpWhen)(original.extract(ll1Iterator))
+          tryRecover(ll1Iterator, skipUntil)(original.extract(ll1Iterator))
 
         export original.firstExpectedDescr
       }

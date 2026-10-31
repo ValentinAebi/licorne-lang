@@ -106,7 +106,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   }
 
   private lazy val source: FinalTreeParser[Source] = {
-    opt(pkgDecl) ::: repeat(importStat ::: maybeSemicolon) ::: repeat(topLevelDef ::: maybeSemicolon) ::: endOfFile.ignored map {
+    opt(pkgDecl.recover(isTopLevelRecoveryKw)).map(_.flatten) :::
+      repeat((importStat ::: maybeSemicolon).recover(isTopLevelRecoveryKw)).map(_.flatten) :::
+      repeat((topLevelDef ::: maybeSemicolon).recover(isTopLevelRecoveryKw)).map(_.flatten) :::
+      endOfFile.ignored map {
       case pkgDeclOpt ^: imports ^: defs => Source(pkgDeclOpt, imports, defs)
     }
   }
@@ -293,7 +296,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     case paramTree ^: defaultOpt => (paramTree, defaultOpt)
   }
 
-  private lazy val functions = repeat((funDef ::: maybeSemicolon).recover(_.isKeyword(Fn), _ => false)).map(_.flatten)
+  private lazy val functions = repeat((funDef ::: maybeSemicolon).recover(isTopLevelRecoveryKw)).map(_.flatten)
 
   private lazy val methodsListOpt: P[List[FunDef]] = {
     opt(openBrace ::: functions ::: closeBrace) map {
@@ -405,7 +408,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val block: P[Block] = withDescription("a block") {
     recursive {
-      openBrace ::: repeatWithEnd(stat.recover(isSeparator, _.isOperator(ClosingBrace)), statementSep).map(_.flatten) ::: closeBrace map {
+      openBrace ::: repeatWithEnd(stat.recover(isSeparatorOrClosingBrace), statementSep).map(_.flatten) ::: closeBrace map {
         stats => Block(stats)
       }
     }
@@ -640,8 +643,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     params.map { case id ^: tpe => (id, tpe) }
   }
 
-  private def isSeparator(tok: Token): Boolean = tok.isOperator(Semicolon) || tok == EndlToken
+  private def isSeparatorOrClosingBrace(tok: Token): Boolean = tok.isOperator(Semicolon, ClosingBrace) || tok == EndlToken
 
+  private def isTopLevelRecoveryKw(tok: Token): Boolean =
+    tok.isKeyword(Package, Import, Typealias, Class, Object, Interface, Record, Datatype, Fn, Pure, Private, Open)
 
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input
