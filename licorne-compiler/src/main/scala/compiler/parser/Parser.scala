@@ -81,7 +81,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
   private val dotDot = op(DotDot).ignored
   private val sharp = op(Sharp).ignored
   private val colon = op(Colon).ignored
-  private val statementSep = withDescription("statement separator")(op(Semicolon) OR endl).ignored
+  private val statementSep = withDescription("a statement separator")(op(Semicolon) OR endl).ignored
   private val semicolon = op(Semicolon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = op(RightArrow).ignored

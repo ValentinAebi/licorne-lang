@@ -204,8 +204,6 @@ object TreeParsers {
 
     /**
      * @return a parser choosing the parser among `this` and `right` that matches the token
-     *
-     *         The parser throws an exception reporting that parser is not LL1 if both `this` and `right` match some token it is given
      */
     final infix def OR[T](right: AnyTreeParser[T])(implicit errorReporter: ErrorReporter): AnyTreeParser[U | T] =
       NonFinalDisjunction(this, right, errorReporter)
@@ -311,8 +309,6 @@ object TreeParsers {
 
     /**
      * @return a parser choosing the parser among `this` and `right` that matches the token
-     *
-     *         The parser throws an exception reporting that parser is not LL1 if both `this` and `right` match some token it is given
      */
     final infix def OR[T](right: FinalTreeParser[T])(implicit errorReporter: ErrorReporter): FinalTreeParser[U | T] =
       FinalDisjunction(this, right, errorReporter)
@@ -406,7 +402,7 @@ object TreeParsers {
       val leftAdmits = left.admits(ll1Iterator)
       val rightAdmits = right.admits(ll1Iterator)
       if (leftAdmits && rightAdmits) {
-        reportNonLL1Error(ll1Iterator, left.firstExpectedDescr, right.firstExpectedDescr, "FinalDisjunction")
+        reportParserMalformation(ll1Iterator, left.firstExpectedDescr, right.firstExpectedDescr, "FinalDisjunction")
       }
       else if leftAdmits then left.extract(ll1Iterator)
       else if rightAdmits then right.extract(ll1Iterator)
@@ -430,7 +426,7 @@ object TreeParsers {
       val leftAdmits = left.admits(ll1Iterator, suffixAdmits)
       val rightAdmits = right.admits(ll1Iterator, suffixAdmits)
       if (leftAdmits && rightAdmits) {
-        reportNonLL1Error(
+        reportParserMalformation(
           ll1Iterator, left.firstExpectedDescr(suffixDescr),
           right.firstExpectedDescr(suffixDescr), "NonFinalDisjunction"
         )
@@ -500,7 +496,7 @@ object TreeParsers {
       val optAdmitsVal = optional.admits(ll1Iterator, suffixAdmits)
       val suffixAdmitsVal = suffixAdmits
       if (optAdmitsVal && suffixAdmitsVal) {
-        reportNonLL1Error(ll1Iterator, optional.firstExpectedDescr(suffixDescr), suffixDescr, "OptionalTreeParser")
+        reportParserMalformation(ll1Iterator, optional.firstExpectedDescr(suffixDescr), suffixDescr, "OptionalTreeParser")
       }
       else if optAdmitsVal then Some(optional.extract(ll1Iterator, suffixAdmits, suffixDescr))
       else if suffixAdmitsVal then None
@@ -525,10 +521,10 @@ object TreeParsers {
     throw ParsingMismatchSignal()
   }
 
-  private def reportNonLL1Error(ll1Iterator: LL1Iterator, opt1: Any, opt2: Any, situationDescr: String): Nothing = {
+  private def reportParserMalformation(ll1Iterator: LL1Iterator, opt1: Any, opt2: Any, situationDescr: String): Nothing = {
     val nKeep = 10
     val remaining = ll1Iterator.current :: ll1Iterator.remaining
-    throw new Error(s"grammar is not LL1: conflict found: $situationDescr at ${
+    throw new AssertionError(s"parser failure: parsing conflict found: $situationDescr at ${
       remaining.take(nKeep)
     }${if remaining.size > nKeep then "..." else ""}\n" +
       s"Option 1 expected: $opt1\n" + s"Option 2 expected: $opt2")
