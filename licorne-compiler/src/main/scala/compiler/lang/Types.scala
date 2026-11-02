@@ -163,7 +163,7 @@ object Types {
 
     override def children: List[Type] = List(left, right)
 
-    override def toString: String = s"${Keyword.When} $cond ${Keyword.Then} $left ${Keyword.Else} $right"
+    override def toString: String = s"${Keyword.If} ($cond) $left ${Keyword.Else} $right"
   }
 
   final case class RefinedType(baseType: Type, predicate: Formula) extends Type {

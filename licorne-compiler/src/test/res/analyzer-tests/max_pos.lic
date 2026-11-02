@@ -36,7 +36,7 @@ object PositiveMax {
             if (v > 0 && v > max) {
                 max = v
             }
-            if k % 2 == 0 {
+            if (k % 2 == 0) {
                 k += incEven
             } else {
                 k += incOdd
@@ -53,7 +53,7 @@ object PositiveMax {
             if (v > 0 && v > max) {
                 max = v
             }
-            if k % 2 == 0 {
+            if (k % 2 == 0) {
                 k += incEven
             } else {
                 k += incOdd    // ERROR: incOdd may be negative

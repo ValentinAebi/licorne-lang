@@ -427,55 +427,25 @@ object Asts {
       }
     }
   }
-
-  /**
-   * If-then-else:
-   * {{{
-   *   if cond {
-   *     thenBr
-   *   } else {
-   *     elseBr
-   *   }
-   * }}}
-   */
-  final case class IfThenElse(cond: Expr, thenBr: Statement, elseBrOpt: Option[Statement]) extends Statement with Conditional {
+  
+  final case class IfStatement(cond: Expr, thenBr: Statement, elseBrOpt: Option[Block | IfStatement]) extends Statement {
     override def children: List[Ast] = List(cond, thenBr) ++ elseBrOpt
   }
-
-  /**
-   * Ternary operator:
-   * {{{
-   *   when cond then thenBr else elseBr
-   * }}}
-   */
-  final case class Ternary(cond: Expr, thenBr: Expr, elseBr: Expr) extends Expr with Conditional {
+  
+  final case class IfExpr(cond: Expr, thenBr: IfExprBranch, elseBr: IfExprBranch) extends Expr {
     override def children: List[Ast] = List(cond, thenBr, elseBr)
-
-    override def elseBrOpt: Option[Statement] = Some(elseBr)
+  }
+  
+  final case class IfExprBranch(stats: List[Statement], result: Expr) extends Ast {
+    override def children: List[Ast] = stats :+ result
   }
 
   sealed abstract class Loop extends Statement
-
-  /**
-   * While loop:
-   * {{{
-   *   while cond {
-   *     body stats
-   *   }
-   * }}}
-   */
+  
   final case class WhileLoop(cond: Expr, body: Statement) extends Loop {
     override def children: List[Ast] = List(cond, body)
   }
-
-  /**
-   * For loop:
-   * {{{
-   *   for initStats; cond; stepStats {
-   *     body stats
-   *   }
-   * }}}
-   */
+  
   final case class ForLoop(
                             initStats: List[LocalDef],
                             cond: Expr,
@@ -484,10 +454,7 @@ object Asts {
                           ) extends Loop {
     override def children: List[Ast] = initStats ++ List(cond) ++ stepStats :+ body
   }
-
-  /**
-   * `return` statement, with or without return value
-   */
+  
   final case class ReturnStat(optVal: Option[Expr]) extends Statement {
     override def children: List[Ast] = optVal.toList
   }
@@ -552,14 +519,6 @@ object Asts {
 
   final case class ClosureTypeTree(paramTypes: List[TypeTree], resultType: TypeTree, enforcedPure: Boolean) extends TypeTree {
     override def children: List[Ast] = paramTypes :+ resultType
-  }
-
-  sealed trait Conditional {
-    def cond: Expr
-
-    def thenBr: Statement
-
-    def elseBrOpt: Option[Statement]
   }
 
 }

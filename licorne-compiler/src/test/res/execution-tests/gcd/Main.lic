@@ -8,7 +8,7 @@ object Main {
     }
 
     private fn gcd(var a: [0..], var b: [0..]) -> [0..] {
-        while b != 0 {
+        while (b != 0) {
             val oldB = b
             b = a % b
             a = oldB

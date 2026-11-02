@@ -52,7 +52,7 @@ class ArrayMap[K sub Any, V sub Any](
         val preSize = currentSize()
         if (preSize > 0) {
             val idx = this.keys.indexOf(k)
-            if idx == null {
+            if (idx == null) {
                 return false
             }
             this.keys.set(idx, null)

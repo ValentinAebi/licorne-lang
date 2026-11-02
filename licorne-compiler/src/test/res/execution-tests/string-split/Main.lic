@@ -6,7 +6,7 @@ object Main {
         val words = s.split(' ')
         for (var i = 0; i < words.size(); i += 1) {
             val word = words.get(i)
-            if !word.contains("a") && word.size() <= 7 {
+            if (!word.contains("a") && word.size() <= 7) {
                 println(word)
             }
         }

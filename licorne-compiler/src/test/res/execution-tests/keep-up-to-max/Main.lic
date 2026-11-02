@@ -3,13 +3,13 @@ import licorne.core.Arrays.toString
 object Main {
 
     fn main(args: Array[String]) {
-        val xs = new Array(10, |when it <= 3 then it else 1|)
+        val xs = new Array(10, |if (it <= 3) it else 1|)
         println(toString(xs))
         println(toString(keepUpToMax(xs)))
     }
 
     fn keepUpToMax(xs: Array[Int]) -> Array[Int] {
-        if xs.size() == 0 {
+        if (xs.size() == 0) {
             return new Array(0, |0|)
         }
         var maxIdx = 0

@@ -27,7 +27,7 @@ object Test {
 
    fn m3(x: Int) -> [0..] {
       val stack = new MutableStack()
-      stack.push(when x >= 0 then x else null)   //> E : first argument of call to push: expected [0..], found [0..]?
+      stack.push(if (x >= 0) x else null)   //> E : first argument of call to push: expected [0..], found [0..]?
       return stack.pop()
    }
 

@@ -55,11 +55,11 @@ object TasksPipelines {
       .andThen(_ => ())
   }
 
-  def multiFrontEnd(er: ErrorReporter): CompilerStep[List[SourceCodeProvider], List[Asts.Source]] = MultiStep(frontend(er))
-
-  def frontend(er: ErrorReporter): CompilerStep[SourceCodeProvider, Asts.Source] = {
-    new Lexer(er).andThen(new Parser(er)).andThen(DisplayAndTerminateIfErrors(er))
-  }
+  def multiFrontEnd(er: ErrorReporter): CompilerStep[List[SourceCodeProvider], List[Asts.Source]] =
+    MultiStep(Lexer(er))
+      .andThen(DisplayAndTerminateIfErrors(er))
+      .andThen(MultiStep(Parser(er)))
+      .andThen(DisplayAndTerminateIfErrors(er))
 
   private def typeCheckerImpl(
                                ihm: IntHandlingMode[?],

@@ -144,16 +144,14 @@ final class Lexer(errorReporter: ErrorReporter) extends CompilerStep[SourceCodeP
       case Failure(_) => errorReporter.reportFatal(Fatal(CompilationStep.Lexing,
         s"could not read source code from source '${sourceCodeProvider.name}'", None))
 
-      case Success(lines) => {
+      case Success(lines) =>
         val indexedLines = lines.toList.zipWithIndex
         val tokenizedLines = indexedLines.map((line, idx) => tokenizeLine(line, idx, sourceCodeProvider))
-        errorReporter.displayAndTerminateIfErrors()
         val positionedTokens =
           for (line, lineIdxZeroBased) <- tokenizedLines.zipWithIndex; (token, colIdx) <- line yield {
             PositionedToken(token, Position(sourceCodeProvider, line = lineIdxZeroBased + 1, col = colIdx + 1, sourceCodeProvider.isStdLib))
           }
         (positionedTokens, sourceCodeProvider.name)
-      }
     }
   }
 

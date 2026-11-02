@@ -7,19 +7,19 @@ record Binary[+T](l: Tree[T], r: Tree[T]) : Tree[T]
 object Trees {
 
       fn sum1(tree: Tree[Int]) -> Int {
-         if tree is Fork {
+         if (tree is Fork) {
             return sum1(tree.left()) + tree.value() + sum1(tree.right())
-         } else if tree is Leaf {
+         } else if (tree is Leaf) {
             return 0
-         } else if tree is Binary {
+         } else if (tree is Binary) {
             return sum1(tree.l()) + sum1(tree.r())
          }
       }
 
       fn sum2(tree: Tree[Int]) -> Int {
-         if tree is Fork {
+         if (tree is Fork) {
             return sum2(tree.left()) + tree.value() + sum2(tree.right())
-         } else if tree is Leaf {
+         } else if (tree is Leaf) {
             return 0
          } else {
             return sum2(tree.l()) + sum2(tree.r())
@@ -27,9 +27,9 @@ object Trees {
       }
 
       fn sum3(tree: Tree[Int]) -> Int {   //> E : missing return in non-Unit method sum3
-         if tree is Fork {
+         if (tree is Fork) {
             return sum3(tree.left()) + tree.value() + sum3(tree.right())
-         } else if tree is Leaf {
+         } else if (tree is Leaf) {
             return 0
          }
       }
@@ -40,19 +40,21 @@ object Trees {
       }
 
       fn contains2[U](tree: Tree[U], u: U) -> Bool {
-         return when tree is Fork then (contains2(tree.left(), u) || tree.value() == u || contains2(tree.right(), u))
-         else when tree is Binary then (contains2(tree.l(), u) || contains2(tree.r(), u))
+         return if (tree is Fork) {
+            contains2(tree.left(), u) || tree.value() == u || contains2(tree.right(), u)
+         } else if (tree is Binary) (contains2(tree.l(), u) || contains2(tree.r(), u))
          else false
       }
 
       fn contains3[U](tree: Tree[U], u: U) -> Bool {
-         return when tree is Binary then (contains3(tree.l(), u) || tree.value() == u || contains3(tree.r(), u))   //> E : method value not found in type Binary[U]
-         else when tree is Fork then (contains3(tree.left(), u) || contains3(tree.right(), u))
+         return if (tree is Binary) {
+            contains3(tree.l(), u) || tree.value() == u || contains3(tree.r(), u)   //> E : method value not found in type Binary[U]
+         } else if (tree is Fork) (contains3(tree.left(), u) || contains3(tree.right(), u))
          else false
       }
 
       fn contains4[U](tree: Tree[U], u: U) -> Bool {
-         return when tree is Fork then (contains4(tree.left(), u) || tree.value() == u || contains4(tree.right(), u))
+         return if (tree is Fork) (contains4(tree.left(), u) || tree.value() == u || contains4(tree.right(), u))
          else contains4(tree.l(), u) || contains4(tree.r(), u)      //> E : method l not found in type Tree[U] <//> E : method r not found in type Tree[U]
       }
 

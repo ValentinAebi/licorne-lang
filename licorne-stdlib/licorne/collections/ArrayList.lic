@@ -12,7 +12,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     fn get(i: Int) -> T {
         if (0 <= i && i < currSize) {
             val elem = array.get(i!!)
-            if elem == NoElem {
+            if (elem == NoElem) {
                 panic "ArrayList consistency error"
             } else {
                 return elem
@@ -51,7 +51,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         for (var i = idx; i + 1 < array.size(); i += 1) {
             val elem = array.get(i + 1)
             array.set(i + 1, NoElem)
-            if elem is NoElem {
+            if (elem is NoElem) {
                 return
             }
             array.set(i, elem)
@@ -61,7 +61,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
 
     fn removeLast() {
         val deletionIdx = this.currSize - 1
-        if deletionIdx < 0 {
+        if (deletionIdx < 0) {
             panic "cannot remove from empty ArrayList"
         }
         this.array.set(deletionIdx!!, NoElem)
@@ -73,7 +73,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
-            if elem is NoElem {
+            if (elem is NoElem) {
                 return mapped
             }
             mapped.add(i, f(elem))
@@ -85,7 +85,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
-            if elem is NoElem {
+            if (elem is NoElem) {
                 return
             }
             array.set(i, f(elem))
@@ -95,7 +95,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     fn filter(pred: pure fn (T) -> Bool) -> ArrayList[T with pred(it)] {
         val filtered = new ArrayList(currSize)
         foreach(fn (elem) -> {
-            if pred(elem) {
+            if (pred(elem)) {
                 filtered.add(elem)
             }
         })
@@ -116,7 +116,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
-            if elem is NoElem {
+            if (elem is NoElem) {
                 return
             }
             f(elem)
@@ -143,7 +143,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
             return
         }
         this.array = new Array(2*array.size() + 1,
-                        |when it < array.size() then array.get(it) else NoElem|)
+                        |if (it < array.size()) array.get(it) else NoElem|)
     }
 
     private fn swap(i: Int, j: Int) {

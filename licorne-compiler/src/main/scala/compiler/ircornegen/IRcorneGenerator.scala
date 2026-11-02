@@ -2,7 +2,7 @@ package compiler.ircornegen
 
 import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{Expr, ImportStat, ObjectDef, Source, TypeDefTree, ValParam, VariableRef}
+import compiler.irs.asts.Asts.{Ast, Expr, ImportStat, ObjectDef, Source, IfExpr, IfExprBranch, TypeDefTree, ValParam, VariableRef}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, IRcorne, InvocationTarget}
@@ -693,11 +693,11 @@ final class IRcorneGenerator(
               currScope.saveInstr(localDecl, localDef)
               localValsCtx.valueOf(localName).setDeclInfo(localDecl)
             }
-          localDef.getPosition.foreach { pos =>
-            if (localValsCtx.valueOf(localName).declInfoOpt.isEmpty) {
-              localValsCtx.valueOf(localName).setDeclInfo(pos)
+            localDef.getPosition.foreach { pos =>
+              if (localValsCtx.valueOf(localName).declInfoOpt.isEmpty) {
+                localValsCtx.valueOf(localName).setDeclInfo(pos)
+              }
             }
-          }
         }
 
       case assig@Asts.VarAssig(varRefTree@Asts.VariableRef(lhsLocalId), typeAnnotTreeOpt, rhsTree) if !currScope.getLocalValuesContextUnsafe.knows(lhsLocalId) =>
@@ -753,7 +753,7 @@ final class IRcorneGenerator(
       case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
         reportError(s"in-place mutation is only allowed on local variables and fields of owner $ThisId", stat.getPosition)
 
-      case ite@Asts.IfThenElse(condTree, thenTree, elseTreeOpt) =>
+      case ite@Asts.IfStatement(condTree, thenTree, elseTreeOpt) =>
         val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, currScope)
         val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
@@ -813,7 +813,7 @@ final class IRcorneGenerator(
           warn("loop body always exits, should be an if statement", whileLoop.getPosition)
           // give up and generate a disjunction instead
           generateIR(
-            Asts.IfThenElse(condTree, bodyTree, None).withDesugaringSource(whileLoop),
+            Asts.IfStatement(condTree, bodyTree, None).withDesugaringSource(whileLoop),
             currScope,
             newScopeIfBlock
           )
@@ -880,6 +880,12 @@ final class IRcorneGenerator(
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateIRExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
+
+    def recurseOnDesugaredToIfExpr(cond: Expr, thenBr: Expr, elseBr: Expr, desugaringSource: Ast): Option[Formula] =
+      recurseOnDesugared(IfExpr(cond,
+        IfExprBranch(List.empty, thenBr).withDesugaringSource(desugaringSource),
+        IfExprBranch(List.empty, elseBr).withDesugaringSource(desugaringSource)
+      ).withDesugaringSource(desugaringSource))
 
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
       val argsValsB = List.newBuilder[IdValue]
@@ -1048,15 +1054,17 @@ final class IRcorneGenerator(
           Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree).withDesugaringSource(binopTree)
         ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.And, rhsTree) =>
-        recurseOnDesugared(Asts.Ternary(lhsTree,
+        recurseOnDesugaredToIfExpr(lhsTree,
           Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
-          Asts.BoolLit(false).withDesugaringSource(binopTree)
-        ).withDesugaringSource(binopTree))
+          Asts.BoolLit(false).withDesugaringSource(binopTree),
+          binopTree
+        )
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Or, rhsTree) =>
-        recurseOnDesugared(Asts.Ternary(lhsTree,
+        recurseOnDesugaredToIfExpr(lhsTree,
           Asts.BoolLit(true).withDesugaringSource(binopTree),
-          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree)
-        ))
+          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
+          binopTree
+        )
       case binopTree@Asts.BinaryOp(lhs, Operator.PlusPlus, rhs) =>
         recurseOnDesugared(Asts.Call(
           Asts.Select(lhs, StdLib.stringConcatFunId).withDesugaringSource(binopTree),
@@ -1091,18 +1099,26 @@ final class IRcorneGenerator(
         currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs, argsB.result()), recordOrClassInstTree)
         proxyStore.saveKnownType(resultVal, typeId)
         None
-      case ternaryTree@Asts.Ternary(condTree, thenTree, elseTree) =>
+      case ifTree@Asts.IfExpr(condTree, thenTree@IfExprBranch(thenStats, thenResult), elseTree@IfExprBranch(elseStats, elseResult)) =>
         val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, currScope)
         val thenVal = currScope.newIntermediate("then")
         val thenScope = Scope.nestedInside(currScope, thenTree)
-        generateIRExpr(thenVal, thenTree, thenScope)
+        for (thenStat <- thenStats) {
+          // we can use doNothingCollector because the presence of a return among the statements will trigger a dead code error anyway (and reject the program)
+          generateIR(thenStat, thenScope, newScopeIfBlock = true)(using currItVal, currImplicitFields, ReturnCollector.doNothingCollector)
+        }
+        generateIRExpr(thenVal, thenResult, thenScope)
         val elseVal = currScope.newIntermediate("else")
         val elseScope = Scope.nestedInside(currScope, elseTree)
-        generateIRExpr(elseVal, elseTree, elseScope)
+        for (elseStat <- elseStats) {
+          // like for the then branch, we can use doNothingCollector
+          generateIR(elseStat, elseScope, newScopeIfBlock = true)(using currItVal, currImplicitFields, ReturnCollector.doNothingCollector)
+        }
+        generateIRExpr(elseVal, elseResult, elseScope)
         currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
           List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
-        ), ternaryTree)
+        ), ifTree)
         // retrieve info from lowering
         proxyStore.developDeepIgnoreAccessorsOpt(thenVal) match {
           case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
@@ -1327,14 +1343,14 @@ final class IRcorneGenerator(
           for {
             ownerFormula <- generateFormula(lhs, currScope)
           } yield Select(ownerFormula, FieldResolutionTarget(field))
-        case instantiation: (Asts.RecordOrClassInstantiation | Asts.ClosureDef | Asts.Ternary) if allowWrappedInstr =>
+        case instantiation: (Asts.RecordOrClassInstantiation | Asts.ClosureDef | Asts.IfExpr) if allowWrappedInstr =>
           val resVal = currScope.newIntermediate("wrapped")
           val scopeToWrap = Scope.nestedInside(currScope, instantiation)
           generateIRExpr(resVal, instantiation, scopeToWrap)
           Some(WrappedScope(resVal, scopeToWrap))
         case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
         case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
-        case Asts.Ternary(cond, thenBr, elseBr) => failIllegalConstruct("ternary operator")
+        case Asts.IfExpr(cond, thenBr, elseBr) => failIllegalConstruct("if expression")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
         case Asts.HybridCast(expr) => failIllegalConstruct("dynamic weak cast")
         case Asts.TypeTest(expr, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>

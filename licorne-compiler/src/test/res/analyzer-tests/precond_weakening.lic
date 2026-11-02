@@ -28,5 +28,5 @@ class D : I {
 }
 
 object Math {
-   pure fn abs(i: Int) -> [0..] = when i < 0 then -i else i
+   pure fn abs(i: Int) -> [0..] = if (i < 0) -i else i
 }

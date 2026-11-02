@@ -24,15 +24,14 @@ object Test {
    }
 
    private fn ifDog[T](animal: Animal, action: fn (Dog) -> T) {
-      if animal is Dog {
+      if (animal is Dog) {
          action(animal)
       }
    }
 
    private fn ifDogOrElse[T](animal: Animal, default: T, f: fn (Dog) -> T) -> T =
-      when animal is Dog
-        then f(animal)
-        else default
+      if (animal is Dog) f(animal)
+      else default
 
 }
 

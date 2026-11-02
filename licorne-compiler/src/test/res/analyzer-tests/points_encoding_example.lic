@@ -31,7 +31,7 @@ object Lists {
 
     fn map[T, U](ls: List[T], f: fn (T) -> U) -> List[U] {
         var resultReversed = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
             resultReversed = new Cons(first = f(rem.first()), rest = resultReversed)
         }
         return reverse(resultReversed)
@@ -39,8 +39,8 @@ object Lists {
 
     fn filter[T](ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
         var filteredReversed = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
-            if p(rem.first()) {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
+            if (p(rem.first())) {
                 filteredReversed = new Cons(first = rem.first(), rest = filteredReversed)
             }
         }
@@ -49,7 +49,7 @@ object Lists {
 
     fn reverse[T](ls: List[T]) -> List[T] {
         var rev = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
             rev = new Cons(first = rem.first(), rest = rev)
         }
         return rev

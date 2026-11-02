@@ -19,7 +19,7 @@ object Main {
     }
 
     private fn describe(a: Animal) -> String? =
-        when a.isMarine() then "marine" else null
+        if (a.isMarine()) "marine" else null
 
     private fn display(s: String) {
         println(s)

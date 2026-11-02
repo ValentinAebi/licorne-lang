@@ -61,7 +61,7 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
     private def isPossibleStatementStart: Boolean = tok match {
       case FirstUppercaseIdentifierToken(_) => true
       case FirstLowercaseIdentifierToken(_) => true
-      case KeywordToken(It | This | Null | Return | Panic | If | When | While | For | Val | Var | New) => true
+      case KeywordToken(It | This | Null | Return | Panic | If | While | For | Val | Var | New) => true
       case KeywordToken(_) => false
       case OperatorToken(OpeningParenthesis | OpeningBrace) => true
       case OperatorToken(_) => false

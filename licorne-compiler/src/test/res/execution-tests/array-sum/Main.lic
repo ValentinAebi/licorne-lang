@@ -23,7 +23,7 @@ object Main {
     }
 
     private pure fn relu(x: Int) -> [0..] =
-        when x < 0 then 0 else x
+        if (x < 0) 0 else x
 
     private pure fn foo(i: Int) -> Int =
         (2*i + 1) % 256 + (3*i*i - 4*i - 2) % 512

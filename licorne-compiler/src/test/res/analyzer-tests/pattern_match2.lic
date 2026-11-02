@@ -7,7 +7,7 @@ object Lists {
 
    fn length[A](var ls: List[A]) -> Int {
       var len = 0
-      while ls is Cons {
+      while (ls is Cons) {
          len += 1
          ls = ls.tail()
       }
@@ -15,8 +15,7 @@ object Lists {
    }
 
    fn tail[U](ls: List[U]) -> List[U] =
-      when ls is Cons
-         then ls.tail()
-         else panic "empty list"
+      if (ls is Cons) ls.tail()
+      else panic "empty list"
 
 }

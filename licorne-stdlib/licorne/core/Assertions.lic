@@ -1,6 +1,6 @@
 package licorne.core
 
-typealias ReturnsWhen(cond: Bool) = when cond then Unit else Nothing
+typealias ReturnsWhen(cond: Bool) = if (cond) Unit else Nothing
 
 object Assertions {
 
@@ -21,6 +21,6 @@ object Assertions {
     fn require(cond: Bool) -> ReturnsWhen(cond) = require(cond, null)
 
     private fn mkErrorMsg(header: String, userMsg: String?) -> String =
-        header ++ (when userMsg == null then "" else ": " ++ userMsg)
+        header ++ (if (userMsg == null) "" else ": " ++ userMsg)
 
 }

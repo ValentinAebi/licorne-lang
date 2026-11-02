@@ -11,7 +11,7 @@ datatype List[+T] {
    fn length_bad() -> Length {
       var len = -1
       var ls = this
-      while ls is Cons {
+      while (ls is Cons) {
          len += 1
          ls = ls.tail()
       }
@@ -21,7 +21,7 @@ datatype List[+T] {
    fn reverse() -> List[T] {
       var reversed = new Nil()
       var ls = this
-      while ls is Cons {
+      while (ls is Cons) {
          reversed = new Cons(head = ls.head(), tail = reversed)
          ls = ls.tail()
       }
@@ -31,8 +31,8 @@ datatype List[+T] {
    fn filter(p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil()
       var ls = this
-      while ls is Cons {
-         if p(ls.head()) {
+      while (ls is Cons) {
+         if (p(ls.head())) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed)
          }
          ls = ls.tail()
@@ -43,8 +43,8 @@ datatype List[+T] {
    fn filter_bad(p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil()
       var ls = this
-      while ls is Cons {
-         if !p(ls.head()) {
+      while (ls is Cons) {
+         if (!p(ls.head())) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
          }
          ls = ls.tail()
@@ -56,7 +56,7 @@ datatype List[+T] {
       var rem1 = this
       var rem2 = other
       var reversedZip = new Nil()
-      while rem1 is Cons && rem2 is Cons {
+      while (rem1 is Cons && rem2 is Cons) {
          reversedZip = new Cons(head = new Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip)
          rem1 = rem1.tail()
          rem2 = rem2.tail()
@@ -85,13 +85,11 @@ object UseLists {
    }
 
    fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when integers.length() == strings.length()
-      then integers.zip(strings)
+      if (integers.length() == strings.length()) integers.zip(strings)
       else new Nil()
 
    fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when integers.length() != strings.length()
-      then new Nil()
+      if (integers.length() != strings.length()) new Nil()
       else integers.zip(strings)
 
    fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {

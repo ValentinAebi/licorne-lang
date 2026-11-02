@@ -2,8 +2,8 @@
 object Test {
 
    fn clamp(min: Int, max: Int, x: Int where min <= max) -> [min..max] =
-      when x < min then min
-      else when x <= max then x
+      if (x < min) min
+      else if (x <= max) x
       else max
 
    fn brokenIdentityFunction(x: Int where x >= 0) -> [0..10] = x  //> E : return value: expected [0..10], found x : [0..]

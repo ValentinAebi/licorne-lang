@@ -5,8 +5,8 @@ object FilterLess {
 
     fn filterLessThan_adHoc_correct(a: Int, var ls: List[Int]) -> List[[..<a]] {
         var filteredReversed = new Nil()
-        while ls is Cons {
-            if ls.first() < a {
+        while (ls is Cons) {
+            if (ls.first() < a) {
                 filteredReversed = new Cons(first = ls.first(), rest = filteredReversed)
             }
             ls = ls.rest()
@@ -16,8 +16,8 @@ object FilterLess {
 
     fn filterLessThan_adHoc_buggy(a: Int, var ls: List[Int]) -> List[[..<a]] {
         var filteredReversed = new Nil()
-        while ls is Cons {
-            if ls.first() <= a {  // ERROR: should be <
+        while (ls is Cons) {
+            if (ls.first() <= a) {  // ERROR: should be <
                 filteredReversed = new Cons(first = ls.first(), rest = filteredReversed) //> E : initialization of field first: expected [..<a], found ls.first() : [..a]
             }
             ls = ls.rest()
@@ -41,7 +41,7 @@ object Lists {
 
     fn map[T, U](ls: List[T], f: fn (T) -> U) -> List[U] {
         var resultReversed = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
             resultReversed = new Cons(first = f(rem.first()), rest = resultReversed)
         }
         return reverse(resultReversed)
@@ -49,8 +49,8 @@ object Lists {
 
     fn filter[T](ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
         var filteredReversed = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
-            if p(rem.first()) {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
+            if (p(rem.first())) {
                 filteredReversed = new Cons(first = rem.first(), rest = filteredReversed)
             }
         }
@@ -59,7 +59,7 @@ object Lists {
 
     fn reverse[T](ls: List[T]) -> List[T] {
         var rev = new Nil()
-        for var rem = ls; rem is Cons; rem = rem.rest() {
+        for (var rem = ls; rem is Cons; rem = rem.rest()) {
             rev = new Cons(first = rem.first(), rest = rev)
         }
         return rev

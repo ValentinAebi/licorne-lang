@@ -6,7 +6,7 @@ import compiler.irs.tokens.Tokens.*
 import compiler.parser.primitives.ParseTree.^:
 import compiler.parser.primitives.TreeParsers.*
 import compiler.pipeline.CompilationStep.Parsing
-import compiler.pipeline.CompilerStep
+import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.lang.{FuncVisibility, Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, TypeVisibility, Types, Variance}
 import compiler.lang.Operator.*
@@ -17,9 +17,11 @@ import compiler.parser.primitives.{BinaryOperatorsParser, LL1Iterator, ParsingMi
 
 import scala.compiletime.uninitialized
 
-final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[PositionedToken], String), Source] {
-  private implicit val implErrorReporter: ErrorReporter = errorReporter
+final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken], String), Source] {
+  private implicit val implErrorReporter: ErrorReporter = er
   private var ll1Iterator: LL1Iterator = uninitialized
+
+  private given CompilationStep = Parsing
 
   private type P[X] = AnyTreeParser[X]
 
@@ -225,7 +227,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
           case block: Block => block
         }
         if (bodyOptRaw.exists(_.isInstanceOf[Expr]) && optRetType.forall(isUnitType)) {
-          errorReporter.report(Err(Parsing, s"single-expression methods are not allowed to return ${PrimitiveType.UnitType}", bodyOptRaw.get.getPosition))
+          er.report(Err(Parsing, s"single-expression methods are not allowed to return ${PrimitiveType.UnitType}", bodyOptRaw.get.getPosition))
         }
         val overridability = optModif match {
           case Some(Open) => Overridability.Open
@@ -278,7 +280,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
     kw(Public).ignored ::: opt(kw(Val)) ::: funOrVarId ::: colon ::: typeTree map {
       case optVal ^: id ^: tpe =>
         optVal.foreach { _ =>
-          errorReporter.warn(s"$Val after $Public is redundant", tpe.getPosition)(using Parsing)
+          er.warn(s"$Val after $Public is redundant", tpe.getPosition)
         }
         PublicParam(id, tpe)
     }
@@ -318,10 +320,10 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
       case Some(allSupertypes) =>
         allSupertypes.flatMap {
           case primitiveTypeTree: PrimitiveTypeTree =>
-            errorReporter.report(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
+            er.report(Err(Parsing, "subclassing a primitive type is forbidden", primitiveTypeTree.getPosition))
             None
           case namedTypeTree@NamedTypeTree(name, typeArgs, args) if args.nonEmpty =>
-            errorReporter.report(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
+            er.report(Err(Parsing, "supertypes cannot take value arguments", namedTypeTree.getPosition))
             None
           case namedTypeTree: NamedTypeTree => Some(namedTypeTree)
         }
@@ -369,7 +371,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val ternaryTypeTree: P[TypeTree] = withDescription("a ternary type") {
     recursive {
-      kw(When).ignored ::: expr ::: kw(Then).ignored ::: typeTree ::: kw(Else).ignored ::: typeTree map {
+      kw(If).ignored ::: controlFlowCondition ::: typeTree ::: kw(Else).ignored ::: typeTree map {
         case cond ^: leftType ^: rightType => TernaryTypeTree(cond, leftType, rightType)
       }
     }
@@ -399,24 +401,26 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         case baseTypeName ^: typeArgsOpt ^: paramsOpt =>
           val primTypeOpt = Types.primTypeFor(baseTypeName).map(PrimitiveTypeTree(_))
           if (primTypeOpt.isDefined && typeArgsOpt.exists(_.nonEmpty)) {
-            errorReporter.report(Err(Parsing, "primitive types cannot take type parameters", typeArgsOpt.get.head.getPosition))
+            er.report(Err(Parsing, "primitive types cannot take type parameters", typeArgsOpt.get.head.getPosition))
           }
           primTypeOpt.getOrElse(NamedTypeTree(baseTypeName, typeArgsOpt.getOrElse(Nil), paramsOpt.getOrElse(Nil)))
       }
     }
   }
 
+  private lazy val statsSeq = repeatWithEnd(stat.recover(isSeparatorOrClosingBrace), statementSep).map(_.flatten)
+
   private lazy val block: P[Block] = withDescription("a block") {
     recursive {
-      openBrace ::: repeatWithEnd(stat.recover(isSeparatorOrClosingBrace), statementSep).map(_.flatten) ::: closeBrace map {
+      openBrace ::: statsSeq ::: closeBrace map {
         stats => Block(stats)
       }
     }
   }
 
-  private lazy val exprOrAssig = withDescription("an expression or an assignment") {
+  private lazy val simpleExprOrAssig = withDescription("an expression or an assignment") {
     recursive {
-      expr ::: opt(assignmentOperator ::: expr) map {
+      simpleExpr ::: opt(assignmentOperator ::: expr) map {
         case singleExpr ^: None => singleExpr
         case lhs ^: Some(Assig ^: rhs) => VarAssig(lhs, rhs)
         case lhs ^: Some(op ^: rhs) => VarModif(lhs, rhs, Operators.assigOperators.apply(op))
@@ -435,9 +439,11 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val expr: P[Expr] = withDescription("an expression") {
     recursive {
-      simpleExpr OR ternary OR regularClosure OR shorthandClosure
+      simpleExpr OR ifExpression OR closure
     }
   }
+
+  private lazy val closure = regularClosure OR shorthandClosure
 
   private lazy val simpleExpr: P[Expr] = {
     recursive {
@@ -571,14 +577,14 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
         case initExpr ^: None => ShorthandFieldInitializer(initExpr)
         case VariableRef(fldId) ^: Some(initExpr) => FullFieldInitializer(fldId, initExpr)
         case malformedLabelExpr ^: Some(initExpr) =>
-          errorReporter.reportError("malformed initializer", malformedLabelExpr.getPosition)(using Parsing)
+          er.reportError("malformed initializer", malformedLabelExpr.getPosition)
           ShorthandFieldInitializer(initExpr)
       }
     }
   }
 
   private lazy val stat: P[Statement] = withDescription("a statement") {
-    exprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifThenElse OR returnStat
+    simpleExprOrAssig OR valDef OR varDef OR whileLoop OR forLoop OR ifStatement OR returnStat
   }
 
   private lazy val valDef = withDescription("a value declaration") {
@@ -595,7 +601,7 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val whileLoop = withDescription(s"a $While loop") {
     recursive {
-      kw(While).ignored ::: expr ::: block map {
+      kw(While).ignored ::: controlFlowCondition ::: block map {
         case cond ^: body => WhileLoop(cond, body)
       }
     }
@@ -609,26 +615,69 @@ final class Parser(errorReporter: ErrorReporter) extends CompilerStep[(List[Posi
 
   private lazy val forLoop = withDescription(s"a $For loop") {
     recursive {
-      kw(For).ignored ::: (forLoopHeaderWithoutParenth OR openParenth ::: forLoopHeaderWithoutParenth ::: closeParenth) ::: block map {
+      kw(For).ignored ::: (openParenth ::: forLoopHeaderWithoutParenth ::: closeParenth) ::: block map {
         case (initStats, cond, stepStats) ^: body => ForLoop(initStats, cond, stepStats, body)
       }
     }
   }
 
-  private lazy val ifThenElse: P[IfThenElse] = withDescription(s"an $If statement") {
+  private lazy val controlFlowCondition: P[Expr] = opt(op(ExclamationMark)) ::: (openParenth ::: expr ::: closeParenth OR varRef) map {
+    case Some(exclMark) ^: expr => UnaryOp(exclMark, expr)
+    case None ^: expr => expr
+  }
+
+  private lazy val ifStatement: P[IfStatement] = withDescription(s"an $If statement") {
     recursive {
-      kw(If).ignored ::: expr ::: block ::: opt(kw(Else).ignored ::: (ifThenElse OR block)) map {
-        case cond ^: thenBr ^: optElse => IfThenElse(cond, thenBr, optElse)
+      kw(If).ignored ::: controlFlowCondition ::: block ::: opt(kw(Else).ignored ::: (ifStatement OR block)) map {
+        case cond ^: thenBr ^: optElse => IfStatement(cond, thenBr, optElse)
       }
     }
   }
 
-  private lazy val ternary = withDescription(s"a $When expression") {
+  private lazy val ifExpression = withDescription(s"an $If expression") {
     recursive {
-      kw(When).ignored ::: expr ::: kw(Then).ignored ::: expr ::: kw(Else).ignored ::: expr map {
-        case cond ^: thenBr ^: elseBr => Ternary(cond, thenBr, elseBr)
+      kw(If).ignored ::: controlFlowCondition ::: ifExprBranch ::: kw(Else).ignored ::: ifExprBranch map {
+        case cond ^: thenBr ^: elseBr => IfExpr(cond, thenBr, elseBr)
       }
     }
+  }
+
+  private lazy val ifExprBranch: P[IfExprBranch] = expr OR (openBrace ::: statsSeq ::: closeBrace) map {
+    case stats: List[Statement] =>
+      def expectExprAtTheEnd(stats: List[Statement]): IfExprBranch = stats.lastOption match {
+        case Some(last: Expr) => IfExprBranch(stats.init, last)
+        case Some(last: IfStatement) =>
+
+          def ifStatementToExpr(ifStat: IfStatement): IfExpr = ifStat match {
+            case IfStatement(cond, thenBlock@Block(thenStats), Some(elseBlock@Block(elseStats))) =>
+              val thenBr = expectExprAtTheEnd(thenStats).setPosition(thenBlock.getPosition)
+              val elseBr = expectExprAtTheEnd(elseStats).setPosition(elseBlock.getPosition)
+              IfExpr(cond, thenBr, elseBr).setPosition(ifStat.getPosition)
+            case IfStatement(cond, thenBlock@Block(thenStats), Some(ite: IfStatement)) =>
+              val thenBr = expectExprAtTheEnd(thenStats).setPosition(thenBlock.getPosition)
+              val elseBr = IfExprBranch(List.empty, ifStatementToExpr(ite))
+              IfExpr(cond, thenBr, elseBr).setPosition(ifStat.getPosition)
+            case IfStatement(cond, thenBlock@Block(thenStats), None) =>
+              er.reportError(s"expected an expression, but $If statement misses an $Else clause", ifStat.getPosition)
+              val thenBr = expectExprAtTheEnd(thenStats).setPosition(thenBlock.getPosition)
+              val elseBr = IfExprBranch(List.empty, UnitLit().setPosition(ifStat.getPosition)).setPosition(ifStat.getPosition)
+              IfExpr(cond, thenBr, elseBr).setPosition(ifStat.getPosition)
+            case IfStatement(cond, thenBr, elseBrOpt) =>
+              throw AssertionError(s"unexpected statement in then branch: ${thenBr.getClass.getSimpleName}")
+          }
+
+          IfExprBranch(stats.init, ifStatementToExpr(last))
+        case Some(stat) =>
+          er.reportError("expected an expression at the end of the branch", stat.getPosition)
+          IfExprBranch(stats, UnitLit().setPosition(stat.getPosition))
+        case None =>
+          val currPos = Some(ll1Iterator.current.position)
+          er.reportError("expression expected", currPos)
+          IfExprBranch(List.empty, UnitLit().setPosition(currPos))
+      }
+
+      expectExprAtTheEnd(stats)
+    case branchResult: Expr => IfExprBranch(List.empty, branchResult)
   }
 
   private lazy val returnStat = withDescription(s"a $Return statement") {

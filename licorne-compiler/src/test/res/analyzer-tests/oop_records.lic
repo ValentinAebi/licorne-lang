@@ -30,7 +30,7 @@ record Cons[+T](head: T, tail: List[T]) : List[T] {
     pure fn size() -> Length = 1 + this.tail().size()
 
     pure fn at(i: Idx(this)) -> T =
-        when i == 0 then this.head()
+        if (i == 0) this.head()
         else this.tail().at((i - 1)!!)  // TODO find a way of allowing this without !! (probably by allowing the expansion of private methods)
 }
 

@@ -34,7 +34,7 @@ object ArrayCopy {
 
    fn copy2[T](xs: Array[T]) -> Array[T] {
       val copy = new Array(length = xs.length())
-      for var i = 0; i < xs.length(); i += 1 {
+      for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i)
          copy.set(i, t)
       }
@@ -43,7 +43,7 @@ object ArrayCopy {
 
    fn copy3[T](xs: Array[T]) -> Array[T] {
       val copy = new Array(length = xs.length())
-      for var i = 0; i < copy.length(); i += 1 {
+      for (var i = 0; i < copy.length(); i += 1) {
          val t = xs.at(i)
          copy.set(i, t)
       }
@@ -52,7 +52,7 @@ object ArrayCopy {
 
    fn copyWrong[T](xs: Array[T]) -> Array[T] {
       val copy = new Array(length = xs.length() / 2)
-      for var i = 0; i < xs.length(); i += 1 {
+      for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i)
          copy.set(i, t)  //> E : first argument of call to set: expected Idx[T](copy), found i : [0 ..< xs.length()]
       }

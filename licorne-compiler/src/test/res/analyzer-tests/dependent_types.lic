@@ -5,8 +5,8 @@ object Main {
 
    pure fn clamp(x: Int, min: Int, max: [min..]) -> [min..max] {
       return (
-        when x < min then min
-        else when x < max then x
+        if (x < min) min
+        else if (x < max) x
         else max
       )
    }

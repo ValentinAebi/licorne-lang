@@ -14,7 +14,7 @@ object Lists {
 
    pure fn length[A](var ls: List[A]) -> Length {
       var len = 0
-      while ls is Cons {
+      while (ls is Cons) {
          len += 1
          ls = ls.tail()
       }
@@ -23,7 +23,7 @@ object Lists {
 
    fn length_bad[A](var ls: List[A]) -> Length {
       var len = -1
-      while ls is Cons {
+      while (ls is Cons) {
          len += 1
          ls = ls.tail()
       }
@@ -32,7 +32,7 @@ object Lists {
 
    fn sum(var ls: List[[0..]]) -> [0..] {
       var s = 0
-      while ls is Cons {
+      while (ls is Cons) {
          s += ls.head()
          ls = ls.tail()
       }
@@ -41,7 +41,7 @@ object Lists {
 
    fn sum_bad(var ls: List[[..1000]]) -> [0..] {
       var s = 0
-      while ls is Cons {    //> E : I could not find a type for variable s that stays valid for all iterations of the loop (I attempted with [0..]), please provide a type annotation at variable declaration (on line 43)
+      while (ls is Cons) {    //> E : I could not find a type for variable s that stays valid for all iterations of the loop (I attempted with [0..]), please provide a type annotation at variable declaration (on line 43)
          s += ls.head()
          ls = ls.tail()
       }
@@ -50,7 +50,7 @@ object Lists {
 
    fn reverse[T](var ls: List[T]) -> List[T] {
       var reversed = new Nil()
-      while ls is Cons {
+      while (ls is Cons) {
          reversed = new Cons(head = ls.head(), tail = reversed)
          ls = ls.tail()
       }
@@ -59,8 +59,8 @@ object Lists {
 
    fn filterLessOrEq(a: Int, var ls: List[Int]) -> List[[..a]] {
       var filteredReversed = new Nil()
-      while ls is Cons {
-         if ls.head() <= a {
+      while (ls is Cons) {
+         if (ls.head() <= a) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed)
          }
          ls = ls.tail()
@@ -70,8 +70,8 @@ object Lists {
 
    fn filterLessThan(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed = new Nil()
-      while ls is Cons {
-         if ls.head() < a {
+      while (ls is Cons) {
+         if (ls.head() < a) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed)
          }
          ls = ls.tail()
@@ -81,8 +81,8 @@ object Lists {
 
    fn filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed = new Nil()
-      while ls is Cons {
-         if ls.head() <= a {
+      while (ls is Cons) {
+         if (ls.head() <= a) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected [..<a], found ls.head() : [..a]
          }
          ls = ls.tail()
@@ -92,8 +92,8 @@ object Lists {
 
    fn filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[..<a]] {
       var filteredReversed: List[[..<a]] = new Nil()
-      while ls is Cons {
-         if ls.head() <= a {
+      while (ls is Cons) {
+         if (ls.head() <= a) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected [..<a], found ls.head() : [..a]
          }
          ls = ls.tail()
@@ -103,8 +103,8 @@ object Lists {
 
    fn filter[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil()
-      while ls is Cons {
-         if p(ls.head()) {
+      while (ls is Cons) {
+         if (p(ls.head())) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed)
          }
          ls = ls.tail()
@@ -114,8 +114,8 @@ object Lists {
 
    fn filter_bad[T](var ls: List[T], p: pure fn (T) -> Bool) -> List[T with p(it)] {
       var filteredReversed = new Nil()
-      while ls is Cons {
-         if !p(ls.head()) {
+      while (ls is Cons) {
+         if !(p(ls.head())) {
             filteredReversed = new Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
          }
          ls = ls.tail()
@@ -136,7 +136,7 @@ object Lists {
       var rem1 = ls1
       var rem2 = ls2
       var reversedZip = new Nil()
-      while rem1 is Cons && rem2 is Cons {
+      while (rem1 is Cons && rem2 is Cons) {
          reversedZip = new Cons(head = new Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip)
          rem1 = rem1.tail()
          rem2 = rem2.tail()
@@ -153,13 +153,11 @@ object UseLists {
    }
 
    fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when length(integers) == length(strings)
-      then zip(integers, strings)
+      if (length(integers) == length(strings)) zip(integers, strings)
       else new Nil()
 
    fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      when length(integers) != length(strings)
-      then new Nil()
+      if (length(integers) != length(strings)) new Nil()
       else zip(integers, strings)
 
    fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {

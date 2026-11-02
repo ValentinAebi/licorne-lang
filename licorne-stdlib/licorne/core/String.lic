@@ -69,7 +69,7 @@ class String : Indexable {
     pure fn count(c: Char) -> Cnt {
         var cnt = 0
         for (var i = 0; i < size(); i += 1) {
-            if charAt(i) == c {
+            if (charAt(i) == c) {
                 cnt += 1
             }
         }
@@ -80,7 +80,7 @@ class String : Indexable {
         var i = 0
         var j = 0
         while (i < size() && j < substring.size()) {
-            if this.charAt(i) == substring.charAt(j) {
+            if (this.charAt(i) == substring.charAt(j)) {
                 j += 1
             } else {
                 j = 0
@@ -130,7 +130,7 @@ class String : Indexable {
     }
 
     private pure fn sanitizeIndexOfResult(i: [-1 ..< size()]) -> Idx(this)? =
-        when i == -1 then null else i
+        if (i == -1) null else i
 
 }
 
