@@ -1,0 +1,23 @@
+
+object Main {
+
+    fn main() {
+        val array = new Array(2, |0|)
+        println(str(foo1(array)))
+        println(str(foo2(array)))
+    }
+
+    private fn foo1(args: Array[Int]) -> Int {
+        return if (args.size() == 0) {
+            println("empty")
+            42
+        } else 0
+    }
+
+    private fn foo2(args: Array[Int]) -> Int =
+        if (args.size() == 0) 42 else {
+            println("nonempty")
+            0
+        }
+
+}
