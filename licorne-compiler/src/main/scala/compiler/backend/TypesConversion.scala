@@ -60,10 +60,13 @@ trait TypesConverter {
     case NothingType => CD_void
   }
 
-  def descriptorFor(typeName: TypeIdentifier): ClassDesc = {
+  def descriptorFor(typeName: TypeIdentifier)(using typeParamsCtx: TypeParamsContext): ClassDesc = {
     if typeName == StdLib.stringTypeId then CD_String
     else if typeName == StdLib.arrayTypeId then CD_Object.arrayType()
-    else ClassDesc.of(typeName.stringId)
+    else typeParamsCtx.typeParams.get(typeName) match {
+      case Some(tpInfo) => tpInfo.upperBoundOpt.map(descriptorFor).getOrElse(CD_Object)
+      case None => ClassDesc.of(typeName.stringIdWithPostfixSep("$"))
+    }
   }
 
   def kindFor(tpe: Type)(using tpCtx: TypeParamsContext): TypeKind = getRuntimeType(tpe)(using tpCtx, dealiasingCtx) match {

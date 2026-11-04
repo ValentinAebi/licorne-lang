@@ -3,43 +3,58 @@ package compiler.typing
 import compiler.irs.ircorne.Formulas.{Formula, IdValue}
 import compiler.lang.Types
 import compiler.lang.Types.Type
+import compiler.typing.contexts.ResolutionContext
+import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 
 
 final class TypeCandidatesStore {
   private val candidates = mutable.Map.empty[IdValue, mutable.LinkedHashSet[Type]]
-  private val pureClosureCandidates = mutable.Set.empty[IdValue]
+  private val uniqueCandidates = mutable.Map.empty[IdValue, Type]
 
-  def offerCandidate(idVal: IdValue, tpe: Type): Unit = {
-    tpe.withTypeVarsSubstituted.foreach { tpe =>
-      candidates.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty).add(tpe)
-      tpe match {
-        case Types.RefinedType(baseType, predicate) =>
-          candidates.apply(idVal).add(baseType)
-        case _ => ()
-      }
+  def discardUnresolvedCandidates(): Unit = {
+    candidates.mapValuesInPlace { (_, candidatesSet) =>
+      candidatesSet.map(_.withTypeVarsExpanded)
+        .filter(_.allTypeVariables.isEmpty)
     }
-    tpe match {
-      case Types.ClosureType(params, result, enforcedPure) if enforcedPure =>
-        pureClosureCandidates.add(idVal)
+  }
+
+  def offerCandidate(idVal: IdValue, tpe: Type)(using proxyStore: ProxyStore, resolCtx: ResolutionContext): Unit = {
+    if (uniqueCandidates.contains(idVal)) {
+      return
+    }
+    val devType = tpe.withDependenciesTransformed(proxyStore.developNearest(_))
+    candidates.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty).add(devType)
+    devType match {
+      case Types.RefinedType(baseType, predicate) =>
+        candidates.apply(idVal).add(baseType)
       case _ => ()
     }
   }
 
+  def setUniqueCandidate(idVal: IdValue, tpe: Type): Unit = {
+    uniqueCandidates.put(idVal, tpe)
+  }
+
   def getCandidates(idVal: IdValue): Iterable[Type] = {
-    candidates.get(idVal) match {
-      case Some(candidates) => candidates
-      case None => List.empty
+    uniqueCandidates.get(idVal) match {
+      case Some(uniqueCandidate) => List(uniqueCandidate)
+      case None => candidates.get(idVal) match {
+        case Some(candidatesRaw) =>
+          val candidatesExp = candidatesRaw.map(_.withTypeVarsExpanded)
+          candidates(idVal) = candidatesExp
+          candidatesExp
+        case None => List.empty
+      }
     }
   }
-  
-  def hasPureClosureCandidateFor(idValue: IdValue): Boolean =
-    pureClosureCandidates.contains(idValue)
 
-  override def toString: String = candidates.map { (idVal, candidates) =>
-    s"   $idVal: ${candidates.mkString("{ ", ", ", " }")}"
-  }.mkString("{\n", ",\n", "\n}")
+  override def toString: String =
+    uniqueCandidates.map((idVal, cand) => s"$idVal -> $cand").mkString("unique: {\b", ",\n", "\n}")
+      ++ candidates.map { (idVal, candidates) =>
+      s"   $idVal: ${candidates.mkString("{ ", ", ", " }")}"
+    }.mkString("regular: {\n", ",\n", "\n}")
 
 }
 

@@ -3,6 +3,8 @@ package compiler.lang
 enum Keyword(val str: String) {
   case As extends Keyword("as")
   case Class extends Keyword("class")
+  case Companion extends Keyword("companion")
+  case Constructor extends Keyword("constructor")   // do not remove, useful to prevent users from using it as an identifier
   case Datatype extends Keyword("datatype")
   case Else extends Keyword("else")
   case Fn extends Keyword("fn")
@@ -12,7 +14,6 @@ enum Keyword(val str: String) {
   case Import extends Keyword("import")
   case Interface extends Keyword("interface")
   case Is extends Keyword("is")
-  case New extends Keyword("new")
   case Null extends Keyword("null")
   case Object extends Keyword("object")
   case Opaque extends Keyword("opaque")

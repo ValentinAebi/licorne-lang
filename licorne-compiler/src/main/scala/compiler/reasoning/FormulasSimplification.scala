@@ -32,9 +32,11 @@ object FormulasSimplification {
         case (BoolConst(false), rhs) => rhs
         case (lhs, rhs) => LogicalOr(lhs, rhs)
       }
-    case Equality(lhs, rhs) if lhs == rhs =>
-      // TODO recurse?
-      BoolConst(true)
+    case Equality(lhs, rhs) =>
+      (simplifyFormula(lhs), simplifyFormula(rhs)) match {
+        case (lhs, rhs) if lhs == rhs => BoolConst(true)
+        case (lhs, rhs) => Equality(lhs, rhs)
+      }
     case LessOrEq(lhs, rhs) =>
       (simplifyNumeric(lhs), simplifyNumeric(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l <= r)

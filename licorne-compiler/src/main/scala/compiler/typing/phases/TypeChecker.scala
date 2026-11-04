@@ -1,12 +1,12 @@
 package compiler.typing.phases
 
-import compiler.irs.ircorne.Formulas.FunCall
+import compiler.identifiers.ItId
+import compiler.irs.ircorne.Formulas.{FunCall, ParamIdValue}
 import compiler.irs.ircorne.IRcorne.{AssigningInstr, Scope}
 import compiler.irs.ircorne.{Formulas, IRcorne, InvocationTarget}
 import compiler.lang.Field.StableField
-import compiler.lang.Types.PrimitiveType.{NullType, UnitType}
-import compiler.lang.Types.TernaryType
-import compiler.lang.Types.Type
+import compiler.lang.Types.PrimitiveType.{NothingType, NullType, UnitType}
+import compiler.lang.Types.{TernaryType, Type, TypeVariable}
 import compiler.lang.{FunctionDescriptor, FunctionSignature, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeChecking
 import compiler.pipeline.{CompilationStep, CompilerStep}

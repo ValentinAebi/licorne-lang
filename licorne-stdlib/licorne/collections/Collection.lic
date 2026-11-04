@@ -4,10 +4,10 @@ interface Collection[+T] {
 
     fn size() -> Cnt
 
-    fn map[U](f: fn (T) -> U) -> Collection[U]
+    fn map[U](f: (T) -> U) -> Collection[U]
 
-    fn filter(pred: pure fn (T) -> Bool) -> Collection[T with pred(it)]
+    fn filter(pred: pure (T) -> Bool) -> Collection[T with pred(it)]
 
-    fn foreach(f: fn (T) -> Unit)
+    fn foreach(f: (T) -> Unit)
 
 }

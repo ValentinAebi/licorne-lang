@@ -124,11 +124,11 @@ class AnalyzerTests(fileName: String) {
     val counterExBoxOpt = Option.empty[CounterexampleBox]
     val pipeline = TasksPipelines.multiFrontEnd(er)
       .andThen(ImportsScanner())
-      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, new ClosuresNamer, er, srcRootForPkgMismatchCheckOpt = None))
+      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, typeCandidatesStore, new ClosuresNamer, er, srcRootForPkgMismatchCheckOpt = None))
       .andThen(SubtypingChecker(proxyStore, er))
       .andThen(TypeAliasesAnalyzer(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, counterExBoxOpt, er))
+      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, typeVarsCtx, counterExBoxOpt, er))
       .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt))
     try {

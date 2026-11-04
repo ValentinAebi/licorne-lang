@@ -10,6 +10,6 @@ private record Wxyz(i: Int)
 
 object Lib {
     fn useWxyz() {
-        new Wxyz(0)
+        Wxyz(0)
     }
 }

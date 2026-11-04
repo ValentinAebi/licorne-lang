@@ -39,7 +39,7 @@ final case class FunctionSignature(
 
   override def sigName: Identifier = functionName
 
-  val (receiverVal: IdValue, receiverType: Type) = paramsInclThis.head
+  val (receiverVal: NamedIdValue, receiverType: Type) = paramsInclThis.head
 
   def ownerAndDescr: (TypeIdentifier, FunctionDescriptor) = (ownerName, descriptor)
 
@@ -325,12 +325,17 @@ sealed trait TypeParamInfo {
   val tid: TypeIdentifier
   val upperBoundOpt: Option[Type]
   val lowerBoundOpt: Option[Type]
+  
+  // TODO handle type parameters with another type parameter as upper bound during erasure
+  //  This means checking all occurrences of upperBoundOpt.getOrElse(NullableType(AnyType))
 
   def varianceOpt: Option[Variance]
 }
 
 final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
   override def varianceOpt: Option[Variance] = Some(variance)
+  
+  def toFunTypeParamInfo: FunctionTypeParamInfo = FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt)
 
   override def toString: String =
     s"${varianceDescr(variance)}$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"

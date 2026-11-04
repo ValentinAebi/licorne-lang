@@ -3,16 +3,16 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, ConstructorFunId, TypeIdentifier}
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne, SourceLevelFormulaPrinter}
+import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType, UnitType}
-import compiler.lang.Types.{NamedType, NullableType, TernaryType, Type, UnionType}
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
+import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
@@ -81,7 +81,7 @@ final class Backend(
     val mainClasses = mutable.LinkedHashSet.empty[String]
     for (tSig <- program.runtimeSignatures) {
       if (tSig.functions.exists(_._2.isMain)) {
-        mainClasses.add(tSig.id.stringId)
+        mainClasses.add(tSig.id.stringIdWithPostfixSep("$"))
       }
       generateTypeDecl(tSig, program)
     }
@@ -96,7 +96,7 @@ final class Backend(
     Files.createDirectories(path.getParent)
     ClassFile.of(ClassHierarchyResolverOption.of(summon[ClassHierarchyResolver])).buildTo(
       path,
-      ClassDesc.of(tid.stringId),
+      ClassDesc.of(tid.stringIdWithPostfixSep("$")),
       cb => {
         val (majorVersion, minorVersion) = javaVersionCode
         var flags = 0
@@ -116,30 +116,39 @@ final class Backend(
         }
         cb.withFlags(flags)
         cb.withVersion(majorVersion, minorVersion)
+
+        given TypeParamsContext = TypeParamsContext(tSig.typeParams)
+
         tSig match {
           case tSig: ObjectSignature =>
             generateInstanceFieldAndInitializer(tSig, cb)
           case _ => ()
         }
         tSig match {
-          case objSig: ObjectSignature => generateObjectConstructor(objSig, cb)
+          case tSig: ObjectSignature =>
+            generateObjectConstructor(tSig, cb)
           case tSig: UserInstantiableTypeSig if tSig.sigName != arrayTypeId =>
-            val fieldsInit = program.constructorFieldsInit.getOrElse(tSig.id, Map.empty)
-            generateUserAccessibleConstructor(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
+            val fieldsInit = program.fieldInitializers.getOrElse(tSig.id, Map.empty)
+            generateConstructorForUserInstantiableType(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
           case _ => ()
         }
-
-        given TypeParamsContext = TypeParamsContext(tSig.typeParams)
-
         generateFields(tid, tSig.fields.values, cb)
-        generateFunctions(tSig, cb)(using program)
+        if (tSig.sigName.isCompanionObject) {
+          if (tSig.sigName.asNonCompanionId != arrayTypeId) {
+            generateAutoConstructorFunctions(tSig.asInstanceOf[ObjectSignature], program.fieldInitializers.getOrElse(tSig.sigName.asNonCompanionId, Map.empty), cb)(using program.globalValuesContext)
+          }
+        } else {
+          generateFunctions(tSig, cb)(using program)
+        }
         generateInterfacesList(tSig.directSupertypes.map(_.typeName), cb)
       }
     )
   }
 
-  // TODO maybe there could be an issue with the ClassHierarchyResolver not being aware of the subtyping relationship between closures and the Closure interface
   private def mkClassHierarchyResolver(subtypingInfo: SubtypingInfo)(using dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext): ClassHierarchyResolver = {
+
+    given TypeParamsContext = TypeParamsContext.empty
+
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val interfaces = util.ArrayList[ClassDesc]()
     val superClasses = util.HashMap[ClassDesc, ClassDesc]()
@@ -163,7 +172,7 @@ final class Backend(
       .cached()
   }
 
-  private def generateInstanceFieldAndInitializer(objSig: ObjectSignature, cb: ClassBuilder)(using DealiasingContext): Unit = {
+  private def generateInstanceFieldAndInitializer(objSig: ObjectSignature, cb: ClassBuilder)(using TypeParamsContext, DealiasingContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val tid = objSig.id
     val tDesc = tConv.descriptorFor(tid)
@@ -177,7 +186,7 @@ final class Backend(
     }))
   }
 
-  private def generateInterfacesList(interfaces: Iterable[TypeIdentifier], cb: ClassBuilder)(using DealiasingContext): Unit = {
+  private def generateInterfacesList(interfaces: Iterable[TypeIdentifier], cb: ClassBuilder)(using TypeParamsContext, DealiasingContext): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     cb.withInterfaceSymbols(interfaces.map(tConv.descriptorFor).toJavaUtilList)
   }
@@ -203,16 +212,50 @@ final class Backend(
     }))
   }
 
-  private def generateUserAccessibleConstructor(tSig: UserInstantiableTypeSig, fieldsInit: Map[FunOrVarId, (initInstr: Iterable[RealInstr], resVal: IdValue)], cb: ClassBuilder)
-                                               (using DealiasingContext, GlobalValuesContext, ResolutionContext, SimplifiedSubtypingContext, ClassHierarchyResolver): Unit = {
-    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-    val tDesc = tConv.descriptorFor(tSig.id)
-    val sigScope = tSig.sigScope
+  private def generateAutoConstructorFunctions(objSig: ObjectSignature, constructorFieldsInit: Map[FunOrVarId, (Iterable[RealInstr], IdValue)], cb: ClassBuilder)
+                                              (using globalValsCtx: GlobalValuesContext, tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, subtypingCtx: SimplifiedSubtypingContext, classHierarchyResolver: ClassHierarchyResolver): Unit = {
+    require(objSig.id.isCompanionObject)
+    val instantiatedTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](objSig.id.copy(isCompanionObject = false)).get
 
+    for ((_, constructorSig) <- objSig.functions) {
+      assert(constructorSig.sigName == ConstructorFunId, s"unexpected: ${constructorSig.sigName}")
+      cb.withMethod(ConstructorFunId.stringId, mkFunDesc(constructorSig), ClassFile.ACC_PUBLIC, mb => mb.withCode { cb =>
+
+        given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(globalValsCtx, TypeParamsContext(constructorSig.typeParams), isSyntheticAccessor = false, objSig.sigName, constructorSig.retType, closureInfoOpt = None)
+
+        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        val desc = tConv.descriptorFor(instantiatedTypeSig.sigName)
+        cb.new_(desc)
+        cb.dup()
+        allocateAndDeclare(constructorSig.receiverVal, cb, instantiatedTypeSig.sigScope)
+        val (constructorParams, defaultedParams) = instantiatedTypeSig.constructorParams.values.splitAt(constructorSig.paramsWithoutThis.size)
+        for (cp <- constructorParams) {
+          val paramSlotIdx = allocateAndDeclare(cp.value, cb, instantiatedTypeSig.sigScope)
+          cb.loadLocal(tConv.kindFor(cp.tpe), paramSlotIdx)
+        }
+        for (cp <- defaultedParams) {
+          val (initInstr, initResVal) = constructorFieldsInit.apply(cp.id)
+          for (instr <- initInstr) {
+            generateInstr(instr, cb, instantiatedTypeSig.sigScope)
+          }
+          val constrParamTypeKind = tConv.kindFor(cp.tpe)
+          cb.loadLocal(constrParamTypeKind, funGenCtx.getSlot(initResVal))
+        }
+        cb.invokespecial(desc, INIT_NAME, mkConstrDesc(instantiatedTypeSig))
+        cb.areturn()
+      })
+    }
+  }
+
+  private def generateConstructorForUserInstantiableType(tSig: UserInstantiableTypeSig, fieldsInit: Map[FunOrVarId, (initInstr: Iterable[RealInstr], resVal: IdValue)], cb: ClassBuilder)
+                                                        (using DealiasingContext, GlobalValuesContext, ResolutionContext, SimplifiedSubtypingContext, ClassHierarchyResolver): Unit = {
     given tpCtx: TypeParamsContext = TypeParamsContext(tSig.typeParams)
 
     given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(summon[GlobalValuesContext], tpCtx, isSyntheticAccessor = false, tSig.sigName, UnitType, closureInfoOpt = None)
 
+    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+    val tDesc = tConv.descriptorFor(tSig.id)
+    val sigScope = tSig.sigScope
     cb.withMethod(INIT_NAME, mkConstrDesc(tSig), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
       allocateAndDeclare(sigScope.getLocalValuesContextUnsafe.getThisValue.get.asInstanceOf[NamedIdValue], cb, sigScope)
       cb.aload(cb.receiverSlot())
@@ -261,6 +304,8 @@ final class Backend(
 
   private def generateMainFunc(ownerId: TypeIdentifier, mainFunSig: FunctionSignature, cb: ClassBuilder)
                               (using ResolutionContext, DealiasingContext): Unit = {
+    given TypeParamsContext = TypeParamsContext.empty
+
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val ownerTypeDesc = tConv.descriptorFor(ownerId)
     cb.withMethod(mainFuncName, MethodTypeDesc.of(CD_void, CD_String.arrayType()), ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC, mb => mb.withCode(cb => {
@@ -269,7 +314,7 @@ final class Backend(
         // this has to be an array of Strings
         cb.aload(0)
       }
-      cb.invokevirtual(ownerTypeDesc, "$" + mainFunSig.functionName.stringId, mkFunDesc(mainFunSig)(using TypeParamsContext.empty))
+      cb.invokevirtual(ownerTypeDesc, "$" + mainFunSig.functionName.stringId, mkFunDesc(mainFunSig))
       cb.return_()
     }))
   }
@@ -335,7 +380,7 @@ final class Backend(
   private def mkPathToClass(typeId: TypeIdentifier): Path = {
     typeId.prefixes
       .foldLeft(outputDirectoryPath)(_.resolve(_))
-      .resolve(typeId.nonPrefixedId + FileExtensions.dot(_.clazz))
+      .resolve(typeId.nonPrefixedIdWithPostfixSep("$") + FileExtensions.dot(_.clazz))
   }
 
   private def generateScope(scope: IRcorne.Scope, cb: CodeBuilder)
@@ -421,13 +466,13 @@ final class Backend(
         genValueLoad(condEvalResultVal, currScope, cb)
         cb.ifeq(elseBrLabel)
         generateScope(thenBr, cb)
-        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables if thenBr.hasNonNothingTypeFor(afterThenVal) && elseBr.hasNonNothingTypeFor(afterElseVal)) {
           genValueMove(joinedVal, afterThenVal, thenBr, cb)
         }
         cb.goto_(afterDisjLabel)
         cb.labelBinding(elseBrLabel)
         generateScope(elseBr, cb)
-        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables if thenBr.hasNonNothingTypeFor(afterThenVal) && elseBr.hasNonNothingTypeFor(afterElseVal)) {
           genValueMove(joinedVal, afterElseVal, elseBr, cb)
         }
         cb.labelBinding(afterDisjLabel)
@@ -541,96 +586,11 @@ final class Backend(
         ensureAssignable(dealiasedTypeOf(assigned, currScope), funSig.retType, cb)
         genValueStore(assigned, currScope, cb)
 
-      // Array methods
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, getFunId, 1)(func.getFunSigUnsafe) =>
-        genValueLoad(receiver, currScope, cb)
-        genValueLoad(args.head, currScope, cb)
-        cb.aaload()
-        if (typeKindOf(assigned, currScope) != TypeKind.REFERENCE) {
-          val elemTypeDescUnboxed = typeDescOf(assigned, currScope)
-          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
-          if (typeDescOf(receiver, currScope).componentType() == CD_Object) {
-            cb.checkcast(elemTypeDescBoxed)
-          }
-          cb.invokevirtual(elemTypeDescBoxed, unboxingFunc(elemTypeDescBoxed), MethodTypeDesc.of(unboxDesc(elemTypeDescBoxed)))
-        }
-        genValueStore(assigned, currScope, cb)
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId, 2)(func.getFunSigUnsafe) =>
-        genValueLoad(receiver, currScope, cb)
-        genValueLoad(args.head, currScope, cb)
-        genValueLoad(args(1), currScope, cb)
-        if (typeKindOf(args(1), currScope) != TypeKind.REFERENCE) {
-          val elemTypeDescUnboxed = typeDescOf(args(1), currScope)
-          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
-          cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, elemTypeDescUnboxed))
-        }
-        cb.aastore()
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId, 0)(func.getFunSigUnsafe) =>
-        genValueLoad(receiver, currScope, cb)
-        cb.arraylength()
-        genValueStore(assigned, currScope, cb)
-
-      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+      // array instantiation
+      case instantiate@IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, List(sizeVal, initClosureVal)) if isFunc(arrayTypeId.asCompanionId, FunctionDescriptor(ConstructorFunId, 2))(func.getFunSigUnsafe) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val funSig = func.getFunSigUnsafe
-        val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
-        val isStaticArrayFunc = StdLib.hasReceiver(arrayTypeId)(funSig)
-        val isStaticFunc = isStaticStringFunc || isStaticArrayFunc
-        genValueLoad(receiver, currScope, cb)
-        val NamedType(receiverTypeId, receiverTypeArgs, _) = funSig.receiverType: @unchecked
-        val recTypeSig = resolCtx.resolveTypeSigAs[RuntimeTypeSignature](receiverTypeId).get
-        val typeArgsSubst = Map.from(recTypeSig.typeParams.map(_.tid).zip(receiverTypeArgs) ++ funSig.typeParams.map(_.tid).zip(typeArgs))
-        generateArgsList(args, funSig, typeArgsSubst, cb, currScope)
-        val (targetReceiverDesc, targetFunName, targetFunDesc) = StdLibFunctions.stringFuncRedirectFor(funSig) match {
-          case Some(targetFunId, targetFunDesc) => (CD_String, targetFunId, targetFunDesc)
-          case None => (tConv.descriptorFor(receiverTypeId), funSig.functionName.stringId, mkFunDesc(funSig, extractParams = if isStaticFunc then _.paramsInclThis else _.paramsWithoutThis))
-        }
-        if (isStaticFunc) {
-          val ownerTypeDesc = {
-            if isStaticStringFunc then ClassDesc.ofInternalName(licorneCoreStringInternalName)
-            else if isStaticArrayFunc then ClassDesc.of(arrayTypeId.stringId)
-            else throw AssertionError("unknown owner for static method")
-          }
-          cb.invokestatic(ownerTypeDesc, targetFunName, targetFunDesc)
-        } else if (recTypeSig.isInstanceOf[ConcreteTypeSig]) {
-          cb.invokevirtual(targetReceiverDesc, targetFunName, targetFunDesc)
-        } else {
-          cb.invokeinterface(targetReceiverDesc, targetFunName, targetFunDesc)
-        }
-        ensureAssignable(dealiasedTypeOf(assigned, currScope), funSig.retType.substitute(typeArgsSubst, Map.empty), cb)
-        genValueStore(assigned, currScope, cb)
-
-      case IRcorne.InvokeClosure(assigned, callee, closureTypingTarget, args) =>
-        genValueLoad(callee, currScope, cb)
-        cb.loadConstant(args.size)
-        val argsArraySlot = funGenCtx.allocateSlotOfSize(1)
-        cb.anewarray(CD_Object)
-        cb.dup()
-        cb.astore(argsArraySlot)
-        for ((arg, idx) <- args.zipWithIndex) {
-          cb.aload(argsArraySlot)
-          cb.loadConstant(idx)
-          genValueLoad(arg, currScope, cb)
-          if (typeKindOf(arg, currScope) != TypeKind.REFERENCE) {
-            val unboxedDesc = typeDescOf(arg, currScope)
-            val boxedDesc = boxDesc(unboxedDesc)
-            cb.invokestatic(boxedDesc, "valueOf", MethodTypeDesc.of(boxedDesc, unboxedDesc))
-          }
-          cb.aastore()
-        }
-        val assignedKind = typeKindOf(assigned, currScope)
-        val assignedUnboxedDesc = typeDescOf(assigned, currScope)
-        generateClosureCallWithOutUnboxIfNeeded(assignedKind, assignedUnboxedDesc, cb)
-        genValueStore(assigned, currScope, cb)
-
-
-      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal, sizeEval), (_, initClosureVal, initClosureEval))) =>
-        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
+        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(func.getInstantiatedReturnTypeUnsafe): @unchecked
         val elemDesc = tConv.descriptorFor(elemType)
-        for (instr <- sizeEval ++ initClosureEval) {
-          generateInstr(instr, cb, currScope)
-        }
         genValueLoad(sizeVal, currScope, cb)
         cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
         genValueStore(assigned, currScope, cb)
@@ -664,20 +624,87 @@ final class Backend(
         cb.labelBinding(loopExitLabel)
         cb.nop()
 
-      case IRcorne.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
-        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val createdObjTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName).get
-        val desc = tConv.descriptorFor(classOrRecordName)
-        cb.new_(desc)
-        cb.dup()
-        for ((fld, (_, argVal, argEval)) <- createdObjTypeSig.constructorParams.values zip fieldsInit) {
-          for (instr <- argEval) {
-            generateInstr(instr, cb, currScope)
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, getFunId, 1)(func.getFunSigUnsafe) =>
+        genValueLoad(receiver, currScope, cb)
+        genValueLoad(args.head, currScope, cb)
+        cb.aaload()
+        if (typeKindOf(assigned, currScope) != TypeKind.REFERENCE) {
+          val elemTypeDescUnboxed = typeDescOf(assigned, currScope)
+          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
+          if (typeDescOf(receiver, currScope).componentType() == CD_Object) {
+            cb.checkcast(elemTypeDescBoxed)
           }
-          genValueLoad(argVal, currScope, cb)
-          ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
+          cb.invokevirtual(elemTypeDescBoxed, unboxingFunc(elemTypeDescBoxed), MethodTypeDesc.of(unboxDesc(elemTypeDescBoxed)))
         }
-        cb.invokespecial(desc, INIT_NAME, mkConstrDesc(createdObjTypeSig))
+        genValueStore(assigned, currScope, cb)
+
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySetFunId, 2)(func.getFunSigUnsafe) =>
+        genValueLoad(receiver, currScope, cb)
+        genValueLoad(args.head, currScope, cb)
+        genValueLoad(args(1), currScope, cb)
+        if (typeKindOf(args(1), currScope) != TypeKind.REFERENCE) {
+          val elemTypeDescUnboxed = typeDescOf(args(1), currScope)
+          val elemTypeDescBoxed = boxDesc(elemTypeDescUnboxed)
+          cb.invokestatic(elemTypeDescBoxed, "valueOf", MethodTypeDesc.of(elemTypeDescBoxed, elemTypeDescUnboxed))
+        }
+        cb.aastore()
+
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, arraySizeFunId, 0)(func.getFunSigUnsafe) =>
+        genValueLoad(receiver, currScope, cb)
+        cb.arraylength()
+        genValueStore(assigned, currScope, cb)
+
+      case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) =>
+        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        val funSig = func.getFunSigUnsafe
+        val isStaticStringFunc = StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
+        val isStaticArrayFunc = StdLib.hasReceiver(arrayTypeId)(funSig)
+        val isStaticFunc = isStaticStringFunc || isStaticArrayFunc
+        genValueLoad(receiver, currScope, cb)
+        val NamedType(receiverTypeId, receiverTypeArgs, _) = funSig.receiverType: @unchecked
+        val recTypeSig = resolCtx.resolveTypeSigAs[RuntimeTypeSignature](receiverTypeId).get
+        val typeArgsSubst = Map.from(recTypeSig.typeParams.map(tp => tp.tid -> tp.upperBoundOpt.getOrElse(NullableType(AnyType))) ++ funSig.typeParams.map(tp => tp.tid -> tp.upperBoundOpt.getOrElse(NullableType(AnyType))))
+        generateArgsList(args, funSig, typeArgsSubst, cb, currScope)
+        val (targetReceiverDesc, targetFunName, targetFunDesc) = StdLibFunctions.stringFuncRedirectFor(funSig) match {
+          case Some(targetFunId, targetFunDesc) => (CD_String, targetFunId, targetFunDesc)
+          case None => (tConv.descriptorFor(receiverTypeId), funSig.functionName.stringId, mkFunDesc(funSig, extractParams = if isStaticFunc then _.paramsInclThis else _.paramsWithoutThis))
+        }
+        if (isStaticFunc) {
+          val ownerTypeDesc = {
+            if isStaticStringFunc then ClassDesc.ofInternalName(licorneCoreStringInternalName)
+            else if isStaticArrayFunc then ClassDesc.of(arrayTypeId.stringId)
+            else throw AssertionError("unknown owner for static method")
+          }
+          cb.invokestatic(ownerTypeDesc, targetFunName, targetFunDesc)
+        } else if (recTypeSig.isInstanceOf[ConcreteTypeSig]) {
+          cb.invokevirtual(targetReceiverDesc, targetFunName, targetFunDesc)
+        } else {
+          cb.invokeinterface(targetReceiverDesc, targetFunName, targetFunDesc)
+        }
+        ensureAssignable(dealiasedTypeOf(assigned, currScope), funSig.retType, cb)
+        genValueStore(assigned, currScope, cb)
+
+      case IRcorne.InvokeClosure(assigned, callee, closureTypingTarget, args) =>
+        genValueLoad(callee, currScope, cb)
+        cb.loadConstant(args.size)
+        val argsArraySlot = funGenCtx.allocateSlotOfSize(1)
+        cb.anewarray(CD_Object)
+        cb.dup()
+        cb.astore(argsArraySlot)
+        for ((arg, idx) <- args.zipWithIndex) {
+          cb.aload(argsArraySlot)
+          cb.loadConstant(idx)
+          genValueLoad(arg, currScope, cb)
+          if (typeKindOf(arg, currScope) != TypeKind.REFERENCE) {
+            val unboxedDesc = typeDescOf(arg, currScope)
+            val boxedDesc = boxDesc(unboxedDesc)
+            cb.invokestatic(boxedDesc, "valueOf", MethodTypeDesc.of(boxedDesc, unboxedDesc))
+          }
+          cb.aastore()
+        }
+        val assignedKind = typeKindOf(assigned, currScope)
+        val assignedUnboxedDesc = typeDescOf(assigned, currScope)
+        generateClosureCallWithOutUnboxIfNeeded(assignedKind, assignedUnboxedDesc, cb)
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.MkClosure(assigned, params, body, uniqueRetOpt, isPure, closureTypeName) =>
@@ -849,12 +876,10 @@ final class Backend(
 
         clb.withInterfaceSymbols(ClassDesc.of(StdLib.closureTypeId.stringId))
 
-        // generate fields
         for ((fldId, (fv, tpe)) <- freeValFields) {
           clb.withField(fldId, tConv.descriptorFor(tpe), ClassFile.ACC_PRIVATE | ClassFile.ACC_FINAL)
         }
 
-        // generate constructor
         clb.withMethod(INIT_NAME, MethodTypeDesc.of(CD_void, freeVals.map((_, tpe) => tConv.descriptorFor(tpe)).toSeq *), ClassFile.ACC_PUBLIC, mb => {
           mb.withCode(cb => {
             cb.aload(0)
@@ -871,16 +896,15 @@ final class Backend(
           })
         })
 
-        // generate apply method
-        val applyFunGenCtx = FunctionGenerationContext(globalValsCtx, tpCtx, isSyntheticAccessor = false, enclosingClassId, NullableType(AnyType), Some(
+        val runFunGenCtx = FunctionGenerationContext(globalValsCtx, tpCtx, isSyntheticAccessor = false, enclosingClassId, NullableType(AnyType), Some(
           freeValFields.map { case (fldName, (fv, tpe)) => (fv, (fldName, tpe)) }, closureClassDesc
         ))
         clb.withMethod(closureFunName, MethodTypeDesc.of(CD_Object, CD_Object.arrayType()), ClassFile.ACC_PUBLIC, mb => {
           mb.withCode(cb => {
-            applyFunGenCtx.allocateSlotOfSize(1) // slot for this
-            val argsArraySlot = applyFunGenCtx.allocateSlotOfSize(1)
+            runFunGenCtx.allocateSlotOfSize(1) // slot for this
+            val argsArraySlot = runFunGenCtx.allocateSlotOfSize(1)
             for (((paramVal, paramType), paramIdx) <- params.zipWithIndex) {
-              val paramSlot = allocateAndDeclare(paramVal, cb, body)(using applyFunGenCtx)
+              val paramSlot = allocateAndDeclare(paramVal, cb, body)(using runFunGenCtx)
               cb.aload(argsArraySlot)
               cb.loadConstant(paramIdx)
               cb.aaload()
@@ -893,7 +917,7 @@ final class Backend(
               }
               cb.storeLocal(paramKind, paramSlot)
             }
-            generateScope(body, cb)(using applyFunGenCtx)
+            generateScope(body, cb)(using runFunGenCtx)
             if (!body.hasExited) {
               cb.aconst_null()
               cb.areturn()
@@ -984,7 +1008,7 @@ final class Backend(
     } else if (srcType == NullType || srcKind == TypeKind.VOID && dstKind == TypeKind.VOID) {
       // nothing to do
     } else if (srcKind == TypeKind.VOID && dstKind != TypeKind.VOID) {
-      cb.iconst_0()
+      cb.aconst_null()
     } else if (dstKind == TypeKind.VOID && srcKind != TypeKind.VOID) {
       cb.pop()
     } else if (srcDesc.isPrimitive && !dstDesc.isPrimitive) {

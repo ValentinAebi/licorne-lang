@@ -3,14 +3,14 @@ import licorne.core.Arrays.toString
 object Main {
 
     fn main(args: Array[String]) {
-        val xs = new Array(10, |if (it <= 3) it else 1|)
+        val xs = Array(10) { if (it <= 3) it else 1 }
         println(toString(xs))
         println(toString(keepUpToMax(xs)))
     }
 
     fn keepUpToMax(xs: Array[Int]) -> Array[Int] {
         if (xs.size() == 0) {
-            return new Array(0, |0|)
+            return Array(0) { 0 }
         }
         var maxIdx = 0
         for (var i = 1; i < xs.size(); i += 1) {
@@ -19,7 +19,7 @@ object Main {
                 maxIdx = i
             }
         }
-        return new Array(maxIdx + 1, |xs.get(it)|)
+        return Array(maxIdx + 1) { xs.get(it) }
     }
 
 }

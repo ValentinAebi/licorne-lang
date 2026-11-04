@@ -20,6 +20,12 @@ extension [T](iterable: Iterable[T]) def asIterableOfType[U <: T : ClassTag]: Op
   Some(resultB.result())
 }
 
+extension [T](iterable: Iterable[T]) def filterIsInstance[U : ClassTag]: Iterable[U] =
+  iterable.flatMap {
+    case u: U => Some(u)
+    case _ => None
+  }
+
 extension [A, B](map: Map[A, B]) def mapVals[C](f: B => C): Map[A, C] =
   map.map((a, b) => (a, f(b)))
 

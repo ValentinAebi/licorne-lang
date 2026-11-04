@@ -43,7 +43,7 @@ object Clamp {
    }
 
    fn foo(in: Array[Int], a: [-2..]) -> Array[[0..a]] {
-      val out = new Array(len = in.length())
+      val out = Array(in.length())
       for (var i = 0; i < in.length(); i += 1) {
          val c = clamp1(0, a, in.at(i))  //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
          out.set(i, c)
@@ -53,7 +53,7 @@ object Clamp {
 
 }
 
-// see (many) other examples for implementations of Array that use range types
+// see the standard library for an implementation of Array that use range types
 class Array[T](val len: [0..]) {
    fn length() -> [0..] = this.len
    fn at(i: Int) -> T {

@@ -2,8 +2,8 @@
 object Main {
 
     fn main() {
-        takeAnimal(new Tiger())
-        takeAnimal(new Dolphin())
+        takeAnimal(Tiger())
+        takeAnimal(Dolphin())
         return unit
     }
 

@@ -2,12 +2,12 @@
 object Main {
 
     fn main() {
-        println(new Foo(27, 38))
-        println(new Foo(59))
-        println(new Bar(21, 11, 27))
-        println(new Bar(32, b = 28, 11))
-        println(new Bar(88, c = 14))
-        println(new Bar(a = 101, 25, c = -1))
+        println(Foo(27, 38))
+        println(Foo(59))
+        println(Bar(21, 11, 27))
+        println(Bar(32, 28, 11))
+        println(Bar(88, 14))
+        println(Bar(101, 25, -1))
     }
 
 }
@@ -18,7 +18,7 @@ record Foo(a: Int, b: [a..] = a + 1) {
     }
 }
 
-record Bar(a: Int, b: Int = 2*a + 5, c: Int = 0) {
+record Bar(a: Int, b: Int = 0, c: Int = 2*a + 5) {
     fn toString() -> String {
         return "(" ++ str(a) ++ "," ++ str(b) ++ "," ++ str(c) ++ ")"
     }

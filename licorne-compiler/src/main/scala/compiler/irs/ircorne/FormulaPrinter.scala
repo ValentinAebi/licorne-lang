@@ -27,7 +27,8 @@ trait FormulaPrinter {
     case Formulas.ClosureCall(callee, closureTypingTarget, args) =>
       s"${prettyprint(callee)}(" ++ args.map(prettyprint).mkString(",") ++ ")"
     case Formulas.PureClosureValue(params, body, closureVal) =>
-      Keyword.Fn.str + " " + params.map(prettyprint).mkString("(", ", ", ")") + " -> " + prettyprint(body)
+      val paramsDescr = if params.isEmpty then "()" else params.map(prettyprint).mkString(", ")
+      "{ " ++ paramsDescr + " -> " + prettyprint(body) ++ " }"
     case Formulas.Plus(lhs, Formulas.IntConst(rhsVal)) if rhsVal < 0 =>
       prettyprint(Formulas.Plus(lhs, Formulas.Neg(Formulas.IntConst(-rhsVal))))
     case Formulas.Plus(lhs, Formulas.Neg(rhs)) => printBinop(lhs, Operator.Minus, rhs)
@@ -43,7 +44,7 @@ trait FormulaPrinter {
     case Formulas.Equality(lhs, rhs) => printBinop(lhs, Operator.Equality, rhs)
     case Formulas.LessOrEq(lhs, rhs) => printBinop(lhs, Operator.LessOrEq, rhs)
     case Formulas.LessThan(lhs, rhs) => printBinop(lhs, Operator.LessThan, rhs)
-    case Formulas.TypePredicate(subject, tpe) => s"${ppMaybeParenth(subject, Precedence.TypeTest.bindsMoreThan(precedenceOf(subject)))}"
+    case Formulas.TypePredicate(subject, tpe) => s"${ppMaybeParenth(subject, Precedence.TypeTest.bindsMoreThan(precedenceOf(subject)))} ${Keyword.Is} $tpe"
     case Formulas.Phi(terms) => "phi(" ++ terms.map(prettyprint).mkString(",") ++ ")"
     case Formulas.WrappedScope(resVal, scope) =>
       val scopeDescr = ppScopeOpt match {

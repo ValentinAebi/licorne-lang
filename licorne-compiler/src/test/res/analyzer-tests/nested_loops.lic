@@ -1,7 +1,7 @@
 
 object Test {
 
-   fn sum[T](table: Array[Array[T]], evalFunc: fn (T) -> [0..]) -> [0..] {
+   fn sum[T](table: Array[Array[T]], evalFunc: (T) -> [0..]) -> [0..] {
       var s = 0
       for (var i = 0; i < table.length(); i += 1) {
          val row = table.at(i)
@@ -12,7 +12,7 @@ object Test {
       return s
    }
 
-   fn sum_bad[T](table: Array[Array[T]], evalFunc: fn (T) -> [0..]) -> [0..] {
+   fn sum_bad[T](table: Array[Array[T]], evalFunc: (T) -> [0..]) -> [0..] {
       var s = 0
       for (var i = 0; i < table.length(); i += 1) {
          val row = table.at(i)

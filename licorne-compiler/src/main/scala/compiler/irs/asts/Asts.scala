@@ -24,6 +24,21 @@ object Asts {
       case Some(source) => source.originalAst
       case None => this
     }
+    
+    def traverseDesugaringSources: Iterator[Ast] = {
+      val init = this
+      new Iterator[Ast] {
+        private var _next = Option(init)
+
+        override def hasNext: Boolean = _next.isDefined
+
+        override def next(): Ast = {
+          val prev = _next.get
+          _next = prev.getDesugaringSource
+          prev
+        }
+      }
+    }
 
     def setPosition(pos: Position): this.type = {
       position.set(pos)
@@ -44,11 +59,19 @@ object Asts {
     def children: List[Ast]
 
     final def preorderWalk(f: PartialFunction[Ast, Unit]): Unit =
+      partialPreorderWalk(f.andThen(_ => true))
+
+    /**
+     * @param f should return `true` iff the walk should go to the current node's children
+     */
+    final def partialPreorderWalk(f: PartialFunction[Ast, Boolean]): Unit =
       preorderWalkImpl(f.lift)
 
-    private def preorderWalkImpl(f: Ast => Option[Unit]): Unit = {
-      f.apply(this)
-      children.foreach(_.preorderWalkImpl(f))
+    private def preorderWalkImpl(f: Ast => Option[Boolean]): Unit = {
+      val traverseChildren = f.apply(this).getOrElse(true)
+      if (traverseChildren) {
+        children.foreach(_.preorderWalkImpl(f))
+      }
     }
   }
 
@@ -351,20 +374,6 @@ object Asts {
     override def children: List[Ast] = callee :: typeArgs ++ args
   }
 
-  final case class RecordOrClassInstantiation(typeId: TypeIdentifier, typeArgs: List[TypeTree], initializers: List[FieldInitializer]) extends Expr {
-    override def children: List[Ast] = typeArgs ++ initializers
-  }
-
-  sealed abstract class FieldInitializer extends Ast
-
-  final case class FullFieldInitializer(fieldName: FunOrVarId, rhs: Expr) extends FieldInitializer {
-    override def children: List[Ast] = List(rhs)
-  }
-
-  final case class ShorthandFieldInitializer(expr: Expr) extends FieldInitializer {
-    override def children: List[Ast] = List(expr)
-  }
-
   final case class UnaryOp(operator: Operator, operand: Expr) extends Expr {
     override def children: List[Ast] = List(operand)
   }
@@ -377,7 +386,7 @@ object Asts {
     override def children: List[Ast] = List(lhs)
   }
 
-  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Block, declaredPure: Boolean) extends Expr {
+  final case class ClosureDef(params: List[(FunOrVarId, Option[TypeTree])], body: Sequence) extends Expr {
     override def children: List[Ast] = params.flatMap(_._2) :+ body
   }
 
@@ -428,15 +437,15 @@ object Asts {
     }
   }
   
-  final case class IfStatement(cond: Expr, thenBr: Statement, elseBrOpt: Option[Block | IfStatement]) extends Statement {
-    override def children: List[Ast] = List(cond, thenBr) ++ elseBrOpt
-  }
-  
-  final case class IfExpr(cond: Expr, thenBr: IfExprBranch, elseBr: IfExprBranch) extends Expr {
+  final case class IfExpr(cond: Expr, thenBr: Sequence, elseBr: Sequence | MissingElse) extends Expr {
     override def children: List[Ast] = List(cond, thenBr, elseBr)
   }
   
-  final case class IfExprBranch(stats: List[Statement], result: Expr) extends Ast {
+  final case class MissingElse() extends Expr {
+    override def children: List[Ast] = List.empty
+  }
+  
+  final case class Sequence(stats: List[Statement], result: Expr) extends Expr {
     override def children: List[Ast] = stats :+ result
   }
 
@@ -455,7 +464,7 @@ object Asts {
     override def children: List[Ast] = initStats ++ List(cond) ++ stepStats :+ body
   }
   
-  final case class ReturnStat(optVal: Option[Expr]) extends Statement {
+  final case class ReturnExpr(optVal: Option[Expr]) extends Expr {
     override def children: List[Ast] = optVal.toList
   }
 

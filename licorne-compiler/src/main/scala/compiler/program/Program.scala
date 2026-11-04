@@ -24,7 +24,7 @@ final case class Program(
                           records: SeqMap[TypeIdentifier, RecordSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
                           functions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function],
-                          constructorFieldsInit: Map[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
+                          fieldInitializers: Map[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
                         ) {
 
   def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
@@ -37,6 +37,8 @@ object Program {
 
   final class Builder(er: ErrorReporter, proxyStore: ProxyStore) {
     private val signatures = mutable.LinkedHashMap.empty[TypeIdentifier, TypeSignature]
+    
+    def currentSignaturesView: collection.Map[TypeIdentifier, TypeSignature] = signatures
 
     val globalValuesContext: GlobalValuesContext = GlobalValuesContext(proxyStore)
 

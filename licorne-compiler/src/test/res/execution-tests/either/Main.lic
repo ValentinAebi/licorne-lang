@@ -3,8 +3,8 @@ import Eithers.*
 object Main {
 
     fn main() {
-        val x = left(new Dog())
-        val y = right(new Car())
+        val x = left(Dog())
+        val y = right(Car())
         display(x)
         display(y)
     }

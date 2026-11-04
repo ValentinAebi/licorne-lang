@@ -18,7 +18,7 @@ final class ProxyStore {
   private val proxies = mutable.Map.empty[IdValue, Formula]
   private val loopProxies = mutable.Map.empty[IdValue, (beforeLoopVal: IdValue, endOfBodyVal: IdValue)]
   private val fieldAccessorProxies = mutable.Map.empty[TypeIdentifier, mutable.Set[FunOrVarId]]
-  private val possiblyImpureClosures = mutable.Map.empty[IdValue, PureClosureValue]
+  private val closureProxies = mutable.Map.empty[IdValue, PureClosureValue]
   private val knownTypes = mutable.Map.empty[IdValue, TypeIdentifier]
 
   def hasProxyFor(idVal: IdValue): Boolean = proxies.contains(idVal)
@@ -46,15 +46,17 @@ final class ProxyStore {
     fieldAccessorProxies.getOrElseUpdate(classId, mutable.Set.empty).addOne(fldId)
   }
 
-  def savePossiblyImpureClosure(idVal: IdValue, closure: PureClosureValue): Unit = {
-    possiblyImpureClosures.put(idVal, closure)
+  def saveClosureProxy(idVal: IdValue, closure: PureClosureValue): Unit = {
+    closureProxies.put(idVal, closure)
   }
 
   def validateClosurePurity(idVal: IdValue): Unit = {
-    possiblyImpureClosures.get(idVal).foreach { closure =>
+    closureProxies.get(idVal).foreach { closure =>
       proxies.put(idVal, closure)
     }
   }
+  
+  def getClosureProxy(idVal: IdValue): Option[PureClosureValue] = closureProxies.get(idVal)
 
   def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = Option.when(fld.isResolvedAndPure) {
     fld.getReceiverSigOpt match {

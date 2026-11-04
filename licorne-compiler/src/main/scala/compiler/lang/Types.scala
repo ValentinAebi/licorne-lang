@@ -1,13 +1,13 @@
 package compiler.lang
 
-import compiler.identifiers.{Identifier, ItId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, Identifier, ItId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.PrimitiveType.*
 import compiler.reasoning.TypeSimplifier
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
+import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.SeqSet
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -24,7 +24,7 @@ object Types {
     def formulaDependencies: List[Formula]
 
     def baseTypeAssumingNoAlias: Type
-    
+
     def baseType(using dealiasingCtx: DealiasingContext): Type =
       dealiasingCtx.dealiasType(this).baseTypeAssumingNoAlias
 
@@ -88,7 +88,7 @@ object Types {
     override def children: List[Type] = params :+ result
 
     override def toString: String =
-      (if enforcedPure then s"${Keyword.Pure} " else "") ++ s"${Keyword.Fn} (${params.mkString(",")}) -> $result"
+      (if enforcedPure then s"${Keyword.Pure} " else "") ++ s"(${params.mkString(",")}) -> $result"
   }
 
   final case class UnionType private(types: SeqSet[Type]) extends Type {
@@ -199,14 +199,14 @@ object Types {
 
     override def toString: String = s"$baseType ${Keyword.With} $predicate"
   }
-  
+
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
 
     override def baseTypeAssumingNoAlias: Type = IntType
 
     override def children: List[Type] = List.empty
-    
+
     def isMereInt: Boolean = lowerBoundOpt.isEmpty && upperBoundOpt.isEmpty
 
     def boundsAsPredicate(itValue: IdValue): Formula = (lowerBoundOpt, upperBoundOpt) match {
@@ -407,6 +407,49 @@ object Types {
     case _ => false
   }
 
+  def unifyTypes(candidate: Type, shape: Type)
+                (using dealiasingCtx: DealiasingContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext): Unit = {
+    (dealiasingCtx.dealiasType(candidate).withTypeVarsExpanded, dealiasingCtx.dealiasType(shape).withTypeVarsExpanded) match {
+      case (tv: TypeVariable, shape) if !Types.isExtreme(shape) =>
+        tv.resolve(shape)
+      case (cand, tv: TypeVariable) if !Types.isExtreme(cand) =>
+        tv.resolve(cand)
+      case (NamedType(candTypeId, candTypeArgs, candArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
+        for {
+          subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, candTypeId)
+          candTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](candTypeId) // TODO see if this line is really needed: candTSig is unused
+          shapeTypeSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](shapeTypeId)
+        } {
+          val shapeSubst = shapeTypeSig.typeParams.map(_.tid).zip(shapeTypeArgs).toMap
+          val composedSubst = subtypingSubst.map {
+            case (tParam, tArg@NamedType(tArgId, Nil, Nil)) =>
+              tParam -> shapeSubst.getOrElse(tArgId, tArg)
+            case (tParam, tArg) =>
+              tParam -> tArg
+          }
+          val upcastShapeType = shapeTypeSig.toType(composedSubst)
+          for ((h, s) <- candTypeArgs.zip(upcastShapeType.typeArgs)) {
+            unifyTypes(h, s)
+          }
+        }
+      case (ClosureType(candParams, candResult, _), ClosureType(shapeParams, shapeResult, _)) =>
+        for ((ht, st) <- candParams.zip(shapeParams)) {
+          unifyTypes(ht, st)
+        }
+        unifyTypes(candResult, shapeResult)
+      case (NullableType(nullatedCand), shape) =>
+        unifyTypes(nullatedCand, shape)
+      case (cand, NullableType(nullatedShape)) =>
+        unifyTypes(cand, nullatedShape)
+      case (RefinedType(candBase, _), shape) =>
+        unifyTypes(candBase, shape)
+      case (cand, RefinedType(shapeBase, _)) =>
+        unifyTypes(cand, shapeBase)
+      case _ => ()
+      // TODO also handle IntersectionTypes / UnionTypes / TernaryTypes?
+    }
+  }
+
   extension (tpe: Type) def applyRecursivelyToTypes(tpf: PartialFunction[Type, Type]): Type =
     tpe.applyRecursively(tpf.applyOrElse(_, identity), identity)
 
@@ -434,7 +477,7 @@ object Types {
   extension (tpe: Type) def substitute(typesSubst: collection.Map[TypeIdentifier, Type], valsSubst: collection.Map[IdValue, Formula]): Type = {
     val typesSubstPF: PartialFunction[Type, Type] = {
       case NamedType(typeName, Nil, Nil) if typesSubst.contains(typeName) =>
-        typesSubst.apply(typeName)
+        typesSubst.apply(typeName).substitute(Map.empty, valsSubst)
     }
     tpe.applyRecursively(typesSubstPF.applyOrElse(_, identity), _.substitute(valsSubst))
   }

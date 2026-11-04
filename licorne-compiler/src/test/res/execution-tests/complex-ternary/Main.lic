@@ -2,7 +2,7 @@
 object Main {
 
     fn main() {
-        val array = new Array(2, |0|)
+        val array = Array(2) { 0 }
         println(str(foo1(array)))
         println(str(foo2(array)))
     }

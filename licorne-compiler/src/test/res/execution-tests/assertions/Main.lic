@@ -2,7 +2,7 @@
 object Main {
 
     fn main() {
-        val array = new Array(1, |100|)
+        val array = Array(1){ 100 }
         printElemUnsafe(array, 0)   // correct, prints 100
         printElemUnsafe(array, 10)  //>STACKTRACE
     }

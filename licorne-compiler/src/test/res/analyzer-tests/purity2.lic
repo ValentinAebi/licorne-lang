@@ -25,12 +25,12 @@ class Animal(val name: String, var hungerLevel: [0..]) {
    }
 
    pure fn resetHungerLevel_incorrect() {
-      this.hungerLevel = 0   //> E : illegal access to impure field hungerLevel
+      this.hungerLevel = 0   //> E : illegal write access to impure field hungerLevel
    }
 
    fn hungerLevel() -> [0..] = this.hungerLevel                    // OK
    fn hungerLevelDuplicate() -> [0..] = this.hungerLevel()         // OK
-   pure fn hungerLevel_incorrect1() -> [0..] = this.hungerLevel    //> E : illegal access to impure field hungerLevel
+   pure fn hungerLevel_incorrect1() -> [0..] = this.hungerLevel    //> E : illegal read access to impure field hungerLevel
    pure fn hungerLevel_incorrect2() -> [0..] = this.hungerLevel()  //> E : illegal call to impure method hungerLevel
 
    pure fn name() -> String = this.name

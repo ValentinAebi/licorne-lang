@@ -91,7 +91,7 @@ class String : Indexable {
     }
 
     fn split(c: Char) -> Array[String] {
-        val parts = new Array(count(c) + 1, |""|)
+        val parts = Array(count(c) + 1){ "" }
         var partsIdx = 0
         for (var i = 0; i < size(); i += 1) {
             val curr = charAt(i)
@@ -104,7 +104,7 @@ class String : Indexable {
         return parts
     }
 
-    fn toCharArray() -> Array[Char] = new Array(size(), |charAt(it)|)
+    fn toCharArray() -> Array[Char] = Array(size()){ charAt(it) }
 
     fn trim() -> String {
         var startIdx = 0

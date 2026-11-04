@@ -1,29 +1,34 @@
 package compiler.ircornegen
 
+import compiler.irs.asts.Asts.Ast
 import compiler.irs.ircorne.Formulas.{Binop, Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne}
+import compiler.reporting.Position
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 
 object FormulasCompilation {
   
-  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore)
+  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast])
                         (typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
-    val resVal = compileFormula(formula)(using instructions, currScope, proxyStore)
+    val resVal = compileFormula(formula)(using instructions, currScope, proxyStore, astOpt)
     for (instr <- instructions) {
       typeInstr(instr)
     }
     (instructions.toList, resVal)
   }
 
-  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore): IdValue = {
+  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IdValue = {
 
     def save(instr: IRcorne.AssigningInstr): Unit = {
       instrOut.addOne(instr)
       proxyStore.saveProxy(instr.assigned, formula)
+      astOpt.foreach { ast =>
+        instr.setAstNode(ast)
+      }
     }
 
     formula match {
@@ -102,7 +107,7 @@ object FormulasCompilation {
   }
 
   private def genBinop(binop: Binop, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => AssigningInstr)
-                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore): IntermediateIdValue =
+                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IntermediateIdValue =
     withIntermediateValue { res =>
       val lhsVal = compileFormula(binop.lhs)
       val rhsVal = compileFormula(binop.rhs)

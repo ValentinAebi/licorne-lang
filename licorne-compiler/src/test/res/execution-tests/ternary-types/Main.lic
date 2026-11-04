@@ -7,7 +7,7 @@ object Main {
     }
 
     private fn mkAnimal(trueIfDog: Bool) -> if (trueIfDog) Dog else Cat =
-        if (trueIfDog) new Dog() else new Cat()
+        if (trueIfDog) Dog() else Cat()
 
 }
 
