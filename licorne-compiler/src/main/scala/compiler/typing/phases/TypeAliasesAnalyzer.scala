@@ -1,9 +1,10 @@
 package compiler.typing.phases
 
 import compiler.datastructures.Graph
-import compiler.identifiers.TypeIdentifier
+import compiler.identifiers.{FunOrVarId, ConstructorFunId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas
-import compiler.lang.Types
+import compiler.irs.ircorne.Formulas.{IdValue, NamedIdValue}
+import compiler.lang.{RuntimeTypeSignature, Types, UserInstantiableTypeSig}
 import compiler.lang.Types.*
 import compiler.pipeline.CompilationStep.TypeAliasesAnalysis
 import compiler.pipeline.{CompilationStep, CompilerStep}
@@ -16,6 +17,7 @@ import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, T
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
 
+import scala.collection.immutable.SeqMap
 import scala.collection.mutable
 
 final class TypeAliasesAnalyzer(
@@ -33,30 +35,42 @@ final class TypeAliasesAnalyzer(
 
   override def apply(input: (Program, SubtypingInfo)): (Program, SubtypingInfo) = {
     val (programOld, subtypingInfo@SubtypingInfo(subtypingGraph, flattenedSupertypesSubstitutions)) = input
-    
+
     given globalValsCtx: GlobalValuesContext = programOld.globalValuesContext
-    
+
     val resolutionCtx = ResolutionContext(programOld, er)
     checkTypeAliasesCyclicity(programOld, resolutionCtx)
     er.displayAndTerminateIfErrors()
 
-    val dealiasingCtx = DealiasingContext(programOld.typeAliases)
-    val programNew = Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, dealiasingCtx, resolutionCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt, er) { solver =>
-      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
+    val oldDealiasingCtx = DealiasingContext(programOld.typeAliases)
+    val programNew = Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, oldDealiasingCtx, resolutionCtx, proxyStore, programOld.globalValuesContext, counterExBoxOpt, er) { solver =>
+      SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, oldDealiasingCtx, resolutionCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
-      
+
       given Solver = solver
 
-      // save types of objects
-      val globalValsCtx = programOld.globalValuesContext
-      val globalScope = globalValsCtx.globalScope
-      for ((objectId, objectSig) <- programOld.objects) {
-        val objVal = globalValsCtx.resolveObject(objectId)
-        globalScope.saveType(objVal, objectSig.toType(Map.empty))(using TypeParamsContext.empty, dealiasingCtx, simplifier, resolutionCtx, proxyStore)
-      }
-      
-      val typer = Typer(None, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollectorFuncOpt = None /* TODO maybe we can allow closures in type aliases */)
-      programOld.copy(typeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig))
+      val typer = Typer(None, oldDealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollectorFuncOpt = None /* TODO maybe we can allow closures in type aliases */)
+      val newTypeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig)
+
+      val newDealiasingCtx = DealiasingContext(newTypeAliases)
+      val newObjects = for ((objId, objSig) <- programOld.objects) yield objId -> (if objId.isCompanionObject then {
+        objSig.copy(functions = for ((funDesc, funSig) <- objSig.functions) yield funDesc -> {
+          assert(funSig.sigName == ConstructorFunId)
+          resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](objId.copy(isCompanionObject = false)) match {
+            case Some(instantiatedTypeSig) =>
+              val newParamsWithoutThisB = SeqMap.newBuilder[NamedIdValue, Type]
+              val valsSubst = mutable.Map.empty[FunOrVarId, IdValue]
+              for (((paramVal, paramType), paramId) <- funSig.paramsWithoutThis zip instantiatedTypeSig.constructorParams.keys) {
+                newParamsWithoutThisB.addOne(paramVal, newDealiasingCtx.dealiasType(paramType).withDependenciesTransformed(_.convertThisDotFieldToFieldVal(instantiatedTypeSig, valsSubst)))
+                valsSubst.put(paramId, paramVal)
+              }
+              funSig.copy(paramsInclThis = funSig.paramsInclThis.take(1) ++ newParamsWithoutThisB.result())
+            case None => funSig
+          }
+        })
+      } else objSig)
+
+      programOld.copy(typeAliases = newTypeAliases, objects = newObjects)
     }
 
     er.displayAndTerminateIfErrors()

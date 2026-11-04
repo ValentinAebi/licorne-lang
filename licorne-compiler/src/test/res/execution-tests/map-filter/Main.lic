@@ -12,9 +12,7 @@ object Main {
         val ls = listFromArray(array)
         ls.map|it + 1|
           .filter|it < array.size()|
-          .foreach(fn (i) -> {
-            println(array.get(i))
-          })
+          .foreach { println(array.get(it)) }
     }
 
 }

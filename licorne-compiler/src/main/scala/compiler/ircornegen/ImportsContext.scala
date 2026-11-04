@@ -14,8 +14,9 @@ final case class ImportsContext(
     importedTypes.get(typeName)
     
   def applyImports(tid: TypeIdentifier): TypeIdentifier = tid match {
-    case TypeIdentifier(Nil, nonPrefixedId) => 
-      importedTypeFor(nonPrefixedId).getOrElse(tid)
+    case TypeIdentifier(Nil, nonPrefixedId, isCompanionObject) =>
+      val raw = importedTypeFor(nonPrefixedId).getOrElse(tid)
+      if isCompanionObject then raw.asCompanionId else raw
     case tid => tid
   }
 

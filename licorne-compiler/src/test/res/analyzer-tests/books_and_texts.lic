@@ -8,11 +8,11 @@ typealias PageNumber(b: Book) = [1 .. b.pagesCnt()]
 
 object Example {
     fn main() {
-        val book = new Book(
-            title = "Modern Graph Theory",
-            author = "Béla Bollobás",
-            pagesCnt = 394,
-            currPage = null
+        val book = Book(
+            "Modern Graph Theory",
+            "Béla Bollobás",
+            394,
+            null
         )
         book.openAtPage(399)   //> E : first argument of call to openAtPage: expected examples.texts.PageNumber(book), found 399
         book.openAtPage(104)

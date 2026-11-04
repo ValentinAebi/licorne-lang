@@ -27,7 +27,8 @@ trait FormulaPrinter {
     case Formulas.ClosureCall(callee, closureTypingTarget, args) =>
       s"${prettyprint(callee)}(" ++ args.map(prettyprint).mkString(",") ++ ")"
     case Formulas.PureClosureValue(params, body, closureVal) =>
-      Keyword.Fn.str + " " + params.map(prettyprint).mkString("(", ", ", ")") + " -> " + prettyprint(body)
+      val paramsDescr = if params.isEmpty then "()" else params.map(prettyprint).mkString(", ")
+      "{ " ++ paramsDescr + " -> " + prettyprint(body) ++ " }"
     case Formulas.Plus(lhs, Formulas.IntConst(rhsVal)) if rhsVal < 0 =>
       prettyprint(Formulas.Plus(lhs, Formulas.Neg(Formulas.IntConst(-rhsVal))))
     case Formulas.Plus(lhs, Formulas.Neg(rhs)) => printBinop(lhs, Operator.Minus, rhs)

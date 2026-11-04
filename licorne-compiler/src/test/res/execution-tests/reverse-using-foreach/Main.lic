@@ -11,9 +11,9 @@ object Main {
 
     private fn reverse[T](ls: LList[T]) -> LList[T] {
         var res: LList[T] = new Nil()
-        ls.foreach(fn (e) -> {
-            res = new Cons(head = e, tail = res)
-        })
+        ls.foreach {
+            res = new Cons(head = it, tail = res)
+        }
         return res
     }
 

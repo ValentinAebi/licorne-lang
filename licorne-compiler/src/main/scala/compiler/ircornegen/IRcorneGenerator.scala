@@ -1,11 +1,12 @@
 package compiler.ircornegen
 
-import compiler.identifiers.{FunOrVarId, ItId, ThisId, TypeIdentifier}
+import compiler.identifiers.*
+import compiler.ircornegen.ImportsScanner.PackagesInfo
 import compiler.irs.asts.Asts
-import compiler.irs.asts.Asts.{Ast, Expr, ImportStat, ObjectDef, Source, IfExpr, IfExprBranch, TypeDefTree, ValParam, VariableRef}
+import compiler.irs.asts.Asts.{Expr, UnitLit}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{ClosureTypingTarget, FieldResolutionTarget, FormulasDsl, IRcorne, InvocationTarget}
+import compiler.irs.ircorne.*
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
@@ -13,10 +14,10 @@ import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
 import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
-import compiler.reasoning.VariableEvolution
+import compiler.reasoning.FormulasSimplification.{simplifyBool, simplifyFormula, simplifyNumeric}
+import compiler.reasoning.{FormulasSimplification, VariableEvolution}
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
-import compiler.ircornegen.ImportsScanner.PackagesInfo
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
@@ -44,7 +45,7 @@ final class IRcorneGenerator(
   override def apply(input: (List[Asts.Source], PackagesInfo)): Program = {
     val (sources, packagesInfo) = input
 
-    given List[Source] = sources
+    given List[Asts.Source] = sources
 
     given PackagesInfo = packagesInfo
 
@@ -121,6 +122,7 @@ final class IRcorneGenerator(
 
             val constructorParams = mutable.LinkedHashMap.empty[FunOrVarId, ConstructorParam]
             val allFieldIds = mutable.Set.empty[FunOrVarId]
+            val fieldInitializersB = Map.newBuilder[FunOrVarId, (Iterable[RealInstr], IdValue)]
 
             def saveAndCheckFieldId(fldId: FunOrVarId, posOpt: Option[Position]): Unit = {
               if (!allFieldIds.add(fldId)) {
@@ -128,6 +130,8 @@ final class IRcorneGenerator(
               }
             }
 
+            var alreadySeenDefault = false
+            var alreadyReportedMissingDefault = false
             for ((paramTree, initTreeOpt) <- paramTrees) {
               val paramId = paramTree.paramId
               saveAndCheckFieldId(paramId, paramTree.getPosition)
@@ -146,6 +150,14 @@ final class IRcorneGenerator(
                   }
               }
               classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramVal, classSigScope, ReassigPermission.Val, Some(paramType))
+              initOpt.foreach { init =>
+                fieldInitializersB.addOne(paramId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, initTreeOpt)(_ => ()))
+              }
+              if (alreadySeenDefault && !alreadyReportedMissingDefault && initOpt.isEmpty) {
+                er.reportError(s"missing default value for parameter $paramId, as it is preceded with a parameter with a default value", paramTree.getPosition)
+                alreadyReportedMissingDefault = true
+              }
+              alreadySeenDefault |= initOpt.isDefined
             }
             val encapsulatedFields = mutable.LinkedHashMap.empty[FunOrVarId, Field]
             for (fldDf@Asts.EncapsulatedFieldDef(fieldId, fieldTypeTreeOpt, initTree, isReassignable) <- encapsulatedFieldTrees) {
@@ -161,6 +173,9 @@ final class IRcorneGenerator(
                 if isReassignable then ReassignableField(fieldId, fieldType, paramVal, initOpt)
                 else StableField(fieldId, fieldType, paramVal, isPublishedAsMethod = false, initOpt)
               )
+              initOpt.foreach { init =>
+                fieldInitializersB.addOne(fieldId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, Some(fldDf.initValue))(_ => ()))
+              }
             }
             val noFunctionsSig = ClassSignature(typeId, typeParams,
               SeqMap.from(constructorParams),
@@ -169,7 +184,7 @@ final class IRcorneGenerator(
               directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty)),
               visibility, classSigScope, df.getPosition
             )
-            allFieldsInitB.addOne(typeId, encapsulatedFields.flatMap((fldId, fld) => fld.defaultInitializerOpt.map(init => fldId -> FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore)(_ => ()))).toMap)
+            allFieldsInitB.addOne(typeId, fieldInitializersB.result())
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using constructorParams.filter(_._2.isInstanceOf[Field]) ++ encapsulatedFields)
             val targetsToResolve = generateFieldsAccessors(typeId, df, constructorParams ++ encapsulatedFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
@@ -199,7 +214,7 @@ final class IRcorneGenerator(
 
             val stableFields = mutable.LinkedHashMap.empty[FunOrVarId, StableField]
             for ((param, initTreeOpt) <- fieldTrees) {
-              if (param.isInstanceOf[ValParam]) {
+              if (param.isInstanceOf[Asts.ValParam]) {
                 warn(s"${Keyword.Val} is redundant for record fields", param.getPosition)
               }
               val paramId = param.paramId
@@ -280,6 +295,73 @@ final class IRcorneGenerator(
         programBuilder.saveSignature(datatypeSig, df.getPosition)
       }
     }
+    val globalValsCtx = globalScope.valuesCtx
+    val companionObjects = mutable.ListBuffer.empty[(TypeSignature, Option[Position])]
+    for ((tid, tSig) <- programBuilder.currentSignaturesView) {
+      tSig match {
+        case tSig: ObjectSignature =>
+          val objVal = globalValsCtx.resolveObject(tid)
+          globalScope.unsafeDirectSaveType(objVal, tSig.toType(Map.empty))
+        case tSig: UserInstantiableTypeSig =>
+          val companionId = tid.asCompanionId
+          val companionObjVal = globalValsCtx.resolveObject(companionId)
+          val companionType = NamedType(companionId, List.empty, List.empty)
+          globalScope.unsafeDirectSaveType(companionObjVal, companionType)
+          val constructorParams = tSig.constructorParams.values.toList
+          val constructorsB = Map.newBuilder[FunctionDescriptor, FunctionSignature]
+          var allOverloadsGenerated = false
+          var paramsListSize = tSig.constructorParams.size
+          while (!allOverloadsGenerated) {
+            val constructorSigScope = Scope.nestedInsideNodeOpt(globalScope, None)
+            val paramsInclThisB = SeqMap.newBuilder[NamedIdValue, Type]
+            val predPartsB = List.newBuilder[Formula]
+            val targetsToResolve = mutable.ListBuffer.empty[(InvocationTarget, Type)]
+            paramsInclThisB.addOne(companionObjVal -> companionType)
+            val (actualParams, defaultedParams) = constructorParams.splitAt(paramsListSize)
+            val valsSubst = mutable.Map.empty[IdValue, Formula]
+            for (cp <- actualParams) {
+              val constructorParamVal = constructorSigScope.newParam(cp.id, cp.value.posOpt)
+              paramsInclThisB.addOne(constructorParamVal -> cp.tpe.substitute(Map.empty, valsSubst))
+              valsSubst.put(cp.value, constructorParamVal)
+              cp match {
+                case cp: Field.StableField if cp.isPublishedAsMethod =>
+                  val itValue = globalValsCtx.globalCtx.itValue
+                  val invkTarget = InvocationTarget(cp.id)
+                  targetsToResolve.addOne(invkTarget, cp.tpe)
+                  predPartsB.addOne(Equality(FunCall(itValue, invkTarget, List.empty, List.empty), constructorParamVal))
+                case _ => ()
+              }
+            }
+            for (cp <- defaultedParams) {
+              val defaultInit = simplifyFormula(cp.defaultInitializerOpt.get.substitute(valsSubst))
+              cp match {
+                case cp: Field.StableField if cp.isPublishedAsMethod =>
+                  val itValue = globalValsCtx.globalCtx.itValue
+                  val invkTarget = InvocationTarget(cp.id)
+                  targetsToResolve.addOne(invkTarget, cp.tpe)
+                  predPartsB.addOne(Equality(FunCall(itValue, invkTarget, List.empty, List.empty), defaultInit))
+                case _ => ()
+              }
+              // TODO this could be optimized to avoid duplicating default value computations
+              valsSubst.put(cp.value, defaultInit)
+            }
+            val predParts = predPartsB.result()
+            val retTypeBase = tSig.toType(Map.empty, Map.empty)
+            val retType = if predParts.isEmpty then retTypeBase else RefinedType(retTypeBase, predParts.reduceLeft(LogicalAnd(_, _)))
+            val constructorSig = FunctionSignature(companionId, ConstructorFunId, tSig.typeParams.map(_.toFunTypeParamInfo),
+              paramsInclThisB.result(), None, retType, constructorSigScope,
+              FuncVisibility.Public, Overridability.Final, Purity.Pure, tSig.declPosOpt, isSyntheticAccessor = false)
+            val constructorDescr = FunctionDescriptor(ConstructorFunId, constructorSig.paramsWithoutThis.size)
+            constructorsB.addOne(constructorDescr -> constructorSig)
+            paramsListSize -= 1
+            allOverloadsGenerated = paramsListSize < 0 || constructorParams(paramsListSize).defaultInitializerOpt.isEmpty
+          }
+          val companionObjSig = ObjectSignature(companionId, constructorsB.result(), List.empty, TypeVisibility.Public, Scope.nestedInsideNodeOpt(globalScope, None), tSig.declPosOpt)
+          companionObjects.addOne(companionObjSig, tSig.declPosOpt)
+        case _ => ()
+      }
+    }
+    companionObjects.foreach(programBuilder.saveSignature)
     val program = programBuilder.build(allFunctionsB.result(), allFieldsInitB.result())
     for (tv <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv)
@@ -288,8 +370,8 @@ final class IRcorneGenerator(
     program
   }
 
-  private def createImportsCtx(source: Source, currTypeOpt: Option[TypeDefTree])
-                              (using allSources: List[Source], packagesInfo: PackagesInfo): ImportsContext = {
+  private def createImportsCtx(source: Asts.Source, currTypeOpt: Option[Asts.TypeDefTree])
+                              (using allSources: List[Asts.Source], packagesInfo: PackagesInfo): ImportsContext = {
     val typesDefInThisSource = source.defs.map(_.name).toSet
     val functionsDefInThisType = currTypeOpt.toSet.flatMap(_.functions.map(_.id))
     val typeImports = mutable.LinkedHashMap.empty[String, TypeIdentifier]
@@ -355,10 +437,10 @@ final class IRcorneGenerator(
     ImportsContext(SeqMap.from(typeImports), SeqMap.from(funcImports))
   }
 
-  private def checkImport(importStat: ImportStat, packagesInfo: PackagesInfo, currPkgPrefixOpt: Option[List[String]]): Unit = {
+  private def checkImport(importStat: Asts.ImportStat, packagesInfo: PackagesInfo, currPkgPrefixOpt: Option[List[String]]): Unit = {
 
     def locateType(tid: TypeIdentifier): Option[Asts.TopLevelDef] = {
-      val TypeIdentifier(prefixes, nonPrefixedId) = tid
+      val TypeIdentifier(prefixes, nonPrefixedId, _) = tid
       val importStatPosOpt = importStat.getPosition
       packagesInfo.get(prefixes) match {
         case Some(pkgDefs) =>
@@ -402,7 +484,7 @@ final class IRcorneGenerator(
           (funId, aliasOpt) <- funIdsWithAlias
         } {
           locateType(tid) match {
-            case Some(df: ObjectDef) =>
+            case Some(df: Asts.ObjectDef) =>
               if (!df.functions.exists(_.id == funId)) {
                 reportError(s"method $funId not found in type ${df.name}", importStat.getPosition)
               }
@@ -579,7 +661,7 @@ final class IRcorneGenerator(
       if (sig.isMain && !isValidParamsListForMain(sig.paramsWithoutThis.map(_._2).toList)) {
         reportError(s"bad signature for main method: expected an empty parameter list or an array of ${StdLib.stringTypeId}", sig.declPosOpt)
       }
-      if (sig.isMain && !functionsProvider.isInstanceOf[ObjectDef]) {
+      if (sig.isMain && !functionsProvider.isInstanceOf[Asts.ObjectDef]) {
         reportError("main methods are only allowed in objects", funDef.getPosition)
       }
     }
@@ -659,7 +741,7 @@ final class IRcorneGenerator(
 
       case expr: Asts.Expr =>
         val resultValue = currScope.newIntermediate("dummy")
-        generateIRExpr(resultValue, expr, currScope)
+        generateIRExpr(resultValue, expr, currScope)(using IfGenerationMode.AcceptMissingElse)
 
       case block@Asts.Block(stats) =>
         val blockScope = if (newScopeIfBlock) {
@@ -719,7 +801,7 @@ final class IRcorneGenerator(
           if varIsReassignable
           then currScope.newVar(lhsLocalId, currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId).declOpt, None, assig.getPosition)
           else currScope.newVal(lhsLocalId, assig.getPosition)
-        generateIRExpr(newValue, rhsTree, currScope)
+        generateIRExpr(newValue, rhsTree, currScope)(using IfGenerationMode.RequireElseBranch)
         generateTypeCheckForAnnotIfAny(newValue, typeAnnotOpt, currScope, assig)
         currScope.getLocalValuesContextUnsafe.valueOf(lhsLocalId) match {
           case KnownAndInitialized(heapVarAddr: HeapVarIdValue, defScope, reassigStatus, _) =>
@@ -730,10 +812,10 @@ final class IRcorneGenerator(
 
       case assig@Asts.VarAssig(Asts.Select(ownerTree, fieldId), typeAnnotTreeOpt, rhsTree) =>
         val ownerVal = currScope.newIntermediate(s"$fieldId'owner")
-        generateIRExpr(ownerVal, ownerTree, currScope)
+        generateIRExpr(ownerVal, ownerTree, currScope)(using IfGenerationMode.RequireElseBranch)
         val typeAnnotOpt = typeAnnotTreeOpt.map(mkType(_, currScope))
         val rhsVal = currScope.newIntermediate(fieldId.stringId)
-        generateIRExpr(rhsVal, rhsTree, currScope)
+        generateIRExpr(rhsVal, rhsTree, currScope)(using IfGenerationMode.RequireElseBranch)
         generateTypeCheckForAnnotIfAny(rhsVal, typeAnnotOpt, currScope, assig)
         currScope.saveInstr(FieldWrite(ownerVal, FieldResolutionTarget(fieldId), rhsVal), assig)
 
@@ -753,41 +835,6 @@ final class IRcorneGenerator(
       case Asts.VarModif(lhs, typeAnnot, rhs, op) =>
         reportError(s"in-place mutation is only allowed on local variables and fields of owner $ThisId", stat.getPosition)
 
-      case ite@Asts.IfStatement(condTree, thenTree, elseTreeOpt) =>
-        val condVal = currScope.newIntermediate("cond")
-        generateIRExpr(condVal, condTree, currScope)
-        val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
-        val elseBrAssignedVars = elseTreeOpt.flatMap(externalVarsAssignedIn)
-        val allAssignedVars = SeqSet(thenBrAssignedVars ++ elseBrAssignedVars)
-        val thenScope = Scope.nestedInside(currScope, thenTree)
-        val elseScope = Scope.nestedInside(currScope, elseTreeOpt.getOrElse(ite))
-        for (varId <- allAssignedVars) {
-          thenScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
-          elseScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
-        }
-        generateIR(thenTree, thenScope, newScopeIfBlock = false)
-        elseTreeOpt.foreach { elseTree =>
-          generateIR(elseTree, elseScope, newScopeIfBlock = false)
-        }
-        val variablesB = List.newBuilder[DisjunctionVarData]
-        for (varId <- allAssignedVars) {
-          (thenScope.getLocalValuesContextUnsafe.valueOf(varId), elseScope.getLocalValuesContextUnsafe.valueOf(varId)) match {
-            case (KnownAndInitialized(thenEndVal, _, _, _), KnownAndInitialized(elseEndVal, _, _, _))
-              if !thenScope.hasExited && !elseScope.hasExited && !thenEndVal.isInstanceOf[HeapVarIdValue] && !elseEndVal.isInstanceOf[HeapVarIdValue]
-            =>
-              val joinVal = currScope.newVar(varId, currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt, Some("join"), ite.getPosition)
-              variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
-              currScope.getLocalValuesContextUnsafe.remap(varId, joinVal)
-              proxyStore.saveProxy(joinVal, Phi(thenEndVal, elseEndVal))
-            case (KnownAndInitialized(thenEndVal, _, _, _), _) if !thenScope.hasExited =>
-              currScope.getLocalValuesContextUnsafe.remap(varId, thenEndVal)
-            case (_, KnownAndInitialized(elseEndVal, _, _, _)) if !elseScope.hasExited =>
-              currScope.getLocalValuesContextUnsafe.remap(varId, elseEndVal)
-            case _ => ()
-          }
-        }
-        currScope.saveInstr(Disjunction(condVal, thenScope, elseScope, variablesB.result()), stat)
-
       case whileLoop@Asts.WhileLoop(condTree, bodyTree) =>
         val condScope = Scope.nestedInside(currScope, condTree)
         val bodyScope = Scope.nestedInside(condScope, bodyTree)
@@ -804,34 +851,27 @@ final class IRcorneGenerator(
           condScope.getLocalValuesContextUnsafe.remap(id, condVal)
         }
         val condVal = currScope.newIntermediate("cond")
-        generateIRExpr(condVal, condTree, condScope)
+        generateIRExpr(condVal, condTree, condScope)(using IfGenerationMode.RequireElseBranch)
         if (condScope.hasExited) {
           reportError("condition evaluation cannot terminate", condTree.getPosition)
         }
         generateIR(bodyTree, bodyScope, newScopeIfBlock = false)
         if (bodyScope.hasExited) {
           warn("loop body always exits, should be an if statement", whileLoop.getPosition)
-          // give up and generate a disjunction instead
-          generateIR(
-            Asts.IfStatement(condTree, bodyTree, None).withDesugaringSource(whileLoop),
-            currScope,
-            newScopeIfBlock
-          )
-        } else {
-          for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars if !beforeLoopVal.isInstanceOf[HeapVarIdValue]) {
-            val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
-            varData.variableEvolutionOpt = for {
-              init <- proxyStore.developDeepIgnoreAccessorsOpt(beforeLoopVal)
-              induct <- proxyStore.developDeepIgnoreAccessorsOpt(bodyLastLocalVal, acceptPhis = true)
-            } yield VariableEvolution.computeFrom(init, induct, condVal)
-            bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
-            proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
-            currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
-            proxyStore.saveLoopProxy(condVal, beforeLoopVal, bodyLastVal)
-          }
-          val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
-          currScope.saveInstr(loop, whileLoop)
         }
+        for (varData@LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- loopUpdatedVars if !beforeLoopVal.isInstanceOf[HeapVarIdValue]) {
+          val bodyLastLocalVal = bodyScope.getLocalValuesContextUnsafe.valueOf(varId).asInstanceOf[KnownAndInitialized].value
+          varData.variableEvolutionOpt = for {
+            init <- proxyStore.developDeepIgnoreAccessorsOpt(beforeLoopVal)
+            induct <- proxyStore.developDeepIgnoreAccessorsOpt(bodyLastLocalVal, acceptPhis = true)
+          } yield VariableEvolution.computeFrom(init, induct, condVal)
+          bodyScope.saveInstr(AssignVal(bodyLastVal, bodyLastLocalVal), bodyScope.instructions.lastOption.flatMap(_.getAstNodeOpt).getOrElse(whileLoop))
+          proxyStore.saveProxy(bodyLastVal, bodyLastLocalVal)
+          currScope.getLocalValuesContextUnsafe.remap(varId, condVal)
+          proxyStore.saveLoopProxy(condVal, beforeLoopVal, bodyLastVal)
+        }
+        val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
+        currScope.saveInstr(loop, whileLoop)
 
       case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
         generateIR(Asts.Block(
@@ -839,25 +879,6 @@ final class IRcorneGenerator(
             body.stats ++ stepStats
           ).withDesugaringSource(forLoop)).withDesugaringSource(forLoop)
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
-
-      case returnStat@Asts.ReturnStat(returnedTreeOpt) =>
-        val retVal = currScope.newIntermediate("ret")
-        returnedTreeOpt match {
-          case Some(returnedTree) =>
-            generateIRExpr(retVal, returnedTree, currScope)
-            proxyStore.developDeepIgnoreAccessorsOpt(retVal, bypassPurityChecks = true) match {
-              case Some(retValProxy) =>
-                returnCollector.offerReturn(retValProxy)
-              case None =>
-                returnCollector.giveUp()
-            }
-          case None =>
-            val unitVal = currScope.valuesCtx.globalCtx.unitVal
-            currScope.saveInstr(AssignVal(retVal, unitVal), returnStat)
-            proxyStore.saveProxy(retVal, unitVal)
-        }
-        currScope.saveInstr(Return(retVal), stat)
-        currScope.getLocalValuesContextUnsafe.markHasExited()
     }
   }
 
@@ -876,15 +897,15 @@ final class IRcorneGenerator(
                               resultVal: IdValue,
                               expr: Asts.Expr,
                               currScope: Scope
-                            )(using currItVal: CurrentItVal, typeParamsCtx: TypeParamsContext, functionInfo: FunctionInfo, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], importsCtx: ImportsContext): Option[Formula] = {
+                            )(using ifGenMode: IfGenerationMode, returnCollector: ReturnCollector, currItVal: CurrentItVal, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], typeParamsCtx: TypeParamsContext, functionInfo: FunctionInfo, importsCtx: ImportsContext): Option[Formula] = {
 
     def recurseOnDesugared(desugaredExpr: Asts.Expr): Option[Formula] =
       generateIRExpr(resultVal, desugaredExpr.withDesugaringSource(expr), currScope)
 
-    def recurseOnDesugaredToIfExpr(cond: Expr, thenBr: Expr, elseBr: Expr, desugaringSource: Ast): Option[Formula] =
-      recurseOnDesugared(IfExpr(cond,
-        IfExprBranch(List.empty, thenBr).withDesugaringSource(desugaringSource),
-        IfExprBranch(List.empty, elseBr).withDesugaringSource(desugaringSource)
+    def recurseOnDesugaredToIfExpr(cond: Expr, thenBr: Expr, elseBr: Expr, desugaringSource: Asts.Ast): Option[Formula] =
+      recurseOnDesugared(Asts.IfExpr(cond,
+        Asts.Sequence(List.empty, thenBr).withDesugaringSource(desugaringSource),
+        Asts.Sequence(List.empty, elseBr).withDesugaringSource(desugaringSource)
       ).withDesugaringSource(desugaringSource))
 
     def generateArgsList(argsTrees: List[Asts.Expr]): List[IdValue] = {
@@ -989,6 +1010,13 @@ final class IRcorneGenerator(
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
         proxyStore.saveProxy(resultVal, objIdVal)
         Some(objIdVal)
+      case callTree@Asts.Call(objRef@Asts.ObjectRef(objectNameRaw), typeArgTrees, argTrees) =>
+        val objectName = importsCtx.applyImports(objectNameRaw)
+        // ASSUMPTION: C::companion.new always returns an object of type C
+        proxyStore.saveKnownType(resultVal, objectName)
+        generateIRExpr(resultVal, Asts.Call(
+          Asts.Select(Asts.ObjectRef(objectName.asCompanionId).withDesugaringSource(objRef), ConstructorFunId).withDesugaringSource(objRef),
+          typeArgTrees, argTrees).withDesugaringSource(callTree), currScope)
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
         val receiverVal = currScope.newIntermediate("receiver")
         generateIRExpr(receiverVal, receiverTree, currScope)
@@ -1085,40 +1113,41 @@ final class IRcorneGenerator(
       case typeTest@Asts.TypeTest(_, tpe) =>
         reportError(s"illegal type for dynamic type test: $tpe", typeTest.getPosition)
         None
-      case recordOrClassInstTree@Asts.RecordOrClassInstantiation(typeIdRaw, typeArgTrees, initializers) =>
-        val argsB = List.newBuilder[(Option[FunOrVarId], IdValue, List[RealInstr])]
-        for (initializer <- initializers) {
-          val (labelOpt, initializerRhs, idValNameHint) = decomposeInitializer(initializer)
-          // TODO maybe we can avoid using locals for constructor arguments
-          val rhsVal = currScope.newIntermediate(idValNameHint.getOrElse("init"))
-          generateIRExpr(rhsVal, initializerRhs, currScope)
-          argsB.addOne(labelOpt, rhsVal, List.empty)
-        }
-        val typeId = importsCtx.applyImports(typeIdRaw)
-        val typeArgs = typeArgTrees.map(mkType(_, currScope))
-        currScope.saveInstr(Instantiate(resultVal, typeId, typeArgs, argsB.result()), recordOrClassInstTree)
-        proxyStore.saveKnownType(resultVal, typeId)
-        None
-      case ifTree@Asts.IfExpr(condTree, thenTree@IfExprBranch(thenStats, thenResult), elseTree@IfExprBranch(elseStats, elseResult)) =>
+      case ifExprTree@Asts.IfExpr(condTree, thenTree, elseTree) =>
         val condVal = currScope.newIntermediate("cond")
         generateIRExpr(condVal, condTree, currScope)
         val thenVal = currScope.newIntermediate("then")
-        val thenScope = Scope.nestedInside(currScope, thenTree)
-        for (thenStat <- thenStats) {
-          // we can use doNothingCollector because the presence of a return among the statements will trigger a dead code error anyway (and reject the program)
-          generateIR(thenStat, thenScope, newScopeIfBlock = true)(using currItVal, currImplicitFields, ReturnCollector.doNothingCollector)
-        }
-        generateIRExpr(thenVal, thenResult, thenScope)
         val elseVal = currScope.newIntermediate("else")
+        val thenScope = Scope.nestedInside(currScope, thenTree)
         val elseScope = Scope.nestedInside(currScope, elseTree)
-        for (elseStat <- elseStats) {
-          // like for the then branch, we can use doNothingCollector
-          generateIR(elseStat, elseScope, newScopeIfBlock = true)(using currItVal, currImplicitFields, ReturnCollector.doNothingCollector)
+        val thenBrAssignedVars = externalVarsAssignedIn(thenTree)
+        val elseBrAssignedVars = externalVarsAssignedIn(elseTree)
+        val allAssignedVars = SeqSet(thenBrAssignedVars ++ elseBrAssignedVars)
+        for (varId <- allAssignedVars) {
+          thenScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
+          elseScope.getLocalValuesContextUnsafe.createShallowCopy(varId)
         }
-        generateIRExpr(elseVal, elseResult, elseScope)
-        currScope.saveInstr(Disjunction(condVal, thenScope, elseScope,
-          List(DisjunctionVarData(None, thenVal, elseVal, resultVal))
-        ), ifTree)
+        generateIRExpr(thenVal, thenTree, thenScope)
+        generateIRExpr(elseVal, elseTree, elseScope)
+        val variablesB = List.newBuilder[DisjunctionVarData]
+        variablesB.addOne(DisjunctionVarData(None, thenVal, elseVal, resultVal))
+        for (varId <- allAssignedVars) {
+          (thenScope.getLocalValuesContextUnsafe.valueOf(varId), elseScope.getLocalValuesContextUnsafe.valueOf(varId)) match {
+            case (KnownAndInitialized(thenEndVal, _, _, _), KnownAndInitialized(elseEndVal, _, _, _))
+              if !thenScope.hasExited && !elseScope.hasExited && !thenEndVal.isInstanceOf[HeapVarIdValue] && !elseEndVal.isInstanceOf[HeapVarIdValue]
+            =>
+              val joinVal = currScope.newVar(varId, currScope.getLocalValuesContextUnsafe.valueOf(varId).declOpt, Some("join"), ifExprTree.getPosition)
+              variablesB.addOne(DisjunctionVarData(Some(varId), thenEndVal, elseEndVal, joinVal))
+              currScope.getLocalValuesContextUnsafe.remap(varId, joinVal)
+              proxyStore.saveProxy(joinVal, Phi(thenEndVal, elseEndVal))
+            case (KnownAndInitialized(thenEndVal, _, _, _), _) if !thenScope.hasExited =>
+              currScope.getLocalValuesContextUnsafe.remap(varId, thenEndVal)
+            case (_, KnownAndInitialized(elseEndVal, _, _, _)) if !elseScope.hasExited =>
+              currScope.getLocalValuesContextUnsafe.remap(varId, elseEndVal)
+            case _ => ()
+          }
+        }
+        currScope.saveInstr(Disjunction(condVal, thenScope, elseScope, variablesB.result()), ifExprTree)
         // retrieve info from lowering
         proxyStore.developDeepIgnoreAccessorsOpt(thenVal) match {
           case Some(BoolConst(true)) => Some(LogicalOr(condVal, elseVal))
@@ -1127,6 +1156,16 @@ final class IRcorneGenerator(
             case _ => None
           }
         }
+      case missingElse@Asts.MissingElse() =>
+        if (ifGenMode != IfGenerationMode.AcceptMissingElse) {
+          reportError(s"missing ${Keyword.Else} branch in ${Keyword.If} expression", missingElse.getPosition)
+        }
+        generateIRExpr(resultVal, UnitLit().withDesugaringSource(missingElse), currScope)
+      case Asts.Sequence(stats, result) =>
+        for (stat <- stats) {
+          generateIR(stat, currScope, newScopeIfBlock = true)
+        }
+        generateIRExpr(resultVal, result, currScope)
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
         val typeName = importsCtx.applyImports(typeNameRaw)
         generateIRExpr(resultVal, castExprTree, currScope)
@@ -1148,10 +1187,10 @@ final class IRcorneGenerator(
         val proxy = generateIRExpr(resultVal, ascribedExpr, currScope)
         currScope.saveInstr(StaticTypeAssert(resultVal, mkType(typeTree, currScope)), ascriptionTree)
         proxy
-      case closureDefTree@Asts.ClosureDef(params, bodyTree, declaredPure) =>
+      case closureDefTree@Asts.ClosureDef(params, bodyTree) =>
         val closureParamsScope = Scope.nestedInside(currScope, bodyTree)
         val globalCtx = closureParamsScope.valuesCtx.globalCtx
-        val paramValsAndTypesB = List.newBuilder[(NamedIdValue, Type)]
+        val paramValsAndTypesB = List.newBuilder[(ParamIdValue, Type)]
         for ((id, typeTreeOpt) <- params) {
           // TODO maybe keep position even when no type is provided
           val posOpt = typeTreeOpt.flatMap(_.getPosition).orElse(closureDefTree.getPosition)
@@ -1161,7 +1200,7 @@ final class IRcorneGenerator(
           paramValsAndTypesB.addOne(paramVal -> tpe)
           closureParamsScope.getLocalValuesContextUnsafe.saveOrRemap(id, paramVal, closureParamsScope, ReassigPermission.Val, givenTypeOpt)
         }
-        for (varId <- externalVarsAssignedIn(bodyTree)) {
+        for (varId <- externalVarsAssignedIn(bodyTree) if !currScope.getLocalValuesContextUnsafe.valueOf(varId).toOption.exists(_.isInstanceOf[HeapVarIdValue])) {
           val heapAddr = currScope.newHeapVar(varId, closureDefTree.getPosition)
           currScope.saveInstr(MkHeapVar(heapAddr), closureDefTree)
           currScope.getLocalValuesContextUnsafe.valueOf(varId) match {
@@ -1177,17 +1216,33 @@ final class IRcorneGenerator(
         val retValCollector = ReturnCollector.freshUniqueCollector
         val isShorthandClosure = params.size == 1 && params.head._1 == ItId
         generateIR(bodyTree, closureBodyScope, newScopeIfBlock = false)(using Option.when(isShorthandClosure)(paramValsAndTypes.head._1), currImplicitFields, retValCollector, FunctionInfo(functionInfo.packagePrefix, functionInfo.funIdOpt))
-        val isPure = declaredPure || closureBodyScope.isObviouslyPure
+        val knownPure = closureBodyScope.isObviouslyPure
         val uniqueRetOpt = retValCollector.getUniqueRet
-        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, uniqueRetOpt, isPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funIdOpt.map(_.stringId).getOrElse("$$anonymous"))), closureDefTree)
+        currScope.saveInstr(MkClosure(resultVal, paramValsAndTypes, closureBodyScope, uniqueRetOpt, knownPure, closuresNamer.mkName(functionInfo.packagePrefix, functionInfo.funIdOpt.map(_.stringId).getOrElse("$$anonymous"))), closureDefTree)
         uniqueRetOpt.flatMap { closureRetVal =>
           val closure = PureClosureValue(paramValsAndTypes.map(_._1), closureRetVal, resultVal)
-          if isPure then Some(closure)
-          else {
-            proxyStore.savePossiblyImpureClosure(resultVal, closure)
-            None
-          }
+          proxyStore.saveClosureProxy(resultVal, closure)
+          Option.when(knownPure)(closure)
         }
+      case returnExpr@Asts.ReturnExpr(returnedTreeOpt) =>
+        val retVal = currScope.newIntermediate("ret")
+        returnedTreeOpt match {
+          case Some(returnedTree) =>
+            generateIRExpr(retVal, returnedTree, currScope)
+            proxyStore.developDeepIgnoreAccessorsOpt(retVal, bypassPurityChecks = true) match {
+              case Some(retValProxy) =>
+                returnCollector.offerReturn(retValProxy)
+              case None =>
+                returnCollector.giveUp()
+            }
+          case None =>
+            val unitVal = currScope.valuesCtx.globalCtx.unitVal
+            currScope.saveInstr(AssignVal(retVal, unitVal), returnExpr)
+            proxyStore.saveProxy(retVal, unitVal)
+        }
+        currScope.saveInstr(Return(retVal), returnExpr)
+        currScope.getLocalValuesContextUnsafe.markHasExited()
+        None
       case panicTree@Asts.PanicExpr(msgTree) =>
         val msgVal = currScope.newIntermediate("msg")
         generateIRExpr(msgVal, msgTree, currScope)
@@ -1204,6 +1259,8 @@ final class IRcorneGenerator(
 
   private def generateFormula(expr: Expr, currScope: Scope, positionDescr: String, allowWrappedInstr: Boolean = false)
                              (using currItVal: CurrentItVal, currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], importsCtx: ImportsContext, typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo): Option[Formula] = {
+
+    given IfGenerationMode = IfGenerationMode.RequireElseBranch
 
     def generateFormula(expr: Expr, currScope: Scope): Option[Formula] = {
 
@@ -1232,14 +1289,17 @@ final class IRcorneGenerator(
                   None
               }
           }
-        case Asts.ThisRef() => generateFormula(VariableRef(ThisId), currScope)
-        case Asts.ItRef() => currItVal.orElse(generateFormula(VariableRef(ItId), currScope))
+        case Asts.ThisRef() => generateFormula(Asts.VariableRef(ThisId), currScope)
+        case Asts.ItRef() => currItVal.orElse(generateFormula(Asts.VariableRef(ItId), currScope))
         case Asts.ObjectRef(objectNameRaw) =>
           val objectName = importsCtx.applyImports(objectNameRaw)
           Some(currScope.valuesCtx.resolveObject(objectName))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
+            case Asts.ObjectRef(objectNameRaw) =>
+              val objectName = importsCtx.applyImports(objectNameRaw)
+              Some(currScope.valuesCtx.resolveObject(objectName.asCompanionId), ConstructorFunId)
             case Asts.VariableRef(funId) if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
               findImplicitReceiverInImports(funId, currScope)
             case Asts.Select(lhs, funId) =>
@@ -1343,13 +1403,16 @@ final class IRcorneGenerator(
           for {
             ownerFormula <- generateFormula(lhs, currScope)
           } yield Select(ownerFormula, FieldResolutionTarget(field))
-        case instantiation: (Asts.RecordOrClassInstantiation | Asts.ClosureDef | Asts.IfExpr) if allowWrappedInstr =>
+        case wrappingTarget: (Asts.ClosureDef | Asts.IfExpr) if allowWrappedInstr =>
           val resVal = currScope.newIntermediate("wrapped")
-          val scopeToWrap = Scope.nestedInside(currScope, instantiation)
-          generateIRExpr(resVal, instantiation, scopeToWrap)
+          val scopeToWrap = Scope.nestedInside(currScope, wrappingTarget)
+          generateIRExpr(resVal, wrappingTarget, scopeToWrap)(using summon[IfGenerationMode], ReturnCollector.doNothingCollector)
           Some(WrappedScope(resVal, scopeToWrap))
-        case Asts.RecordOrClassInstantiation(typeId, typeArgs, initializers) => failIllegalConstruct("instantiation")
-        case Asts.ClosureDef(params, body, declaredPure) => failIllegalConstruct("closure definition")
+        case Asts.Sequence(stats, result) =>
+          // TODO maybe try to collapse assignments when possible?
+          failIllegalConstruct("instructions sequence")
+        case Asts.MissingElse() => failIllegalConstruct(s"missing ${Keyword.Else}")
+        case Asts.ClosureDef(params, body) => failIllegalConstruct("closure definition")
         case Asts.IfExpr(cond, thenBr, elseBr) => failIllegalConstruct("if expression")
         case Asts.Cast(expr, tpe) => failIllegalConstruct("dynamic cast or conversion")
         case Asts.HybridCast(expr) => failIllegalConstruct("dynamic weak cast")
@@ -1359,6 +1422,7 @@ final class IRcorneGenerator(
             subj <- generateFormula(expr, currScope)
           } yield TypePredicate(subj, typeName)
         case Asts.TypeTest(expr, tpe) => failIllegalConstruct(s"cast to $tpe")
+        case Asts.ReturnExpr(optVal) => failIllegalConstruct("return expression")
         case Asts.PanicExpr(msg) => failIllegalConstruct("panic expression")
       }
     }
@@ -1418,7 +1482,7 @@ final class IRcorneGenerator(
   }
 
   private def mkNamedType(namedTypeTree: Asts.NamedTypeTree, scope: Scope)(using currImplicitFields: collection.Map[FunOrVarId, ConstructorParam], typeParamsCtx: TypeParamsContext, funInfo: FunctionInfo, importsCtx: ImportsContext): NamedType = namedTypeTree match {
-    case Asts.NamedTypeTree(rawTId@TypeIdentifier(Nil, typeName), typeParams, params) =>
+    case Asts.NamedTypeTree(rawTId@TypeIdentifier(Nil, typeName, false), typeParams, params) =>
       typeParamsCtx.resolve(rawTId) match {
         case Some(tpe) => NamedType(rawTId, List.empty, List.empty)
         case None =>
@@ -1446,12 +1510,6 @@ final class IRcorneGenerator(
     assignedVars
   }
 
-  private def decomposeInitializer(initializer: Asts.FieldInitializer): (labelOpt: Option[FunOrVarId], rhs: Asts.Expr, idValNameHint: Option[String]) = initializer match {
-    case Asts.FullFieldInitializer(fieldName, rhs) => (Some(fieldName), rhs, Some(fieldName.stringId))
-    case Asts.ShorthandFieldInitializer(expr@VariableRef(name)) => (None, expr, Some(name.stringId))
-    case Asts.ShorthandFieldInitializer(expr) => (None, expr, None)
-  }
-
   extension (scope: Scope) private def saveInstr(instr: IRcorne.Instr, node: Asts.Ast): Unit = {
     instr match {
       case _: Scope => ()
@@ -1472,5 +1530,9 @@ final class IRcorneGenerator(
   private case class FunctionInfo(packagePrefix: List[String], funIdOpt: Option[FunOrVarId])
 
   private type CurrentItVal = Option[IdValue]
+
+  private enum IfGenerationMode {
+    case RequireElseBranch, AcceptMissingElse
+  }
 
 }

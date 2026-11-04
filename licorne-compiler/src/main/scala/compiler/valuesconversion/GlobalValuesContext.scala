@@ -25,15 +25,16 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   
   val itValue: NamedIdValue = globalScope.newUninterpretedConst("it")
 
-  def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue =
+  def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue = {
     idToObjName.getOrElseUpdate(objectId, {
       val value = globalScope.newUninterpretedConst(objectId.stringId)
       objNameToId(value) = objectId
       value
     })
-    
+  }
+
   def resolveObjectIfKnown(objectId: TypeIdentifier): Option[UninterpretedConstIdValue] =
-    idToObjName.get(objectId)
+    idToObjName.get(objectId.copy(isCompanionObject = false))
     
   def getNameOfObject(objectVal: IdValue): Option[TypeIdentifier] =
     objNameToId.get(objectVal)

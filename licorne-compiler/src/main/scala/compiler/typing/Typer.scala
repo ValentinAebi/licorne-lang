@@ -25,7 +25,7 @@ import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
-import compiler.util.{BidirectionalIterator, SeqSet, asIterableOfType, findUnique, mapVals}
+import compiler.util.{BidirectionalIterator, SeqSet, asIterableOfType, filterIsInstance, findUnique, mapVals}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.*
@@ -86,7 +86,11 @@ final class Typer(
         var stop = false
         while (instrIter.hasNext && !stop) {
           val instr = instrIter.next()
-          scope.reportHasExitedIfNeeded(er, instr.getPosition)
+          instr match {
+            case Return(retVal) if !scope.hasNonNothingTypeFor(retVal) => ()
+            case _ =>
+              scope.reportHasExitedIfNeeded(er, instr.getPosition)
+          }
           if (scope.hasExited) {
             stop = true
           } else {
@@ -376,7 +380,7 @@ final class Typer(
 
       case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
-        val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, invk.getPosition)
+        val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, typeCandidatesStore.getCandidates(assigned), invk.getPosition)
         irModif {
           invk.typeArgs = instFunTypeArgs
         }
@@ -443,21 +447,6 @@ final class Typer(
         // defer typing to first write
         ()
 
-      case instantiate@Instantiate(assigned, classOrRecordName, typeArgsRaw, fieldsInit) =>
-        resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName) match {
-          case Some(typeSig) =>
-            val (typesSubst, instantiatedTypeArgs) = instantiateTypes(typeSig.typeParams, typeArgsRaw, subtypingCtx, currScope, instantiate.getPosition, Some(s"instantiation of $classOrRecordName"))
-            irModif {
-              instantiate.typeArgs = instantiatedTypeArgs
-            }
-            val (newFieldsInit, tpe) = typeInstInitializers(instantiate, typeSig, currScope, typesSubst, branchInfo)
-            instantiate.fieldsInit = newFieldsInit
-            instantiate.resolveOutType(tpe)
-            currScope.saveType(assigned, tpe)
-          case None =>
-            er.reportError(s"type $classOrRecordName not found or not instantiable", instantiate.getPosition)
-        }
-
       case mkClosure@MkClosure(assigned, params, body, uniqueRetOpt, knownPureBeforeTyping, closureTypeName) =>
         val id = NormalFunOrVarId(assigned match {
           case assigned: NamedIdValue => IRLevelFormulaPrinter.prettyprint(assigned)
@@ -521,7 +510,7 @@ final class Typer(
               if (solver.canDisprove(assertion)) {
                 er.warn(s"!! will always fail: it asserts ${SourceLevelFormulaPrinter.prettyprint(assertion)}, which is always false", hybridCast.getPosition)
               }
-              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
+              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore, hybridCast.getAstNodeOpt)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
                 case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
                   func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0))
@@ -654,107 +643,6 @@ final class Typer(
     }
   }
 
-  private def typeInstInitializers(instantiate: Instantiate, typeSig: UserInstantiableTypeSig, currScope: Scope, typesSubst: Map[TypeIdentifier, Type], branchInfo: BranchingInfo)
-                                  (using TypeParamsContext): (newFieldsInit: List[(Option[FunOrVarId], IdValue, Iterable[RealInstr])], newInstanceType: Type) = {
-    val newFieldsInitB = List.newBuilder[(Option[FunOrVarId], IdValue, Iterable[RealInstr])]
-    val assigned = instantiate.assigned
-    val newInstanceTypeBase = typeSig.toType(typesSubst)
-    tryToResolveTypeVarsUsingCandidates(assigned, newInstanceTypeBase)
-    val fieldsInitArgsSubst = mutable.Map.empty[IdValue, Formula]
-    val returnTypePredParts = mutable.ListBuffer.empty[Formula]
-    var remainingLabels = typeSig.constructorParams.keySet
-
-    def saveFldValInTypeIfStable(param: ConstructorParam, rhsValRaw: IdValue, substitutedType: Type): Unit = {
-      param match {
-        case fld: Field.StableField =>
-          val rhsValExpanded = simplifyFormula(proxyStore.developNearest(rhsValRaw))
-          val fldResolTarget = FieldResolutionTarget(fld.id)
-          fldResolTarget.resolve(typeSig, substitutedType)
-          val itSelect = Select(itValue, fldResolTarget)
-          returnTypePredParts.addOne(Equality(itSelect, rhsValExpanded))
-          val assignedSelect = Select(assigned, fldResolTarget)
-          solver.assertEq(assignedSelect, rhsValExpanded, SimplifiedType.from(substitutedType))
-          fieldsInitArgsSubst.put(fld.value, rhsValExpanded)
-        case _ => ()
-      }
-    }
-
-    def generateDefaultInitializer(param: ConstructorParam): Unit = {
-      val (defaultInitEvalInstr, defaultInitResVal) = convertFormulaToIR(param.defaultInitializerOpt.get.substitute(fieldsInitArgsSubst), currScope, proxyStore)(typeInstr(_, currScope, branchInfo))
-      newFieldsInitB.addOne(Some(param.id), defaultInitResVal, defaultInitEvalInstr)
-      remainingLabels -= param.id
-      saveFldValInTypeIfStable(param, defaultInitResVal, param.tpe.substitute(typesSubst, fieldsInitArgsSubst))
-    }
-
-    val expFieldsIter = BidirectionalIterator(typeSig.constructorParams.values)
-    val actFieldsIter = BidirectionalIterator(instantiate.fieldsInit)
-    var errorFlag = false
-    val typeSigThisVal = typeSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get
-    while (!errorFlag && expFieldsIter.canMoveForward && actFieldsIter.canMoveForward) {
-      val fld = expFieldsIter.moveForward()
-      val (initFldIdOpt, rhsVal, rhsEval) = actFieldsIter.moveForward()
-      if (initFldIdOpt.forall(_ == fld.id)) {
-        val rhsValType = currScope.getCurrentTypeOf(rhsVal)
-        val expType = dealiasingCtx.dealiasType(fld.tpe.withTypeVarsExpanded).withTypeVarsExpanded
-          .withDependenciesTransformed(_.convertThisDotFieldToFieldVal(typeSig))
-          .substitute(typesSubst, fieldsInitArgsSubst)
-        (expType, proxyStore.developDeep(rhsVal)) match {
-          case (ClosureType(paramTypes, resultTV: TypeVariable, _), PureClosureValue(params, body, _)) if !resultTV.isResolved =>
-            absInt.interpretUnderAssumptions(body, params.zip(paramTypes.map(dealiasingCtx.dealiasType(_))).toMap, None) match {
-              case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
-                resultTV.resolve(absIntResult)
-              case _ => ()
-            }
-          case _ => ()
-        }
-        subtypingCtx.enforceIsSubtypeExpAct(rhsVal, rhsValType, expType, s"initialization of field ${fld.id}", currScope, instantiate.getPosition)
-        saveFldValInTypeIfStable(fld, rhsVal, expType)
-        newFieldsInitB.addOne(Some(fld.id), rhsVal, rhsEval)
-        remainingLabels -= fld.id
-      } else fld.defaultInitializerOpt match {
-        case Some(defaultInitializer) if initFldIdOpt.exists(remainingLabels.contains) =>
-          actFieldsIter.moveBackward()
-          generateDefaultInitializer(fld)
-        case _ =>
-          val foundDescr = initFldIdOpt match {
-            case Some(initFieldId) => s"label $initFieldId"
-            case None => SourceLevelFormulaPrinter.prettyprint(rhsVal)
-          }
-          er.reportError(s"expected initializer of field ${fld.id}, found $foundDescr", instantiate.getPosition)
-          errorFlag = true
-      }
-    }
-    if (!errorFlag) {
-      var continuePadding = true
-      while (continuePadding && expFieldsIter.canMoveForward) {
-        val fld = expFieldsIter.moveForward()
-        fld.defaultInitializerOpt match {
-          case Some(initializer) =>
-            generateDefaultInitializer(fld)
-          case None =>
-            expFieldsIter.moveBackward()
-            continuePadding = false
-        }
-      }
-    }
-    if (!errorFlag && expFieldsIter.canMoveForward) {
-      er.reportError(s"missing initializer for field ${expFieldsIter.moveForward().id}", instantiate.getPosition)
-      errorFlag = true
-    }
-    if (!errorFlag && actFieldsIter.canMoveForward) {
-      er.reportError(s"unexpected ${actFieldsIter.moveForward().label.map(l => s"initializer of label $l").getOrElse("unlabeled initializer")}", instantiate.getPosition)
-      errorFlag = true
-    }
-    val newInstanceType =
-      if returnTypePredParts.isEmpty then newInstanceTypeBase
-      else {
-        val rawPred = returnTypePredParts.reduce(LogicalAnd(_, _))
-        val pred = proxyStore.developNearest(rawPred)
-        RefinedType(newInstanceTypeBase, pred)
-      }
-    (newFieldsInitB.result(), applyCandidateIfTernary(assigned, newInstanceType))
-  }
-
   private def applyCandidateIfTernary(assigned: IdValue, regularType: Type)(using TypeParamsContext): Type =
     typeCandidatesStore.getCandidates(assigned).find(_.isInstanceOf[TernaryType]) match {
       case Some(tCand: TernaryType) if subtypingCtx.isSubtype(regularType, tCand) => tCand
@@ -793,7 +681,7 @@ final class Typer(
           NothingType
         case FunCall(receiver, func, typeArgs, args) if func.isResolved => func.getInstantiatedReturnTypeUnsafe
         case call@FunCall(receiver, func, typeArgs, args) if func.isNotResolvedYet =>
-          val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, posOpt)
+          val (tpe, receiverTypeArgsInst, funTypeArgsInst) = resolveFunSigAndCheckArgs(receiver, func, typeArgs, args, currScope, List.empty, posOpt)
           if (funTypeArgsInst.nonEmpty) {
             irModif {
               call.typeArgs = funTypeArgsInst
@@ -1019,9 +907,9 @@ final class Typer(
       enforcePurity(predicate, "predicate", posOpt)
       RefinedType(baseTypeInst, predicate)
     case tpe@IntRangeType(lbOpt, ubOpt) =>
-      lbOpt.foreach(checkIntRangeBound(_, "lower", currScope, posOpt))
-      ubOpt.foreach(checkIntRangeBound(_, "upper", currScope, posOpt))
-      tpe
+      val lbOk = lbOpt.forall(checkIntRangeBound(_, "lower", currScope, posOpt))
+      val ubOk = ubOpt.forall(checkIntRangeBound(_, "upper", currScope, posOpt))
+      if lbOk && ubOk then tpe else IntType
     case tpe@NullableType(nullatedTypeRaw) =>
       val nullatedTypeInst = instantiateType(nullatedTypeRaw, ambientVarianceOpt, currScope, posOpt)
       nullatedTypeInst match {
@@ -1032,12 +920,14 @@ final class Typer(
       NullableType(nullatedTypeInst)
   }
 
-  private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Unit = {
+  private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
     val tpe = typeFormula(bound, currScope, posOpt)
-    if (!subtypingCtx.isSubtype(tpe, IntType)) {
-      er.reportError(s"$upperOrLower bound of range has type $tpe, however only integers and chars can be used as bounds for a '[ .. ]' range", posOpt)
+    val boundOk = subtypingCtx.isSubtype(tpe, IntType)
+    if (!boundOk) {
+      er.reportError(s"$upperOrLower bound of range has type $tpe, but only integers and chars are allowed", posOpt)
     }
     enforcePurity(bound, s"range type bound", posOpt)
+    boundOk
   }
 
   private def makeDeductionsIfNothing(tpe: Type, scope: Scope)(using TypeParamsContext): Unit = {
@@ -1491,12 +1381,12 @@ final class Typer(
   }
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
-                                        callArgs: List[Formula], scope: Scope, posOpt: Option[Position])
+                                        callArgs: List[Formula], scope: Scope, returnTypeCandidates: Iterable[Type], posOpt: Option[Position])
                                        (using tParamsCtx: TypeParamsContext): (returnType: Type, instantiatedReceiverTypeArgs: List[Type], instantiatedFunTypeArgs: List[Type]) = {
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
-      er.reportError(s"method ${invkTarget.funId} not found in type $receiverType", posOpt)
+      er.reportError(s"method ${FunctionDescriptor(invkTarget.funId, callArgs.size)} not found in type $receiverType", posOpt)
       irModif {
         invkTarget.markUnresolvable()
       }
@@ -1516,6 +1406,12 @@ final class Typer(
             val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
             val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
+            if (funSig.sigName == ConstructorFunId) {
+              returnTypeCandidates.headOption.foreach { cand =>
+                val argsSubst = funSig.paramsInclThis.keys.zip(receiver :: callArgs.map(proxyStore.developNearest(_))).toMap[IdValue, Formula]
+                unifyTypes(cand, funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst))
+              }
+            }
             val absIntSubst =
               funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg)))
                 .flatMap {
@@ -1527,7 +1423,7 @@ final class Typer(
                     absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
                       case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
                         typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
-                        Some(closureResultTypeId -> absIntResult)
+                        Some(closureResultTypeId -> discardPredicateIfOnlyEqualities(absIntResult))
                       case _ => None
                     }
                   case _ => None
@@ -1573,17 +1469,8 @@ final class Typer(
     doComputeCurrentType(scope, formula, None)
 
   private def doComputeCurrentType(scope: Scope, formula: Formula, posOptIfShouldReport: Option[Option[Position]])
-                                  (using TypeSimplifier, TypeParamsContext): Type = {
-    val tpe = scope.getCurrentTypeOf(formula)
-    posOptIfShouldReport.foreach { posOpt =>
-      (formula, tpe) match {
-        case (idVal@UninterpretedConstIdValue(name, definingScope, uid), NothingType) if !globalValuesCtx.isPredefLiteralValue(idVal) =>
-          er.reportError(s"object not found: $name", posOpt)
-        case _ => ()
-      }
-    }
-    tpe.withTypeVarsExpanded
-  }
+                                  (using TypeSimplifier, TypeParamsContext): Type =
+    scope.getCurrentTypeOf(formula).withTypeVarsExpanded
 
   private def typeClosureCall(callee: Formula, calleeType: Type, closureTypingTarget: ClosureTypingTarget, argsAndTypes: List[(Some[Formula], Type)], currScope: Scope, posOpt: Option[Position])
                              (using TypeParamsContext): Type = {
@@ -1768,14 +1655,17 @@ final class Typer(
 
     // second pass: actually check types
     subst.clear()
-    var argIdx = if argsIncludeReceiver then 0 else 1
-    for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
-      val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-      subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
-      paramValOpt.foreach { paramVal =>
-        addToSubstIfValid(paramVal, argOpt, subst)
+    solver.onNewFrame {
+      var argIdx = if argsIncludeReceiver then 0 else 1
+      for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
+        val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
+        subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
+        paramValOpt.foreach { paramVal =>
+          addToSubstIfValid(paramVal, argOpt, subst)
+          solver.takeType(paramVal, argType)
+        }
+        argIdx += 1
       }
-      argIdx += 1
     }
     subst
   }

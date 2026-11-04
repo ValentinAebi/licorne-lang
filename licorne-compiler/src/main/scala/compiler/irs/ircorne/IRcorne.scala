@@ -260,19 +260,7 @@ object IRcorne {
     override def consumedVals: List[IdValue] = callee :: args
   }
 
-  final case class Instantiate(assigned: IdValue, classOrRecordName: TypeIdentifier, var typeArgs: List[Type], var fieldsInit: List[(label: Option[FunOrVarId], rhs: IdValue, rhsEval: Iterable[RealInstr])]) extends AssigningInstr, NoChildren {
-    private var outType: Option[Type] = None
-    
-    def resolveOutType(tpe: Type): Unit = {
-      outType = Some(tpe)
-    }
-    
-    def getOutType: Type = outType.get
-
-    override def consumedVals: List[IdValue] = fieldsInit.map(_.rhs)
-  }
-
-  final case class MkClosure(assigned: IdValue, params: List[(NamedIdValue, Type)], body: Scope, uniqueRetOpt: Option[Formula], var isPure: Boolean, closureTypeName: TypeIdentifier) extends AssigningInstr, ConsumesNoVal {
+  final case class MkClosure(assigned: IdValue, var params: List[(ParamIdValue, Type)], body: Scope, uniqueRetOpt: Option[Formula], var isPure: Boolean, closureTypeName: TypeIdentifier) extends AssigningInstr, ConsumesNoVal {
     override def children: List[Instr] = List(body)
   }
 
@@ -429,11 +417,10 @@ object IRcorne {
         throw IllegalArgumentException(s"illegal type save: $idVal in $this")
       }
       solver.takeType(idVal, tpe)
-      tpe match {
-        case ClosureType(params, result, enforcedPure) if enforcedPure =>
-          proxyStore.validateClosurePurity(idVal)
-        case _ => ()
-      }
+    }
+    
+    def unsafeDirectSaveType(idVal: UninterpretedConstIdValue, tpe: Type): Unit = {
+      types.put(idVal, tpe)
     }
 
     def saveSmartcast(f: Formula, smartcastType: Type): Unit = {
@@ -486,6 +473,9 @@ object IRcorne {
         outScopeOpt.flatMap(_.typeOfNoSmartcast(idValue))
       }
     }
+    
+    def hasNonNothingTypeFor(idValue: IdValue): Boolean =
+      typeOfNoSmartcast(idValue).exists(_ != NothingType)
 
     override def toString: String = {
       val outerScopeDescr = outScopeOpt match {
@@ -623,7 +613,7 @@ object IRcorne {
       thenBr.isObviouslyPure && elseBr.isObviouslyPure
     case scope: Scope =>
       scope.instructions.forall(_.isObviouslyPure)
-    case _: (Instantiate | MkClosure) => true
+    case _: MkClosure => true
     case LocalDecl(localId, tpe) => true
     case Unreachable() => true
     case _ => false

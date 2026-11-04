@@ -3,16 +3,16 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.{FunOrVarId, TypeIdentifier}
+import compiler.identifiers.{FunOrVarId, ConstructorFunId, TypeIdentifier}
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
-import compiler.irs.ircorne.{Formulas, IRLevelFormulaPrinter, IRcorne, SourceLevelFormulaPrinter}
+import compiler.irs.ircorne.{Formulas, IRcorne, SourceLevelFormulaPrinter}
 import compiler.lang
 import compiler.lang.*
 import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType, UnitType}
-import compiler.lang.Types.{NamedType, NullableType, TernaryType, Type, UnionType}
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
+import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
 import compiler.pipeline.CompilerStep
 import compiler.program.Program
@@ -121,24 +121,28 @@ final class Backend(
             generateInstanceFieldAndInitializer(tSig, cb)
           case _ => ()
         }
-        tSig match {
-          case objSig: ObjectSignature => generateObjectConstructor(objSig, cb)
-          case tSig: UserInstantiableTypeSig if tSig.sigName != arrayTypeId =>
-            val fieldsInit = program.constructorFieldsInit.getOrElse(tSig.id, Map.empty)
-            generateUserAccessibleConstructor(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
-          case _ => ()
-        }
 
         given TypeParamsContext = TypeParamsContext(tSig.typeParams)
 
+        tSig match {
+          case tSig: ObjectSignature =>
+            generateObjectConstructor(tSig, cb)
+          case tSig: UserInstantiableTypeSig if tSig.sigName != arrayTypeId =>
+            val fieldsInit = program.fieldInitializers.getOrElse(tSig.id, Map.empty)
+            generateConstructorForUserInstantiableType(tSig, fieldsInit, cb)(using summon[DealiasingContext], program.globalValuesContext)
+          case _ => ()
+        }
         generateFields(tid, tSig.fields.values, cb)
-        generateFunctions(tSig, cb)(using program)
+        if (tSig.sigName.isCompanionObject) {
+          generateAutoNewFunctions(tSig.asInstanceOf[ObjectSignature], program.fieldInitializers.getOrElse(tSig.sigName.asNonCompanionId, Map.empty), cb)(using program.globalValuesContext)
+        } else {
+          generateFunctions(tSig, cb)(using program)
+        }
         generateInterfacesList(tSig.directSupertypes.map(_.typeName), cb)
       }
     )
   }
 
-  // TODO maybe there could be an issue with the ClassHierarchyResolver not being aware of the subtyping relationship between closures and the Closure interface
   private def mkClassHierarchyResolver(subtypingInfo: SubtypingInfo)(using dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext): ClassHierarchyResolver = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val interfaces = util.ArrayList[ClassDesc]()
@@ -203,8 +207,43 @@ final class Backend(
     }))
   }
 
-  private def generateUserAccessibleConstructor(tSig: UserInstantiableTypeSig, fieldsInit: Map[FunOrVarId, (initInstr: Iterable[RealInstr], resVal: IdValue)], cb: ClassBuilder)
-                                               (using DealiasingContext, GlobalValuesContext, ResolutionContext, SimplifiedSubtypingContext, ClassHierarchyResolver): Unit = {
+  private def generateAutoNewFunctions(objSig: ObjectSignature, constructorFieldsInit: Map[FunOrVarId, (Iterable[RealInstr], IdValue)], cb: ClassBuilder)
+                                      (using globalValsCtx: GlobalValuesContext, tpCtx: TypeParamsContext, dealiasingCtx: DealiasingContext, resolCtx: ResolutionContext, subtypingCtx: SimplifiedSubtypingContext, classHierarchyResolver: ClassHierarchyResolver): Unit = {
+    require(objSig.id.isCompanionObject)
+    val instantiatedTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](objSig.id.copy(isCompanionObject = false)).get
+
+    for ((_, constructorSig) <- objSig.functions) {
+      assert(constructorSig.sigName == ConstructorFunId, s"unexpected: ${constructorSig.sigName}")
+      cb.withMethod(ConstructorFunId.stringId, mkFunDesc(constructorSig), ClassFile.ACC_PUBLIC, mb => mb.withCode { cb =>
+        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        val desc = tConv.descriptorFor(instantiatedTypeSig.sigName)
+        cb.new_(desc)
+        cb.dup()
+        var paramSlotIdx = 1
+        for ((fldVal, fldType) <- constructorSig.paramsWithoutThis) {
+          cb.loadLocal(tConv.kindFor(fldType), paramSlotIdx)
+          paramSlotIdx += tConv.kindFor(fldType).slotSize()
+        }
+        for ((_, constrParam) <- instantiatedTypeSig.constructorParams.drop(constructorSig.paramsWithoutThis.size)) {
+          val (initInstr, initResVal) = constructorFieldsInit.apply(constrParam.id)
+
+          given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(globalValsCtx, TypeParamsContext(constructorSig.typeParams), isSyntheticAccessor = false, objSig.sigName, constructorSig.retType, closureInfoOpt = None)
+
+          for (instr <- initInstr) {
+            generateInstr(instr, cb, instantiatedTypeSig.sigScope)
+          }
+          val constrParamTypeKind = tConv.kindFor(constrParam.tpe)
+          cb.loadLocal(constrParamTypeKind, funGenCtx.getSlot(initResVal))
+          paramSlotIdx += constrParamTypeKind.slotSize()
+        }
+        cb.invokespecial(desc, INIT_NAME, mkConstrDesc(instantiatedTypeSig))
+        cb.areturn()
+      })
+    }
+  }
+
+  private def generateConstructorForUserInstantiableType(tSig: UserInstantiableTypeSig, fieldsInit: Map[FunOrVarId, (initInstr: Iterable[RealInstr], resVal: IdValue)], cb: ClassBuilder)
+                                                        (using DealiasingContext, GlobalValuesContext, ResolutionContext, SimplifiedSubtypingContext, ClassHierarchyResolver): Unit = {
     val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val tDesc = tConv.descriptorFor(tSig.id)
     val sigScope = tSig.sigScope
@@ -421,13 +460,13 @@ final class Backend(
         genValueLoad(condEvalResultVal, currScope, cb)
         cb.ifeq(elseBrLabel)
         generateScope(thenBr, cb)
-        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables if currScope.hasNonNothingTypeFor(afterThenVal) && currScope.hasNonNothingTypeFor(afterElseVal)) {
           genValueMove(joinedVal, afterThenVal, thenBr, cb)
         }
         cb.goto_(afterDisjLabel)
         cb.labelBinding(elseBrLabel)
         generateScope(elseBr, cb)
-        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables) {
+        for (varData@DisjunctionVarData(varIdOpt, afterThenVal, afterElseVal, joinedVal) <- variables if currScope.hasNonNothingTypeFor(afterThenVal) && currScope.hasNonNothingTypeFor(afterElseVal)) {
           genValueMove(joinedVal, afterElseVal, elseBr, cb)
         }
         cb.labelBinding(afterDisjLabel)
@@ -541,7 +580,44 @@ final class Backend(
         ensureAssignable(dealiasedTypeOf(assigned, currScope), funSig.retType, cb)
         genValueStore(assigned, currScope, cb)
 
-      // Array methods
+      // array instantiation
+      case instantiate@IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, List(sizeVal, initClosureVal)) if isFunc(arrayTypeId, FunctionDescriptor(ConstructorFunId, 2))(func.getFunSigUnsafe) =>
+        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(func.getInstantiatedReturnTypeUnsafe): @unchecked
+        val elemDesc = tConv.descriptorFor(elemType)
+        genValueLoad(sizeVal, currScope, cb)
+        cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
+        genValueStore(assigned, currScope, cb)
+        val counterSlot = funGenCtx.allocateSlotOfSize(TypeKind.INT.slotSize())
+        cb.iconst_0()
+        cb.istore(counterSlot)
+        // LOOP CONDITION START
+        val initLoopStartLabel = cb.newBoundLabel()
+        val loopExitLabel = cb.newLabel()
+        cb.iload(counterSlot)
+        genValueLoad(sizeVal, currScope, cb)
+        cb.isub()
+        cb.ifge(loopExitLabel)
+        // LOOP BODY START
+        genValueLoad(assigned, currScope, cb)
+        cb.iload(counterSlot)
+        // invoke the initialization closure, it takes a single argument, wrapped in an array
+        genValueLoad(initClosureVal, currScope, cb)
+        cb.iconst_1()
+        cb.anewarray(CD_Integer)
+        cb.dup()
+        cb.iconst_0()
+        cb.iload(counterSlot)
+        cb.invokestatic(CD_Integer, "valueOf", MethodTypeDesc.of(CD_Integer, CD_int))
+        cb.aastore()
+        generateClosureCallWithOutUnboxIfNeeded(TypeKind.REFERENCE, boxDesc(tConv.descriptorFor(elemType)), cb)
+        cb.aastore()
+        cb.iinc(counterSlot, 1)
+        cb.goto_(initLoopStartLabel)
+        // LOOP END
+        cb.labelBinding(loopExitLabel)
+        cb.nop()
+
       case IRcorne.InvokeFunc(assigned, receiver, func, typeArgs, args) if isFunc(arrayTypeId, getFunId, 1)(func.getFunSigUnsafe) =>
         genValueLoad(receiver, currScope, cb)
         genValueLoad(args.head, currScope, cb)
@@ -621,63 +697,6 @@ final class Backend(
         val assignedKind = typeKindOf(assigned, currScope)
         val assignedUnboxedDesc = typeDescOf(assigned, currScope)
         generateClosureCallWithOutUnboxIfNeeded(assignedKind, assignedUnboxedDesc, cb)
-        genValueStore(assigned, currScope, cb)
-
-
-      case instantiate@IRcorne.Instantiate(assigned, StdLib.arrayTypeId, _, List((_, sizeVal, sizeEval), (_, initClosureVal, initClosureEval))) =>
-        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = getRuntimeType(instantiate.getOutType): @unchecked
-        val elemDesc = tConv.descriptorFor(elemType)
-        for (instr <- sizeEval ++ initClosureEval) {
-          generateInstr(instr, cb, currScope)
-        }
-        genValueLoad(sizeVal, currScope, cb)
-        cb.anewarray(if elemDesc.isPrimitive then boxDesc(elemDesc) else elemDesc)
-        genValueStore(assigned, currScope, cb)
-        val counterSlot = funGenCtx.allocateSlotOfSize(TypeKind.INT.slotSize())
-        cb.iconst_0()
-        cb.istore(counterSlot)
-        // LOOP CONDITION START
-        val initLoopStartLabel = cb.newBoundLabel()
-        val loopExitLabel = cb.newLabel()
-        cb.iload(counterSlot)
-        genValueLoad(sizeVal, currScope, cb)
-        cb.isub()
-        cb.ifge(loopExitLabel)
-        // LOOP BODY START
-        genValueLoad(assigned, currScope, cb)
-        cb.iload(counterSlot)
-        // invoke the initialization closure, it takes a single argument, wrapped in an array
-        genValueLoad(initClosureVal, currScope, cb)
-        cb.iconst_1()
-        cb.anewarray(CD_Integer)
-        cb.dup()
-        cb.iconst_0()
-        cb.iload(counterSlot)
-        cb.invokestatic(CD_Integer, "valueOf", MethodTypeDesc.of(CD_Integer, CD_int))
-        cb.aastore()
-        generateClosureCallWithOutUnboxIfNeeded(TypeKind.REFERENCE, boxDesc(tConv.descriptorFor(elemType)), cb)
-        cb.aastore()
-        cb.iinc(counterSlot, 1)
-        cb.goto_(initLoopStartLabel)
-        // LOOP END
-        cb.labelBinding(loopExitLabel)
-        cb.nop()
-
-      case IRcorne.Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
-        val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-        val createdObjTypeSig = resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName).get
-        val desc = tConv.descriptorFor(classOrRecordName)
-        cb.new_(desc)
-        cb.dup()
-        for ((fld, (_, argVal, argEval)) <- createdObjTypeSig.constructorParams.values zip fieldsInit) {
-          for (instr <- argEval) {
-            generateInstr(instr, cb, currScope)
-          }
-          genValueLoad(argVal, currScope, cb)
-          ensureAssignable(fld.tpe, dealiasedTypeOf(argVal, currScope), cb)
-        }
-        cb.invokespecial(desc, INIT_NAME, mkConstrDesc(createdObjTypeSig))
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.MkClosure(assigned, params, body, uniqueRetOpt, isPure, closureTypeName) =>

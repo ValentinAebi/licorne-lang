@@ -5,10 +5,10 @@ import compiler.irs.tokens.Tokens.*
 import compiler.lang.Keyword.*
 import compiler.lang.Operator.*
 
-/**
- * Iterator allowing at most one lookahead
- */
-final class LL1Iterator private(initTokensList: List[PositionedToken]) {
+import scala.util.boundary
+
+
+final class ParsingIterator private(initTokensList: List[PositionedToken]) {
   require(initTokensList.nonEmpty)
   private var _curr: PositionedToken = PositionedToken(EndlToken, initTokensList.head.position)
   private var _remTokens: List[PositionedToken] = initTokensList.filterNot(_.token.isSpaceOrComment)
@@ -44,6 +44,11 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
 
   def remaining: List[PositionedToken] = _remTokens
 
+  def lookahead(n: Int)(pf: PartialFunction[List[Token], Boolean]): Boolean = {
+    require(n >= 1)
+    pf.applyOrElse(_curr.token :: _remTokens.take(n-1).map(_.token), _ => false)
+  }
+
   extension (tok: Token) {
 
     private def isStatementSep: Boolean = tok match {
@@ -56,12 +61,12 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
 
     private def isAssig: Boolean = tok.isOperator(Assig, PlusEq, MinusEq, TimesEq, DivEq, ModuloEq, PlusPlusEq)
 
-    private def isClearlyNotStatementEnd: Boolean = isBinop || isAssig || tok.isOperator(Comma, OpeningBrace, OpeningParenthesis, OpeningBracket, RightArrow)
+    private def isClearlyNotStatementEnd: Boolean = isBinop || isAssig || tok.isOperator(Comma, OpeningBrace, OpeningParenthesis, OpeningBracket, RightArrow, Colon)
 
     private def isPossibleStatementStart: Boolean = tok match {
       case FirstUppercaseIdentifierToken(_) => true
       case FirstLowercaseIdentifierToken(_) => true
-      case KeywordToken(It | This | Null | Return | Panic | If | While | For | Val | Var | New) => true
+      case KeywordToken(It | This | Null | Return | Panic | If | While | For | Val | Var) => true
       case KeywordToken(_) => false
       case OperatorToken(OpeningParenthesis | OpeningBrace) => true
       case OperatorToken(_) => false
@@ -88,8 +93,8 @@ final class LL1Iterator private(initTokensList: List[PositionedToken]) {
 
 }
 
-object LL1Iterator {
-  def from(tokensSeq: List[PositionedToken]): LL1Iterator = {
-    new LL1Iterator(tokensSeq)
+object ParsingIterator {
+  def from(tokensSeq: List[PositionedToken]): ParsingIterator = {
+    new ParsingIterator(tokensSeq)
   }
 }

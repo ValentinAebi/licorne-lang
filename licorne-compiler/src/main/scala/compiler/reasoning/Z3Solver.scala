@@ -246,8 +246,10 @@ final class Z3Solver[IntSort <: KSort] private[reasoning](kCtx: KContext, kZ3Sol
 
   override def takeType(subject: Formula, tpe: Types.Type)(using dealiasingCtx: DealiasingContext, globalValsCtx: GlobalValuesContext): Unit = {
     val itValue = globalValsCtx.itValue
-    for (t <- dealiasingCtx.dealiasType(tpe.withTypeVarsExpanded).withTypeVarsExpanded.breakdownIfIntersection) {
-      val predicate = t.asRefinedType.flattenedRefinement.predicate
+    for {
+      t <- dealiasingCtx.dealiasType(tpe.withTypeVarsExpanded).withTypeVarsExpanded.breakdownIfIntersection
+      predicate <- t.asRefinedType.flattenedRefinement.predicate.splitConjuncts
+    } {
       assert(predicate.substitute(itValue, subject))
     }
   }

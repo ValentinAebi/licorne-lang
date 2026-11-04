@@ -32,8 +32,8 @@ class ArrayWrapper[T] (
 object ArrayWrappers {
 
     fn mkNew[T](size: Length) -> ArrayWrapper[T] {
-        val wrapped = new Array(size)
-        return new ArrayWrapper(size, wrapped)
+        val wrapped = Array(size)
+        return ArrayWrapper(size, wrapped)
     }
 
 }

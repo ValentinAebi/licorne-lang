@@ -68,7 +68,7 @@ class ArrayMap[K sub Any, V sub Any](
 object ArrayMaps {
 
     fn newEmptyOfCapacity[K sub Any, V sub Any](capacity: Length) -> ArrayMap[K, V] =
-        new ArrayMap(keys = new Array(size = capacity), values = new Array(size = capacity), currSize = 0);
+        ArrayMap(Array(capacity), Array(capacity), 0);
 
 }
 

@@ -4,7 +4,7 @@ package licorne.collections
 // TODO negative casts (#30) would make NoElems checks more concise
 
 class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
-    var array = new Array[T | NoElem](initialCapacity, |NoElem|)
+    var array = Array[T | NoElem](initialCapacity){ NoElem }
     var currSize: Cnt = 0
 
     fn size() -> Cnt = currSize
@@ -68,8 +68,8 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         this.currSize = deletionIdx
     }
 
-    fn map[U](f: fn (T) -> U) -> ArrayList[U] {
-        val mapped = new ArrayList(currSize)
+    fn map[U](f: (T) -> U) -> ArrayList[U] {
+        val mapped = ArrayList(currSize)
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
@@ -81,7 +81,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         return mapped
     }
 
-    fn mapInPlace(f: fn (T) -> T) {
+    fn mapInPlace(f: (T) -> T) {
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
@@ -92,13 +92,13 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fn filter(pred: pure fn (T) -> Bool) -> ArrayList[T with pred(it)] {
-        val filtered = new ArrayList(currSize)
-        foreach(fn (elem) -> {
-            if (pred(elem)) {
-                filtered.add(elem)
+    fn filter(pred: pure (T) -> Bool) -> ArrayList[T with pred(it)] {
+        val filtered = ArrayList(currSize)
+        foreach {
+            if (pred(it)) {
+                filtered.add(it)
             }
-        })
+        }
         return filtered
     }
 
@@ -112,7 +112,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fn foreach(f: fn (T) -> Unit) {
+    fn foreach(f: (T) -> Unit) {
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
             val elem = array.get(i)
@@ -126,13 +126,13 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     fn toString() -> String {
         var s = "["
         var isFirst = true
-        foreach(fn (elem) -> {
+        foreach {
             if !isFirst {
                 s ++= ","
             }
-            s ++= str(elem)
+            s ++= str(it)
             isFirst = false
-        })
+        }
         s ++= "]"
         return s
     }
@@ -142,8 +142,9 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         if (currSize + 1 < array.size()) {
             return
         }
-        this.array = new Array(2*array.size() + 1,
-                        |if (it < array.size()) array.get(it) else NoElem|)
+        this.array = Array(2*array.size() + 1) {
+            if (it < array.size()) array.get(it) else NoElem
+        }
     }
 
     private fn swap(i: Int, j: Int) {

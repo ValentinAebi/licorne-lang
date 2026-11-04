@@ -1,6 +1,6 @@
 package compiler.typing.phases
 
-import compiler.identifiers.{NormalFunOrVarId, TypeIdentifier}
+import compiler.identifiers.{ItId, NormalFunOrVarId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.{Formula, IdValue}
 import compiler.irs.ircorne.{Formulas, IRcorne}
 import compiler.irs.ircorne.IRcorne.*
@@ -24,6 +24,7 @@ final class TypeCandidatesInferrer(
                                     timeoutConfig: TimeoutConfig,
                                     proxyStore: ProxyStore,
                                     typeCandidatesStore: TypeCandidatesStore,
+                                    externalTypeVarsCtx: TypeVariablesContext,
                                     counterExBoxOpt: Option[CounterexampleBox],
                                     er: ErrorReporter
                                   ) extends CompilerStep[(Program, SubtypingInfo), (Program, SubtypingInfo)] {
@@ -74,7 +75,7 @@ final class TypeCandidatesInferrer(
 
   private def traverseInstr(instr: Instr, currEnvir: ExecutionEnvironment)
                            (using typeParamsCtx: TypeParamsContext, resolutionCtx: ResolutionContext, globalValsCtx: GlobalValuesContext,
-                            subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, typeVarsCtx: TypeVariablesContext, lt: LightweightTyper): Unit = instr match {
+                            subtypingCtx: SubtypingContext, dealiasingCtx: DealiasingContext, tmpTypeVarsCtx: TypeVariablesContext, lt: LightweightTyper): Unit = instr match {
     case Loop(cond, condVal, body, variables) =>
       for {
         LoopVarData(varId, beforeLoopVal, condVal, bodyLastVal, varDefScope) <- variables
@@ -125,7 +126,7 @@ final class TypeCandidatesInferrer(
             .find((tSig, funSig) => funSig.functionName == func.funId)
             .map { (tSig, funSig) =>
               val typesSubst = tSig.typeParams.map { tp =>
-                tp.tid -> typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, invkFunc.getPosition)
+                tp.tid -> tmpTypeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, invkFunc.getPosition)
               }.toMap
               (tSig.id, typesSubst, Map.empty[IdValue, Formula])
             }
@@ -145,19 +146,31 @@ final class TypeCandidatesInferrer(
         }
       }
     case InvokeClosure(assigned, callee, closureTypingTarget, args) => ()
-    case Instantiate(assigned, classOrRecordName, typeArgs, fieldsInit) =>
-      for {
-        candidate <- typeCandidatesStore.getCandidates(assigned).headOption // TODO see if this line is really needed: candidate value is unused
-        tSig <- resolutionCtx.resolveTypeSigAs[UserInstantiableTypeSig](classOrRecordName)
-      } {
-        val subst = createTypeParamsSubst(tSig.typeParams, typeArgs)
-        for (((fldId, fld), (_, arg, _)) <- tSig.fields zip fieldsInit) {
-          val expFldType = fld.tpe.substitute(subst, Map.empty)
-          typeCandidatesStore.offerCandidate(arg, expFldType)
-        }
+    case mkClosure@MkClosure(assigned, params, body, uniqueRetOpt, _, closureTypeName) =>
+
+      def isClosureTypeWithoutArgs(tpe: Type): Boolean = tpe match {
+        case ClosureType(params, result, enforcedPure) => params.isEmpty
+        case _ => false
       }
-    case mkClosure@MkClosure(assigned, params, body, uniqueRetOpt, declaredPure, closureTypeName) =>
-      val closureInfo = ClosureInfo(params, body, typeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, declaredPure, TypeParamsContext.empty /* TODO check this */)
+
+      val closureTypeCandidates = typeCandidatesStore.getCandidates(assigned)
+      if (params.size == 1 && params.headOption.exists(_._1.id == ItId) && closureTypeCandidates.nonEmpty && closureTypeCandidates.forall(isClosureTypeWithoutArgs)) {
+        mkClosure.params = List.empty
+        proxyStore.getClosureProxy(assigned).foreach { closureValue =>
+          closureValue.params = List.empty
+        }
+        val itType = params.head._2.asInstanceOf[TypeVariable]
+        tmpTypeVarsCtx.forgetTypeVar(itType)
+        externalTypeVarsCtx.forgetTypeVar(itType)
+      }
+      val requirePure = closureTypeCandidates.exists {
+        case ClosureType(params, result, enforcedPure) => enforcedPure
+        case _ => false
+      }
+      if (requirePure) {
+        proxyStore.validateClosurePurity(assigned)
+      }
+      val closureInfo = ClosureInfo(params, body, tmpTypeVarsCtx.newTypeVariable(NormalFunOrVarId(assigned.toString), None, None, typeParamsCtx, mkClosure.getPosition), BranchingInfo.empty, requirePure, TypeParamsContext.empty /* TODO check this */)
       traverseScope(body, closureInfo)
     case MkHeapVar(assigned) => ()
     case TypeTest(assigned, testedValue, testedTypeId) => ()
@@ -207,49 +220,6 @@ final class TypeCandidatesInferrer(
       substB.addOne(tParam.tid -> tArg)
     }
     substB.result()
-  }
-
-  private def unifyTypes(candidate: Type, shape: Type)
-                        (using dealiasingCtx: DealiasingContext, subtypingCtx: SubtypingContext, resolCtx: ResolutionContext): Unit = {
-    (dealiasingCtx.dealiasType(candidate).withTypeVarsExpanded, dealiasingCtx.dealiasType(shape).withTypeVarsExpanded) match {
-      case (tv: TypeVariable, shape) =>
-        tv.resolve(shape)
-      case (cand, tv: TypeVariable) =>
-        tv.resolve(cand)
-      case (NamedType(candTypeId, candTypeArgs, candArgs), NamedType(shapeTypeId, shapeTypeArgs, shapeArgs)) =>
-        for {
-          subtypingSubst <- subtypingCtx.subToSuperSubst(shapeTypeId, candTypeId)
-          candTSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](candTypeId) // TODO see if this line is really needed: candTSig is unused
-          shapeTypeSig <- resolCtx.resolveTypeSigAs[RuntimeTypeSignature](shapeTypeId)
-        } {
-          val shapeSubst = shapeTypeSig.typeParams.map(_.tid).zip(shapeTypeArgs).toMap
-          val composedSubst = subtypingSubst.map {
-            case (tParam, tArg@NamedType(tArgId, Nil, Nil)) =>
-              tParam -> shapeSubst.getOrElse(tArgId, tArg)
-            case (tParam, tArg) =>
-              tParam -> tArg
-          }
-          val upcastShapeType = shapeTypeSig.toType(composedSubst)
-          for ((h, s) <- candTypeArgs.zip(upcastShapeType.typeArgs)) {
-            unifyTypes(h, s)
-          }
-        }
-      case (ClosureType(candParams, candResult, _), ClosureType(shapeParams, shapeResult, _)) =>
-        for ((ht, st) <- candParams.zip(shapeParams)) {
-          unifyTypes(ht, st)
-        }
-        unifyTypes(candResult, shapeResult)
-      case (NullableType(nullatedCand), shape) =>
-        unifyTypes(nullatedCand, shape)
-      case (cand, NullableType(nullatedShape)) =>
-        unifyTypes(cand, nullatedShape)
-      case (RefinedType(candBase, _), shape) =>
-        unifyTypes(candBase, shape)
-      case (cand, RefinedType(shapeBase, _)) =>
-        unifyTypes(cand, shapeBase)
-      case _ => ()
-      // TODO also handle IntersectionTypes / UnionTypes / TernaryTypes?
-    }
   }
 
   private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {

@@ -19,33 +19,33 @@ datatype List[+T] {
    }
 
    fn reverse() -> List[T] {
-      var reversed = new Nil()
+      var reversed = Nil()
       var ls = this
       while (ls is Cons) {
-         reversed = new Cons(head = ls.head(), tail = reversed)
+         reversed = Cons(head = ls.head(), tail = reversed)
          ls = ls.tail()
       }
       return reversed
    }
 
-   fn filter(p: pure fn (T) -> Bool) -> List[T with p(it)] {
-      var filteredReversed = new Nil()
+   fn filter(p: pure (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = Nil()
       var ls = this
       while (ls is Cons) {
          if (p(ls.head())) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed)
+            filteredReversed = Cons(head = ls.head(), tail = filteredReversed)
          }
          ls = ls.tail()
       }
       return filteredReversed.reverse()
    }
 
-   fn filter_bad(p: pure fn (T) -> Bool) -> List[T with p(it)] {
-      var filteredReversed = new Nil()
+   fn filter_bad(p: pure (T) -> Bool) -> List[T with p(it)] {
+      var filteredReversed = Nil()
       var ls = this
       while (ls is Cons) {
          if (!p(ls.head())) {
-            filteredReversed = new Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
+            filteredReversed = Cons(head = ls.head(), tail = filteredReversed) //> E : initialization of field head: expected T with p(it), found ls.head() : T with !p(it)
          }
          ls = ls.tail()
       }
@@ -55,9 +55,9 @@ datatype List[+T] {
    fn zip[S](other: List[S] where this.length() == other.length()) -> List[Pair[T, S]] {
       var rem1 = this
       var rem2 = other
-      var reversedZip = new Nil()
+      var reversedZip = Nil()
       while (rem1 is Cons && rem2 is Cons) {
-         reversedZip = new Cons(head = new Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip)
+         reversedZip = Cons(head = Pair(l = rem1.head(), r = rem2.head()), tail = reversedZip)
          rem1 = rem1.tail()
          rem2 = rem2.tail()
       }
@@ -86,10 +86,10 @@ object UseLists {
 
    fn useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
       if (integers.length() == strings.length()) integers.zip(strings)
-      else new Nil()
+      else Nil()
 
    fn useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
-      if (integers.length() != strings.length()) new Nil()
+      if (integers.length() != strings.length()) Nil()
       else integers.zip(strings)
 
    fn useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
@@ -97,7 +97,7 @@ object UseLists {
    }
 
    fn instanceTests(ls: List[I], thres: Int) {
-      val filtered = ls.filter(fn (x) -> x is A && x.value() >= thres)
+      val filtered = ls.filter({ x -> x is A && x.value() >= thres })
       filtered : Nothing //> E : type ascription: expected Nothing, found filtered : lists.List[lists.A with thres <= it.value()] (where I am unable to prove the stability of the following values: it.value())
    }
 

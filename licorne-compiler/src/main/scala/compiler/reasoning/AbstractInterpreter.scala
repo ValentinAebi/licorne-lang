@@ -3,10 +3,11 @@ package compiler.reasoning
 import compiler.irs.ircorne.Formulas
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
-import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
+import compiler.lang.Types.PrimitiveType.{BoolType, DoubleType, IntType}
 import compiler.lang.Types.{IntRangeType, IntersectionType, Type, asRefinedType}
 import compiler.reasoning.AbstractInterpreter.someZero
 import compiler.reasoning.{Solver, TypeSimplifier}
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
 import compiler.util.asIterableOfType
 import compiler.valuesconversion.GlobalValuesContext
@@ -178,7 +179,9 @@ final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, 
 
     def interpretUnderAssumptions(formula: Formula): Option[Type] = formula match {
       case formula: Formula if assignmentTargetOpt.exists(_.typeCanMention(formula)) => Some(IntRangeType.singleton(formula))
-      case constFormula: ConstFormula => Some(IntRangeType.singleton(constFormula))
+      case constFormula: (IntConst | CharConst) => Some(IntRangeType.singleton(constFormula))
+      case BoolConst(value) => Some(BoolType)
+      case StringConst(value) => Some(StdLib.stringType)
       case idValue: IdValue => typeAssumptions.get(idValue).map { tpe =>
         tpe.filtered(assignmentTargetOpt, currScopeAndProxyStoreOpt = None)
       }

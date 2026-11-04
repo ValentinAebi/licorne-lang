@@ -11,10 +11,10 @@ object Main {
         array.set(4, 25)
         val list = listFromArray(array)
         var sum = 0
-        list.foreach(fn (i) -> {
+        list.foreach { i ->
             println(i)
             sum += i
-        })
+        }
         println("Sum: " ++ str(sum))
     }
 

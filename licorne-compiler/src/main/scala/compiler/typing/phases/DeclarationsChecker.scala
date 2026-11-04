@@ -64,11 +64,11 @@ final class DeclarationsChecker(
         },
         programOld.typeAliases,
         programOld.functions,
-        programOld.constructorFieldsInit
+        programOld.fieldInitializers
       )
 
       for {
-        (tid, constructorFields) <- programNew.constructorFieldsInit
+        (tid, constructorFields) <- programNew.fieldInitializers
         tSig <- resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](tid)
         tpCtx <- Some(TypeParamsContext(tSig.typeParams))
         (fieldId, (fieldInitInstructions, fieldInitVal)) <- constructorFields
@@ -78,13 +78,15 @@ final class DeclarationsChecker(
         for (instr <- fieldInitInstructions) {
           typer.typeInstr(instr, tSig.sigScope, BranchingInfo.empty)
         }
-        val fieldType = tSig.encapsulatedFields.apply(fieldId).tpe
+        val fieldType = tSig.constructorParams.get(fieldId).orElse(tSig.encapsulatedFields.get(fieldId)).get.tpe
         val initializerType = tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier)
         val isSubtype = subtypingCtx.enforceIsSubtype(initializerType, fieldType,
           s"initializer of field $fieldId does not conform to its declared type $fieldType", tSig.declPosOpt)
-        if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) && tSig.encapsulatedFields.apply(fieldId).isStable) {
-          val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
-          er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
+        tSig.encapsulatedFields.get(fieldId).foreach { encapsulatedField =>
+          if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) && encapsulatedField.isStable) {
+            val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
+            er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
+          }
         }
       }
 
@@ -106,14 +108,14 @@ final class DeclarationsChecker(
       }
 
       for {
-        (tid, constructorFields) <- programNew.constructorFieldsInit
+        (tid, constructorFields) <- programNew.fieldInitializers
         tSig <- resolCtx.resolveTypeSigAs[UserInstantiableTypeSig](tid)
         tpCtx <- Some(TypeParamsContext(tSig.typeParams))
         (fieldId, (fieldInitInstructions, fieldInitVal)) <- constructorFields
       } {
-        tSig.encapsulatedFields.apply(fieldId).tpe match {
-          case fieldType: TypeVariable if fieldType.allTypeVariables.exists(!_.isResolved) =>
-            er.reportError(s"I could not infer type of field $fieldId", tSig.declPosOpt)
+        tSig.encapsulatedFields.get(fieldId).map(_.tpe) match {
+          case Some(fieldType: TypeVariable) if fieldType.allTypeVariables.exists(!_.isResolved) =>
+            er.reportError(s"I could not infer type of field $fieldId", fieldInitInstructions.lastOption.flatMap(_.getPosition).orElse(tSig.declPosOpt))
           case _ => ()
         }
       }

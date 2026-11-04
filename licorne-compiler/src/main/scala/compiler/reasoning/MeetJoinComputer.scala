@@ -164,7 +164,7 @@ final class MeetJoinComputer(
 
   def computeJoinOfNamed(types: Iterable[NamedType])(using TypeParamsContext): Option[NamedType] = {
     val typesToSubst = Map.from(for {
-      tpe@NamedType(tid, typeArgs, args) <- types
+      case tpe@NamedType(tid, typeArgs, args) <- types
     } yield {
       tpe -> (resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](tid) match {
         case Some(tSig) =>

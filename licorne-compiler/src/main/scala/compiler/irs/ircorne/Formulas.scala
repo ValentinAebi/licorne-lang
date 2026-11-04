@@ -155,7 +155,7 @@ object Formulas {
     }
   }
 
-  final case class PureClosureValue(params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
+  final case class PureClosureValue(var params: List[IdValue], body: Formula, closureVal: IdValue) extends Formula {
     override def children: List[Formula] = params :+ body :+ closureVal
   }
 
@@ -338,12 +338,12 @@ object Formulas {
         Select(owner, field)
     }
 
-  extension (formula: Formula) def convertThisDotFieldToFieldVal(tSig: RuntimeTypeSignature): Formula =
+  extension (formula: Formula) def convertThisDotFieldToFieldVal(tSig: RuntimeTypeSignature, fldIdToVal: collection.Map[FunOrVarId, IdValue]): Formula =
     formula.applyRecursively {
-      case Select(owner, field) if field.isResolved && owner == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
-        field.getFieldUnsafe.value
-      case funCall@FunCall(receiver, func, typeArgs, args) if func.isResolved && receiver == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
-        tSig.fields.get(func.funId).map(_.value).getOrElse(funCall)
+      case sel@Select(owner, field) if owner == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
+        fldIdToVal.getOrElse(field.fieldId, sel)
+      case funCall@FunCall(receiver, func, typeArgs, args) if receiver == tSig.sigScope.getLocalValuesContextUnsafe.getThisValue.get =>
+        fldIdToVal.getOrElse(func.funId, funCall)
     }
 
   extension (formula: Formula) def typeCanMention(dep: Formula): Boolean =

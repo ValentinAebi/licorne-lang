@@ -9,8 +9,13 @@ sealed trait Identifier {
   override def toString: String = stringId
 }
 
-final case class TypeIdentifier(prefixes: List[String], nonPrefixedId: String) extends Identifier {
-  override def stringId: String = (prefixes :+ nonPrefixedId).mkString(".")
+final case class TypeIdentifier(prefixes: List[String], nonPrefixedId: String, isCompanionObject: Boolean = false) extends Identifier {
+  
+  def asCompanionId: TypeIdentifier = copy(isCompanionObject = true)
+  
+  def asNonCompanionId: TypeIdentifier = copy(isCompanionObject = false)
+  
+  override def stringId: String = (prefixes :+ nonPrefixedId).mkString(".") ++ (if isCompanionObject then s"::${Keyword.Companion}" else "")
 }
 
 sealed trait FunOrVarId extends Identifier
@@ -18,7 +23,7 @@ sealed trait FunOrVarId extends Identifier
 final case class NormalFunOrVarId(stringId: String) extends FunOrVarId
 
 case object ConstructorFunId extends FunOrVarId {
-  override def stringId: String = "<init>"
+  override def stringId: String = Keyword.Constructor.str
 }
 
 case object ThisId extends FunOrVarId {

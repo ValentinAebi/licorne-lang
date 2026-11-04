@@ -18,7 +18,7 @@ class Car(
 object Cars {
 
     fn newCarWithDefaultValues() -> Car {
-        return new Car(year = 2026, seats = 5)
+        return Car(year = 2026, seats = 5)
     }
 
 }

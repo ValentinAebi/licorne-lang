@@ -21,11 +21,11 @@ object Test {
    }
 
    fn test3_wrong(i: I) {
-      bar(i, new A())         //> E : first argument of call to bar: expected I with it.m(), found i : I
+      bar(i, A())         //> E : first argument of call to bar: expected I with it.m(), found i : I
    }
 
    fn test3_ok(i: I) {
-      bar(i!!, new A())       // OK
+      bar(i!!, A())       // OK
    }
 
 }

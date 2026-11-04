@@ -15,34 +15,34 @@ datatype LList[+T] : ImmutSeq[T] {
         panic "out of bounds"
     }
 
-    fn map[U](f: fn (T) -> U) -> LList[U] {
-        var rev = new Nil()
+    fn map[U](f: (T) -> U) -> LList[U] {
+        var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
-            rev = new Cons(head = f(ls.head()), tail = rev)
+            rev = Cons(f(ls.head()), rev)
         }
         return rev.reversed()
     }
 
-    fn filter(pred: pure fn (T) -> Bool) -> LList[T with pred(it)] {
-        var rev = new Nil()
+    fn filter(pred: pure (T) -> Bool) -> LList[T with pred(it)] {
+        var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             if (pred(ls.head())) {
-                rev = new Cons(head = ls.head(), tail = rev)
+                rev = Cons(ls.head(), rev)
             }
         }
         return rev.reversed()
     }
 
-    fn foreach(action: fn (T) -> Unit) {
+    fn foreach(action: (T) -> Unit) {
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             action(ls.head())
         }
     }
 
     pure fn reversed() -> LList[T] {
-        var res = new Nil()
+        var res = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
-            res = new Cons(head = ls.head(), tail = res)
+            res = Cons(ls.head(), res)
         }
         return res
     }
@@ -61,9 +61,9 @@ record Nil : LList[Nothing] {
 object LLists {
 
     fn listFromArray[T](a: Array[T]) -> LList[T] with it.size() == a.size() {
-        var ls = new Nil()
+        var ls = Nil()
         for (var i = a.size() - 1; i >= 0; i -= 1) {
-            ls = new Cons(head = a.get(i), tail = ls)
+            ls = Cons(a.get(i), ls)
         }
         return ls!!
     }
