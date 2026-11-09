@@ -1,0 +1,5 @@
+
+record Foo(     //> E : initializer of field b has type Int, which does not conform to its declared type [0..]
+    a: Int,
+    b: [0..] = a
+)

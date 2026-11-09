@@ -81,7 +81,7 @@ final class DeclarationsChecker(
         val fieldType = tSig.constructorParams.get(fieldId).orElse(tSig.encapsulatedFields.get(fieldId)).get.tpe
         val initializerType = tSig.sigScope.getCurrentTypeOf(fieldInitVal)(using proxyStore, simplifier)
         val isSubtype = subtypingCtx.enforceIsSubtype(fieldInitVal, initializerType, fieldType,
-          s"initializer of field $fieldId does not conform to its declared type $fieldType", tSig.sigScope, tSig.declPosOpt)(using summon[TypeParamsContext], typer)
+          s"initializer of field $fieldId has type $initializerType, which does not conform to its declared type $fieldType", tSig.sigScope, tSig.declPosOpt)(using summon[TypeParamsContext], typer)
         tSig.encapsulatedFields.get(fieldId).foreach { encapsulatedField =>
           if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) && encapsulatedField.isStable) {
             val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
