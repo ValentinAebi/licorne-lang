@@ -2,7 +2,7 @@
 class Foo {
     val bar = 0
 
-    fn func() {
+    fun func() {
         if (bar == 0) {
             println("yes")
         } else {

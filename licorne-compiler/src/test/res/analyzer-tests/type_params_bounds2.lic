@@ -8,7 +8,7 @@ record R[A, B sub A](a: A, b: B)
 
 object Test {
 
-   fn testF(animal: Animal, dog: Dog) -> Unit {
+   fun testF(animal: Animal, dog: Dog) -> Unit {
       R(animal, dog)
       R(dog, animal)  //> E : type variable B has been resolved to type Animal, which violates its upper bound Dog
    }

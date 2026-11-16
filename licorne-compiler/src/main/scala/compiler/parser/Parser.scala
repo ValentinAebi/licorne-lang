@@ -217,7 +217,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
       case _ => false
     }
 
-    opt(kw(Private, Open)) ::: opt(kw(Pure)) ::: kw(Fn).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
+    opt(kw(Private, Open)) ::: opt(kw(Pure)) ::: kw(Fun).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: concreteExpr) ::: closeParenth
       ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: concreteExpr) map {
       case optModif ^: optPure ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
@@ -682,7 +682,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private def fieldsRecoveryStrategy(tok: Token): Boolean = statRecoveryStrategy(tok) || tok.isKeyword(Val, Var)
 
   private def topLevelRecoveryStrategy(tok: Token): Boolean =
-    tok.isKeyword(Package, Import, Typealias, Class, Object, Interface, Record, Datatype, Fn, Pure, Private, Open)
+    tok.isKeyword(Package, Import, Typealias, Class, Object, Interface, Record, Datatype, Fun, Pure, Private, Open)
 
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input

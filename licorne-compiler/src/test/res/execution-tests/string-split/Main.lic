@@ -1,7 +1,7 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val s = "This is a 5-words sentence"
         val words = s.split(' ')
         for (var i = 0; i < words.size(); i += 1) {

@@ -1,7 +1,7 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val s = "This is a sentence."
         val i = s.indexOf("is")
         println(i)

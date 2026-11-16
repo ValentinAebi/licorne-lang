@@ -1,7 +1,7 @@
 
 object Test {
 
-    fn test(t: [0..]) {
+    fun test(t: [0..]) {
         var a = 0
         var b = 0
         while (a < t) {
@@ -13,7 +13,7 @@ object Test {
         }
     }
 
-    private fn foo(x: Int, y: Int where x <= y) {}
-    private fn bar(x: Int, y: Int where x < y) {}
+    private fun foo(x: Int, y: Int where x <= y) {}
+    private fun bar(x: Int, y: Int where x < y) {}
 
 }

@@ -3,7 +3,7 @@ typealias AtLeast(i: Int) = [i..]
 
 object Main {
 
-   pure fn clamp(x: Int, min: Int, max: [min..]) -> [min..max] {
+   pure fun clamp(x: Int, min: Int, max: [min..]) -> [min..max] {
       return (
         if (x < min) min
         else if (x < max) x
@@ -11,15 +11,15 @@ object Main {
       )
    }
 
-   fn foo(a: Int, x: AtLeast(a)) -> String {
+   fun foo(a: Int, x: AtLeast(a)) -> String {
       return clamp(x, 0, 10)    //> E : return value: expected licorne.core.String, found Main.clamp(x,0,10) : [0..10]
    }
 
-   fn bar() {
+   fun bar() {
       foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found "Hello" : licorne.core.StringL(5)
    }
 
-   fn abc(ls: List[Bool]) {
+   fun abc(ls: List[Bool]) {
       ls.indexOf(true) : String     //> E : type ascription: expected licorne.core.String, found ls.indexOf(true) : Idx[Bool](ls)
    }
 
@@ -29,6 +29,6 @@ typealias Length = AtLeast(0)
 typealias Idx[T](ls: List[T]) = [0 ..< ls.size()]
 
 interface List[T] {
-   pure fn size() -> Length
-   pure fn indexOf(elem: T) -> Idx(this)
+   pure fun size() -> Length
+   pure fun indexOf(elem: T) -> Idx(this)
 }

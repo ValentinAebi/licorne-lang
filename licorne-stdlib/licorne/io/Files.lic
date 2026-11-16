@@ -5,10 +5,10 @@ import licorne.collections.LLists
 
 object Files {
 
-    fn readAllLines(path: String) -> LList[String] =
+    fun readAllLines(path: String) -> LList[String] =
         LLists.listFromArray(FilePrimitives.readAllLines(path))
 
-    fn write(path: String, content: String) {
+    fun write(path: String, content: String) {
         FilePrimitives.writeFile(path, content)
     }
 

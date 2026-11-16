@@ -1,12 +1,12 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val sum = sumUpTo(10)
         println(sum)
     }
 
-    fn sumUpTo(n: [0..]) -> [0..] {
+    fun sumUpTo(n: [0..]) -> [0..] {
         var s = 0
         for (var i = 1; i <= n; i += 1) {
             s += i

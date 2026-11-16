@@ -1,13 +1,13 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val array = Array(1){ 100 }
         printElemUnsafe(array, 0)   // correct, prints 100
         printElemUnsafe(array, 10)  //>STACKTRACE
     }
 
-    private fn printElemUnsafe(xs: Array[Int], i: Int) {
+    private fun printElemUnsafe(xs: Array[Int], i: Int) {
         require(0 <= i && i < xs.size(), "not a valid index")
         println(xs.get(i))
     }

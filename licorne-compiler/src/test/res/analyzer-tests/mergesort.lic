@@ -6,7 +6,7 @@ typealias ArrayOfLen[T](len: Length) = Array[T] with it.length() == len
 
 object MergeSort {
 
-    fn sort[T](array: Array[T], lessThan: (T,T) -> Bool) {
+    fun sort[T](array: Array[T], lessThan: (T,T) -> Bool) {
         if (array.length() == 0) {
             return
         }
@@ -14,7 +14,7 @@ object MergeSort {
         doSort(array, tmpArray, lessThan, 0, array.length() - 1)
     }
 
-    private fn doSort[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
+    private fun doSort[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
                          lt: (T,T) -> Bool, left: Idx(array), right: Idx(array)) {
         if (left < right) {
             val mid = (left + right) / 2
@@ -24,7 +24,7 @@ object MergeSort {
         }
     }
 
-    private fn merge[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
+    private fun merge[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
                         lt: (T,T) -> Bool, left: Idx(array), mid: Idx(array), right: Idx(array) & [left..]) {
         var i = left
         var j = mid + 1
@@ -55,11 +55,11 @@ typealias Pos[T](arr: Array[T]) = [0 .. arr.length()]
 
 class Array[T](public length: Length) {
 
-    fn get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(i: Idx(this), value: T) {
+    fun set(i: Idx(this), value: T) {
         panic "compile to bytecode xASTORE"
     }
 
@@ -67,7 +67,7 @@ class Array[T](public length: Length) {
 
 object ArrayUtils {
 
-    fn arrayCopy[S, D super S](src: Array[S], srcStart: Idx(src),
+    fun arrayCopy[S, D super S](src: Array[S], srcStart: Idx(src),
                                dst: Array[D], dstStart: Idx(dst),
                                len: Length where srcStart + len <= src.length() && dstStart + len <= dst.length()) {
         for (var i = 0; i < len; i += 1) {

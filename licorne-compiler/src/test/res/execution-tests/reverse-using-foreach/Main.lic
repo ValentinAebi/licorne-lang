@@ -4,12 +4,12 @@ import licorne.collections.Nil
 
 object Main {
 
-    fn main() {
+    fun main() {
         val ls = reverse(Cons(1, Cons(2, Nil())))
         println((ls as Cons).head())
     }
 
-    private fn reverse[T](ls: LList[T]) -> LList[T] {
+    private fun reverse[T](ls: LList[T]) -> LList[T] {
         var res: LList[T] = Nil()
         ls.foreach {
             res = Cons(it, res)

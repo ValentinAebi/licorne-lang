@@ -1,7 +1,7 @@
 
 object Test {
 
-    fn iterate[T](arr: Array[T], start: [0..], inc: [0..], f: (T) -> Unit) {
+    fun iterate[T](arr: Array[T], start: [0..], inc: [0..], f: (T) -> Unit) {
         for (var i = start; i < arr.length(); i += inc) {
             f(arr.at(i))
         }
@@ -13,6 +13,6 @@ typealias Length = [0..]
 typealias Idx[T](a: Array[T]) = [0 ..< a.length()]
 
 interface Array[T] {
-    pure fn length() -> Length
-    fn at(i: Idx(this)) -> T
+    pure fun length() -> Length
+    fun at(i: Idx(this)) -> T
 }

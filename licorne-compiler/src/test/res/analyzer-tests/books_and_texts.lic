@@ -7,7 +7,7 @@ typealias Cnt = [0..]
 typealias PageNumber(b: Book) = [1 .. b.pagesCnt()]
 
 object Example {
-    fn main() {
+    fun main() {
         val book = Book(
             "Modern Graph Theory",
             "Béla Bollobás",
@@ -20,7 +20,7 @@ object Example {
 }
 
 interface Text {
-    pure fn title() -> String
+    pure fun title() -> String
 }
 
 class Book(
@@ -30,17 +30,17 @@ class Book(
     var currPage: PageNumber(this)?
 ) : Text {
 
-    fn openAtPage(p: PageNumber(this)) {
+    fun openAtPage(p: PageNumber(this)) {
         currPage = p
     }
 
-    fn close() {
+    fun close() {
         currPage = null
     }
 
-    fn currentPage() -> PageNumber(this)? = currPage
+    fun currentPage() -> PageNumber(this)? = currPage
 
-    fn isClosed() -> Bool =
+    fun isClosed() -> Bool =
         currentPage() == null
 }
 
@@ -52,7 +52,7 @@ record InternetPage(
 ) : Text
 
 object InternetPages {
-    pure fn isValidUrl(s: String) -> Bool {
+    pure fun isValidUrl(s: String) -> Bool {
         panic "not implemented..."
     }
 }

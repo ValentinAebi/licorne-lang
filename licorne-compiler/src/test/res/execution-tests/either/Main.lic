@@ -2,14 +2,14 @@ import Eithers.*
 
 object Main {
 
-    fn main() {
+    fun main() {
         val x = left(Dog())
         val y = right(Car())
         display(x)
         display(y)
     }
 
-    private fn display(e: Either[Animal, Car]) {
+    private fun display(e: Either[Animal, Car]) {
         if (e is Left) {
             println(e.l().speak().toUpperCase())
         } else {

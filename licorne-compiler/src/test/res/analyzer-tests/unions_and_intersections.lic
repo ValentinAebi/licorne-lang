@@ -1,7 +1,7 @@
 
 object Test {
 
-   fn foo(i: [0..]) {
+   fun foo(i: [0..]) {
       if (i < 10) {
          i : [0..9]
          i : [0..] & [..9]

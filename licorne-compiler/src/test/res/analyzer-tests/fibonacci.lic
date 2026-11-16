@@ -3,7 +3,7 @@ typealias Nat = [0..]
 
 object Fibonacci {
 
-    fn fibonacci(n: Nat) -> [0..] & [n..] {
+    fun fibonacci(n: Nat) -> [0..] & [n..] {
         if (n <= 1) {
             return n
         } else {

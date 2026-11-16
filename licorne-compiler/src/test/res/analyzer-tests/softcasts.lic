@@ -1,39 +1,39 @@
 
 object Test {
 
-   fn foo(a: Int, b: [0..9]){}
-   fn bar(i: I with it.m(), a: A){}
+   fun foo(a: Int, b: [0..9]){}
+   fun bar(i: I with it.m(), a: A){}
 
-   fn test1_wrong(x: Int, y: Int) {
+   fun test1_wrong(x: Int, y: Int) {
       foo(x, y)      //> E : second argument of call to foo: expected [0..9], found y : Int
    }
 
-   fn test1_ok(x: Int, y: Int) {
+   fun test1_ok(x: Int, y: Int) {
       foo(x, y!!)    // OK
    }
 
-   fn test2_wrong(x: Int?) {
+   fun test2_wrong(x: Int?) {
       foo(x, 0)      //> E : first argument of call to foo: expected Int, found x : Int?
    }
 
-   fn test2_ok(x: Int?) {
+   fun test2_ok(x: Int?) {
       foo(x!!, 0)    // OK
    }
 
-   fn test3_wrong(i: I) {
+   fun test3_wrong(i: I) {
       bar(i, A())         //> E : first argument of call to bar: expected I with it.m(), found i : I
    }
 
-   fn test3_ok(i: I) {
+   fun test3_ok(i: I) {
       bar(i!!, A())       // OK
    }
 
 }
 
 interface I {
-   pure fn m() -> Bool
+   pure fun m() -> Bool
 }
 
 class A : I {
-   pure fn m() -> Bool = false
+   pure fun m() -> Bool = false
 }

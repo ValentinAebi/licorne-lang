@@ -4,7 +4,7 @@ import licorne.collections.LLists.listFromArray
 
 object Main {
 
-    fn main() {
+    fun main() {
         val array = Array[[0..]](10) { 0 }
         for (var i = 0; i < 10; i += 1) {
             array.set(i, 2*i)

@@ -3,7 +3,7 @@ import Lists.*
 
 object FilterLess {
 
-    fn filterLessThan_adHoc_correct(a: Int, var ls: List[Int]) -> List[[..<a]] {
+    fun filterLessThan_adHoc_correct(a: Int, var ls: List[Int]) -> List[[..<a]] {
         var filteredReversed = Nil()
         while (ls is Cons) {
             if (ls.first() < a) {
@@ -14,7 +14,7 @@ object FilterLess {
         return reverse(filteredReversed)
     }
 
-    fn filterLessThan_adHoc_buggy(a: Int, var ls: List[Int]) -> List[[..<a]] {
+    fun filterLessThan_adHoc_buggy(a: Int, var ls: List[Int]) -> List[[..<a]] {
         var filteredReversed = Nil()
         while (ls is Cons) {
             if (ls.first() <= a) {  // ERROR: should be <
@@ -25,10 +25,10 @@ object FilterLess {
         return reverse(filteredReversed)
     }
 
-    fn filterLessThan_functional_correct(a: Int, ls: List[Int]) -> List[[..<a]] =
+    fun filterLessThan_functional_correct(a: Int, ls: List[Int]) -> List[[..<a]] =
         filter(ls) { it < a }
 
-    fn filterLessThan_functional_buggy(a: Int, ls: List[Int]) -> List[[..<a]] =
+    fun filterLessThan_functional_buggy(a: Int, ls: List[Int]) -> List[[..<a]] =
         filter(ls) { it <= a }  // ERROR: should be elem < a    //> E : return value: expected List[[..<a]], found List[[..a]]
 
 }
@@ -39,7 +39,7 @@ record Nil() : List[Nothing]
 
 object Lists {
 
-    fn map[T, U](ls: List[T], f: (T) -> U) -> List[U] {
+    fun map[T, U](ls: List[T], f: (T) -> U) -> List[U] {
         var resultReversed = Nil()
         for (var rem = ls; rem is Cons; rem = rem.rest()) {
             resultReversed = Cons(f(rem.first()), resultReversed)
@@ -47,7 +47,7 @@ object Lists {
         return reverse(resultReversed)
     }
 
-    fn filter[T](ls: List[T], p: pure (T) -> Bool) -> List[T with p(it)] {
+    fun filter[T](ls: List[T], p: pure (T) -> Bool) -> List[T with p(it)] {
         var filteredReversed = Nil()
         for (var rem = ls; rem is Cons; rem = rem.rest()) {
             if (p(rem.first())) {
@@ -57,7 +57,7 @@ object Lists {
         return reverse(filteredReversed)
     }
 
-    fn reverse[T](ls: List[T]) -> List[T] {
+    fun reverse[T](ls: List[T]) -> List[T] {
         var rev = Nil()
         for (var rem = ls; rem is Cons; rem = rem.rest()) {
             rev = Cons(rem.first(), rev)

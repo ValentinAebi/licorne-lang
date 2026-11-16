@@ -3,7 +3,7 @@ typealias Nat = [0..]
 
 object Test {
 
-   fn transitivity(i: [0..], j: [0..], k: [0..]) {
+   fun transitivity(i: [0..], j: [0..], k: [0..]) {
       if (i != j) {
          return
       }
@@ -14,7 +14,7 @@ object Test {
       }
    }
 
-   fn congruence(a: Int, b: Int) -> [1..] {
+   fun congruence(a: Int, b: Int) -> [1..] {
       if (foo(a) > 0 && a == b) {
          return foo(b)   // OK
       } else if (foo(a) > 10) {
@@ -24,23 +24,23 @@ object Test {
       }
    }
 
-   pure fn foo(x: Int) -> Int = x * x + 1
+   pure fun foo(x: Int) -> Int = x * x + 1
 
-   fn eClassMergeAfter(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeAfter(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if (x < b && y >= a && x == y) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }
       panic "error"
    }
 
-   fn eClassMergeBefore(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeBefore(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if (x == y && x < b && y >= a) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }
       panic "error"
    }
 
-   fn eClassMergeInBetween(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeInBetween(a: Int, b: Int, x: Int, y: Int) -> Nothing {
       if (x < b && x == y && y >= a) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }

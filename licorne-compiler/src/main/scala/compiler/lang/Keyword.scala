@@ -7,7 +7,7 @@ enum Keyword(val str: String) {
   case Constructor extends Keyword("constructor")   // do not remove, useful to prevent users from using it as an identifier
   case Datatype extends Keyword("datatype")
   case Else extends Keyword("else")
-  case Fn extends Keyword("fn")
+  case Fun extends Keyword("fun")
   case For extends Keyword("for")
   case If extends Keyword("if")
   case It extends Keyword("it")

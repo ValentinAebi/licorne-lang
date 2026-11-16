@@ -7,17 +7,17 @@ class Car(
     var seats: [0..]
 ) {
 
-    fn setYear(year: CarAcceptableYears) {
+    fun setYear(year: CarAcceptableYears) {
         this.year = year
     }
 
-    fn getYear() -> CarAcceptableYears = year
+    fun getYear() -> CarAcceptableYears = year
 
 }
 
 object Cars {
 
-    fn newCarWithDefaultValues() -> Car {
+    fun newCarWithDefaultValues() -> Car {
         return Car(2026, 5)
     }
 
@@ -25,9 +25,9 @@ object Cars {
 
 object Test {
 
-    fn getYear() -> [2021..] = 2024
+    fun getYear() -> [2021..] = 2024
 
-    fn test_correct() {
+    fun test_correct() {
         val a = 1998
         val c = Cars.newCarWithDefaultValues()
         c.setYear(a)
@@ -36,7 +36,7 @@ object Test {
         val k: [2021..] = getYear()
     }
 
-    fn test_buggy() {
+    fun test_buggy() {
         val a = 998
         val c = Cars.newCarWithDefaultValues()
         c.setYear(a)        //> E : first argument of call to setYear: expected CarAcceptableYears, found a : [998..998]

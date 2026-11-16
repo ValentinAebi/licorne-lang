@@ -1,6 +1,6 @@
 
 interface Animal[Food] {
-   fn eat(food: Food)
+   fun eat(food: Food)
 }
 
 interface Reptile[Food] : Animal[Food]
@@ -8,7 +8,7 @@ interface ReptileEatingInsects : Reptile[List[Insect]]
 interface Lizard : ReptileEatingInsects
 
 class Glasworm : Lizard {
-   fn eat(insects: List[Insect]){
+   fun eat(insects: List[Insect]){
       // ...
    }
 }
@@ -17,16 +17,16 @@ class Insect
 
 object Main {
 
-   fn main() {
+   fun main() {
       feed1(Glasworm(), Insect())
       feed2(Glasworm(), Insect())
    }
 
-   private fn feed1(lizard: Lizard, insect: Insect){
+   private fun feed1(lizard: Lizard, insect: Insect){
       lizard.eat(insect)   //> E : first argument of call to eat: expected List[Insect], found insect : Insect
    }
 
-   private fn feed2(lizard: Lizard, insect: Insect){
+   private fun feed2(lizard: Lizard, insect: Insect){
       lizard.eat(Cons(insect, Nil()))
    }
 

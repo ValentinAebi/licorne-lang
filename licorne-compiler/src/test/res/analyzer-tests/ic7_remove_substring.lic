@@ -7,7 +7,7 @@ typealias Length = [0..]
 
 object IC7 {
 
-    fn removeSubstring_correct_1(original: String, removed: String) -> String {
+    fun removeSubstring_correct_1(original: String, removed: String) -> String {
         val i = indexOf(original, removed)
         if (i != -1) {    // checking using !=
             return concat(
@@ -18,7 +18,7 @@ object IC7 {
         return original
     }
 
-    fn removeSubstring_correct_2(original: String, removed: String) -> String {
+    fun removeSubstring_correct_2(original: String, removed: String) -> String {
         val i = indexOf(original, removed)
         if (i > -1) {      // <- checking using >
             return concat(
@@ -29,7 +29,7 @@ object IC7 {
         return original
     }
 
-    fn removeSubstring_buggy(original: String, removed: String) -> String {
+    fun removeSubstring_buggy(original: String, removed: String) -> String {
         val i = indexOf(original, removed)
         // ERROR: missing check for i == -1
         return concat(
@@ -39,7 +39,7 @@ object IC7 {
     }
 
     // alternative using explicit precondition
-    fn removeSubstring_precond(original: String, removed: String) -> String {
+    fun removeSubstring_precond(original: String, removed: String) -> String {
         val i = indexOf(original, removed)
         if (i != -1) {
             return concat(
@@ -57,19 +57,19 @@ typealias StringOfLen(len: Length) = String with length(it) == len
 
 object StringOpsPlaceholder {
 
-    pure fn length(s: String) -> Length {
+    pure fun length(s: String) -> Length {
         panic "not implemented"
     }
 
-    fn indexOf(s: String, target: String) -> [-1 ..< length(s) - length(target)] {
+    fun indexOf(s: String, target: String) -> [-1 ..< length(s) - length(target)] {
         panic "not implemented"
     }
 
-    fn substring(s: String, from: Position(s), end: Position(s) & [from..]) -> StringOfLen(end - from) {
+    fun substring(s: String, from: Position(s), end: Position(s) & [from..]) -> StringOfLen(end - from) {
         panic "not implemented"
     }
 
-    fn concat(s1: String, s2: String) -> StringOfLen(length(s1) + length(s2)) {
+    fun concat(s1: String, s2: String) -> StringOfLen(length(s1) + length(s2)) {
         panic "not implemented"
     }
 

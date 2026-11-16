@@ -1,12 +1,12 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val cat = mkAnimal(false)
         cat.meow()
     }
 
-    private fn mkAnimal(trueIfDog: Bool) -> if (trueIfDog) Dog else Cat =
+    private fun mkAnimal(trueIfDog: Bool) -> if (trueIfDog) Dog else Cat =
         if (trueIfDog) Dog() else Cat()
 
 }
@@ -14,7 +14,7 @@ object Main {
 interface Animal
 class Dog : Animal
 class Cat : Animal {
-    fn meow() {
+    fun meow() {
         println("Meow!")
     }
 }

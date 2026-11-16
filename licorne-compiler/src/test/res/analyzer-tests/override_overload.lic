@@ -1,9 +1,9 @@
 
 interface I {
-    fn func(i: Int)
-    fn func(i: Int, j: Int)
+    fun func(i: Int)
+    fun func(i: Int, j: Int)
 }
 
 class A : I {   //> E : A does not implement method func(#1) declared in its supertype I
-    fn func(i: Int, j: Int){}
+    fun func(i: Int, j: Int){}
 }

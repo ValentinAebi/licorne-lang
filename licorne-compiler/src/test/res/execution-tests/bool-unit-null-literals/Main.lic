@@ -1,13 +1,13 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         takeAnimal(Tiger())
         takeAnimal(Dolphin())
         return unit
     }
 
-    private fn takeAnimal(a: Animal) {
+    private fun takeAnimal(a: Animal) {
         val descr = describe(a)
         if (descr == null) {
             println()
@@ -18,10 +18,10 @@ object Main {
         return u
     }
 
-    private fn describe(a: Animal) -> String? =
+    private fun describe(a: Animal) -> String? =
         if (a.isMarine()) "marine" else null
 
-    private fn display(s: String) {
+    private fun display(s: String) {
         println(s)
         return   // implicit unit literal
     }
@@ -29,13 +29,13 @@ object Main {
 }
 
 interface Animal {
-    fn isMarine() -> Bool
+    fun isMarine() -> Bool
 }
 
 class Tiger : Animal {
-    fn isMarine() -> Bool = false
+    fun isMarine() -> Bool = false
 }
 
 class Dolphin : Animal {
-    fn isMarine() -> Bool = true
+    fun isMarine() -> Bool = true
 }

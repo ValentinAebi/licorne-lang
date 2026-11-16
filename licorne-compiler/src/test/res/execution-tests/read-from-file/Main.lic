@@ -3,7 +3,7 @@ import licorne.core.Assertions.assert
 
 object Main {
 
-    fn main() {
+    fun main() {
         val lines = readAllLines("../file-to-read.txt")
         assert(lines.size() == 4)
         println(lines.get(3))

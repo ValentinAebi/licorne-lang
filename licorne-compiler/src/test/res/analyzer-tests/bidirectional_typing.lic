@@ -1,11 +1,11 @@
 
 class MutableStack[T] {
 
-   fn push(t: T) {
+   fun push(t: T) {
       panic "not implemented"
    }
 
-   fn pop() -> T {
+   fun pop() -> T {
       panic "not implemented"
    }
 
@@ -13,19 +13,19 @@ class MutableStack[T] {
 
 object Test {
 
-   fn m1() {
+   fun m1() {
       val stack = MutableStack()
       stack.push(42)         // OK, resolve the type variable to Int
       stack.push("Hi")       //> E : first argument of call to push: expected Int, found "Hi" : licorne.core.StringL(2)
    }
 
-   fn m2() {
+   fun m2() {
       val stack = MutableStack[String]()
       stack.push(42)         //> E : first argument of call to push: expected licorne.core.String, found 42
       stack.push("Hi")       // OK
    }
 
-   fn m3(x: Int) -> [0..] {
+   fun m3(x: Int) -> [0..] {
       val stack = MutableStack()
       stack.push(if (x >= 0) x else null)   //> E : first argument of call to push: expected [0..], found [0..]?
       return stack.pop()

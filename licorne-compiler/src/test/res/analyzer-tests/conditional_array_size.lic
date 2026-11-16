@@ -1,7 +1,7 @@
 
 object Main {
 
-    private fn foo(b: Bool, sz: [0..]) {
+    private fun foo(b: Bool, sz: [0..]) {
         var array = Array(sz){ 0 }
         if b {
             array = Array(2*array.size()){ 0 }

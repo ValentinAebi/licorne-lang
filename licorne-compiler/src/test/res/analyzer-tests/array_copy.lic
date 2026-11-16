@@ -6,23 +6,23 @@ typealias Length = [0..]
 typealias Idx[T](array: Seq[T]) = [0 ..< array.length()]
 
 interface Seq[T] {
-   pure fn length() -> Length
+   pure fun length() -> Length
 }
 
 class Array[T](public length: Length) : Seq[T] {
 
-   fn at(i: Idx(this)) -> T {
+   fun at(i: Idx(this)) -> T {
       panic "not implemented"
    }
 
-   fn set(i: Idx(this), value: T) {
+   fun set(i: Idx(this), value: T) {
       panic "not implemented"
    }
 }
 
 object ArrayCopy {
 
-   fn copy1[T](xs: Array[T]) -> Array[T] {
+   fun copy1[T](xs: Array[T]) -> Array[T] {
       val length = xs.length()
       val copy = Array(length)
       for (var i = 0; i < length; i += 1) {
@@ -32,7 +32,7 @@ object ArrayCopy {
       return copy
    }
 
-   fn copy2[T](xs: Array[T]) -> Array[T] {
+   fun copy2[T](xs: Array[T]) -> Array[T] {
       val copy = Array(xs.length())
       for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i)
@@ -41,7 +41,7 @@ object ArrayCopy {
       return copy
    }
 
-   fn copy3[T](xs: Array[T]) -> Array[T] {
+   fun copy3[T](xs: Array[T]) -> Array[T] {
       val copy = Array(xs.length())
       for (var i = 0; i < copy.length(); i += 1) {
          val t = xs.at(i)
@@ -50,7 +50,7 @@ object ArrayCopy {
       return copy
    }
 
-   fn copyWrong[T](xs: Array[T]) -> Array[T] {
+   fun copyWrong[T](xs: Array[T]) -> Array[T] {
       val copy = Array(xs.length() / 2)
       for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i)
@@ -59,7 +59,7 @@ object ArrayCopy {
       return copy
    }
 
-   fn copyOversized[T](xs: Array[T]) -> Array[T] {
+   fun copyOversized[T](xs: Array[T]) -> Array[T] {
       val copy = Array(xs.length() + 100)
       for (var i = 0; i < xs.length(); i += 1) {
          val t = xs.at(i)

@@ -1,13 +1,13 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val one = 1
         val five = 5
         val r = foo { x -> x*x + five*x + one }
         println(r)
     }
 
-    private fn foo(f: (Int) -> Int) -> Int = f(2)
+    private fun foo(f: (Int) -> Int) -> Int = f(2)
 
 }

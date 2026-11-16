@@ -2,17 +2,17 @@ import licorne.io.Console
 
 object Main {
 
-    fn main() {
+    fun main() {
         val obj = null
         foo(obj)     //>STACKTRACE
     }
 
-    private fn foo(x: String?) {
+    private fun foo(x: String?) {
         val s = x!!  //>STACKTRACE
         println(s)
     }
 
-    private fn println(s: String) {
+    private fun println(s: String) {
         Console.println(s)
     }
 

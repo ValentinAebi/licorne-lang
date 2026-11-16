@@ -1,7 +1,7 @@
 
 object Test {
 
-   fn test(){
+   fun test(){
       val x = 0
       val y = x as Int    // OK
       val z = x as Bool   //> E : impossible conversion: Int to Bool

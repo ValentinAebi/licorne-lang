@@ -1,12 +1,12 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val a = genArray(315)
         println(sum(a))
     }
 
-    private fn sum(xs: Array[[0..]]) -> [0..] {
+    private fun sum(xs: Array[[0..]]) -> [0..] {
         var s = 0
         for (var i = 0; i < xs.size(); i += 1) {
             s += xs.get(i)
@@ -14,7 +14,7 @@ object Main {
         return s
     }
 
-    private fn genArray(size: Cnt) -> Array[[0..]] {
+    private fun genArray(size: Cnt) -> Array[[0..]] {
         val array = Array(size) { 0 }
         for (var i = 0; i < size; i += 1) {
             array.set(i, relu(foo(i)))
@@ -22,10 +22,10 @@ object Main {
         return array
     }
 
-    private pure fn relu(x: Int) -> [0..] =
+    private pure fun relu(x: Int) -> [0..] =
         if (x < 0) 0 else x
 
-    private pure fn foo(i: Int) -> Int =
+    private pure fun foo(i: Int) -> Int =
         (2*i + 1) % 256 + (3*i*i - 4*i - 2) % 512
 
 }

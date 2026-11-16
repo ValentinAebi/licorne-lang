@@ -1,4 +1,4 @@
 
 interface Seq[+T] {
-   fn filter(pred: (T) -> Bool) -> Seq[T with pred(it)]     //> E : I cannot prove that predicate pred(it) is pure
+   fun filter(pred: (T) -> Bool) -> Seq[T with pred(it)]     //> E : I cannot prove that predicate pred(it) is pure
 }

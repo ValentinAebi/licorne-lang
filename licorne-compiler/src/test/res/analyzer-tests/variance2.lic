@@ -1,15 +1,15 @@
 
 interface Covariant[+T] {
-   fn accept(t: T)            //> E : variance error: covariant type parameter T in contravariant position
-   fn produce() -> T
+   fun accept(t: T)            //> E : variance error: covariant type parameter T in contravariant position
+   fun produce() -> T
 }
 
 interface Contravariant[-T] {
-   fn accept(t: T)
-   fn produce() -> T            //> E : variance error: contravariant type parameter T in covariant position
+   fun accept(t: T)
+   fun produce() -> T            //> E : variance error: contravariant type parameter T in covariant position
 }
 
 interface Invariant[T] {
-   fn accept(t: T)
-   fn produce() -> T
+   fun accept(t: T)
+   fun produce() -> T
 }

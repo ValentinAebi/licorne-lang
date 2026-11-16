@@ -2,11 +2,11 @@ package licorne.closures
 
 class HeapVar(var value: Any?) {
 
-    fn get() -> Any? {
+    fun get() -> Any? {
         return value
     }
 
-    fn set(newVal: Any?) {
+    fun set(newVal: Any?) {
         this.value = newVal
     }
 

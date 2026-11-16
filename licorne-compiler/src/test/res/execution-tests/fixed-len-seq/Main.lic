@@ -1,7 +1,7 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         val s1 = FixedLenSeq(5, 0)
         s1.set(1, 42)
         s1.set(2, 100)
@@ -13,11 +13,11 @@ object Main {
 class FixedLenSeq[T](public size: Cnt, defaultElem: T) : Indexable {
     val array = Array(size) { defaultElem }
 
-    fn set(i: Idx(this), elem: T) {
+    fun set(i: Idx(this), elem: T) {
         array.set(i, elem)
     }
 
-    fn get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)) -> T {
         return array.get(i)
     }
 }

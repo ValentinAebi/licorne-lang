@@ -2,20 +2,20 @@ package licorne.io
 
 object Console {
 
-    fn print(o: Any?) {
+    fun print(o: Any?) {
         panic "compiler stub"
     }
 
-    fn println() {
+    fun println() {
         print("\n")
     }
 
-    fn println(o: Any?) {
+    fun println(o: Any?) {
         print(o)
         println()
     }
 
-    fn readLine() -> String {
+    fun readLine() -> String {
         panic "compiler stub"
     }
 

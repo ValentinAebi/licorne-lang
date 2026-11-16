@@ -1,33 +1,33 @@
 
 object Main {
 
-   fn m1(obj: I?) {
+   fun m1(obj: I?) {
       if (obj != null) {
          obj.m(10)          // OK
       }
    }
 
-   fn m2(obj: I?) {
+   fun m2(obj: I?) {
       obj.m(25)             //> E : receiver of call to m: expected I, found obj : I?
    }
 
-   fn m3(obj: I) {
+   fun m3(obj: I) {
       obj.m(25)             // OK
    }
 
-   fn m4(var obj: I?) {
+   fun m4(var obj: I?) {
       while (obj != null) {
          obj = obj.m(0)  // OK
          obj.m(99)       //> E : receiver of call to m: expected I, found obj : I?
       }
    }
 
-   fn foo(x: Int, obj: I) -> I {
+   fun foo(x: Int, obj: I) -> I {
       val res = if (x < 0) null else obj
       return res         //> E : return value: expected I, found res : I?
    }
 
-   fn bar[T](b1: Box[T?], b2: Box[T]?) {
+   fun bar[T](b1: Box[T?], b2: Box[T]?) {
       consume(b1.value())          //> E : first argument of call to consume: expected Any, found b1.value() : T?
       consumeNullable(b1.value())  // OK
       consume(b2.value())          //> E : receiver of call to value: expected Box[T], found b2 : Box[T]? <//> E : first argument of call to consume: expected Any, found b2.value() : T
@@ -36,13 +36,13 @@ object Main {
       }
    }
 
-   fn consume(o: Any){}
-   fn consumeNullable(o: Any?){}
+   fun consume(o: Any){}
+   fun consumeNullable(o: Any?){}
 
 }
 
 interface I {
-   fn m(i: Int) -> I?
+   fun m(i: Int) -> I?
 }
 
 record Box[T](value: T)

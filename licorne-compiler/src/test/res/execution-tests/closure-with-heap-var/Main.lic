@@ -2,7 +2,7 @@ import licorne.collections.LLists.*
 
 object Main {
 
-    fn main() {
+    fun main() {
         val array = Array(5) { 0 }
         array.set(0, 7)
         array.set(1, 5)

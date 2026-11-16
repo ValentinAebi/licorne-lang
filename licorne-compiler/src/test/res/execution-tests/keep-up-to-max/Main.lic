@@ -2,13 +2,13 @@ import licorne.core.Arrays.toString
 
 object Main {
 
-    fn main(args: Array[String]) {
+    fun main(args: Array[String]) {
         val xs = Array(10) { if (it <= 3) it else 1 }
         println(toString(xs))
         println(toString(keepUpToMax(xs)))
     }
 
-    fn keepUpToMax(xs: Array[Int]) -> Array[Int] {
+    fun keepUpToMax(xs: Array[Int]) -> Array[Int] {
         if (xs.size() == 0) {
             return Array(0) { 0 }
         }

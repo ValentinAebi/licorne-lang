@@ -4,7 +4,7 @@ import licorne.collections.MutSeq
 
 object Main {
 
-    fn main() {
+    fun main() {
         val al1 = ArrayList()
         al1.add(25)
         al1.add(32)
@@ -24,7 +24,7 @@ object Main {
         }
     }
 
-    private fn foo(seq: MutSeq[Int with it % 3 == 0]) {
+    private fun foo(seq: MutSeq[Int with it % 3 == 0]) {
         seq.reverse()
         println(seq.get(0))
     }

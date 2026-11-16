@@ -4,23 +4,23 @@ typealias ReturnsWhen(cond: Bool) = if (cond) Unit else Nothing
 
 object Assertions {
 
-    fn assert(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
+    fun assert(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
         if (!cond) {
             panic mkErrorMsg("assertion failed", msg)
         }
     }
 
-    fn assert(cond: Bool) -> ReturnsWhen(cond) = assert(cond, null)
+    fun assert(cond: Bool) -> ReturnsWhen(cond) = assert(cond, null)
 
-    fn require(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
+    fun require(cond: Bool, msg: String?) -> ReturnsWhen(cond) {
         if (!cond) {
             panic mkErrorMsg("requirement failed", msg)
         }
     }
 
-    fn require(cond: Bool) -> ReturnsWhen(cond) = require(cond, null)
+    fun require(cond: Bool) -> ReturnsWhen(cond) = require(cond, null)
 
-    private fn mkErrorMsg(header: String, userMsg: String?) -> String =
+    private fun mkErrorMsg(header: String, userMsg: String?) -> String =
         header ++ (if (userMsg == null) "" else ": " ++ userMsg)
 
 }

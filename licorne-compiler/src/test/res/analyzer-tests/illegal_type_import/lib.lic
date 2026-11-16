@@ -9,7 +9,7 @@ private(example.lib) record Bar(i: Int) : J
 private record Wxyz(i: Int)
 
 object Lib {
-    fn useWxyz() {
+    fun useWxyz() {
         Wxyz(0)
     }
 }

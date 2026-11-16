@@ -2,9 +2,9 @@
 
 interface Map[K, V] {
 
-    fn get(k: K) -> V?
+    fun get(k: K) -> V?
 
-    fn put(k: K, v: V)
+    fun put(k: K, v: V)
 
 }
 
@@ -15,13 +15,13 @@ class ArrayMap[K sub Any, V sub Any](
     var currSize: [0 .. capacity()]
 ) : Map[K, V] {
 
-    pure fn capacity() -> Length =
+    pure fun capacity() -> Length =
         this.keys.size()
 
-    fn currentSize() -> [0 .. capacity()] =
+    fun currentSize() -> [0 .. capacity()] =
         this.currSize
 
-    fn get(k: K) -> V? {
+    fun get(k: K) -> V? {
         val idx = this.keys.indexOf(k);
         if (idx == null) {
             return null;
@@ -30,7 +30,7 @@ class ArrayMap[K sub Any, V sub Any](
         }
     }
 
-    fn put(k: K, v: V) -> Bool {
+    fun put(k: K, v: V) -> Bool {
         val preSize = currentSize();
         val canAdd = preSize < capacity();
         if canAdd {
@@ -48,7 +48,7 @@ class ArrayMap[K sub Any, V sub Any](
         return canAdd;
     }
 
-    fn remove(k: K) -> Bool {
+    fun remove(k: K) -> Bool {
         val preSize = currentSize();
         if (preSize > 0) {
             val idx = this.keys.indexOf(k);
@@ -67,30 +67,30 @@ class ArrayMap[K sub Any, V sub Any](
 
 object ArrayMaps {
 
-    fn newEmptyOfCapacity[K sub Any, V sub Any](capacity: Length) -> ArrayMap[K, V] =
+    fun newEmptyOfCapacity[K sub Any, V sub Any](capacity: Length) -> ArrayMap[K, V] =
         ArrayMap(Array(capacity), Array(capacity), 0);
 
 }
 
 interface OrderedCollection[T] {
 
-    pure fn size() -> Length
+    pure fun size() -> Length
 
-    fn get(i: Idx(this)) -> T
+    fun get(i: Idx(this)) -> T
 
 }
 
 class Array[T](public size: Length) : OrderedCollection[T] {
 
-    fn get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(i: Idx(this), value: T) {
+    fun set(i: Idx(this), value: T) {
         panic "compile to bytecode xASTORE"
     }
 
-    fn indexOf(t: T) -> Idx(this)? {
+    fun indexOf(t: T) -> Idx(this)? {
         for (var i = 0; i < size(); i += 1) {
             if (get(i) == t) {
                 return i;

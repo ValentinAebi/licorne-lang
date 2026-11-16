@@ -1,7 +1,7 @@
 
 object Test {
 
-   fn test(animal: Animal) {
+   fun test(animal: Animal) {
 
       ifDog[Unit](animal) { dog -> dog.woof() }
       ifDog[Unit](animal) { dog: Dog -> dog.woof() }
@@ -31,13 +31,13 @@ object Test {
 
    }
 
-   private fn ifDog[T](animal: Animal, action: (Dog) -> T) {
+   private fun ifDog[T](animal: Animal, action: (Dog) -> T) {
       if (animal is Dog) {
          action(animal)
       }
    }
 
-   private fn ifDogOrElse[T](animal: Animal, default: T, f: (Dog) -> T) -> T =
+   private fun ifDogOrElse[T](animal: Animal, default: T, f: (Dog) -> T) -> T =
       if (animal is Dog) f(animal)
       else default
 
@@ -47,14 +47,14 @@ interface Animal
 
 class Dog : Animal {
 
-   fn woof() {}
+   fun woof() {}
 
-   fn isHungry() -> Bool {
+   fun isHungry() -> Bool {
       return true
    }
 
    // returns true iff not hungry anymore
-   fn eat(food: Food) -> Bool {
+   fun eat(food: Food) -> Bool {
       // ...
       return false
    }

@@ -3,10 +3,10 @@ package licorne.collections
 
 interface MutSeq[T] : Collection[T] {
 
-    fn get(i: Int) -> T?
+    fun get(i: Int) -> T?
 
-    fn add(elem: T)
+    fun add(elem: T)
 
-    fn reverse()
+    fun reverse()
     
 }

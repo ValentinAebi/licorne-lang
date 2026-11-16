@@ -3,7 +3,7 @@ typealias Nat = [0..]
 
 object Fibonacci {
 
-    fn recursive(n: Nat) -> Nat {
+    fun recursive(n: Nat) -> Nat {
         if (n <= 1) {
             return n
         } else {
@@ -11,7 +11,7 @@ object Fibonacci {
         }
     }
 
-    fn iterative(n: Nat) -> Nat {
+    fun iterative(n: Nat) -> Nat {
         var curr = 0
         var next = 1
         for (var i = 0; i < n; i += 1) {

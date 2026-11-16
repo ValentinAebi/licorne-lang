@@ -18,7 +18,7 @@ class LexerTests {
   def tokenizationTest(): Unit = {
     val mockSourceCodeProvider = new SourceCodeProvider {
       override def lines: Try[Seq[String]] = Success(List(
-        "fn foo(x: Int): Bar = a(b(x))",
+        "fun foo(x: Int): Bar = a(b(x))",
         "val p: T = foo(42)",
         "val s = \"ba\"+'r'"
       ))
@@ -47,7 +47,7 @@ class LexerTests {
     val errorReporter = ErrorReporter(errorsCollector.addOne, failExit)
 
     val expectedTokSeq = List(
-      KeywordToken(Fn),
+      KeywordToken(Fun),
       SpaceToken,
       FirstLowercaseIdentifierToken("foo"),
       OperatorToken(OpeningParenthesis),

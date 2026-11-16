@@ -1,7 +1,7 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         // see the corresponding test in ExecutionTests for cases that work
         Foo(0, 1, 2)         //> E : method constructor(#3) not found in type Foo::companion
         Bar(0)               // OK

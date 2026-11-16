@@ -1,8 +1,8 @@
 
 interface Animal {
-    fn speak() -> String
+    fun speak() -> String
 }
 
 class Dog : Animal {
-    fn speak() -> String = "woof"
+    fun speak() -> String = "woof"
 }

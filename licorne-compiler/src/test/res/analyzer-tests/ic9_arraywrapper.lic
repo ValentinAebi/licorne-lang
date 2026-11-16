@@ -2,11 +2,11 @@
 
 object Client {
 
-    fn clearIndex1[T](a: ArrayWrapper[T?], i: Idx(a)) {
+    fun clearIndex1[T](a: ArrayWrapper[T?], i: Idx(a)) {
         a.set(i, null)
     }
 
-    fn clearIndex2[T](a: ArrayWrapper[T?], i: Int) {
+    fun clearIndex2[T](a: ArrayWrapper[T?], i: Int) {
         if (0 <= i && i < a.size()) {
             a.set(i, null)
         }
@@ -19,11 +19,11 @@ class ArrayWrapper[T] (
     val wrapped: Array[T] with it.size() == size
 ) : Sized {
 
-    fn set(i: Idx(this), elem: T) {
+    fun set(i: Idx(this), elem: T) {
         this.wrapped.set(i, elem)
     }
 
-    fn get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)) -> T {
         return this.wrapped.at(i)
     }
 
@@ -31,7 +31,7 @@ class ArrayWrapper[T] (
 
 object ArrayWrappers {
 
-    fn mkNew[T](size: Length) -> ArrayWrapper[T] {
+    fun mkNew[T](size: Length) -> ArrayWrapper[T] {
         val wrapped = Array(size)
         return ArrayWrapper(size, wrapped)
     }
@@ -39,7 +39,7 @@ object ArrayWrappers {
 }
 
 interface Sized {
-    pure fn size() -> Length
+    pure fun size() -> Length
 }
 
 typealias Length = [0..]
@@ -47,11 +47,11 @@ typealias Idx(seq: Sized) = [0 ..< seq.size()]
 
 class Array[T](public size: Length) : Sized {
 
-    fn at(i: Idx(this)) -> T {
+    fun at(i: Idx(this)) -> T {
         panic "compile to bytecode xALOAD"
     }
 
-    fn set(i: Idx(this), t: T) {
+    fun set(i: Idx(this), t: T) {
         panic "compile to bytecode xASTORE"
     }
 

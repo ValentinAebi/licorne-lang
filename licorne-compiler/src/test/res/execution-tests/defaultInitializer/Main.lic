@@ -1,7 +1,7 @@
 
 object Main {
 
-    fn main() {
+    fun main() {
         println(Foo(27, 38))
         println(Foo(59))
         println(Bar(21, 11, 27))
@@ -13,13 +13,13 @@ object Main {
 }
 
 record Foo(a: Int, b: [a..] = a + 1) {
-    fn toString() -> String {
+    fun toString() -> String {
         return "(" ++ str(a) ++ "," ++ str(b) ++ ")"
     }
 }
 
 record Bar(a: Int, b: Int = 0, c: Int = 2*a + 5) {
-    fn toString() -> String {
+    fun toString() -> String {
         return "(" ++ str(a) ++ "," ++ str(b) ++ "," ++ str(c) ++ ")"
     }
 }

@@ -1,21 +1,21 @@
 
 object Test {
 
-   fn m1(animal: Animal, x: [0 .. animal.hungerLevel1()]) {}   //> E : I cannot prove that range type bound animal.hungerLevel1() is pure
+   fun m1(animal: Animal, x: [0 .. animal.hungerLevel1()]) {}   //> E : I cannot prove that range type bound animal.hungerLevel1() is pure
 
-   fn m2(animal: Animal, x: [0 .. animal.hungerLevel2()]) {}
+   fun m2(animal: Animal, x: [0 .. animal.hungerLevel2()]) {}
 
-   fn m3(food: Food, x: [0 .. food.nutrients()]) {}
+   fun m3(food: Food, x: [0 .. food.nutrients()]) {}
 
 }
 
 class Animal {
 
-   fn hungerLevel1() -> [0..] {
+   fun hungerLevel1() -> [0..] {
       panic "not implemented"
    }
 
-   pure fn hungerLevel2() -> [0..] {
+   pure fun hungerLevel2() -> [0..] {
       panic "not implemented"
    }
 
