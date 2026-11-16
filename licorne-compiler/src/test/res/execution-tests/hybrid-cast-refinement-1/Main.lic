@@ -11,7 +11,7 @@ object Main {
         foo(t, z!!)  //>STACKTRACE
     }
     
-    private fun foo(x: [0..], y: [0..x]) -> [0..] {
+    private fun foo(x: [0..], y: [0..x]): [0..] {
         return x - y
     }
 

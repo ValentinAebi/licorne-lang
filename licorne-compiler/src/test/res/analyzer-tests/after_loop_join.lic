@@ -1,7 +1,7 @@
 
 object Test {
 
-   fun ok(var x: Int) -> [0..10] {
+   fun ok(var x: Int): [0..10] {
       if (x < 0) {
          x = -x
       }
@@ -11,7 +11,7 @@ object Test {
       return x
    }
 
-   fun bad(var x: Int) -> [0..9] {
+   fun bad(var x: Int): [0..9] {
       if (x < 0) {
          x = -x
       }

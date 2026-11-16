@@ -1,7 +1,7 @@
 
 object BadArrayCopy {
 
-    fun copyArray[T](src: Array[T]) -> ArrayL[T](src.size()) =
+    fun copyArray[T](src: Array[T]): ArrayL[T](src.size()) =
         Array(src.size()){ src.get(it + 1) }    //> E : first argument of call to get: expected licorne.core.Idx(src), found it + 1 : [1 .. src.size()]
 
 }

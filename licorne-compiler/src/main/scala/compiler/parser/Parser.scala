@@ -219,7 +219,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
 
     opt(kw(Private, Open)) ::: opt(kw(Pure)) ::: kw(Fun).ignored ::: funOrVarId ::: typeParamsWithoutVarianceListOpt
       ::: openParenth ::: repeatWithSep(funParamTree, comma) ::: opt(kw(Where).ignored ::: concreteExpr) ::: closeParenth
-      ::: opt(-> ::: typeTree) ::: opt(block OR assig ::: concreteExpr) map {
+      ::: opt(colon ::: typeTree) ::: opt(block OR assig ::: concreteExpr) map {
       case optModif ^: optPure ^: funName ^: typeParams ^: params ^: optPrecond ^: optRetType ^: bodyOptRaw =>
         val bodyOptDesugared = bodyOptRaw.map {
           case expr: Expr => Block(List(

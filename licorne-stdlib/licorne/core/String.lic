@@ -8,65 +8,65 @@ typealias NonEmptyString = StringLMin(1)
 
 class String : Indexable {
 
-    pure fun size() -> Cnt = length()
+    pure fun size(): Cnt = length()
 
-    private pure fun length() -> Cnt {
+    private pure fun length(): Cnt {
         panic "compiler stub"
     }
 
-    pure fun isEmpty() -> Bool {
+    pure fun isEmpty(): Bool {
         panic "compiler stub"
     }
 
-    pure fun concat(s: String) -> StringL(this.size() + s.size()) {
+    pure fun concat(s: String): StringL(this.size() + s.size()) {
         panic "compiler stub"
     }
 
-    pure fun startsWith(s: String) -> Bool {
+    pure fun startsWith(s: String): Bool {
         panic "compiler stub"
     }
 
-    pure fun endsWith(s: String) -> Bool {
+    pure fun endsWith(s: String): Bool {
         panic "compiler stub"
     }
 
-    pure fun indent(n: Cnt) -> StringL(this.size() + n) {
+    pure fun indent(n: Cnt): StringL(this.size() + n) {
         panic "compiler stub"
     }
 
-    pure fun indexOf(s: String) -> Idx(this)? =
+    pure fun indexOf(s: String): Idx(this)? =
         sanitizeIndexOfResult(javaIndexOf(s))
 
-    pure fun lastIndexOf(s: String) -> Idx(this)? =
+    pure fun lastIndexOf(s: String): Idx(this)? =
         sanitizeIndexOfResult(javaLastIndexOf(s))
 
-    pure fun repeat(n: Cnt) -> StringL(n * size()) {
+    pure fun repeat(n: Cnt): StringL(n * size()) {
         panic "compiler stub"
     }
 
-    pure fun replace(target: String, replacement: String) -> String {
+    pure fun replace(target: String, replacement: String): String {
         panic "compiler stub"
     }
 
-    pure fun substring(begin: [0 .. this.size()], end: [0 .. this.size()] where begin <= end) -> StringLMin(end - begin) {
+    pure fun substring(begin: [0 .. this.size()], end: [0 .. this.size()] where begin <= end): StringLMin(end - begin) {
         panic "compiler stub"
     }
 
-    pure fun toLowerCase() -> StringL(this.size()) {
+    pure fun toLowerCase(): StringL(this.size()) {
         panic "compiler stub"
     }
 
-    pure fun toUpperCase() -> StringL(this.size()) {
+    pure fun toUpperCase(): StringL(this.size()) {
         panic "compiler stub"
     }
 
-    pure fun charAt(i: Idx(this)) -> Char {
+    pure fun charAt(i: Idx(this)): Char {
         panic "compiler stub"
     }
 
-    pure fun get(i: Idx(this)) -> Char = charAt(i)
+    pure fun get(i: Idx(this)): Char = charAt(i)
 
-    pure fun count(c: Char) -> Cnt {
+    pure fun count(c: Char): Cnt {
         var cnt = 0
         for (var i = 0; i < size(); i += 1) {
             if (charAt(i) == c) {
@@ -76,7 +76,7 @@ class String : Indexable {
         return cnt
     }
 
-    pure fun contains(substring: String) -> Bool {
+    pure fun contains(substring: String): Bool {
         var i = 0
         var j = 0
         while (i < size() && j < substring.size()) {
@@ -90,7 +90,7 @@ class String : Indexable {
         return j == substring.size()
     }
 
-    fun split(c: Char) -> Array[String] {
+    fun split(c: Char): Array[String] {
         val parts = Array(count(c) + 1){ "" }
         var partsIdx = 0
         for (var i = 0; i < size(); i += 1) {
@@ -104,9 +104,9 @@ class String : Indexable {
         return parts
     }
 
-    fun toCharArray() -> Array[Char] = Array(size()){ charAt(it) }
+    fun toCharArray(): Array[Char] = Array(size()){ charAt(it) }
 
-    fun trim() -> String {
+    fun trim(): String {
         var startIdx = 0
         while (startIdx < size() && isBlankChar(charAt(startIdx))) {
             startIdx += 1
@@ -118,24 +118,24 @@ class String : Indexable {
         return substring(startIdx, endIdx + 1)
     }
 
-    private fun isBlankChar(c: Char) -> Bool =
+    private fun isBlankChar(c: Char): Bool =
         c == ' ' || c == '\t'
     
-    private pure fun javaIndexOf(s: String) -> [-1 ..< size()] {
+    private pure fun javaIndexOf(s: String): [-1 ..< size()] {
         panic "compiler stub"
     }
 
-    private pure fun javaLastIndexOf(s: String) -> [-1 ..< size()] {
+    private pure fun javaLastIndexOf(s: String): [-1 ..< size()] {
         panic "compiler stub"
     }
 
-    private pure fun sanitizeIndexOfResult(i: [-1 ..< size()]) -> Idx(this)? =
+    private pure fun sanitizeIndexOfResult(i: [-1 ..< size()]): Idx(this)? =
         if (i == -1) null else i
 
 }
 
 object Strings {
-    fun str(a: Any?) -> String {
+    fun str(a: Any?): String {
         panic "compiler stub"
     }
 }

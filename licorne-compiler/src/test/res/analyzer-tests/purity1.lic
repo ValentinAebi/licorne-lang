@@ -1,16 +1,16 @@
 
 interface I {
-   pure fun foo(i: Int) -> String
-   fun bar(s: String) -> Int
+   pure fun foo(i: Int): String
+   fun bar(s: String): Int
 }
 
 class A : I {
 
-   pure fun foo(i: Int) -> String {
+   pure fun foo(i: Int): String {
       panic "not implemented"
    }
 
-   fun bar(s: String) -> Int {
+   fun bar(s: String): Int {
       panic "not implemented"
    }
 
@@ -18,11 +18,11 @@ class A : I {
 
 object B : I {
 
-   fun foo(i: Int) -> String {   //> E : foo(#1) in B overrides foo(#1) in I but violates its declared purity
+   fun foo(i: Int): String {   //> E : foo(#1) in B overrides foo(#1) in I but violates its declared purity
       panic "not implemented"
    }
 
-   pure fun bar(s: String) -> Int {
+   pure fun bar(s: String): Int {
       panic "not implemented"
    }
 

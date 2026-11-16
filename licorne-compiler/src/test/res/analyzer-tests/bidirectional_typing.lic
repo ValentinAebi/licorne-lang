@@ -5,7 +5,7 @@ class MutableStack[T] {
       panic "not implemented"
    }
 
-   fun pop() -> T {
+   fun pop(): T {
       panic "not implemented"
    }
 
@@ -25,7 +25,7 @@ object Test {
       stack.push("Hi")       // OK
    }
 
-   fun m3(x: Int) -> [0..] {
+   fun m3(x: Int): [0..] {
       val stack = MutableStack()
       stack.push(if (x >= 0) x else null)   //> E : first argument of call to push: expected [0..], found [0..]?
       return stack.pop()

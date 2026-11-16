@@ -1,6 +1,6 @@
 
 interface Collection[T] {
-   fun map[U](f: pure (T) -> U) -> Collection[U]
+   fun map[U](f: pure (T) -> U): Collection[U]
    fun foreach(f: (T) -> Unit)
 }
 
@@ -21,22 +21,22 @@ object Test {
       coll.map(impureClosure)        //> E : first argument of call to map: expected pure (Int) -> Unit, found impureClosure : (Int) -> Unit
    }
 
-   pure fun useClosure(cl: (String) -> String) -> String {
+   pure fun useClosure(cl: (String) -> String): String {
       val s = "Hello world!"
       return cl(s)      //> E : illegal invocation of an impure closure in a pure method or closure
    }
 
-   pure fun dontUseClosure(cl: (String) -> String) -> String {
+   pure fun dontUseClosure(cl: (String) -> String): String {
       return "Hello!"   // OK
    }
 
-   fun useClosureInPureClosure(cl: (String) -> String) -> pure () -> String {
+   fun useClosureInPureClosure(cl: (String) -> String): pure () -> String {
       return {
         cl("Hello")     //> E : illegal invocation of an impure closure in a pure method or closure
       }
    }
 
-   pure fun produceImpureClosure() -> (Container[Int]) -> Unit {
+   pure fun produceImpureClosure(): (Container[Int]) -> Unit {
       return { container -> container.set(42) }     // OK
    }
 

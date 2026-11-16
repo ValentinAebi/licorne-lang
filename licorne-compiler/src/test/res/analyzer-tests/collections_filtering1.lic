@@ -1,26 +1,26 @@
 
 interface Seq[+T] {
-   fun filter(pred: pure (T) -> Bool) -> Seq[T with pred(it)]
+   fun filter(pred: pure (T) -> Bool): Seq[T with pred(it)]
 }
 
 object Test {
 
-   fun filterInRange(seq: Seq[Int], u: Int) -> Seq[[0..u]] =
+   fun filterInRange(seq: Seq[Int], u: Int): Seq[[0..u]] =
       seq.filter { x -> 0 <= x && x <= u }                // OK
 
-   fun filterInRange_bad(seq: Seq[Int], u: Int) -> Nothing =
+   fun filterInRange_bad(seq: Seq[Int], u: Int): Nothing =
       seq.filter { x -> 0 <= x && x <= u }                //> E : return value: expected Nothing, found Seq[[0..u]]
 
-   fun keepAs(seq: Seq[I]) -> Seq[A] =
+   fun keepAs(seq: Seq[I]): Seq[A] =
       seq.filter { i -> i is A }                          // OK
 
-   fun keepAs_bad(seq: Seq[I]) -> Nothing =
+   fun keepAs_bad(seq: Seq[I]): Nothing =
       seq.filter { i -> i is A }                          //> E : return value: expected Nothing, found Seq[A]
 
-   fun filterNonNull[T](seq: Seq[T?]) -> Seq[T] =
+   fun filterNonNull[T](seq: Seq[T?]): Seq[T] =
       seq.filter { e -> e != null }                       // OK
 
-   fun filterNonNull_bad[T](seq: Seq[T?]) -> Nothing =
+   fun filterNonNull_bad[T](seq: Seq[T?]): Nothing =
       seq.filter { e -> e != null }                       //> E : return value: expected Nothing, found Seq[T]
 
 }

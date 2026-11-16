@@ -1,7 +1,7 @@
 package licorne.collections
 
 interface ImmutSeq[+T] : Collection[T], Indexable {
-    pure fun get(i: Idx(this)) -> T
+    pure fun get(i: Idx(this)): T
 
-    pure fun reversed() -> ImmutSeq[T]
+    pure fun reversed(): ImmutSeq[T]
 }

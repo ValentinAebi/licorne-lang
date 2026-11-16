@@ -37,7 +37,7 @@ object Test {
       }
    }
 
-   private fun ifDogOrElse[T](animal: Animal, default: T, f: (Dog) -> T) -> T =
+   private fun ifDogOrElse[T](animal: Animal, default: T, f: (Dog) -> T): T =
       if (animal is Dog) f(animal)
       else default
 
@@ -49,12 +49,12 @@ class Dog : Animal {
 
    fun woof() {}
 
-   fun isHungry() -> Bool {
+   fun isHungry(): Bool {
       return true
    }
 
    // returns true iff not hungry anymore
-   fun eat(food: Food) -> Bool {
+   fun eat(food: Food): Bool {
       // ...
       return false
    }

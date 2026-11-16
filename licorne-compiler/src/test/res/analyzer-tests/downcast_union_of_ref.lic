@@ -9,13 +9,13 @@ object Test {
 }
 
 interface I {
-    pure fun bar() -> Int
+    pure fun bar(): Int
 }
 
 class A: I {
-    pure fun bar() -> Int = 42
+    pure fun bar(): Int = 42
 }
 
 class B : I {
-    pure fun bar() -> Int = 10
+    pure fun bar(): Int = 10
 }

@@ -23,7 +23,7 @@ class ArrayWrapper[T] (
         this.wrapped.set(i, elem)
     }
 
-    fun get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)): T {
         return this.wrapped.at(i)
     }
 
@@ -31,7 +31,7 @@ class ArrayWrapper[T] (
 
 object ArrayWrappers {
 
-    fun mkNew[T](size: Length) -> ArrayWrapper[T] {
+    fun mkNew[T](size: Length): ArrayWrapper[T] {
         val wrapped = Array(size)
         return ArrayWrapper(size, wrapped)
     }
@@ -39,7 +39,7 @@ object ArrayWrappers {
 }
 
 interface Sized {
-    pure fun size() -> Length
+    pure fun size(): Length
 }
 
 typealias Length = [0..]
@@ -47,7 +47,7 @@ typealias Idx(seq: Sized) = [0 ..< seq.size()]
 
 class Array[T](public size: Length) : Sized {
 
-    fun at(i: Idx(this)) -> T {
+    fun at(i: Idx(this)): T {
         panic "compile to bytecode xALOAD"
     }
 

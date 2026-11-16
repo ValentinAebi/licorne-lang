@@ -1,11 +1,11 @@
 
 interface Foo[T] {
-   fun get() -> T
+   fun get(): T
 }
 
 object Test {
 
-   fun bar(f: Foo) -> Int {    //> E : type variable ?T in type of parameter f could not be resolved in a way that preserves encapsulation
+   fun bar(f: Foo): Int {    //> E : type variable ?T in type of parameter f could not be resolved in a way that preserves encapsulation
       return f.get()
    }
 

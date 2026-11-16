@@ -3,7 +3,7 @@ package licorne.collections
 
 datatype LList[+T] : ImmutSeq[T] {
 
-    pure fun get(i: Idx(this)) -> T {
+    pure fun get(i: Idx(this)): T {
         var j = i
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             if (j == 0) {
@@ -15,7 +15,7 @@ datatype LList[+T] : ImmutSeq[T] {
         panic "out of bounds"
     }
 
-    fun map[U](f: (T) -> U) -> LList[U] {
+    fun map[U](f: (T) -> U): LList[U] {
         var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             rev = Cons(f(ls.head()), rev)
@@ -23,7 +23,7 @@ datatype LList[+T] : ImmutSeq[T] {
         return rev.reversed()
     }
 
-    fun filter(pred: pure (T) -> Bool) -> LList[T with pred(it)] {
+    fun filter(pred: pure (T) -> Bool): LList[T with pred(it)] {
         var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             if (pred(ls.head())) {
@@ -39,7 +39,7 @@ datatype LList[+T] : ImmutSeq[T] {
         }
     }
 
-    pure fun reversed() -> LList[T] {
+    pure fun reversed(): LList[T] {
         var res = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             res = Cons(ls.head(), res)
@@ -50,17 +50,17 @@ datatype LList[+T] : ImmutSeq[T] {
 }
 
 record Cons[+T](head: T, tail: LList[T]) : LList[T] {
-    pure fun size() -> Cnt = tail.size() + 1
+    pure fun size(): Cnt = tail.size() + 1
 }
 
 record Nil : LList[Nothing] {
-    pure fun size() -> Cnt = 0
+    pure fun size(): Cnt = 0
 }
 
 
 object LLists {
 
-    fun listFromArray[T](a: Array[T]) -> LList[T] with it.size() == a.size() {
+    fun listFromArray[T](a: Array[T]): LList[T] with it.size() == a.size() {
         var ls = Nil()
         for (var i = a.size() - 1; i >= 0; i -= 1) {
             ls = Cons(a.get(i), ls)

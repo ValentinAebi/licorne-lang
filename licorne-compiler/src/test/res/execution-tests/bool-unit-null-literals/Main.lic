@@ -18,7 +18,7 @@ object Main {
         return u
     }
 
-    private fun describe(a: Animal) -> String? =
+    private fun describe(a: Animal): String? =
         if (a.isMarine()) "marine" else null
 
     private fun display(s: String) {
@@ -29,13 +29,13 @@ object Main {
 }
 
 interface Animal {
-    fun isMarine() -> Bool
+    fun isMarine(): Bool
 }
 
 class Tiger : Animal {
-    fun isMarine() -> Bool = false
+    fun isMarine(): Bool = false
 }
 
 class Dolphin : Animal {
-    fun isMarine() -> Bool = true
+    fun isMarine(): Bool = true
 }

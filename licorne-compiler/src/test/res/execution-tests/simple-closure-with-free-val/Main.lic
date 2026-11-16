@@ -8,6 +8,6 @@ object Main {
         println(r)
     }
 
-    private fun foo(f: (Int) -> Int) -> Int = f(2)
+    private fun foo(f: (Int) -> Int): Int = f(2)
 
 }

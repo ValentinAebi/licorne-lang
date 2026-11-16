@@ -5,19 +5,19 @@ typealias ArrayOfLen[T](l: [0..]) = Array[T] with it.length() == l
 
 object IC4 {
 
-    fun getThirdElement_1_correct(arr: ArrayOfMinLen[String](3)) -> String {
+    fun getThirdElement_1_correct(arr: ArrayOfMinLen[String](3)): String {
         return arr.at(2)
     }
 
-    fun getThirdElement_1_buggy(arr: ArrayOfMinLen[String](3)) -> String {
+    fun getThirdElement_1_buggy(arr: ArrayOfMinLen[String](3)): String {
         return arr.at(3) //> E : first argument of call to at: expected Idx[T](arr), found 3
     }
 
-    fun getThirdElement_2_correct(arr: ArrayOfLen[String](3)) -> String {
+    fun getThirdElement_2_correct(arr: ArrayOfLen[String](3)): String {
         return arr.at(2)
     }
 
-    fun getThirdElement_2_buggy(arr: ArrayOfLen[String](3)) -> String {
+    fun getThirdElement_2_buggy(arr: ArrayOfLen[String](3)): String {
         return arr.at(3) //> E : first argument of call to at: expected Idx[T](arr), found 3
     }
 
@@ -28,11 +28,11 @@ typealias Idx[T](array: Array[T]) = [0 ..< array.length()]
 
 class Array[T] {
 
-    pure fun length() -> Length {
+    pure fun length(): Length {
         panic "compile to bytecode ARRAYLENGTH"
     }
 
-    fun at(i: Idx(this)) -> T {
+    fun at(i: Idx(this)): T {
         panic "compile to bytecode xALOAD"
     }
 

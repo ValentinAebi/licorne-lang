@@ -12,7 +12,7 @@ record Pair[+L, +R](l: L, r: R)
 
 object Lists {
 
-   pure fun length[A](var ls: List[A]) -> Length {
+   pure fun length[A](var ls: List[A]): Length {
       var len = 0
       while (ls is Cons) {
          len += 1
@@ -21,7 +21,7 @@ object Lists {
       return len
    }
 
-   fun length_bad[A](var ls: List[A]) -> Length {
+   fun length_bad[A](var ls: List[A]): Length {
       var len = -1
       while (ls is Cons) {
          len += 1
@@ -30,7 +30,7 @@ object Lists {
       return len //> E : return value: expected lists.Length, found len : [-1..]
    }
 
-   fun sum(var ls: List[[0..]]) -> [0..] {
+   fun sum(var ls: List[[0..]]): [0..] {
       var s = 0
       while (ls is Cons) {
          s += ls.head()
@@ -39,7 +39,7 @@ object Lists {
       return s
    }
 
-   fun sum_bad(var ls: List[[..1000]]) -> [0..] {
+   fun sum_bad(var ls: List[[..1000]]): [0..] {
       var s = 0
       while (ls is Cons) {    //> E : I could not find a type for variable s that stays valid for all iterations of the loop (I attempted with [0..]), please provide a type annotation at variable declaration (on line 43)
          s += ls.head()
@@ -48,7 +48,7 @@ object Lists {
       return s
    }
 
-   fun reverse[T](var ls: List[T]) -> List[T] {
+   fun reverse[T](var ls: List[T]): List[T] {
       var reversed = Nil()
       while (ls is Cons) {
          reversed = Cons(ls.head(), reversed)
@@ -57,7 +57,7 @@ object Lists {
       return reversed
    }
 
-   fun filterLessOrEq(a: Int, var ls: List[Int]) -> List[[..a]] {
+   fun filterLessOrEq(a: Int, var ls: List[Int]): List[[..a]] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if (ls.head() <= a) {
@@ -68,7 +68,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filterLessThan(a: Int, var ls: List[Int]) -> List[[..<a]] {
+   fun filterLessThan(a: Int, var ls: List[Int]): List[[..<a]] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if (ls.head() < a) {
@@ -79,7 +79,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filterLessThan_bad1(a: Int, var ls: List[Int]) -> List[[..<a]] {
+   fun filterLessThan_bad1(a: Int, var ls: List[Int]): List[[..<a]] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if (ls.head() <= a) {
@@ -90,7 +90,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filterLessThan_bad2(a: Int, var ls: List[Int]) -> List[[..<a]] {
+   fun filterLessThan_bad2(a: Int, var ls: List[Int]): List[[..<a]] {
       var filteredReversed: List[[..<a]] = Nil()
       while (ls is Cons) {
          if (ls.head() <= a) {
@@ -101,7 +101,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filter[T](var ls: List[T], p: pure (T) -> Bool) -> List[T with p(it)] {
+   fun filter[T](var ls: List[T], p: pure (T) -> Bool): List[T with p(it)] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if (p(ls.head())) {
@@ -112,7 +112,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filter_bad[T](var ls: List[T], p: pure (T) -> Bool) -> List[T with p(it)] {
+   fun filter_bad[T](var ls: List[T], p: pure (T) -> Bool): List[T with p(it)] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if !(p(ls.head())) {
@@ -123,16 +123,16 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filterLessThanSimpler(a: Int, ls: List[Int]) -> List[[..a-1]] =
+   fun filterLessThanSimpler(a: Int, ls: List[Int]): List[[..a-1]] =
       filter(ls) { it < a }
 
-   fun filterLessThanSimpler_bad(a: Int, ls: List[Int]) -> List[[..a-1]] =
+   fun filterLessThanSimpler_bad(a: Int, ls: List[Int]): List[[..a-1]] =
       filter(ls) { it <= a }  //> E : return value: expected lists.List[[..<a]], found lists.List[[..a]]
 
-   fun isSingletonList[T](ls: List[T]) -> Bool =
+   fun isSingletonList[T](ls: List[T]): Bool =
       ls is Cons && ls.tail() is Nil
 
-   fun zip[S, T](ls1: List[S], ls2: List[T] where length(ls1) == length(ls2)) -> List[Pair[S, T]] {
+   fun zip[S, T](ls1: List[S], ls2: List[T] where length(ls1) == length(ls2)): List[Pair[S, T]] {
       var rem1 = ls1
       var rem2 = ls2
       var reversedZip = Nil()
@@ -148,19 +148,19 @@ object Lists {
 
 object UseLists {
 
-   fun useZipCorrectly1(integers: List[Int], strings: List[String] where length(integers) == length(strings)) -> List[Pair[Int, String]] {
+   fun useZipCorrectly1(integers: List[Int], strings: List[String] where length(integers) == length(strings)): List[Pair[Int, String]] {
       return zip(integers, strings)
    }
 
-   fun useZipCorrectly2(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+   fun useZipCorrectly2(integers: List[Int], strings: List[String]): List[Pair[Int, String]] =
       if (length(integers) == length(strings)) zip(integers, strings)
       else Nil()
 
-   fun useZipCorrectly3(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] =
+   fun useZipCorrectly3(integers: List[Int], strings: List[String]): List[Pair[Int, String]] =
       if (length(integers) != length(strings)) Nil()
       else zip(integers, strings)
 
-   fun useZipIncorrectly(integers: List[Int], strings: List[String]) -> List[Pair[Int, String]] {
+   fun useZipIncorrectly(integers: List[Int], strings: List[String]): List[Pair[Int, String]] {
       return zip(integers, strings)   //> E : illegal call to zip: I cannot prove that its precondition lists.Lists.length[S](integers) == lists.Lists.length[T](strings) holds
    }
 
@@ -173,5 +173,5 @@ object UseLists {
 
 interface I
 class A : I {
-   pure fun value() -> Int = 42
+   pure fun value(): Int = 42
 }

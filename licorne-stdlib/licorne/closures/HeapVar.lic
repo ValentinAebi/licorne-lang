@@ -2,7 +2,7 @@ package licorne.closures
 
 class HeapVar(var value: Any?) {
 
-    fun get() -> Any? {
+    fun get(): Any? {
         return value
     }
 

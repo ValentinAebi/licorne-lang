@@ -8,7 +8,7 @@ object Main {
         println(toString(keepUpToMax(xs)))
     }
 
-    fun keepUpToMax(xs: Array[Int]) -> Array[Int] {
+    fun keepUpToMax(xs: Array[Int]): Array[Int] {
         if (xs.size() == 0) {
             return Array(0) { 0 }
         }

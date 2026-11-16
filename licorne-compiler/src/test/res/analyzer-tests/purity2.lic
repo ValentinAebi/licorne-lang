@@ -1,7 +1,7 @@
 
 class Foo {
 
-   pure fun bar(animal: Animal) -> Unit {
+   pure fun bar(animal: Animal): Unit {
       animal.hungerLevel()           //> E : illegal call to impure method hungerLevel
       animal.hungerLevel_incorrect1()// OK
       animal.name()                  // OK
@@ -28,16 +28,16 @@ class Animal(val name: String, var hungerLevel: [0..]) {
       this.hungerLevel = 0   //> E : illegal write access to impure field hungerLevel
    }
 
-   fun hungerLevel() -> [0..] = this.hungerLevel                    // OK
-   fun hungerLevelDuplicate() -> [0..] = this.hungerLevel()         // OK
-   pure fun hungerLevel_incorrect1() -> [0..] = this.hungerLevel    //> E : illegal read access to impure field hungerLevel
-   pure fun hungerLevel_incorrect2() -> [0..] = this.hungerLevel()  //> E : illegal call to impure method hungerLevel
+   fun hungerLevel(): [0..] = this.hungerLevel                    // OK
+   fun hungerLevelDuplicate(): [0..] = this.hungerLevel()         // OK
+   pure fun hungerLevel_incorrect1(): [0..] = this.hungerLevel    //> E : illegal read access to impure field hungerLevel
+   pure fun hungerLevel_incorrect2(): [0..] = this.hungerLevel()  //> E : illegal call to impure method hungerLevel
 
-   pure fun name() -> String = this.name
-   pure fun getName1() -> String {
+   pure fun name(): String = this.name
+   pure fun getName1(): String {
       return this.name
    }
-   fun getName2() -> String {
+   fun getName2(): String {
       return this.name
    }
 

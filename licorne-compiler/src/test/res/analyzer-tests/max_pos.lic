@@ -1,7 +1,7 @@
 
 object PositiveMax {
 
-    fun maxPos_correct(a: Array[Int]) -> [0..] {
+    fun maxPos_correct(a: Array[Int]): [0..] {
         var k = 0
         var max = 0
         while (k < a.length()) {
@@ -14,7 +14,7 @@ object PositiveMax {
         return max
     }
 
-    fun maxPos_buggy(a: Array[Int]) -> [0..] {
+    fun maxPos_buggy(a: Array[Int]): [0..] {
         var k = 0
         var max = 0
         // ERROR: should be <
@@ -28,7 +28,7 @@ object PositiveMax {
         return max
     }
 
-    fun maxPos_moreComplex_correct(a: Array[Int], start: Idx(a), incEven: [1..], incOdd: [1..]) -> [0..] {
+    fun maxPos_moreComplex_correct(a: Array[Int], start: Idx(a), incEven: [1..], incOdd: [1..]): [0..] {
         var k = start
         var max = 0
         while (k < a.length()) {
@@ -45,7 +45,7 @@ object PositiveMax {
         return max
     }
 
-    fun maxPos_moreComplex_buggy(a: Array[Int], start: Idx(a), incEven: [1..], incOdd: Int) -> [0..] {
+    fun maxPos_moreComplex_buggy(a: Array[Int], start: Idx(a), incEven: [1..], incOdd: Int): [0..] {
         var k = start
         var max = 0
         while (k < a.length()) {    //> E : I could not find a type for variable k that stays valid for all iterations of the loop (I attempted with Idx[T](a)), please provide a type annotation at variable declaration (on line 49)
@@ -69,7 +69,7 @@ typealias Idx[T](arr: Array[T]) = [0 ..< arr.length()]
 
 class Array[T](public length: Length) {
 
-    fun at(i: Idx(this)) -> T {
+    fun at(i: Idx(this)): T {
         panic "compile to bytecode xALOAD"
     }
 

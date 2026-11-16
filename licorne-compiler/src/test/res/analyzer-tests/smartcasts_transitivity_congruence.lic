@@ -14,7 +14,7 @@ object Test {
       }
    }
 
-   fun congruence(a: Int, b: Int) -> [1..] {
+   fun congruence(a: Int, b: Int): [1..] {
       if (foo(a) > 0 && a == b) {
          return foo(b)   // OK
       } else if (foo(a) > 10) {
@@ -24,23 +24,23 @@ object Test {
       }
    }
 
-   pure fun foo(x: Int) -> Int = x * x + 1
+   pure fun foo(x: Int): Int = x * x + 1
 
-   fun eClassMergeAfter(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeAfter(a: Int, b: Int, x: Int, y: Int): Nothing {
       if (x < b && y >= a && x == y) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }
       panic "error"
    }
 
-   fun eClassMergeBefore(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeBefore(a: Int, b: Int, x: Int, y: Int): Nothing {
       if (x == y && x < b && y >= a) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }
       panic "error"
    }
 
-   fun eClassMergeInBetween(a: Int, b: Int, x: Int, y: Int) -> Nothing {
+   fun eClassMergeInBetween(a: Int, b: Int, x: Int, y: Int): Nothing {
       if (x < b && x == y && y >= a) {
          return x    //> E : return value: expected Nothing, found x : [a..<b]
       }

@@ -1,41 +1,41 @@
 
 object DivByZero {
 
-   fun ok1(x: Int, y: Int) -> Int =
+   fun ok1(x: Int, y: Int): Int =
       if (y == 0) y else x / y
 
-   fun ok2(x: Int, var y: Int) -> Int {
+   fun ok2(x: Int, var y: Int): Int {
       if (y == 0) {
          y += 1
       }
       return x / y               // OK
    }
 
-   fun ok3(x: Int, y: [1..]) -> Int {
+   fun ok3(x: Int, y: [1..]): Int {
       return x / y
    }
 
-   fun ok4(x: [0..], y: Int) -> Int =
+   fun ok4(x: [0..], y: Int): Int =
       if (y > 0) x / y
       else y / (x + 1)
 
-   fun ok5(x: Int, y: Int where y != 0) -> Int =
+   fun ok5(x: Int, y: Int where y != 0): Int =
       x % y
 
-   fun ok6(x: Int, y: Int with it != 0) -> Int =
+   fun ok6(x: Int, y: Int with it != 0): Int =
       x / y
 
-   fun wrong1(x: Int, y: Int) -> Int =
+   fun wrong1(x: Int, y: Int): Int =
       x % y                         //> E : I cannot prove that right-hand side y of operator '%' cannot be zero
 
-   fun wrong2(x: Int, y: [1..]) -> Int {
+   fun wrong2(x: Int, y: [1..]): Int {
       if (x % 100 == 0) {
          return x % y            // OK
       }
       return x / (y - 1)         //> E : I cannot prove that right-hand side y - 1 of operator '/' cannot be zero
    }
 
-   fun wrong3(x: Int, y: Int with it >= 0) -> Int =
+   fun wrong3(x: Int, y: Int with it >= 0): Int =
       x / y                         //> E : I cannot prove that right-hand side y of operator '/' cannot be zero
 
 }

@@ -7,7 +7,7 @@ object Main {
         println(gcd(21, 77)) // 7
     }
 
-    private fun gcd(var a: [0..], var b: [0..]) -> [0..] {
+    private fun gcd(var a: [0..], var b: [0..]): [0..] {
         while (b != 0) {
             val oldB = b
             b = a % b

@@ -1,5 +1,5 @@
 package licorne.core
 
 interface Indexable : Indexed {
-    pure fun size() -> Cnt
+    pure fun size(): Cnt
 }

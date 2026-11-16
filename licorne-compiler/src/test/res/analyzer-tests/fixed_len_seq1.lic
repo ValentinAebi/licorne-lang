@@ -16,7 +16,7 @@ class FixedLenSeq[T](public size: Cnt, defaultElem: T) : Indexable {
         array.set(i + 1, elem)  //> E : first argument of call to set: expected licorne.core.Idx(this.array()), found i + 1 : [1 .. this.size()]
     }
 
-    fun get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)): T {
         return array.get(i)
     }
 }

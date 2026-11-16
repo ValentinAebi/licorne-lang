@@ -7,9 +7,9 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     var array = Array[T | NoElem](initialCapacity){ NoElem }
     var currSize: Cnt = 0
 
-    fun size() -> Cnt = currSize
+    fun size(): Cnt = currSize
 
-    fun get(i: Int) -> T {
+    fun get(i: Int): T {
         if (0 <= i && i < currSize) {
             val elem = array.get(i!!)
             if (elem == NoElem) {
@@ -68,7 +68,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         this.currSize = deletionIdx
     }
 
-    fun map[U](f: (T) -> U) -> ArrayList[U] {
+    fun map[U](f: (T) -> U): ArrayList[U] {
         val mapped = ArrayList(currSize)
         val array = this.array
         for (var i = 0; i < array.size(); i += 1) {
@@ -92,7 +92,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fun filter(pred: pure (T) -> Bool) -> ArrayList[T with pred(it)] {
+    fun filter(pred: pure (T) -> Bool): ArrayList[T with pred(it)] {
         val filtered = ArrayList(currSize)
         foreach {
             if (pred(it)) {
@@ -123,7 +123,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fun toString() -> String {
+    fun toString(): String {
         var s = "["
         var isFirst = true
         foreach {

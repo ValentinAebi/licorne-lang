@@ -9,7 +9,7 @@ object Main {
         println((ls as Cons).head())
     }
 
-    private fun reverse[T](ls: LList[T]) -> LList[T] {
+    private fun reverse[T](ls: LList[T]): LList[T] {
         var res: LList[T] = Nil()
         ls.foreach {
             res = Cons(it, res)

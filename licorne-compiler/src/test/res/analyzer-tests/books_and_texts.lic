@@ -20,7 +20,7 @@ object Example {
 }
 
 interface Text {
-    pure fun title() -> String
+    pure fun title(): String
 }
 
 class Book(
@@ -38,9 +38,9 @@ class Book(
         currPage = null
     }
 
-    fun currentPage() -> PageNumber(this)? = currPage
+    fun currentPage(): PageNumber(this)? = currPage
 
-    fun isClosed() -> Bool =
+    fun isClosed(): Bool =
         currentPage() == null
 }
 
@@ -52,7 +52,7 @@ record InternetPage(
 ) : Text
 
 object InternetPages {
-    pure fun isValidUrl(s: String) -> Bool {
+    pure fun isValidUrl(s: String): Bool {
         panic "not implemented..."
     }
 }

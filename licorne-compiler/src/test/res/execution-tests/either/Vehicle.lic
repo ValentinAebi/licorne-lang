@@ -1,8 +1,8 @@
 
 interface Vehicle {
-    fun maxPassengers() -> Cnt
+    fun maxPassengers(): Cnt
 }
 
 class Car : Vehicle {
-    fun maxPassengers() -> Cnt = 6
+    fun maxPassengers(): Cnt = 6
 }

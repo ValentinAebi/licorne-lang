@@ -3,7 +3,7 @@ package licorne.collections
 
 interface MutSeq[T] : Collection[T] {
 
-    fun get(i: Int) -> T?
+    fun get(i: Int): T?
 
     fun add(elem: T)
 

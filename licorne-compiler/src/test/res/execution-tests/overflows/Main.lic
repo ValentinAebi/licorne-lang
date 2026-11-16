@@ -9,7 +9,7 @@ object Main {
         println(t)
     }
 
-    private fun foo(i: Int, j: Int) -> Int {
+    private fun foo(i: Int, j: Int): Int {
         return 2*i + 3*j //>STACKTRACE
     }
 

@@ -11,11 +11,11 @@ object Test {
 
 class Animal {
 
-   fun hungerLevel1() -> [0..] {
+   fun hungerLevel1(): [0..] {
       panic "not implemented"
    }
 
-   pure fun hungerLevel2() -> [0..] {
+   pure fun hungerLevel2(): [0..] {
       panic "not implemented"
    }
 

@@ -1,28 +1,28 @@
 
 object Clamp {
 
-   fun clamp1(min: Int, max: [min..], x: Int) -> [min..max] =
+   fun clamp1(min: Int, max: [min..], x: Int): [min..max] =
      if (x < min) min
      else if (x < max) x
      else max
 
-   fun clamp2(min: Int, max: Int, x: Int) -> [min..max] =
+   fun clamp2(min: Int, max: Int, x: Int): [min..max] =
      if (x < min) min              //> E : return value: expected [min..max], found Int
      else if (x < max) x
      else max
 
-   fun clamp3(min: Int, max: [min..], x: Int) -> [min..max] =
+   fun clamp3(min: Int, max: [min..], x: Int): [min..max] =
      if (x < min) min              //> E : return value: expected [min..max], found [min - 1 .. max]
      else if (x < max) x - 1
      else max
 
    // this case is more intricate because the order of parameters prevents x from being smartcast to [min..max] in the second branch
-   fun clamp4(x: Int, min: Int, max: [min..]) -> [min..max] =
+   fun clamp4(x: Int, min: Int, max: [min..]): [min..max] =
      if (x < min) min
      else if (x < max) x
      else max
 
-   fun clamp5(min: Int, max: [min..], x: Int) -> [min..max] {
+   fun clamp5(min: Int, max: [min..], x: Int): [min..max] {
       if (x < min) {
          return min
       } else if (x < max) {
@@ -32,7 +32,7 @@ object Clamp {
       }
    }
 
-   fun clamp6(min: Int, max: [min..], x: Int) -> [min..max] {
+   fun clamp6(min: Int, max: [min..], x: Int): [min..max] {
       if (x < min) {
          return min - 1  //> E : return value: expected [min..max], found min - 1 : Int
       } else if (x < max) {
@@ -42,7 +42,7 @@ object Clamp {
       }
    }
 
-   fun foo(in: Array[Int], a: [-2..]) -> Array[[0..a]] {
+   fun foo(in: Array[Int], a: [-2..]): Array[[0..a]] {
       val out = Array(in.length())
       for (var i = 0; i < in.length(); i += 1) {
          val c = clamp1(0, a, in.at(i))  //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
@@ -55,8 +55,8 @@ object Clamp {
 
 // see the standard library for an implementation of Array that use range types
 class Array[T](val len: [0..]) {
-   fun length() -> [0..] = this.len
-   fun at(i: Int) -> T {
+   fun length(): [0..] = this.len
+   fun at(i: Int): T {
       panic "not implemented"
    }
    fun set(i: Int, value: T) {

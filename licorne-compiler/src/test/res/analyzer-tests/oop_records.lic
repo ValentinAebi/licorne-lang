@@ -3,40 +3,40 @@ typealias Length = [0..]
 typealias Idx[T](s: Sequence[T]) = [0 ..< s.size()]
 
 interface Sequence[+T] {
-    pure fun size() -> Length
+    pure fun size(): Length
 
-    fun at(i: Idx(this)) -> T
+    fun at(i: Idx(this)): T
 }
 
 class Array[T](public size: Length) : Sequence[T] {
-    fun at(i: Idx(this)) -> T {
+    fun at(i: Idx(this)): T {
         panic "compile to bytecode xALOAD"
     }
 }
 
 datatype List[+T] : Sequence[T] {
-    pure fun at(i: Idx(this)) -> T
+    pure fun at(i: Idx(this)): T
 }
 
 record Nil : List[Nothing] {
     // TODO try to find a way to encode Nil == List with it.size() == 0, and let the compiler figure out that no definition of at is needed here
-    fun at(i: Int) -> Nothing {    //> E : at(#1) in Nil overrides at(#1) in List but violates its declared purity
+    fun at(i: Int): Nothing {    //> E : at(#1) in Nil overrides at(#1) in List but violates its declared purity
         panic "out of bounds"
     }
-    pure fun size() -> Length = 0
+    pure fun size(): Length = 0
 }
 
 record Cons[+T](head: T, tail: List[T]) : List[T] {
-    pure fun size() -> Length = 1 + this.tail().size()
+    pure fun size(): Length = 1 + this.tail().size()
 
-    pure fun at(i: Idx(this)) -> T =
+    pure fun at(i: Idx(this)): T =
         if (i == 0) this.head()
         else this.tail().at((i - 1)!!)  // TODO find a way of allowing this without !! (probably by allowing the expansion of private methods)
 }
 
 interface PairInterface[A, B] {
-    pure fun l() -> A
-    pure fun r() -> B
+    pure fun l(): A
+    pure fun r(): B
 }
 
 record Pair[L, R](l: L, r: R) : PairInterface[L, R]

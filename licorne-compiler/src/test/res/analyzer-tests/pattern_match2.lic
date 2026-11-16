@@ -5,7 +5,7 @@ record Nil : List[Nothing]
 
 object Lists {
 
-   fun length[A](var ls: List[A]) -> Int {
+   fun length[A](var ls: List[A]): Int {
       var len = 0
       while (ls is Cons) {
          len += 1
@@ -14,7 +14,7 @@ object Lists {
       return ls.head() //> E : method head(#0) not found in type Nil
    }
 
-   fun tail[U](ls: List[U]) -> List[U] =
+   fun tail[U](ls: List[U]): List[U] =
       if (ls is Cons) ls.tail()
       else panic "empty list"
 

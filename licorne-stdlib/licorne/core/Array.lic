@@ -6,7 +6,7 @@ typealias ArrayLMin[T](minLen: Cnt) = Array[T] with it.size() == minLen
 
 class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
 
-    fun get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)): T {
         panic "stub, compiled to xALOAD"
     }
 
@@ -34,7 +34,7 @@ class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
 
 object Arrays {
 
-    fun copy[T](src: Array[T]) -> ArrayL[T](src.size()) =
+    fun copy[T](src: Array[T]): ArrayL[T](src.size()) =
         Array(src.size()){ src.get(it) }
 
     fun copy[T](src: Array[T], dst: Array[T] where dst.size() >= src.size()) {
@@ -43,7 +43,7 @@ object Arrays {
         }
     }
 
-    fun toString[T](array: Array[T]) -> String {
+    fun toString[T](array: Array[T]): String {
         var s = "["
         for (var i = 0; i < array.size(); i += 1) {
             if (i > 0) {

@@ -17,7 +17,7 @@ class FixedLenSeq[T](public size: Cnt, defaultElem: T) : Indexable {
         array.set(i, elem)
     }
 
-    fun get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)): T {
         return array.get(i)
     }
 }

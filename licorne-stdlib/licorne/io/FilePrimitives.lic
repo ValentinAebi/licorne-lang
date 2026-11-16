@@ -3,11 +3,11 @@ package licorne.io
 // replaced with the Java implementation by the compiler
 private(licorne.io) object FilePrimitives {
 
-    fun readAllLines(path: String) -> Array[String] {
+    fun readAllLines(path: String): Array[String] {
         panic "implemented in Java"
     }
 
-    fun writeFile(path: String, content: String) -> Int {
+    fun writeFile(path: String, content: String): Int {
         panic "implemented in Java"
     }
 

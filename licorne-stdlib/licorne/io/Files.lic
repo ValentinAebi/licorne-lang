@@ -5,7 +5,7 @@ import licorne.collections.LLists
 
 object Files {
 
-    fun readAllLines(path: String) -> LList[String] =
+    fun readAllLines(path: String): LList[String] =
         LLists.listFromArray(FilePrimitives.readAllLines(path))
 
     fun write(path: String, content: String) {

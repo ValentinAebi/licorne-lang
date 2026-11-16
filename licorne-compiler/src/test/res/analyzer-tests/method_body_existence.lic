@@ -1,12 +1,12 @@
 
 datatype D {
-    open fun d1(i: Int) -> Int     //> E : open method d1 must have a body
-    open fun d2(i: Int) -> Int {}  // OK
-    fun d3(i: Int) -> Int          // OK
+    open fun d1(i: Int): Int     //> E : open method d1 must have a body
+    open fun d2(i: Int): Int {}  // OK
+    fun d3(i: Int): Int          // OK
 }
 
 class A {
-    open fun a1(i: Int) -> Int     //> E : method a1 defined in non abstract type A cannot be open
-    fun a2(i: Int) -> Int {}       // OK
-    fun a3(i: Int) -> Int          //> E : method a3 defined in non abstract type A must have a body
+    open fun a1(i: Int): Int     //> E : method a1 defined in non abstract type A cannot be open
+    fun a2(i: Int): Int {}       // OK
+    fun a3(i: Int): Int          //> E : method a3 defined in non abstract type A must have a body
 }

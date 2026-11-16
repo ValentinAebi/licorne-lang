@@ -6,7 +6,7 @@ object Main {
         cat.meow()
     }
 
-    private fun mkAnimal(trueIfDog: Bool) -> if (trueIfDog) Dog else Cat =
+    private fun mkAnimal(trueIfDog: Bool): if (trueIfDog) Dog else Cat =
         if (trueIfDog) Dog() else Cat()
 
 }

@@ -1,11 +1,11 @@
 
 object Test {
 
-   fun clamp(min: Int, max: Int, x: Int where min <= max) -> [min..max] =
+   fun clamp(min: Int, max: Int, x: Int where min <= max): [min..max] =
       if (x < min) min
       else if (x <= max) x
       else max
 
-   fun brokenIdentityFunction(x: Int where x >= 0) -> [0..10] = x  //> E : return value: expected [0..10], found x : [0..]
+   fun brokenIdentityFunction(x: Int where x >= 0): [0..10] = x  //> E : return value: expected [0..10], found x : [0..]
 
 }

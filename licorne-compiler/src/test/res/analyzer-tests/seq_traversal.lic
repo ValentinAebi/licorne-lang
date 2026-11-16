@@ -3,14 +3,14 @@ typealias Length = [0..]
 typealias Idx[T](seq: Seq[T]) = [0 ..< seq.size()]
 
 interface Seq[T] {
-   pure fun size() -> Length
+   pure fun size(): Length
 
-   fun at(i: Idx(this)) -> T
+   fun at(i: Idx(this)): T
 }
 
 object SeqTraversal {
 
-   fun sum(seq: Seq[Int]) -> Int {
+   fun sum(seq: Seq[Int]): Int {
       var s = 0
       for (var i = 0; i < seq.size(); i += 1) {
          s += seq.at(i)  // OK
@@ -18,7 +18,7 @@ object SeqTraversal {
       return s
    }
 
-   fun sum_wrong(seq: Seq[Int]) -> Int {
+   fun sum_wrong(seq: Seq[Int]): Int {
       var s = 0
       for (var i = 0; i <= seq.size(); i += 1) {
          s += seq.at(i)  //> E : first argument of call to at: expected Idx[T](seq), found i : [0 .. seq.size()]

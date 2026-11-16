@@ -11,13 +11,13 @@ class Car(
         this.year = year
     }
 
-    fun getYear() -> CarAcceptableYears = year
+    fun getYear(): CarAcceptableYears = year
 
 }
 
 object Cars {
 
-    fun newCarWithDefaultValues() -> Car {
+    fun newCarWithDefaultValues(): Car {
         return Car(2026, 5)
     }
 
@@ -25,7 +25,7 @@ object Cars {
 
 object Test {
 
-    fun getYear() -> [2021..] = 2024
+    fun getYear(): [2021..] = 2024
 
     fun test_correct() {
         val a = 1998

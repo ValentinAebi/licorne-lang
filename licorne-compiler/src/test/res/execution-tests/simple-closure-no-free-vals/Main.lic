@@ -6,6 +6,6 @@ object Main {
         println(r)
     }
 
-    private fun foo(f: (Int) -> Int) -> Int = f(5)
+    private fun foo(f: (Int) -> Int): Int = f(5)
 
 }

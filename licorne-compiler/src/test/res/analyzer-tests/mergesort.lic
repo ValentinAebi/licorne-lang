@@ -55,7 +55,7 @@ typealias Pos[T](arr: Array[T]) = [0 .. arr.length()]
 
 class Array[T](public length: Length) {
 
-    fun get(i: Idx(this)) -> T {
+    fun get(i: Idx(this)): T {
         panic "compile to bytecode xALOAD"
     }
 
