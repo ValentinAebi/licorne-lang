@@ -20,14 +20,14 @@ final case class Program(
                           interfaces: SeqMap[TypeIdentifier, InterfaceSignature],
                           classes: SeqMap[TypeIdentifier, ClassSignature],
                           objects: SeqMap[TypeIdentifier, ObjectSignature],
-                          datatypes: SeqMap[TypeIdentifier, DatatypeSignature],
-                          records: SeqMap[TypeIdentifier, RecordSignature],
+                          sealedInterfaces: SeqMap[TypeIdentifier, SealedInterfaceSignature],
+                          dataclasses: SeqMap[TypeIdentifier, DataclassSignature],
                           typeAliases: SeqMap[TypeIdentifier, TypeAliasSignature],
                           functions: SeqMap[(TypeIdentifier, FunctionDescriptor), IRcorne.Function],
                           fieldInitializers: Map[TypeIdentifier, Map[FunOrVarId, (Iterable[RealInstr], IdValue)]]
                         ) {
 
-  def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ datatypes ++ records).values
+  def runtimeSignatures: Iterable[RuntimeTypeSignature] = (interfaces ++ classes ++ objects ++ sealedInterfaces ++ dataclasses).values
 
   def allTypeSignatures: Iterable[TypeSignature] = runtimeSignatures ++ typeAliases.values
 
@@ -59,16 +59,16 @@ object Program {
       val interfacesB = SeqMap.newBuilder[TypeIdentifier, InterfaceSignature]
       val classesB = SeqMap.newBuilder[TypeIdentifier, ClassSignature]
       val packagesB = SeqMap.newBuilder[TypeIdentifier, ObjectSignature]
-      val datatypes = SeqMap.newBuilder[TypeIdentifier, DatatypeSignature]
-      val recordsB = SeqMap.newBuilder[TypeIdentifier, RecordSignature]
+      val sealedInterfaces = SeqMap.newBuilder[TypeIdentifier, SealedInterfaceSignature]
+      val dataclasses = SeqMap.newBuilder[TypeIdentifier, DataclassSignature]
       val typeAliasesB = SeqMap.newBuilder[TypeIdentifier, TypeAliasSignature]
       for ((id, sig) <- signatures) {
         sig match {
           case sig: InterfaceSignature => interfacesB.addOne(id, sig)
           case sig: ClassSignature => classesB.addOne(id, sig)
           case sig: ObjectSignature => packagesB.addOne(id, sig)
-          case sig: DatatypeSignature => datatypes.addOne(id, sig)
-          case sig: RecordSignature => recordsB.addOne(id, sig)
+          case sig: SealedInterfaceSignature => sealedInterfaces.addOne(id, sig)
+          case sig: DataclassSignature => dataclasses.addOne(id, sig)
           case sig: TypeAliasSignature => typeAliasesB.addOne(id, sig)
         }
       }
@@ -77,8 +77,8 @@ object Program {
         interfacesB.result(),
         classesB.result(),
         packagesB.result(),
-        datatypes.result(),
-        recordsB.result(),
+        sealedInterfaces.result(),
+        dataclasses.result(),
         typeAliasesB.result(),
         allFunctions,
         allFieldInitializers

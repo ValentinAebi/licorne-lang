@@ -105,7 +105,7 @@ object BranchingInfo {
         val candidates =
           tids.flatMap { tid =>
             typesReasoningCache.developUnencapsulated(tid) match {
-              case Some(records) => records.map(_.id)
+              case Some(dataclasses) => dataclasses.map(_.id)
               case None => List(tid)
             }
           }.filterNot(tid => knownIsNot.exists(forbiddenSuper => subtypingCtx.subToSuperSubst(tid, forbiddenSuper).isDefined))

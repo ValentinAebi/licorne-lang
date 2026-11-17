@@ -4,11 +4,11 @@ import lists.Lists.{zip, length, filter}
 
 typealias Length = [0..]
 
-datatype List[out T]
-record Nil : List[Nothing]
-record Cons[out T](head: T, tail: List[T]) : List[T]
+sealed interface List[out T]
+data class Nil : List[Nothing]
+data class Cons[out T](val head: T, val tail: List[T]) : List[T]
 
-record Pair[out L, out R](l: L, r: R)
+data class Pair[out L, out R](val l: L, val r: R)
 
 object Lists {
 

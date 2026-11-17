@@ -5,13 +5,13 @@ typealias Coord(axisSize: NonZeroLength) = [0..<axisSize]
 
 object Encoder {
 
-    fun decodeAll(data: List[Int], xSize: NonZeroLength, ySize: NonZeroLength): List[Point[Coord(xSize), Coord(ySize)]] {
-        val validData = removeOutliers(data)
+    fun decodeAll(encodedData: List[Int], xSize: NonZeroLength, ySize: NonZeroLength): List[Point[Coord(xSize), Coord(ySize)]] {
+        val validData = removeOutliers(encodedData)
         return map(validData) { decode(it, xSize, ySize) }
     }
 
-    private fun removeOutliers(data: List[Int]): List[[0..]] =
-        filter(data) { it >= 0 }
+    private fun removeOutliers(ls: List[Int]): List[[0..]] =
+        filter(ls) { it >= 0 }
 
     private fun decode(datapoint: [0..], xSize: NonZeroLength, ySize: NonZeroLength): Point[Coord(xSize), Coord(ySize)] {
         val x = (datapoint / 64) % xSize
@@ -21,11 +21,11 @@ object Encoder {
 
 }
 
-record Point[I : Int, J : Int](x: I, y: J)
+data class Point[I : Int, J : Int](val x: I, val y: J)
 
-datatype List[out T]
-record Cons[out T](first: T, rest: List[T]) : List[T]
-record Nil() : List[Nothing]
+sealed interface List[out T]
+data class Cons[out T](val first: T, val rest: List[T]) : List[T]
+data class Nil() : List[Nothing]
 
 object Lists {
 

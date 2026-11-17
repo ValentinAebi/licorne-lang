@@ -1,5 +1,5 @@
 
-datatype D {
+sealed interface D {
     open fun d1(i: Int): Int     //> E : open method d1 must have a body
     open fun d2(i: Int): Int {}  // OK
     fun d3(i: Int): Int          // OK

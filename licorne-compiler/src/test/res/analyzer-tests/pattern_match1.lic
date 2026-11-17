@@ -1,8 +1,8 @@
 
-datatype Tree[out T]
-record Leaf : Tree[Nothing]
-record Fork[out T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
-record Binary[out T](l: Tree[T], r: Tree[T]) : Tree[T]
+sealed interface Tree[out T]
+data class Leaf : Tree[Nothing]
+data class Fork[out T](val left: Tree[T], val value: T, val right: Tree[T]) : Tree[T]
+data class Binary[out T](val l: Tree[T], val r: Tree[T]) : Tree[T]
 
 object Trees {
 

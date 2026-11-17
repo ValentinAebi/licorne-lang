@@ -53,4 +53,4 @@ class Container[T](var value: T) {
    }
 }
 
-record Pair[A,B](left: A, right: B)
+data class Pair[A,B](val left: A, val right: B)

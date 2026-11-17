@@ -3,10 +3,10 @@ package example.lib
 private(example) interface I
 private(example.lib) interface J
 
-record Abc(i: Int)
-private(example) record Foo(i: Int) : J     // wrong, but ignored since the compiler does not reach the phase that would detect it (see "subtype_violating_visibility" test)
-private(example.lib) record Bar(i: Int) : J
-private record Wxyz(i: Int)
+data class Abc(val i: Int)
+private(example) data class Foo(val i: Int) : J     // wrong, but ignored since the compiler does not reach the phase that would detect it (see "subtype_violating_visibility" test)
+private(example.lib) data class Bar(val i: Int) : J
+private data class Wxyz(val i: Int)
 
 object Lib {
     fun useWxyz() {

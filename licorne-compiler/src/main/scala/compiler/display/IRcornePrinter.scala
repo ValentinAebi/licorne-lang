@@ -45,12 +45,12 @@ final class IRcornePrinter(
       printObject(sig)
       pps.newLine()
     }
-    for ((_, sig) <- program.datatypes) {
-      printDatatype(sig)
+    for ((_, sig) <- program.sealedInterfaces) {
+      printSealedInterface(sig)
       pps.newLine()
     }
-    for ((_, sig) <- program.records) {
-      printRecord(sig)
+    for ((_, sig) <- program.dataclasses) {
+      printDataclass(sig)
       pps.newLine()
     }
 
@@ -104,10 +104,10 @@ final class IRcornePrinter(
     pps.newLine()
   }
 
-  private def printDatatype(datatypeSig: DatatypeSignature)
-                           (using pps: PrettyPrintString, program: Program): Unit = {
-    val DatatypeSignature(id, typeParams, functions, directSupertypes, directSubtypes, visibility, sigScope, declPosOpt) = datatypeSig
-    pps.add(s"DATATYPE ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
+  private def printSealedInterface(sealedInterface: SealedInterfaceSignature)
+                                  (using pps: PrettyPrintString, program: Program): Unit = {
+    val SealedInterfaceSignature(id, typeParams, functions, directSupertypes, directSubtypes, visibility, sigScope, declPosOpt) = sealedInterface
+    pps.add(s"SEALED-INTERFACE ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
       .add(mkSuperTypesDescr(directSupertypes))
       .add(" with cases ")
@@ -121,10 +121,10 @@ final class IRcornePrinter(
     pps.newLine()
   }
 
-  private def printRecord(recordSig: RecordSignature)
-                         (using pps: PrettyPrintString, program: Program): Unit = {
-    val RecordSignature(id, typeParams, fields, functions, directSupertypes, visibility, sigScope, declPosOpt) = recordSig
-    pps.add(s"RECORD ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
+  private def printDataclass(dataclassSig: DataclassSignature)
+                            (using pps: PrettyPrintString, program: Program): Unit = {
+    val DataclassSignature(id, typeParams, fields, functions, directSupertypes, visibility, sigScope, declPosOpt) = dataclassSig
+    pps.add(s"DATACLASS ($visibility, scope ${sigScope.scopeUid})").addSpace().add(id)
       .add(mkTypeParamsDescr(typeParams))
     printFields(fields)
     pps.add(mkSuperTypesDescr(directSupertypes))

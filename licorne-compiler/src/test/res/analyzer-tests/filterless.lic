@@ -33,9 +33,9 @@ object FilterLess {
 
 }
 
-datatype List[out T]
-record Cons[out T](first: T, rest: List[T]) : List[T]
-record Nil() : List[Nothing]
+sealed interface List[out T]
+data class Cons[out T](val first: T, val rest: List[T]) : List[T]
+data class Nil() : List[Nothing]
 
 object Lists {
 

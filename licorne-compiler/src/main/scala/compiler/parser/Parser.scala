@@ -144,7 +144,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   }
 
   private lazy val topLevelDef: P[TopLevelDef] = withDescription("a top level definition") {
-    typeVisibilityModifierOpt ::: (interfaceDef OR objectDef OR classDef OR datatypeDef OR recordDef OR typeAliasDef) map {
+    typeVisibilityModifierOpt ::: (interfaceDef OR objectDef OR classDef OR sealedInterfaceDef OR dataClassDef OR typeAliasDef) map {
       case visibility ^: df =>
         df.visibility = visibility
         df
@@ -174,17 +174,17 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     }
   }
 
-  private lazy val datatypeDef = withDescription("a datatype declaration") {
-    kw(Datatype).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
-      case id ^: typeParams ^: supertypes ^: functions => DataTypeDef(id, typeParams, functions, supertypes, TypeVisibility.Public)
+  private lazy val sealedInterfaceDef = withDescription("a sealed class declaration") {
+    kw(Sealed).ignored ::: kw(Interface).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt ::: supertypesListOpt ::: methodsListOpt map {
+      case id ^: typeParams ^: supertypes ^: functions => SealedInterfaceDef(id, typeParams, functions, supertypes, TypeVisibility.Public)
     }
   }
 
-  private lazy val recordDef = withDescription("a record declaration") {
-    kw(Record).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
-      ::: opt(openParenth ::: repeatWithSep(recordParamWithOptDefault, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
+  private lazy val dataClassDef = withDescription("a data class declaration") {
+    kw(Data).ignored ::: kw(Class).ignored ::: highName ::: typeParamsPossiblyWithVarianceListOpt
+      ::: opt(openParenth ::: repeatWithSep(dataclassParamWithOptDefault, comma) ::: closeParenth) ::: supertypesListOpt ::: methodsListOpt map {
       case name ^: typeParams ^: fieldsOpt ^: supertypes ^: functions =>
-        RecordDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes, TypeVisibility.Public)
+        DataClassDef(name, typeParams, fieldsOpt.getOrElse(Nil), functions, supertypes, TypeVisibility.Public)
     }
   }
 
@@ -253,8 +253,8 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     }
   }
 
-  private lazy val recordParamTree = withDescription("a record parameter") {
-    simpleParamTree OR valParamTree
+  private lazy val dataclassParamTree = withDescription("a data class parameter") {
+    valParamTree
   }
 
   private lazy val valParamTree = {
@@ -295,7 +295,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     }
   }
 
-  private lazy val recordParamWithOptDefault: P[(RecordParam, Option[Expr])] = recordParamTree ::: opt(assig ::: concreteExpr) map {
+  private lazy val dataclassParamWithOptDefault: P[(DataclassParam, Option[Expr])] = dataclassParamTree ::: opt(assig ::: concreteExpr) map {
     case paramTree ^: defaultOpt => (paramTree, defaultOpt)
   }
 
@@ -682,7 +682,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private def fieldsRecoveryStrategy(tok: Token): Boolean = statRecoveryStrategy(tok) || tok.isKeyword(Val, Var)
 
   private def topLevelRecoveryStrategy(tok: Token): Boolean =
-    tok.isKeyword(Package, Import, Typealias, Class, Object, Interface, Record, Datatype, Fun, Pure, Private, Open)
+    tok.isKeyword(Package, Import, Typealias, Class, Object, Interface, Sealed, Data, Fun, Pure, Private, Open)
 
   override def apply(input: (List[PositionedToken], String)): Source = {
     val (positionedTokens, srcName) = input

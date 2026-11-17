@@ -1,7 +1,7 @@
 
-datatype Either[out L, out R]
-record Left[out L](l: L) : Either[L, Nothing]
-record Right[out R](r: R) : Either[Nothing, R]
+sealed interface Either[out L, out R]
+data class Left[out L](val l: L) : Either[L, Nothing]
+data class Right[out R](val r: R) : Either[Nothing, R]
 
 object Eithers {
     fun left[L](l: L): Either[L, Nothing] = Left(l)

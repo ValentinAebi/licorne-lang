@@ -24,7 +24,7 @@ object Asts {
       case Some(source) => source.originalAst
       case None => this
     }
-    
+
     def traverseDesugaringSources: Iterator[Ast] = {
       val init = this
       new Iterator[Ast] {
@@ -182,27 +182,27 @@ object Asts {
     override def children: List[Ast] = typeParams ++ params.flatMap((p, initOpt) => List(p) ++ initOpt) ++ encapsulatedFields ++ functions ++ directSupertypes
   }
 
-  final case class DataTypeDef(
-                                name: String,
-                                typeParams: List[TypeParamWithVariance],
-                                functions: List[FunDef],
-                                directSupertypes: List[NamedTypeTree],
-                                var visibility: TypeVisibility
-                              ) extends UnencapsulatedTypeDefTree {
-    override def description: String = s"datatype $name"
+  final case class SealedInterfaceDef(
+                                       name: String,
+                                       typeParams: List[TypeParamWithVariance],
+                                       functions: List[FunDef],
+                                       directSupertypes: List[NamedTypeTree],
+                                       var visibility: TypeVisibility
+                                     ) extends UnencapsulatedTypeDefTree {
+    override def description: String = s"sealed interface $name"
 
     override def children: List[Ast] = typeParams ++ functions ++ directSupertypes
   }
 
-  final case class RecordDef(
-                              name: String,
-                              typeParams: List[TypeParamWithVariance],
-                              fields: List[(RecordParam, Option[Expr])],
-                              functions: List[FunDef],
-                              directSupertypes: List[NamedTypeTree],
-                              var visibility: TypeVisibility
-                            ) extends UnencapsulatedTypeDefTree {
-    override def description: String = s"record $name"
+  final case class DataClassDef(
+                                 name: String,
+                                 typeParams: List[TypeParamWithVariance],
+                                 fields: List[(DataclassParam, Option[Expr])],
+                                 functions: List[FunDef],
+                                 directSupertypes: List[NamedTypeTree],
+                                 var visibility: TypeVisibility
+                               ) extends UnencapsulatedTypeDefTree {
+    override def description: String = s"data class $name"
 
     override def children: List[Ast] = typeParams ++ fields.flatMap((p, initOpt) => List(p) ++ initOpt) ++ functions ++ directSupertypes
   }
@@ -245,7 +245,7 @@ object Asts {
     val paramTypeTreeOpt: Option[TypeTree]
   }
 
-  sealed trait RecordParam extends Param {
+  sealed trait DataclassParam extends Param {
     val paramId: FunOrVarId
     val paramTypeTree: TypeTree
   }
@@ -260,7 +260,7 @@ object Asts {
     override val paramTypeTreeOpt: Option[TypeTree] = Some(paramTypeTree)
   }
 
-  final case class ValParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, RecordParam {
+  final case class ValParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, DataclassParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
@@ -272,7 +272,7 @@ object Asts {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
-  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, RecordParam, NonThisFunctionParam, TypeAliasParam {
+  final case class SimpleParam(paramId: FunOrVarId, paramTypeTree: TypeTree) extends ClassParam, DataclassParam, NonThisFunctionParam, TypeAliasParam {
     override def children: List[Ast] = List(paramTypeTree)
   }
 
@@ -281,7 +281,7 @@ object Asts {
 
     override def children: List[Ast] = paramTypeTreeOpt.toList
   }
-  
+
   final case class EncapsulatedFieldDef(fieldId: FunOrVarId, fieldTypeTreeOpt: Option[TypeTree], initValue: Expr, isReassignable: Boolean) extends Ast {
     override def children: List[Ast] = fieldTypeTreeOpt.toList :+ initValue
   }
@@ -436,25 +436,25 @@ object Asts {
       }
     }
   }
-  
+
   final case class IfExpr(cond: Expr, thenBr: Sequence, elseBr: Sequence | MissingElse) extends Expr {
     override def children: List[Ast] = List(cond, thenBr, elseBr)
   }
-  
+
   final case class MissingElse() extends Expr {
     override def children: List[Ast] = List.empty
   }
-  
+
   final case class Sequence(stats: List[Statement], result: Expr) extends Expr {
     override def children: List[Ast] = stats :+ result
   }
 
   sealed abstract class Loop extends Statement
-  
+
   final case class WhileLoop(cond: Expr, body: Statement) extends Loop {
     override def children: List[Ast] = List(cond, body)
   }
-  
+
   final case class ForLoop(
                             initStats: List[LocalDef],
                             cond: Expr,
@@ -463,7 +463,7 @@ object Asts {
                           ) extends Loop {
     override def children: List[Ast] = initStats ++ List(cond) ++ stepStats :+ body
   }
-  
+
   final case class ReturnExpr(optVal: Option[Expr]) extends Expr {
     override def children: List[Ast] = optVal.toList
   }
@@ -511,7 +511,7 @@ object Asts {
   final case class IntersectionTypeTree(types: List[TypeTree]) extends TypeTree {
     override def children: List[Ast] = types
   }
-  
+
   final case class TernaryTypeTree(cond: Expr, leftType: TypeTree, rightType: TypeTree) extends TypeTree {
     override def children: List[Ast] = List(cond, leftType, rightType)
   }

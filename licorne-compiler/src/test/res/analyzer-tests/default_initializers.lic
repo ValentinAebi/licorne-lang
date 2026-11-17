@@ -16,6 +16,6 @@ object Main {
 
 }
 
-record Foo(a: Int, b: [a..] = a + 1)
-record Bar(a: Int, b: Int = 2*a + 5, c: Int = 0)
-record Baz(a: Int, b: Int = 2*a + 5, c: Int)
+data class Foo(val a: Int, val b: [a..] = a + 1)
+data class Bar(val a: Int, val b: Int = 2*a + 5, val c: Int = 0)
+data class Baz(val a: Int, val b: Int = 2*a + 5, val c: Int)

@@ -1,7 +1,7 @@
 package compiler.typing.smartcasting
 
 import compiler.identifiers.TypeIdentifier
-import compiler.lang.{DatatypeSignature, RecordSignature}
+import compiler.lang.{SealedInterfaceSignature, DataclassSignature}
 import compiler.typing.contexts.ResolutionContext
 
 import scala.collection.mutable
@@ -9,29 +9,29 @@ import scala.util.boundary
 
 
 final class TypesReasoningCache(resolutionCtx: ResolutionContext) {
-  private val allRecords = mutable.Map.empty[TypeIdentifier, Option[List[RecordSignature]]]
+  private val allDataclasses = mutable.Map.empty[TypeIdentifier, Option[List[DataclassSignature]]]
 
-  def developUnencapsulated(tpe: TypeIdentifier): Option[List[RecordSignature]] = {
-    allRecords.getOrElseUpdate(tpe, {
-      val recordsOpt = boundary {
+  def developUnencapsulated(tpe: TypeIdentifier): Option[List[DataclassSignature]] = {
+    allDataclasses.getOrElseUpdate(tpe, {
+      val dataclassesOpt = boundary {
         resolutionCtx.resolveTypeSig(tpe) match {
-          case Some(sig: DatatypeSignature) =>
-            val possibilities = mutable.ListBuffer.empty[RecordSignature]
+          case Some(sig: SealedInterfaceSignature) =>
+            val possibilities = mutable.ListBuffer.empty[DataclassSignature]
             for (subT <- sig.directSubtypes) {
               developUnencapsulated(subT) match {
-                case Some(records) =>
-                  possibilities.addAll(records)
+                case Some(dataclasses) =>
+                  possibilities.addAll(dataclasses)
                 case None =>
                   boundary.break(None)
               }
             }
             Some(possibilities.toList.distinct)
-          case Some(sig: RecordSignature) => Some(List(sig))
+          case Some(sig: DataclassSignature) => Some(List(sig))
           case _ => None
         }
       }
-      allRecords(tpe) = recordsOpt
-      recordsOpt
+      allDataclasses(tpe) = dataclassesOpt
+      dataclassesOpt
     })
   }
 

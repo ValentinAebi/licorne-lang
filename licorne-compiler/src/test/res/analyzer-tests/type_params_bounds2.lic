@@ -4,7 +4,7 @@ interface Mammal : Vertebrate
 interface Dog : Mammal
 interface Cat : Mammal
 
-record R[A, B : A](a: A, b: B)
+data class R[A, B : A](val a: A, val b: B)
 
 object Test {
 

@@ -1159,38 +1159,38 @@ final class Typer(
     }
   }
 
-  def typeDatatypeSig(datatypeSig: DatatypeSignature): DatatypeSignature = {
-    val DatatypeSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, directSubtypes, visibility, sigScope, declPosOpt) = datatypeSig
+  def typeSealedInterfaceSig(sealedInterfaceSig: SealedInterfaceSignature): SealedInterfaceSignature = {
+    val SealedInterfaceSignature(id, typeParamsRaw, functionsRaw, directSupertypesRaw, directSubtypes, visibility, sigScope, declPosOpt) = sealedInterfaceSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
-    saveReceiverType(datatypeSig, fullTypeParamsCtx)
+    saveReceiverType(sealedInterfaceSig, fullTypeParamsCtx)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
-    val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(datatypeSig, resolutionCtx, fullTypeParamsCtx)
+    val directSupertypesInst = typeSuperTypesAsPossiblySealedInterfaces(sealedInterfaceSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      DatatypeSignature(id, typeParamsInst, functionsInst, directSupertypesInst, directSubtypes, visibility, sigScope, declPosOpt)
+      SealedInterfaceSignature(id, typeParamsInst, functionsInst, directSupertypesInst, directSubtypes, visibility, sigScope, declPosOpt)
     }
   }
 
-  def typeRecordSig(recordSig: RecordSignature): RecordSignature = {
-    val RecordSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = recordSig
+  def typeDataclassSig(dataclassSig: DataclassSignature): DataclassSignature = {
+    val DataclassSignature(id, typeParamsRaw, fieldsRaw, functionsRaw, directSupertypesRaw, visibility, sigScope, declPosOpt) = dataclassSig
 
     checkTypeParamsAreDistinct(typeParamsRaw, declPosOpt)
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(TypeParamsContext.empty, typeParamsRaw) {
       typeTypeTypeParam(_, sigScope, declPosOpt)
     }
-    saveReceiverType(recordSig, fullTypeParamsCtx)
-    val fieldsInst = typeFieldsUsing(typeStableField(_, recordSig, fullTypeParamsCtx, declPosOpt, isEncapsulatedField = false))(fieldsRaw)
+    saveReceiverType(dataclassSig, fullTypeParamsCtx)
+    val fieldsInst = typeFieldsUsing(typeStableField(_, dataclassSig, fullTypeParamsCtx, declPosOpt, isEncapsulatedField = false))(fieldsRaw)
     val functionsInst = for (funId, funSig) <- functionsRaw yield {
       funId -> typeFunSig(funSig, fullTypeParamsCtx)
     }
-    val directSupertypesInst = typeSuperTypesAsDatatypesOrInterfaces(recordSig, resolutionCtx, fullTypeParamsCtx)
+    val directSupertypesInst = typeSuperTypesAsPossiblySealedInterfaces(dataclassSig, resolutionCtx, fullTypeParamsCtx)
     checkingAllTypeVarsResolved {
-      RecordSignature(id, typeParamsInst, fieldsInst, functionsInst, directSupertypesInst, visibility, sigScope, declPosOpt)
+      DataclassSignature(id, typeParamsInst, fieldsInst, functionsInst, directSupertypesInst, visibility, sigScope, declPosOpt)
     }
   }
 
@@ -1602,8 +1602,8 @@ final class Typer(
   private def typeSupertypesAsInterfaces(sig: EncapsulatedTypeSig, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
     typeSupertypes[InterfaceSignature](sig, "interface", resolutionCtx, typeParamsCtx)
 
-  private def typeSuperTypesAsDatatypesOrInterfaces(sig: RuntimeTypeSignature, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
-    typeSupertypes[AbstractTypeSig](sig, "datatype or interface", resolutionCtx, typeParamsCtx)
+  private def typeSuperTypesAsPossiblySealedInterfaces(sig: RuntimeTypeSignature, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] =
+    typeSupertypes[AbstractTypeSig](sig, "interface or sealed interface", resolutionCtx, typeParamsCtx)
 
   private def typeSupertypes[S <: AbstractTypeSig : ClassTag](sig: RuntimeTypeSignature, superTKindDescr: String, resolutionCtx: ResolutionContext, typeParamsCtx: TypeParamsContext): List[NamedType] = {
     for (superTRaw <- sig.directSupertypes) yield {
@@ -1612,9 +1612,9 @@ final class Typer(
         case superTDealiased: NamedType =>
           resolutionCtx.resolveTypeSigAs[S](superTDealiased.typeName) match {
             case Some(superTDealiasedSig) =>
-              val isSealedHierarchyEdge = superTDealiasedSig.isInstanceOf[DatatypeSignature]
+              val isSealedHierarchyEdge = superTDealiasedSig.isInstanceOf[SealedInterfaceSignature]
               if (isSealedHierarchyEdge && superTDealiasedSig.visibility != sig.visibility) {
-                er.reportError(s"visibility of ${sig.sigName} differs from the visibility of its supertype ${superTInst.typeName}, which is a datatype", sig.declPosOpt)
+                er.reportError(s"visibility of ${sig.sigName} differs from the visibility of its sealed supertype ${superTInst.typeName}", sig.declPosOpt)
               } else if (!isSealedHierarchyEdge && !superTDealiasedSig.visibility.isAtLeastAsPermissiveAs(sig.visibility)) {
                 er.reportError(s"type ${sig.sigName} is not allowed to be a subtype of ${superTDealiasedSig.sigName}, whose visibility is more restricted", sig.declPosOpt)
               }

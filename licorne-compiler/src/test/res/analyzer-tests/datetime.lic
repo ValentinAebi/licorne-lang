@@ -5,7 +5,7 @@ typealias Year = Int
 typealias Month = [1..12]
 typealias DayOfMonth(year: Year, month: Month) = [1..nDaysInMonth(year, month)]
 
-record Date(year: Year, month: Month, day: DayOfMonth(year, month)) {
+data class Date(val year: Year, val month: Month, val day: DayOfMonth(year, month)) {
 
     pure fun nextDay(): Date {
         if (this.day() < nDaysInMonth(this.year(), this.month())) {
@@ -53,7 +53,7 @@ typealias Minutes = [0..59]
 typealias Seconds = [0..59]
 
 
-record Time(hours: Hours, minutes: Minutes, seconds: Seconds) {
+data class Time(val hours: Hours, val minutes: Minutes, val seconds: Seconds) {
 
     fun deltaTime(h: Int, min: Int, sec: Int): Time {
         val sSum = seconds() + sec

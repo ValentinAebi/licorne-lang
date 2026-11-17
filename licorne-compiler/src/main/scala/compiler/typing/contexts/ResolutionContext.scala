@@ -25,8 +25,8 @@ final case class ResolutionContext(
     (interfaces.get(typeId)
       orElse classes.get(typeId)
       orElse objects.get(typeId)
-      orElse datatypes.get(typeId)
-      orElse records.get(typeId)
+      orElse sealedInterfaces.get(typeId)
+      orElse dataclasses.get(typeId)
       orElse typeAliases.get(typeId))
 
   def resolveTypeSigAs[S <: TypeSignature : ClassTag](typeId: TypeIdentifier): Option[S] =

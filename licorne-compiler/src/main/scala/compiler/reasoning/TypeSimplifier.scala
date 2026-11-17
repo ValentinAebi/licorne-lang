@@ -55,7 +55,7 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
             subtypingCtx.isSubtype(tpe, otherType) && !subtypingCtx.isSubtype(otherType, tpe)
           }
         }
-        // TODO if datatypes/structs and union covers all cases of a supertype, return this supertype (?)
+        // TODO if sealed interfaces / dataclasses and union covers all cases of a supertype, return this supertype (?)
         val nonNullType = filteredTypes.size match {
           case 0 => NullType
           case 1 => filteredTypes.head
@@ -100,7 +100,7 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
             subtypingCtx.isSubtype(otherType, tpe) && !subtypingCtx.isSubtype(tpe, otherType)
           }
         }
-      // TODO if datatypes/structs, maybe compute intersection (?)
+      // TODO if sealed interfaces / dataclasses, maybe compute intersection (?)
       val nonNullType = filteredTypes.size match {
         case 0 => AnyType
         case 1 => filteredTypes.head

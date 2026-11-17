@@ -202,6 +202,7 @@ sealed trait UserInstantiableTypeSig extends ConcreteTypeSig {
 
 sealed trait AbstractTypeSig extends RuntimeTypeSignature {
   override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
+
   override def stableExposedFields: SeqMap[FunOrVarId, Field.StableField] = SeqMap.empty
 }
 
@@ -262,30 +263,30 @@ final case class ObjectSignature(
   override def stableExposedFields: SeqMap[FunOrVarId, Field.StableField] = SeqMap.empty
 }
 
-final case class DatatypeSignature(
-                                    id: TypeIdentifier,
-                                    typeParams: List[TypeTypeParamInfo],
-                                    functions: Map[FunctionDescriptor, FunctionSignature],
-                                    directSupertypes: List[NamedType],
-                                    directSubtypes: SeqSet[TypeIdentifier],
-                                    visibility: TypeVisibility,
-                                    sigScope: Scope,
-                                    declPosOpt: Option[Position]
-                                  )
+final case class SealedInterfaceSignature(
+                                           id: TypeIdentifier,
+                                           typeParams: List[TypeTypeParamInfo],
+                                           functions: Map[FunctionDescriptor, FunctionSignature],
+                                           directSupertypes: List[NamedType],
+                                           directSubtypes: SeqSet[TypeIdentifier],
+                                           visibility: TypeVisibility,
+                                           sigScope: Scope,
+                                           declPosOpt: Option[Position]
+                                         )
   extends RuntimeTypeSignature, AbstractTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig {
   override def fields: SeqMap[FunOrVarId, Field] = SeqMap.empty
 }
 
-final case class RecordSignature(
-                                  id: TypeIdentifier,
-                                  typeParams: List[TypeTypeParamInfo],
-                                  constructorParams: SeqMap[FunOrVarId, StableField],
-                                  functions: Map[FunctionDescriptor, FunctionSignature],
-                                  directSupertypes: List[NamedType],
-                                  visibility: TypeVisibility,
-                                  sigScope: Scope,
-                                  declPosOpt: Option[Position]
-                                )
+final case class DataclassSignature(
+                                     id: TypeIdentifier,
+                                     typeParams: List[TypeTypeParamInfo],
+                                     constructorParams: SeqMap[FunOrVarId, StableField],
+                                     functions: Map[FunctionDescriptor, FunctionSignature],
+                                     directSupertypes: List[NamedType],
+                                     visibility: TypeVisibility,
+                                     sigScope: Scope,
+                                     declPosOpt: Option[Position]
+                                   )
   extends RuntimeTypeSignature, ConcreteTypeSig, UnencapsulatedTypeSig, TypeParametricTypeSig, UserInstantiableTypeSig {
   override def encapsulatedFields: SeqMap[FunOrVarId, Field] = SeqMap.empty
 }
@@ -325,7 +326,7 @@ sealed trait TypeParamInfo {
   val tid: TypeIdentifier
   val upperBoundOpt: Option[Type]
   val lowerBoundOpt: Option[Type]
-  
+
   // TODO handle type parameters with another type parameter as upper bound during erasure
   //  This means checking all occurrences of upperBoundOpt.getOrElse(NullableType(AnyType))
 
@@ -334,7 +335,7 @@ sealed trait TypeParamInfo {
 
 final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
   override def varianceOpt: Option[Variance] = Some(variance)
-  
+
   def toFunTypeParamInfo: FunctionTypeParamInfo = FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt)
 
   override def toString: String =

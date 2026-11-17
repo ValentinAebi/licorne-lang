@@ -45,4 +45,4 @@ interface I {
    fun m(i: Int): I?
 }
 
-record Box[T](value: T)
+data class Box[T](val value: T)

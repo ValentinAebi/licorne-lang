@@ -5,7 +5,7 @@ enum Keyword(val str: String) {
   case Class extends Keyword("class")
   case Companion extends Keyword("companion")
   case Constructor extends Keyword("constructor")   // do not remove, useful to prevent users from using it as an identifier
-  case Datatype extends Keyword("datatype")
+  case Data extends Keyword("data")
   case Else extends Keyword("else")
   case Fun extends Keyword("fun")
   case For extends Keyword("for")
@@ -25,8 +25,8 @@ enum Keyword(val str: String) {
   case Private extends Keyword("private")
   case Public extends Keyword("public")
   case Pure extends Keyword("pure")
-  case Record extends Keyword("record")
   case Return extends Keyword("return")
+  case Sealed extends Keyword("sealed")
   case Super extends Keyword("super")
   case This extends Keyword("this")
   case Typealias extends Keyword("typealias")

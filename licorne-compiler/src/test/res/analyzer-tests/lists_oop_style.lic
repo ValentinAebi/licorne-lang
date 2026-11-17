@@ -2,7 +2,7 @@ package lists
 
 typealias Length = [0..]
 
-datatype List[out T] {
+sealed interface List[out T] {
 
    pure fun length(): Length
 
@@ -66,17 +66,17 @@ datatype List[out T] {
 
 }
 
-record Nil : List[Nothing] {
+data class Nil : List[Nothing] {
     pure fun length(): [0..0] = 0
     fun isSingletonList(): Bool = false
 }
 
-record Cons[out T](head: T, tail: List[T]) : List[T] {
+data class Cons[out T](val head: T, val tail: List[T]) : List[T] {
     pure fun length(): [1..] = 1 + tail.length()
     fun isSingletonList(): Bool = tail is Nil
 }
 
-record Pair[out L, out R](l: L, r: R)
+data class Pair[out L, out R](val l: L, val r: R)
 
 object UseLists {
 

@@ -1,7 +1,7 @@
 
-datatype List[out T]
-record Cons[out T](head: T, tail: List[T]) : List[T]
-record Nil : List[Nothing]
+sealed interface List[out T]
+data class Cons[out T](val head: T, val tail: List[T]) : List[T]
+data class Nil : List[Nothing]
 
 object Lists {
 

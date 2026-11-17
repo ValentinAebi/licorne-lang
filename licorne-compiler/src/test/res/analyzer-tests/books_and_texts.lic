@@ -46,9 +46,9 @@ class Book(
 
 typealias Url = String with isValidUrl(it)
 
-record InternetPage(
-    title: String,
-    url: Url
+data class InternetPage(
+    val title: String,
+    val url: Url
 ) : Text
 
 object InternetPages {

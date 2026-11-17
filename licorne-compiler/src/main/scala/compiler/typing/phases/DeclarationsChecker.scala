@@ -56,11 +56,11 @@ final class DeclarationsChecker(
         for ((id, objectSig) <- programOld.objects) yield {
           id -> typer.typeObjectSig(objectSig)
         },
-        for ((id, datatypeSig) <- programOld.datatypes) yield {
-          id -> typer.typeDatatypeSig(datatypeSig)
+        for ((id, sealedInterfaceSig) <- programOld.sealedInterfaces) yield {
+          id -> typer.typeSealedInterfaceSig(sealedInterfaceSig)
         },
-        for ((id, recordSig) <- programOld.records) yield {
-          id -> typer.typeRecordSig(recordSig)
+        for ((id, dataclassSig) <- programOld.dataclasses) yield {
+          id -> typer.typeDataclassSig(dataclassSig)
         },
         programOld.typeAliases,
         programOld.functions,
