@@ -3,6 +3,7 @@ package compiler.runners
 import compiler.gennames.FileExtensions.dot
 import compiler.io.{SourceCodeProvider, SourceFile}
 import compiler.pipeline.TasksPipelines
+import compiler.pipeline.TasksPipelines.PhaseTimingMode
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reasoning.{ArithIntMode, BvInt32Mode, CounterexampleBox, IntHandlingMode}
 import compiler.setup.EnvironmentVariables
@@ -187,6 +188,20 @@ object Main {
     val check = !getUnvalArg("dont-check-pkg", argsMap)
     Option.when(check)(currentWorkingDir())
   }
+  
+  private def getTimingModeArg(argsMap: MutArgsMap): PhaseTimingMode = {
+    
+    def mkTimingString(time: Long, phaseName: String): String = s"$phaseName: $time ms"
+    
+    val arg = getValuedArg("timing", argsMap, Some(""))
+    arg match {
+      case "" => PhaseTimingMode.DontTime
+      case "STDOUT" => PhaseTimingMode.Time((time, phaseName) => println(mkTimingString(time, phaseName)))
+      case "STDERR" => PhaseTimingMode.Time((time, phaseName) => System.err.println(mkTimingString(time, phaseName)))
+      // TODO allow writing timing to file?
+      case arg => error("unrecognized value for timing argument")
+    }
+  }
 
   private def getCounterExBoxArg(argsMap: MutArgsMap): Option[CounterexampleBox] = {
     Option.when(getUnvalArg("counter-ex", argsMap))(new CounterexampleBox)
@@ -222,7 +237,8 @@ object Main {
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, isDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
+      val timingMode = getTimingModeArg(argsMap)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, isDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir, timingMode)
       val programArgs = getProgramArgsArg(argsMap)
       reportUnknownArgsIfAny(argsMap)
       val mainClasses = compiler.apply(sources ++ stdLibSources)
@@ -252,7 +268,8 @@ object Main {
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
+      val timingMode = getTimingModeArg(argsMap)
+      val compiler = TasksPipelines.compiler(outDirPath, stdLibRoot, irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir, timingMode)
       reportUnknownArgsIfAny(argsMap)
       compiler.apply(sources ++ stdLibSources)
     }
@@ -270,7 +287,8 @@ object Main {
       val stdLibRoot = getLicorneStdLibRootDirArg(argsMap)
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir)
+      val timingMode = getTimingModeArg(argsMap)
+      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir, timingMode)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")
@@ -316,6 +334,7 @@ object Main {
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |compile: compile the program
          | args: -out-dir=...: required, directory where to write the output file
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
@@ -325,12 +344,14 @@ object Main {
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |typecheck: parse and typecheck the program
          | args: -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |help: displays help (this)
          |""".stripMargin)
   }

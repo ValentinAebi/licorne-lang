@@ -34,12 +34,15 @@ object TasksPipelines {
                 timeoutConfig: TimeoutConfig,
                 counterExBoxOpt: Option[CounterexampleBox],
                 srcRootForPkgMismatchCheckOpt: Option[Path],
+                timingMode: PhaseTimingMode,
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
+    given PhaseTimingMode = timingMode
+    
     val closuresNamer = new ClosuresNamer
     typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
-      .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, er))
-      .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath))
+      .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, er).maybeTimed("bytecode generation"))
+      .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath).maybeTimed("classes insertion"))
   }
 
   def typeChecker(
@@ -48,10 +51,11 @@ object TasksPipelines {
                    timeoutConfig: TimeoutConfig,
                    counterExBoxOpt: Option[CounterexampleBox],
                    srcRootForPkgMismatchCheckOpt: Option[Path],
+                   timingMode: PhaseTimingMode,
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)(using timingMode)
       .andThen(_ => ())
   }
 
@@ -69,28 +73,33 @@ object TasksPipelines {
                                closuresNamer: ClosuresNamer,
                                irDirPathOpt: Option[Path],
                                srcRootForPkgMismatchCheckOpt: Option[Path]
-                             ): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
+                             )(using PhaseTimingMode): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
     val proxyStore = ProxyStore()
     val typeCandidatesStore = TypeCandidatesStore()
     val heapVarsTypeStore = HeapVarsTypeStore()
-    multiFrontEnd(er)
-      .andThen(ImportsScanner())
-      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, typeCandidatesStore, closuresNamer, er, srcRootForPkgMismatchCheckOpt))
+    multiFrontEnd(er).maybeTimed("frontend")
+      .andThen(ImportsScanner().maybeTimed("imports scanning"))
+      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, typeCandidatesStore, closuresNamer, er, srcRootForPkgMismatchCheckOpt).maybeTimed("ircorne generation"))
       .andThen(MaybePrintIRcorne("ir1-after-ir-gen.ircorne", proxyStore, typeCandidatesStore, identity, er, irDirPathOpt))
-      .andThen(SubtypingChecker(proxyStore, er))
+      .andThen(SubtypingChecker(proxyStore, er).maybeTimed("subtyping analysis"))
       .andThen(MaybePrintIRcorne("ir2-after-subtyping-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
-      .andThen(TypeAliasesAnalyzer(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(TypeAliasesAnalyzer(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt).maybeTimed("type aliases analysis"))
       .andThen(MaybePrintIRcorne("ir3-after-typealiases-analysis.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
-      .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
+      .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt).maybeTimed("declarations analysis"))
       .andThen(MaybePrintIRcorne("ir4-after-ir-gen.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
-      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, typeVarsCtx, counterExBoxOpt, er))
+      .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, typeVarsCtx, counterExBoxOpt, er).maybeTimed("type candidates inference"))
       .andThen(MaybePrintIRcorne("ir5-after-candidates-inference.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
-      .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()))
+      .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()).maybeTimed("type checking"))
       .andThen(MaybePrintIRcorne("ir6-after-typecheck.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
       .andThen(DisplayAndTerminateIfErrors(er))
-      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt).maybeTimed("overrides analysis"))
       .andThen(MaybePrintIRcorne("ir7-after-overrides-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
+  }
+
+  extension [In, Out](phase: CompilerStep[In, Out]) private def maybeTimed(phaseName: String)(using ptm: PhaseTimingMode): CompilerStep[In, Out] = ptm match {
+    case PhaseTimingMode.DontTime => phase
+    case PhaseTimingMode.Time(timeConsumer) => TimedPhase(phaseName, phase, timeConsumer)
   }
 
   private def defaultErrorReporter: ErrorReporter =
@@ -111,6 +120,16 @@ object TasksPipelines {
           Files.copy(srcPath, dstPath, StandardCopyOption.REPLACE_EXISTING)
         }
       input
+    }
+  }
+
+  private final class TimedPhase[In, Out](phaseName: String, wrappedPhase: CompilerStep[In, Out], timeConsumer: (Long, String) => Unit) extends CompilerStep[In, Out] {
+    override def apply(input: In): Out = {
+      val startTime = System.currentTimeMillis()
+      val result = wrappedPhase.apply(input)
+      val endTime = System.currentTimeMillis()
+      timeConsumer(endTime - startTime, phaseName)
+      result
     }
   }
 
@@ -137,6 +156,11 @@ object TasksPipelines {
       er.displayAndTerminateIfErrors()
       input
     }
+  }
+
+  enum PhaseTimingMode {
+    case DontTime extends PhaseTimingMode
+    case Time(timeConsumer: (Long, String) => Unit) extends PhaseTimingMode
   }
 
 }

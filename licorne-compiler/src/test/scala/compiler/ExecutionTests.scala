@@ -4,6 +4,7 @@ import compiler.ExecutionTests.*
 import compiler.gennames.FileExtensions
 import compiler.io.SourceFile
 import compiler.pipeline.TasksPipelines
+import compiler.pipeline.TasksPipelines.PhaseTimingMode
 import compiler.reasoning.ArithIntMode
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
@@ -61,7 +62,7 @@ class ExecutionTests(programDirName: String) {
 
     val mainClasses = try {
       TasksPipelines
-        .compiler(testOutSubdirPath, TestDirectories.stdLibRootPath, Some(testOutSubdirPath), ArithIntMode, timeoutConfig, None, None, er)
+        .compiler(testOutSubdirPath, TestDirectories.stdLibRootPath, Some(testOutSubdirPath), ArithIntMode, timeoutConfig, None, None, PhaseTimingMode.DontTime, er)
         .apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {
       case e: Throwable =>
