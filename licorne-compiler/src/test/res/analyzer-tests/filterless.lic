@@ -33,8 +33,8 @@ object FilterLess {
 
 }
 
-datatype List[+T]
-record Cons[+T](first: T, rest: List[T]) : List[T]
+datatype List[out T]
+record Cons[out T](first: T, rest: List[T]) : List[T]
 record Nil() : List[Nothing]
 
 object Lists {

@@ -42,13 +42,13 @@ object Clamp {
       }
    }
 
-   fun foo(in: Array[Int], a: [-2..]): Array[[0..a]] {
-      val out = Array(in.length())
-      for (var i = 0; i < in.length(); i += 1) {
-         val c = clamp1(0, a, in.at(i))  //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
-         out.set(i, c)
+   fun foo(inarr: Array[Int], a: [-2..]): Array[[0..a]] {
+      val outarr = Array(inarr.length())
+      for (var i = 0; i < inarr.length(); i += 1) {
+         val c = clamp1(0, a, inarr.at(i))  //> E : second argument of call to clamp1: expected [0..], found a : [-2..]
+         outarr.set(i, c)
       }
-      return out
+      return outarr
    }
 
 }

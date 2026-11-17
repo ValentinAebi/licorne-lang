@@ -1,6 +1,6 @@
 package licorne.core
 
-// TODO maybe redefine String as String[C sub Char], to constrain the characters a String may contain?
+// TODO maybe redefine String as String[C : Char], to constrain the characters a String may contain?
 
 typealias StringL(len: Cnt) = String with it.size() == len
 typealias StringLMin(minLen: Cnt) = String with it.size() >= minLen

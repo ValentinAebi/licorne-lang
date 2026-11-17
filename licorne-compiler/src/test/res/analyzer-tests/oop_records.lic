@@ -2,7 +2,7 @@
 typealias Length = [0..]
 typealias Idx[T](s: Sequence[T]) = [0 ..< s.size()]
 
-interface Sequence[+T] {
+interface Sequence[out T] {
     pure fun size(): Length
 
     fun at(i: Idx(this)): T
@@ -14,7 +14,7 @@ class Array[T](public size: Length) : Sequence[T] {
     }
 }
 
-datatype List[+T] : Sequence[T] {
+datatype List[out T] : Sequence[T] {
     pure fun at(i: Idx(this)): T
 }
 
@@ -26,7 +26,7 @@ record Nil : List[Nothing] {
     pure fun size(): Length = 0
 }
 
-record Cons[+T](head: T, tail: List[T]) : List[T] {
+record Cons[out T](head: T, tail: List[T]) : List[T] {
     pure fun size(): Length = 1 + this.tail().size()
 
     pure fun at(i: Idx(this)): T =

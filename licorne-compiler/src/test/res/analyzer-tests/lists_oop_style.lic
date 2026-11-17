@@ -2,7 +2,7 @@ package lists
 
 typealias Length = [0..]
 
-datatype List[+T] {
+datatype List[out T] {
 
    pure fun length(): Length
 
@@ -71,12 +71,12 @@ record Nil : List[Nothing] {
     fun isSingletonList(): Bool = false
 }
 
-record Cons[+T](head: T, tail: List[T]) : List[T] {
+record Cons[out T](head: T, tail: List[T]) : List[T] {
     pure fun length(): [1..] = 1 + tail.length()
     fun isSingletonList(): Bool = tail is Nil
 }
 
-record Pair[+L, +R](l: L, r: R)
+record Pair[out L, out R](l: L, r: R)
 
 object UseLists {
 

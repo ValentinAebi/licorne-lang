@@ -525,7 +525,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     opt(openBracket ::: repeatWithSepNonZero(typeParamWithoutVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   }
 
-  private lazy val typeParamWithoutVariance = highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
+  private lazy val typeParamWithoutVariance = highName ::: opt(colon ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
     case id ^: upperBoundOpt ^: lowerBoundOpt =>
       TypeParamWithoutVariance(id, upperBoundOpt, lowerBoundOpt)
   }
@@ -534,11 +534,11 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     opt(openBracket ::: repeatWithSepNonZero(typeParamPossiblyWithVariance, comma) ::: closeBracket) map (_.getOrElse(List.empty))
   }
 
-  private lazy val typeParamPossiblyWithVariance = opt(op(Plus, Minus)) ::: highName ::: opt(kw(Sub).ignored ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
+  private lazy val typeParamPossiblyWithVariance = opt(kw(In, Out)) ::: highName ::: opt(colon ::: typeTree) ::: opt(kw(Super).ignored ::: typeTree) map {
     case varianceSymbolOpt ^: typeParamName ^: upperBoundOpt ^: lowerBoundOpt =>
       val variance = varianceSymbolOpt match {
-        case Some(Plus) => Variance.Covariant
-        case Some(Minus) => Variance.Contravariant
+        case Some(Out) => Variance.Covariant
+        case Some(In) => Variance.Contravariant
         case Some(_) => assert(false)
         case None => Variance.Invariant
       }

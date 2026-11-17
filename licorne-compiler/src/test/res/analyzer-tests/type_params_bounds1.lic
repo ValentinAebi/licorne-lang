@@ -6,14 +6,14 @@ interface Dog : Mammal
 interface Cat : Mammal
 
 interface I {
-   fun foo[T sub Animal super Mammal](t: T): Unit
-   fun bar[T sub Vertebrate super Dog](t: T): Unit
+   fun foo[T : Animal super Mammal](t: T): Unit
+   fun bar[T : Vertebrate super Dog](t: T): Unit
 }
 
 class C : I {
 
-   fun foo[T sub Mammal super Dog](t: T): Unit {}   //> E : upper bound of type parameter T of function foo(#1) in C does not conform to the signature of the overridden function in I
+   fun foo[T : Mammal super Dog](t: T): Unit {}   //> E : upper bound of type parameter T of function foo(#1) in C does not conform to the signature of the overridden function in I
 
-   fun bar[T sub Animal super Mammal](t: T): Unit {}  //> E : lower bound of type parameter T of function bar(#1) in C does not conform to the signature of the overridden function in I
+   fun bar[T : Animal super Mammal](t: T): Unit {}  //> E : lower bound of type parameter T of function bar(#1) in C does not conform to the signature of the overridden function in I
 
 }

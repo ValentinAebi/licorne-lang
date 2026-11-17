@@ -1,7 +1,7 @@
 package licorne.collections
 
 
-datatype LList[+T] : ImmutSeq[T] {
+datatype LList[out T] : ImmutSeq[T] {
 
     pure fun get(i: Idx(this)): T {
         var j = i
@@ -49,7 +49,7 @@ datatype LList[+T] : ImmutSeq[T] {
 
 }
 
-record Cons[+T](head: T, tail: LList[T]) : LList[T] {
+record Cons[out T](head: T, tail: LList[T]) : LList[T] {
     pure fun size(): Cnt = tail.size() + 1
 }
 

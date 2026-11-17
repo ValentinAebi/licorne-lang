@@ -971,7 +971,7 @@ final class Typer(
           ambientVariance <- ambientVarianceOpt
           if !tpVariance.isAssignableTo(ambientVariance)
         } {
-          er.reportError(s"variance error: $tpVariance type parameter $typeName in $ambientVariance position", posOpt)
+          er.reportError(s"variance error: $tpVariance type parameter $typeName is not allowed in this position", posOpt)
         }
         namedType
       case None => resolutionCtx.resolveTypeSig(typeName) match {

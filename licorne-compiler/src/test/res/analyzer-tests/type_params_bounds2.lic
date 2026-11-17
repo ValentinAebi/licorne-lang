@@ -4,7 +4,7 @@ interface Mammal : Vertebrate
 interface Dog : Mammal
 interface Cat : Mammal
 
-record R[A, B sub A](a: A, b: B)
+record R[A, B : A](a: A, b: B)
 
 object Test {
 

@@ -1,8 +1,8 @@
 
-datatype Tree[+T]
+datatype Tree[out T]
 record Leaf : Tree[Nothing]
-record Fork[+T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
-record Binary[+T](l: Tree[T], r: Tree[T]) : Tree[T]
+record Fork[out T](left: Tree[T], value: T, right: Tree[T]) : Tree[T]
+record Binary[out T](l: Tree[T], r: Tree[T]) : Tree[T]
 
 object Trees {
 

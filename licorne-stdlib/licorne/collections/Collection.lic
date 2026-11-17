@@ -1,6 +1,6 @@
 package licorne.collections
 
-interface Collection[+T] {
+interface Collection[out T] {
 
     fun size(): Cnt
 

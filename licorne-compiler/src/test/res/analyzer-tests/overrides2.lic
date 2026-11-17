@@ -1,8 +1,8 @@
 
 typealias Plants = List[Plant]
 
-interface Seq[+T]
-interface List[+T] : Seq[T]
+interface Seq[out T]
+interface List[out T] : Seq[T]
 class MutList[E] : List[E]
 
 interface Animal

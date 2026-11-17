@@ -21,10 +21,10 @@ object Encoder {
 
 }
 
-record Point[I sub Int, J sub Int](x: I, y: J)
+record Point[I : Int, J : Int](x: I, y: J)
 
-datatype List[+T]
-record Cons[+T](first: T, rest: List[T]) : List[T]
+datatype List[out T]
+record Cons[out T](first: T, rest: List[T]) : List[T]
 record Nil() : List[Nothing]
 
 object Lists {

@@ -9,7 +9,7 @@ interface Map[K, V] {
 }
 
 // A (fixed-capacity) implementation of an ArrayMap
-class ArrayMap[K sub Any, V sub Any](
+class ArrayMap[K : Any, V : Any](
     val keys: Array[K?],
     val values: ArrayOfSameLength[V?](keys),
     var currSize: [0 .. capacity()]
@@ -67,7 +67,7 @@ class ArrayMap[K sub Any, V sub Any](
 
 object ArrayMaps {
 
-    fun newEmptyOfCapacity[K sub Any, V sub Any](capacity: Length): ArrayMap[K, V] =
+    fun newEmptyOfCapacity[K : Any, V : Any](capacity: Length): ArrayMap[K, V] =
         ArrayMap(Array(capacity), Array(capacity), 0);
 
 }

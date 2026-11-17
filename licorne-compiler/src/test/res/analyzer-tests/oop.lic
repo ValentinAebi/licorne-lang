@@ -32,6 +32,6 @@ object Main {
 
 }
 
-datatype List[+T]
-record Cons[+T](head: T, tail: List[T]) : List[T]
+datatype List[out T]
+record Cons[out T](head: T, tail: List[T]) : List[T]
 record Nil : List[Nothing]

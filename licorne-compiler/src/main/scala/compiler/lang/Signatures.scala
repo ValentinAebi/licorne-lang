@@ -1,10 +1,10 @@
 package compiler.lang
 
 import compiler.identifiers.{FunOrVarId, Identifier, TypeIdentifier}
+import compiler.irs.ircorne.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Field.StableField
-import compiler.irs.ircorne.Formulas.{Formula, IdValue, NamedIdValue, ParamIdValue}
-import compiler.lang.Keyword.{Sub, Super}
+import compiler.lang.Keyword.Super
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type, TypeVariable}
 import compiler.reporting.Position
@@ -338,23 +338,23 @@ final case class TypeTypeParamInfo(tid: TypeIdentifier, variance: Variance, uppe
   def toFunTypeParamInfo: FunctionTypeParamInfo = FunctionTypeParamInfo(tid, upperBoundOpt, lowerBoundOpt)
 
   override def toString: String =
-    s"${varianceDescr(variance)}$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
+    s"${varianceDescr(variance)}$tid${boundDescr(":", upperBoundOpt)}${boundDescr(Super.str, lowerBoundOpt)}"
 }
 
 final case class FunctionTypeParamInfo(tid: TypeIdentifier, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type]) extends TypeParamInfo {
   override def varianceOpt: Option[Variance] = None
 
   override def toString: String =
-    s"$tid${boundDescr(Sub, upperBoundOpt)}${boundDescr(Super, lowerBoundOpt)}"
+    s"$tid${boundDescr(":", upperBoundOpt)}${boundDescr(Super.str, lowerBoundOpt)}"
 }
 
 private def varianceDescr(variance: Variance): String = variance match {
   case Variance.Invariant => ""
-  case Variance.Covariant => Operator.Plus.toString
-  case Variance.Contravariant => Operator.Minus.toString
+  case Variance.Covariant => Keyword.Out.toString + " "
+  case Variance.Contravariant => Keyword.In.toString + " "
 }
 
-private def boundDescr(subOrSuper: Keyword, boundOpt: Option[Type]): String = boundOpt match {
-  case Some(bound) => s" $subOrSuper $bound"
+private def boundDescr(colonOrSuper: String, boundOpt: Option[Type]): String = boundOpt match {
+  case Some(bound) => s" $colonOrSuper $bound"
   case None => ""
 }

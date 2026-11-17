@@ -2,8 +2,8 @@ package compiler.lang
 
 enum Variance(private val value: Int, val descr: String) {
   case Invariant extends Variance(0, "invariant")
-  case Covariant extends Variance(1, "covariant")
-  case Contravariant extends Variance(-1, "contravariant")
+  case Covariant extends Variance(1, s"'${Keyword.Out}'")
+  case Contravariant extends Variance(-1, s"'${Keyword.In}'")
 
   def isAssignableTo(superV: Variance): Boolean = superV match {
     case Invariant => this == Invariant

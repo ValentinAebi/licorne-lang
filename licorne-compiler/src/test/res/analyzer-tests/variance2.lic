@@ -1,12 +1,12 @@
 
-interface Covariant[+T] {
-   fun accept(t: T)            //> E : variance error: covariant type parameter T in contravariant position
+interface Covariant[out T] {
+   fun accept(t: T)            //> E : variance error: 'out' type parameter T is not allowed in this position
    fun produce(): T
 }
 
-interface Contravariant[-T] {
+interface Contravariant[in T] {
    fun accept(t: T)
-   fun produce(): T            //> E : variance error: contravariant type parameter T in covariant position
+   fun produce(): T            //> E : variance error: 'in' type parameter T is not allowed in this position
 }
 
 interface Invariant[T] {

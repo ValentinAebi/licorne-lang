@@ -1,5 +1,5 @@
 
-interface Seq[+T] {
+interface Seq[out T] {
    fun filter(pred: pure (T) -> Bool): Seq[T with pred(it)]
 }
 
