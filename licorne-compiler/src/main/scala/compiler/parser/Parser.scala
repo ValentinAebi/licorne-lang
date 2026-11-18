@@ -11,7 +11,7 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.lang.{FuncVisibility, Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, TypeVisibility, Types, Variance}
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.*
-import compiler.lang.Types.PrimitiveType
+import compiler.lang.Types.{PrimitiveType, isExtreme}
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.parser.primitives.{BinaryOperatorsParser, ParsingIterator, ParsingMismatchSignal}
 
@@ -617,16 +617,23 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
     }
   }
 
-  private lazy val forLoopHeaderWithoutParenth: P[(List[LocalDef], Expr, List[Assignment])] = {
+  private lazy val cStyleForLoopHeaderWithoutParenth: P[(List[LocalDef], Expr, List[Assignment])] = {
     repeatWithSep(valDef OR varDef, comma) ::: semicolon ::: concreteExpr ::: semicolon ::: repeatWithSep(assignmentStat, comma) map {
       case initStats ^: cond ^: stepStats => (initStats, cond, stepStats)
     }
   }
 
+  private lazy val foreachLoopHeaderWithoutParenth: P[(VariableRef, Expr)] = {
+    varRef ::: kw(In).ignored ::: concreteExpr map {
+      case elemVar ^: iteratedExpr => (elemVar, iteratedExpr)
+    }
+  }
+
   private lazy val forLoop = withDescription(s"a $For loop") {
     recursive {
-      kw(For).ignored ::: (openParenth ::: forLoopHeaderWithoutParenth ::: closeParenth) ::: block map {
-        case (initStats, cond, stepStats) ^: body => ForLoop(initStats, cond, stepStats, body)
+      kw(For).ignored ::: (openParenth ::: (cStyleForLoopHeaderWithoutParenth or foreachLoopHeaderWithoutParenth) ::: closeParenth) ::: block map {
+        case Left(initStats, cond, stepStats) ^: body => CStyleForLoop(initStats, cond, stepStats, body)
+        case Right(elemVarId, iteratedExpr) ^: body => ForeachLoop(elemVarId, iteratedExpr, body)
       }
     }
   }

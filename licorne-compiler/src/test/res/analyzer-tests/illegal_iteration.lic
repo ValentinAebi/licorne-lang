@@ -1,0 +1,10 @@
+
+object Test {
+
+    fun test(arg: Int) {
+        for (e in arg) {    //> E : type Int cannot be iterated, as it has no iterator___ method
+            println(e)
+        }
+    }
+
+}

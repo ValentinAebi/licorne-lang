@@ -1,0 +1,23 @@
+package licorne.core
+
+class StringIterator(val s: String) : Iterator[Char] {
+    var idx: Idx(s) = 0
+    var terminated = false
+
+    fun hasNext(): Bool = !terminated
+
+    fun next(): Char {
+        if (terminated) {
+            panic "Iterator: no next element"
+        }
+        val c = s.get(idx)
+        val currIdx = this.idx
+        if (currIdx + 1 < s.size()) {
+            idx = currIdx + 1
+        } else {
+            terminated = true
+        }
+        return c
+    }
+
+}

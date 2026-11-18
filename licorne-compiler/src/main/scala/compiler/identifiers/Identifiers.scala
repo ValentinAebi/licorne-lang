@@ -1,6 +1,7 @@
 package compiler.identifiers
 
 import compiler.lang.Keyword
+import compiler.stdlib.StdLib
 
 sealed trait Identifier {
 
@@ -38,4 +39,8 @@ case object ThisId extends FunOrVarId {
 
 case object ItId extends FunOrVarId {
   override def stringId: String = Keyword.It.str
+}
+
+case object ForeachIteratorVarId extends FunOrVarId {
+  override def stringId: String = StdLib.autoIteratorFunId.stringId
 }

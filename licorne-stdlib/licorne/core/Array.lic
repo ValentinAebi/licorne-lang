@@ -14,6 +14,10 @@ class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
         panic "stub, compiled to xSTORE"
     }
 
+    fun iterator___(): Iterator[T] {
+        return ArrayIterator(this)
+    }
+
     fun reverse() {
         var i = 0
         var j = size() - 1

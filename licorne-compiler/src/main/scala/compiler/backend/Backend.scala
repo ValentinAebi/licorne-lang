@@ -3,7 +3,7 @@ package compiler.backend
 import compiler.backend.Boxing.{boxDesc, unboxDesc}
 import compiler.backend.Erasure.getRuntimeType
 import compiler.gennames.FileExtensions
-import compiler.identifiers.{FunOrVarId, ConstructorFunId, TypeIdentifier}
+import compiler.identifiers.{ConstructorFunId, FunOrVarId, TypeIdentifier}
 import compiler.ircornegen.ClosuresNamer
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.*
@@ -19,7 +19,7 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.*
-import compiler.typing.SubtypingInfo
+import compiler.typing.{OverridesStore, SubtypingInfo}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, TypeParamsContext}
 import compiler.util.toJavaUtilList
 import compiler.valuesconversion.GlobalValuesContext
@@ -40,6 +40,7 @@ final class Backend(
                      outputDirectoryPath: Path,
                      disableOverflowChecks: Boolean,
                      closuresNamer: ClosuresNamer,
+                     overridesStore: OverridesStore,
                      er: ErrorReporter
                    ) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
 
@@ -323,7 +324,6 @@ final class Backend(
                           (using DealiasingContext, SimplifiedSubtypingContext, GlobalValuesContext, ResolutionContext, ClassHierarchyResolver): Unit = {
     given tpCtx: TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
 
-    val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
     val isStaticFunc =
       StdLib.hasReceiver(stringTypeId)(funSig) && StdLibFunctions.stringFuncRedirectFor(funSig).isEmpty
         || StdLib.hasReceiver(arrayTypeId)(funSig)
@@ -360,6 +360,33 @@ final class Backend(
           }
       }
     })
+
+    if (!isStaticFunc) {
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val bridgeDescriptors = overridesStore.getFunctionsOverriddenBy(funSig).map(mkFunDesc(_)).toList.distinct.filter(_ != funDesc)
+      for (bridgeDesc <- bridgeDescriptors) {
+        cb.withMethod(funName, bridgeDesc, flags, mb => {
+          bodyOpt.foreach { body =>
+            mb.withCode(cb => {
+
+              given funGenCtx: FunctionGenerationContext = FunctionGenerationContext(summon[GlobalValuesContext], tpCtx, funSig.isSyntheticAccessor, funSig.ownerName, funSig.retType, closureInfoOpt = None)
+
+              cb.aload(0)
+              var paramSlotIdx = 1
+              for ((bridgeParamDesc, funParamDesc) <- bridgeDesc.parameterArray().zip(funDesc.parameterArray())) {
+                val paramKind = descToKind(bridgeParamDesc)
+                cb.loadLocal(paramKind, paramSlotIdx)
+                ensureAssignable(funParamDesc, bridgeParamDesc, cb)
+                paramSlotIdx += paramKind.slotSize()
+              }
+              cb.invokevirtual(tConv.descriptorFor(funSig.ownerName), funSig.functionName.stringId, funDesc)
+              ensureAssignable(bridgeDesc.returnType(), funDesc.returnType(), cb)
+              cb.return_(descToKind(bridgeDesc.returnType()))
+            })
+          }
+        })
+      }
+    }
   }
 
 
@@ -504,7 +531,7 @@ final class Backend(
       case IRcorne.MkArrayLiteral(assigned, elements) =>
         val nonBoxingTypeConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
         val boxingTypeConv = BoxingTypesConverter.fromAmbientDealiasingCtx
-        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = currScope.typeOfNoSmartcast(assigned).get.baseType : @unchecked
+        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = currScope.typeOfNoSmartcast(assigned).get.baseType: @unchecked
         cb.loadConstant(elements.size)
         val boxedElemDesc = boxingTypeConv.descriptorFor(elemType)
         cb.anewarray(boxedElemDesc)
@@ -1050,6 +1077,25 @@ final class Backend(
       case _ => ()
     }
   }
+
+  private def ensureAssignable(dstDesc: ClassDesc, srcDesc: ClassDesc, cb: CodeBuilder): Unit = if (srcDesc != dstDesc) {
+    if (srcDesc == CD_void) {
+      cb.aconst_null()
+    } else if (dstDesc == CD_void && descToKind(srcDesc).slotSize() == 2) {
+      cb.pop2()
+    } else if (dstDesc == CD_void) {
+      cb.pop()
+    } else if (srcDesc.isPrimitive) {
+      val srcDescBoxed = boxDesc(srcDesc)
+      cb.invokestatic(srcDescBoxed, "valueOf", MethodTypeDesc.of(srcDescBoxed, srcDesc))
+    } else if (dstDesc.isPrimitive) {
+      val dstDescBoxed = boxDesc(dstDesc)
+      cb.checkcast(dstDescBoxed)
+      cb.invokevirtual(dstDescBoxed, unboxingFunc(dstDescBoxed), MethodTypeDesc.of(dstDesc))
+    }
+  }
+
+  private def descToKind(desc: ClassDesc): TypeKind = TypeKind.fromDescriptor(desc.descriptorString())
 
   private def unboxingFunc(boxedDesc: ClassDesc): String = boxedDesc match {
     case CD_Integer => "intValue"

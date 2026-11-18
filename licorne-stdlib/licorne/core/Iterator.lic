@@ -1,0 +1,6 @@
+package licorne.core
+
+interface Iterator[out T] {
+    fun hasNext(): Bool
+    fun next(): T
+}

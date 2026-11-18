@@ -9,7 +9,7 @@ import compiler.ircornegen.{ClosuresNamer, IRcorneGenerator, ImportsScanner}
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
-import compiler.typing.{HeapVarsTypeStore, TypeCandidatesStore}
+import compiler.typing.{HeapVarsTypeStore, OverridesStore, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 import org.junit.Assert.fail
 import org.junit.Test
@@ -130,7 +130,7 @@ class AnalyzerTests(fileName: String) {
       .andThen(DeclarationsChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
       .andThen(TypeCandidatesInferrer(ihm, timeoutConfig, proxyStore, typeCandidatesStore, typeVarsCtx, counterExBoxOpt, er))
       .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt))
-      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt))
+      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, new OverridesStore, er, counterExBoxOpt))
     try {
       pipeline.apply(srcFiles ++ TestDirectories.loadStdLib())
     } catch {

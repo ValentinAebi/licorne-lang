@@ -12,7 +12,7 @@ import compiler.program.Program
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
-import compiler.typing.SubtypingInfo
+import compiler.typing.{OverridesStore, SubtypingInfo}
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
@@ -24,6 +24,7 @@ final class OverridesChecker(
                               ihm: IntHandlingMode[?],
                               timeoutConfig: TimeoutConfig,
                               proxyStore: ProxyStore,
+                              overridesStore: OverridesStore,
                               er: ErrorReporter,
                               counterExBoxOpt: Option[CounterexampleBox],
                               handleErrors: ErrorReporter => Unit = _.displayAndTerminateIfErrors()
@@ -70,6 +71,8 @@ final class OverridesChecker(
               case Some(subFunSig@FunctionSignature(_, _, subFunTypeParams, subFunParams, subFunPrecondOpt, subFunRetType, _, subFunVisibility, subFunOverridability, subFunPurity, subFunDeclPosOpt, _)) =>
                 if (superFunOverridability == Overridability.Final) {
                   er.reportError(s"cannot override final method $funDescr defined in $superT", subFunDeclPosOpt)
+                } else {
+                  overridesStore.saveOverride(subFunSig, superFunSig)
                 }
                 val typeParamsLenMatch = subFunTypeParams.size == superFunTypeParams.size
                 val paramsLenMatch = subFunParams.size == superFunParams.size

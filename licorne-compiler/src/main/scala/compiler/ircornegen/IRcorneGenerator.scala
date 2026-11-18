@@ -889,13 +889,29 @@ final class IRcorneGenerator(
         val loop = Loop(condScope, condVal, bodyScope, loopUpdatedVars)
         currScope.saveInstr(loop, whileLoop)
 
-      case forLoop@Asts.ForLoop(initStats, cond, stepStats, body) =>
+      case forLoop@Asts.CStyleForLoop(initStats, cond, stepStats, body) =>
         generateIR(Asts.Block(
           initStats :+ Asts.WhileLoop(cond, Asts.Block(
             body.stats ++ stepStats
           ).withDesugaringSource(forLoop)).withDesugaringSource(forLoop)
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
+
+      case forLoop@Asts.ForeachLoop(elemVarTree@Asts.VariableRef(elemVarId), iteratedTree, bodyTree) =>
+        generateIR(Asts.Block(List(
+          Asts.LocalDef(ForeachIteratorVarId, None, Some(desugaredCall(iteratedTree, StdLib.autoIteratorFunId, forLoop)), ReassigPermission.Val).withDesugaringSource(forLoop),
+          Asts.WhileLoop(
+            desugaredCall(Asts.VariableRef(ForeachIteratorVarId).withDesugaringSource(forLoop), StdLib.hasNextFunId, forLoop),
+            Asts.Block(List(
+              Asts.LocalDef(elemVarId, None, Some(desugaredCall(Asts.VariableRef(ForeachIteratorVarId).withDesugaringSource(forLoop), StdLib.nextFunId, elemVarTree)), ReassigPermission.Val).withDesugaringSource(elemVarTree),
+              bodyTree
+            ))
+          ).withDesugaringSource(forLoop)
+        )), currScope, newScopeIfBlock = true)
     }
+  }
+
+  private def desugaredCall(receiver: Expr, funId: FunOrVarId, desugaringSource: Asts.Ast): Expr = {
+    Asts.Call(Asts.Select(receiver, funId).withDesugaringSource(desugaringSource), List.empty, List.empty).withDesugaringSource(desugaringSource)
   }
 
   private def generateTypeCheckForAnnotIfAny(
@@ -1033,6 +1049,7 @@ final class IRcorneGenerator(
           typeArgTrees, argTrees).withDesugaringSource(callTree), currScope)
         None
       case callTree@Asts.Call(Asts.Select(receiverTree, funId), typeArgsTrees, argTrees) =>
+        checkCallForbiddenMethods(funId, callTree)
         val receiverVal = currScope.newIntermediate("receiver")
         generateIRExpr(receiverVal, receiverTree, currScope)
         val typeArgs = typeArgsTrees.map(mkType(_, currScope))
@@ -1042,6 +1059,7 @@ final class IRcorneGenerator(
         Option.when(funId != ConstructorFunId)(FunCall(receiverVal, invkTarget, typeArgs, argVals))
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
+        checkCallForbiddenMethods(funId, callTree)
         findImplicitReceiverInImports(funId, currScope) match {
           case Some(receiverVal, targetFunId) =>
             val intermReceiverVal = currScope.newIntermediate("objalias")
@@ -1524,6 +1542,12 @@ final class IRcorneGenerator(
     }
     val assignedVars = assigned.toSet -- defined
     assignedVars
+  }
+
+  private def checkCallForbiddenMethods(funId: FunOrVarId, callTree: Asts.Call): Unit = {
+    if (funId == StdLib.autoIteratorFunId && !callTree.traverseDesugaringSources.exists(_.isInstanceOf[Asts.ForeachLoop])) {
+      er.reportError(s"method identifier ${StdLib.autoIteratorFunId} is reserved for the automatic desugaring of for loops, methods with this identifier cannot be invoked directly", callTree.getPosition)
+    }
   }
 
   extension (scope: Scope) private def saveInstr(instr: IRcorne.Instr, node: Asts.Ast): Unit = {

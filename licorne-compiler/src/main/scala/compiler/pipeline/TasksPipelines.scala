@@ -13,7 +13,7 @@ import compiler.reasoning.{BvInt32Mode, CounterexampleBox, IntHandlingMode}
 import compiler.reporting.Errors.{ErrorReporter, ExitCode}
 import compiler.typing.contexts.TypeVariablesContext
 import compiler.typing.phases.*
-import compiler.typing.{HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore}
+import compiler.typing.{HeapVarsTypeStore, OverridesStore, SubtypingInfo, TypeCandidatesStore}
 import compiler.valproxies.ProxyStore
 
 import java.nio.file.{Files, Path, StandardCopyOption}
@@ -40,8 +40,9 @@ object TasksPipelines {
     given PhaseTimingMode = timingMode
     
     val closuresNamer = new ClosuresNamer
-    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
-      .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, er).maybeTimed("bytecode generation"))
+    val overridesStore = new OverridesStore
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, overridesStore, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+      .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, overridesStore, er).maybeTimed("bytecode generation"))
       .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath).maybeTimed("classes insertion"))
   }
 
@@ -55,7 +56,7 @@ object TasksPipelines {
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)(using timingMode)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, new OverridesStore, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)(using timingMode)
       .andThen(_ => ())
   }
 
@@ -71,6 +72,7 @@ object TasksPipelines {
                                er: ErrorReporter,
                                counterExBoxOpt: Option[CounterexampleBox],
                                closuresNamer: ClosuresNamer,
+                               overridesStore: OverridesStore,
                                irDirPathOpt: Option[Path],
                                srcRootForPkgMismatchCheckOpt: Option[Path]
                              )(using PhaseTimingMode): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
@@ -93,7 +95,7 @@ object TasksPipelines {
       .andThen(TypeChecker(ihm, timeoutConfig, typeVarsCtx, proxyStore, typeCandidatesStore, heapVarsTypeStore, er, counterExBoxOpt, handleErrors = _ => ()).maybeTimed("type checking"))
       .andThen(MaybePrintIRcorne("ir6-after-typecheck.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
       .andThen(DisplayAndTerminateIfErrors(er))
-      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, er, counterExBoxOpt).maybeTimed("overrides analysis"))
+      .andThen(OverridesChecker(ihm, timeoutConfig, proxyStore, overridesStore, er, counterExBoxOpt).maybeTimed("overrides analysis"))
       .andThen(MaybePrintIRcorne("ir7-after-overrides-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))
   }
 

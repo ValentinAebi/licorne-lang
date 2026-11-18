@@ -5,6 +5,8 @@ import compiler.lang.*
 import compiler.lang.Types.PrimitiveType
 import compiler.reporting.Position
 
+import scala.annotation.internal.Body
+
 
 object Asts {
 
@@ -343,7 +345,7 @@ object Asts {
   final case class NullRef() extends Expr {
     override def children: List[Ast] = List.empty
   }
-  
+
   final case class ArrayLiteral(elems: List[Expr]) extends Expr {
     override def children: List[Ast] = elems
   }
@@ -459,13 +461,17 @@ object Asts {
     override def children: List[Ast] = List(cond, body)
   }
 
-  final case class ForLoop(
-                            initStats: List[LocalDef],
-                            cond: Expr,
-                            stepStats: List[Assignment],
-                            body: Block
-                          ) extends Loop {
+  final case class CStyleForLoop(
+                                  initStats: List[LocalDef],
+                                  cond: Expr,
+                                  stepStats: List[Assignment],
+                                  body: Block
+                                ) extends Loop {
     override def children: List[Ast] = initStats ++ List(cond) ++ stepStats :+ body
+  }
+
+  final case class ForeachLoop(elemVar: VariableRef, iterated: Expr, body: Block) extends Loop {
+    override def children: List[Ast] = List(elemVar, iterated, body)
   }
 
   final case class ReturnExpr(optVal: Option[Expr]) extends Expr {

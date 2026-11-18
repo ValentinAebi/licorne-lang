@@ -1391,7 +1391,11 @@ final class Typer(
     val receiverType = typeFormula(receiver, scope, posOpt)
 
     def errorCase() = {
-      er.reportError(s"method ${FunctionDescriptor(invkTarget.funId, callArgs.size)} not found in type $receiverType", posOpt)
+      if (invkTarget.funId == StdLib.autoIteratorFunId) {
+        er.reportError(s"type $receiverType cannot be iterated, as it has no ${StdLib.autoIteratorFunId} method", posOpt)
+      } else {
+        er.reportError(s"method ${FunctionDescriptor(invkTarget.funId, callArgs.size)} not found in type $receiverType", posOpt)
+      }
       irModif {
         invkTarget.markUnresolvable()
       }

@@ -1,0 +1,10 @@
+
+object Main {
+
+    fun main() {
+        for (c in "Licorne") {
+            println(c)
+        }
+    }
+
+}

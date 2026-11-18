@@ -1,0 +1,23 @@
+package licorne.core
+
+class ArrayIterator[T](val array: Array[T]) : Iterator[T] {
+    var idx: Idx(array) = 0
+    var terminated = false
+
+    fun hasNext(): Bool = !terminated
+
+    fun next(): T {
+        if (terminated) {
+            panic "Iterator: no next element"
+        }
+        val elem = array.get(idx)
+        val currIdx = this.idx
+        if (currIdx + 1 < array.size()) {
+            idx = currIdx + 1
+        } else {
+            terminated = true
+        }
+        return elem
+    }
+    
+}

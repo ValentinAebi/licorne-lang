@@ -213,6 +213,12 @@ object TreeParsers {
     /**
      * @return a parser choosing the parser among `this` and `right` that matches the token
      */
+    final infix def or[T](right: AnyTreeParser[T])(implicit errorReporter: ErrorReporter): AnyTreeParser[Either[U, T]] =
+      NonFinalDisjunction(None, this.map(Left(_)), right.map(Right(_)), errorReporter)
+
+    /**
+     * @return a parser choosing the parser among `this` and `right` that matches the token
+     */
     final infix def OR[T](right: AnyTreeParser[T])(implicit errorReporter: ErrorReporter): AnyTreeParser[U | T] =
       NonFinalDisjunction(None, this, right, errorReporter)
 
@@ -314,6 +320,12 @@ object TreeParsers {
         case _ ^: r => r
       }
     }
+
+    /**
+     * @return a parser choosing the parser among `this` and `right` that matches the token
+     */
+    final infix def or[T](right: FinalTreeParser[T])(implicit errorReporter: ErrorReporter): FinalTreeParser[Either[U, T]] =
+      FinalDisjunction(None, this.map(Left(_)), right.map(Right(_)), errorReporter)
 
     /**
      * @return a parser choosing the parser among `this` and `right` that matches the token
