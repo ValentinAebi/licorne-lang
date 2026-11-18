@@ -2,7 +2,7 @@ package licorne.core
 
 
 typealias ArrayL[T](len: Cnt) = Array[T] with it.size() == len
-typealias ArrayLMin[T](minLen: Cnt) = Array[T] with it.size() == minLen
+typealias ArrayLMin[T](minLen: Cnt) = Array[T] with it.size() >= minLen
 
 class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
 
@@ -28,6 +28,12 @@ class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
         val tmp = get(i)
         set(i, get(j))
         set(j, tmp)
+    }
+
+    fun foreach(action: (T) -> Unit) {
+        for (var i = 0; i < size(); i += 1) {
+            action(get(i))
+        }
     }
 
 }

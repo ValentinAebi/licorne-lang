@@ -1,0 +1,14 @@
+
+object Main {
+
+    fun main() {
+        val xs = [1, 2, 3, 4, 5]
+        xs.foreach { println(it) }
+        printAll(["This", "is", "a", "sentence"])
+    }
+
+    private fun printAll(array: ArrayLMin[String](2)) {
+        array.foreach { println(it) }
+    }
+
+}

@@ -26,6 +26,12 @@ extension [T](iterable: Iterable[T]) def filterIsInstance[U : ClassTag]: Iterabl
     case _ => None
   }
 
+extension [T](iterable: Iterable[T]) def findInstance[U: ClassTag](pred: U => Boolean = (_: U) => true): Option[U] =
+  iterable.iterator.flatMap {
+    case u: U if pred(u) => Some(u)
+    case _ => None
+  }.find(_ => true)
+
 extension [A, B](map: Map[A, B]) def mapVals[C](f: B => C): Map[A, C] =
   map.map((a, b) => (a, f(b)))
 

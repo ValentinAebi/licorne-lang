@@ -552,9 +552,17 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private lazy val objectRef = possiblyPrefixedTypeNameWithSharp map (ObjectRef(_))
 
   private lazy val varRef = funOrVarId map (name => VariableRef(name))
+  
+  private def arrayLiteral(using ExprMode) = withDescription("an array literal") {
+    recursive {
+      openBracket ::: repeatWithSep(expr, comma) ::: closeBracket map { elems =>
+        ArrayLiteral(elems)
+      }
+    }
+  }
 
   private def atomicExpr(using ExprMode): P[Expr] = recursive {
-    varRef OR thisRef OR itRef OR literalValue OR nullRef OR objectRef OR parenthesizedExpr
+    varRef OR thisRef OR itRef OR literalValue OR nullRef OR objectRef OR arrayLiteral OR parenthesizedExpr
   }
 
   private def selectOrIndexingChain(using exprMode: ExprMode) = recursive {

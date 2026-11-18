@@ -343,6 +343,10 @@ object Asts {
   final case class NullRef() extends Expr {
     override def children: List[Ast] = List.empty
   }
+  
+  final case class ArrayLiteral(elems: List[Expr]) extends Expr {
+    override def children: List[Ast] = elems
+  }
 
   /**
    * Occurrence of a variable (`val`, `var`, function parameter, etc.)

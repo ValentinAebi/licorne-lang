@@ -21,12 +21,12 @@ import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simpl
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{arrayLTypeId, arrayTypeId, sizeFunId, stringLTypeId, stringType}
 import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
-import compiler.util.{SeqSet, asIterableOfType, findUnique, mapVals}
+import compiler.util.{SeqSet, asIterableOfType, findInstance, findUnique, mapVals}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 import compiler.valuesconversion.LocalValuesContext.*
@@ -340,6 +340,19 @@ final class Typer(
         currScope.saveType(assigned, applyCandidateIfTernary(assigned, mkTypeForStringLit(src)))
         saveEquality(assigned, StringConst(src))
 
+      case mkArrayLit@MkArrayLiteral(assigned, elements) =>
+        val types = elements.map(currScope.computeCurrentType(_, mkArrayLit.getPosition))
+        val candidateElemTypeOpt =
+          typeCandidatesStore.getCandidates(assigned)
+            .map(_.baseType)
+            .findInstance[NamedType](_.typeName == StdLib.arrayTypeId)
+            .flatMap(_.typeArgs.headOption)
+        val elemType =
+          if types.isEmpty then candidateElemTypeOpt.getOrElse(NothingType)
+          else if candidateElemTypeOpt.exists(cand => types.forall(subtypingCtx.isSubtype(_, cand))) then candidateElemTypeOpt.get
+          else types.reduceLeft(meetJoin.computeJoin(_, _))
+        currScope.saveType(assigned, NamedType(arrayLTypeId, List(elemType), List(IntConst(elements.size))))
+
       case neg@NumNeg(assigned, operand) => assignTarget(assigned, currScope) {
         typeNumericNeg(operand, currScope, neg.getPosition)
       }
@@ -400,8 +413,8 @@ final class Typer(
         currScope.saveType(assigned, returnType)
         tryToResolveTypeVarsUsingCandidates(assigned, returnType)
         if (func.isResolved) {
-          if (StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0)(func.getFunSigUnsafe)) {
-            er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${StdLib.sizeFunId} is not callable", invk.getPosition)
+          if (StdLib.isFunc(StdLib.indexedTypeId, sizeFunId, 0)(func.getFunSigUnsafe)) {
+            er.reportError(s"implementation restriction: method ${StdLib.indexedTypeId}::${sizeFunId} is not callable", invk.getPosition)
           }
           makeDeductionsIfNothing(returnType, currScope)
         }
@@ -518,11 +531,11 @@ final class Typer(
               val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore, hybridCast.getAstNodeOpt)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
                 case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
-                  func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, StdLib.sizeFunId, 0))
+                  func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, sizeFunId, 0))
                 case _ => false
               } match {
                 case Some(_) =>
-                  er.reportError(s"implementation restriction: !! cannot be used because it involves a call to non-callable method ${StdLib.indexedTypeId}::${StdLib.sizeFunId}", hybridCast.getPosition)
+                  er.reportError(s"implementation restriction: !! cannot be used because it involves a call to non-callable method ${StdLib.indexedTypeId}::${sizeFunId}", hybridCast.getPosition)
                 case None =>
                   targetBase match {
                     case NamedType(StdLib.arrayTypeId, _, _) =>

@@ -12,8 +12,10 @@ import compiler.program.Program
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, MeetJoinComputer, Reasoning}
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.*
 import compiler.typing.*
+import compiler.util.findInstance
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
 
@@ -109,6 +111,14 @@ final class TypeCandidatesInferrer(
     case AssignBoolConst(assigned, src) => ()
     case AssignCharConst(assigned, src) => ()
     case AssignStringConst(assigned, src) => ()
+    case MkArrayLiteral(assigned, elements) =>
+      typeCandidatesStore.getCandidates(assigned).map(_.baseType).findInstance[NamedType](_.typeName == StdLib.arrayTypeId) match {
+        case Some(NamedType(StdLib.arrayTypeId, argType :: _, Nil)) =>
+          for (elem <- elements) {
+            typeCandidatesStore.offerCandidate(elem, argType)
+          }
+        case _ => ()
+      }
     case NumNeg(assigned, operand) => ()
     case Add(assigned, lhs, rhs) => ()
     case Sub(assigned, lhs, rhs) => ()

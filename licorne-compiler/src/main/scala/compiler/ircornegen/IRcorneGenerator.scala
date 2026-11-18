@@ -22,8 +22,8 @@ import compiler.reporting.Position
 import compiler.stdlib.StdLib
 import compiler.typing.TypeCandidatesStore
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
-import compiler.typing.contexts.{DealiasingContext, TypeParamsContext, TypeVariablesContext}
-import compiler.util.{SeqSet, filterIsInstance, mapVals}
+import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
+import compiler.util.{SeqSet, mapVals}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.LocalValuesContext
 import compiler.valuesconversion.LocalValuesContext.{KnownAndInitialized, KnownButUninitialized}
@@ -980,6 +980,13 @@ final class IRcorneGenerator(
         currScope.saveInstr(AssignVal(resultVal, nullVal), expr)
         proxyStore.saveProxy(resultVal, nullVal)
         Some(nullVal)
+      case Asts.ArrayLiteral(elemTrees) =>
+        val elemVals = elemTrees.map(_ => currScope.newIntermediate("arrelem"))
+        for ((elemVal, elemTree) <- elemVals.zip(elemTrees)) {
+          generateIRExpr(elemVal, elemTree, currScope)
+        }
+        currScope.saveInstr(MkArrayLiteral(resultVal, elemVals), expr)
+        None
       case varRefTree@Asts.VariableRef(name) =>
         (currScope.getLocalValuesContextUnsafe.valueOf(name): @unchecked) match {
           case LocalValuesContext.Unknown(id) =>
@@ -1285,6 +1292,7 @@ final class IRcorneGenerator(
         case Asts.BoolLit(value) => Some(BoolConst(value))
         case Asts.StringLit(value) => Some(StringConst(value))
         case Asts.NullRef() => Some(currScope.valuesCtx.globalCtx.nullVal)
+        case Asts.ArrayLiteral(elems) => failIllegalConstruct("array literal")
         case varRefTree@Asts.VariableRef(name) =>
           currScope.getLocalValuesContextOpt.flatMap(_.valueOf(name).toOption) match {
             case someVal@Some(_) => someVal

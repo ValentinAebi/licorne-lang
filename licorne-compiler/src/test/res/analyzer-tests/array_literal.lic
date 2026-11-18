@@ -1,0 +1,14 @@
+
+object Main {
+
+    fun main() {
+        printAll([0])   //> E : first argument of call to printAll: expected licorne.core.ArrayLMin[Int](2), found licorne.core.ArrayL[[0..0]](1)
+        printAll(["This", "is", "a", "sentence"])
+    }
+
+    private fun printAll[T](array: ArrayLMin[T](2)) {
+        array.foreach { println(it) }
+    }
+
+}
+

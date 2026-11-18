@@ -28,6 +28,8 @@ object StdLib {
   val getFunId: FunOrVarId = NormalFunOrVarId("get")
   val sizeFunId: FunOrVarId = NormalFunOrVarId("size")
   val arrayTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Array")
+  val arrayLTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "ArrayL")
+  val arrayLMinTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "ArrayLMin")
   val arraySetFunId: FunOrVarId = NormalFunOrVarId("set")
   val arraySizeFunId: FunOrVarId = NormalFunOrVarId("size")
   val countTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "Cnt")

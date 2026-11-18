@@ -219,6 +219,10 @@ object IRcorne {
   final case class AssignCharConst(assigned: IdValue, src: Char) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
   final case class AssignStringConst(assigned: IdValue, src: String) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
+  
+  final case class MkArrayLiteral(assigned: IdValue, elements: List[IdValue]) extends AssigningInstr, PureInstr, NoChildren {
+    override def consumedVals: List[IdValue] = elements
+  }
 
   final case class NumNeg(assigned: IdValue, operand: IdValue) extends AssigningInstr, PureInstr, UnaryOp
 

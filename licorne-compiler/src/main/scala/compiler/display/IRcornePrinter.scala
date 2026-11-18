@@ -258,6 +258,8 @@ final class IRcornePrinter(
         pps.add(s"CHARC ${maybeTyped(assigned, scope)} := $src")
       case AssignStringConst(assigned, src) =>
         pps.add(s"STRINGC ${maybeTyped(assigned, scope)} := \"${src.replace("\n", "\\n").replace("\t", "\\t")}\"")
+      case MkArrayLiteral(assigned, elements) =>
+        pps.add(s"ARRAYLIT ${maybeTyped(assigned, scope)} := ${elements.mkString("[", ",", "]")}")
       case NumNeg(assigned, operand) =>
         pps.add(s"NEG ${maybeTyped(assigned, scope)} := -$operand")
       case Add(assigned, lhs, rhs) =>

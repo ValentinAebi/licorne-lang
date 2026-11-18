@@ -501,6 +501,27 @@ final class Backend(
         cb.ldc(cstEntry)
         genValueStore(assigned, currScope, cb)
 
+      case IRcorne.MkArrayLiteral(assigned, elements) =>
+        val nonBoxingTypeConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+        val boxingTypeConv = BoxingTypesConverter.fromAmbientDealiasingCtx
+        val NamedType(StdLib.arrayTypeId, List(elemType), Nil) = currScope.typeOfNoSmartcast(assigned).get.baseType : @unchecked
+        cb.loadConstant(elements.size)
+        val boxedElemDesc = boxingTypeConv.descriptorFor(elemType)
+        cb.anewarray(boxedElemDesc)
+        val elemTypeIsPrimitive = nonBoxingTypeConv.descriptorFor(elemType).isPrimitive
+        var arrayIdx = 0
+        for (elem <- elements) {
+          cb.dup()
+          cb.loadConstant(arrayIdx)
+          genValueLoad(elem, currScope, cb)
+          if (elemTypeIsPrimitive) {
+            cb.invokestatic(boxedElemDesc, "valueOf", MethodTypeDesc.of(boxedElemDesc, unboxDesc(boxedElemDesc)))
+          }
+          cb.aastore()
+          arrayIdx += 1
+        }
+        genValueStore(assigned, currScope, cb)
+
       case IRcorne.NumNeg(assigned, operand) =>
         genValueLoad(operand, currScope, cb)
         dispatchArithOnVal(operand, currScope, whenInt = {
