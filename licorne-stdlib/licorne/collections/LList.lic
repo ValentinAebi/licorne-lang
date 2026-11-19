@@ -3,6 +3,8 @@ package licorne.collections
 
 sealed interface LList[out T] : ImmutSeq[T] {
 
+    fun iterator(): Iterator[T] = LListIterator(this)
+
     pure fun get(i: Idx(this)): T {
         var j = i
         for (var ls = this; ls is Cons; ls = ls.tail()) {

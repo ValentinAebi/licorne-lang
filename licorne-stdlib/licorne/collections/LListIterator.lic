@@ -1,0 +1,16 @@
+package licorne.collections
+
+private(licorne.collections) class LListIterator[T](ls: LList[T]) : Iterator[T] {
+    var rem = ls
+
+    fun hasNext(): Bool {
+        return rem is Cons
+    }
+
+    fun next(): T {
+        val rem = this.rem as Cons
+        val result = rem.head()
+        this.rem = rem.tail()
+        return result
+    }
+}

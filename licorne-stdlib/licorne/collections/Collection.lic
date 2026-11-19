@@ -10,4 +10,8 @@ interface Collection[out T] {
 
     fun foreach(f: (T) -> Unit)
 
+    fun iterator(): Iterator[T]
+
+    open fun iterator___(): Iterator[T] = iterator()
+
 }

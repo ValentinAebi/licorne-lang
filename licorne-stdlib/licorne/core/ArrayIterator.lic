@@ -1,6 +1,6 @@
 package licorne.core
 
-class ArrayIterator[T](val array: Array[T]) : Iterator[T] {
+private(licorne) class ArrayIterator[T](val array: Array[T], val limit: Pos(array) = array.size()) : Iterator[T] {
     var idx: Idx(array) = 0
     var terminated = false
 
@@ -12,7 +12,7 @@ class ArrayIterator[T](val array: Array[T]) : Iterator[T] {
         }
         val elem = array.get(idx)
         val currIdx = this.idx
-        if (currIdx + 1 < array.size()) {
+        if (currIdx + 1 < limit) {
             idx = currIdx + 1
         } else {
             terminated = true

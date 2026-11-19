@@ -9,6 +9,13 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
 
     fun size(): Cnt = currSize
 
+    fun iterator(): Iterator[T] = ArrayIterator(array, size()!!).map { elem ->
+        if (elem is NoElem) {
+            panic "concurrent modification"
+        }
+        return elem
+    }
+
     fun get(i: Int): T {
         if (0 <= i && i < currSize) {
             val elem = array.get(i!!)

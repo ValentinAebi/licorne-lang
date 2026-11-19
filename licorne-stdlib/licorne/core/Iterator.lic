@@ -3,4 +3,6 @@ package licorne.core
 interface Iterator[out T] {
     fun hasNext(): Bool
     fun next(): T
+
+    fun map[U](f: (T) -> U): Iterator[U] = MappedIterator(this, f)
 }

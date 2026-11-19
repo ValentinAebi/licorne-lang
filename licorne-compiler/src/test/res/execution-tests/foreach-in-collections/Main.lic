@@ -1,0 +1,32 @@
+import licorne.collections.Collection
+import licorne.collections.ArrayList
+import licorne.collections.LList
+import licorne.collections.LLists.listFromArray
+
+object Main {
+
+    fun main() {
+        val al = ArrayList()
+        al.add(1)
+        al.add(2)
+        al.add(3)
+        al.add(4)
+        for (i in al) {
+            println(i)
+        }
+        val ll = listFromArray(["This", "list", "contains", "strings"])
+        for (x in ll) {
+            println(x)
+        }
+        println(sum(al))
+    }
+
+    private fun sum(c: Collection[[0..]]): [0..] {
+        var sum = 0
+        for (i in c) {
+            sum += i
+        }
+        return sum
+    }
+
+}
