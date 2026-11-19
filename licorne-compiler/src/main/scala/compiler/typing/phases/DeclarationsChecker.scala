@@ -10,7 +10,7 @@ import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
 import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.ResolveTypeVars
-import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
+import compiler.typing.{ClosureInfo, ClosuresCollector, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
 import compiler.valuesconversion.GlobalValuesContext
@@ -44,8 +44,8 @@ final class DeclarationsChecker(
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, er, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
 
-      val closuresCollector = mutable.Queue.empty[ClosureInfo]
-      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+      val closuresCollector = new ClosuresCollector
+      val typer = Typer(None, dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector))
 
       val programNew = Program(globalValsCtx,
         for ((id, interfaceSig) <- programOld.interfaces) yield {
@@ -94,7 +94,7 @@ final class DeclarationsChecker(
       while (closuresCollector.nonEmpty) {
         val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
         val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-          proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+          proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, Some(closuresCollector))
         solver.onNewFrame {
           for ((paramVal, paramType) <- closureParams) {
             solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))

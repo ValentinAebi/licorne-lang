@@ -49,7 +49,7 @@ final class TypeAliasesAnalyzer(
 
       given Solver = solver
 
-      val typer = Typer(None, oldDealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollectorFuncOpt = None /* TODO maybe we can allow closures in type aliases */)
+      val typer = Typer(None, oldDealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, simplifier, absInt, globalValsCtx, er, closuresCollectorOpt = None /* TODO maybe we can allow closures in type aliases */)
       val newTypeAliases = for (tid, tSig) <- programOld.typeAliases yield tid -> typer.typeTypeAliasSig(tSig)
 
       val newDealiasingCtx = DealiasingContext(newTypeAliases)

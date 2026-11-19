@@ -106,9 +106,9 @@ final class TypeChecker(
                        )(using globalValsCtx: GlobalValuesContext, dealiasingCtx: DealiasingContext): Unit =
     func.bodyOpt.foreach { funcBody =>
 
-      val closuresCollector = mutable.Queue.empty[ClosureInfo]
+      val closuresCollector = new ClosuresCollector
       val funcTyper = Typer(Some(funSig), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector))
       val ownerSig = resolCtx.resolveTypeSigAs(funSig.ownerName).get
 
       given TypeParamsContext = TypeParamsContext(ownerSig.typeParams ++ funSig.typeParams)
@@ -147,7 +147,7 @@ final class TypeChecker(
         while (closuresCollector.nonEmpty) {
           val closureInfo@ClosureInfo(closureParams, closureBody, closureRetType, branchingInfo, requiresPurityInBody, typeParamsCtx) = closuresCollector.dequeue()
           val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolCtx, typeVarsCtx, subtypingCtx, meetJoin,
-            proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector.enqueue(_)))
+            proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValsCtx, er, Some(closuresCollector))
           solver.onNewFrame {
             for ((paramVal, paramType) <- closureParams) {
               solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))

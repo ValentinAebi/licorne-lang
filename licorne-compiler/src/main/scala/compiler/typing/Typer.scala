@@ -53,12 +53,9 @@ final class Typer(
                    absInt: AbstractInterpreter,
                    globalValuesCtx: GlobalValuesContext,
                    er: ErrorReporter,
-                   closuresCollectorFuncOpt: Option[ClosureInfo => Unit],
+                   closuresCollectorOpt: Option[ClosuresCollector],
                    allowWriteToIR: Boolean = true
                  )(using CompilationStep) {
-  private val closuresCollectorFunc = closuresCollectorFuncOpt.getOrElse {
-    (closureInfo: ClosureInfo) => er.reportError("closure definition is not allowed in this position", closureInfo.body.getPosition)
-  }
 
   // @formatter:off
   private given DealiasingContext = dealiasingCtx
@@ -78,7 +75,7 @@ final class Typer(
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
     meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValuesCtx, er,
-    closuresCollectorFuncOpt, allowWriteToIR = false)
+    closuresCollectorOpt, allowWriteToIR = false)
 
   def typeScopeInstructions(scope: Scope, branchInfo: BranchingInfo, scopeKind: ScopeKind = ScopeKind.NotAFunc)(using TypeParamsContext): Unit = {
     solver.onNewFrame {
@@ -491,7 +488,12 @@ final class Typer(
           }
         }
         currScope.saveType(assigned, ClosureType(paramTypesB.result(), resultTypeVar, isPure))
-        closuresCollectorFunc(ClosureInfo(params, body, resultTypeVar, branchInfo, isPure, typeParamsCtx))
+        closuresCollectorOpt match {
+          case Some(closuresCollector) =>
+            closuresCollector.enqueue(assigned, ClosureInfo(params, body, resultTypeVar, branchInfo, isPure, typeParamsCtx))
+          case None =>
+            er.reportError("closure definition is not allowed in this position", mkClosure.getPosition)
+        }
 
       case tt@TypeTest(assigned, testedValue, testedTypeId) =>
         checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
@@ -1431,23 +1433,6 @@ final class Typer(
                 unifyTypes(cand.substitute(Map.empty, allArgsSubst), funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, allArgsSubst))
               }
             }
-            val absIntSubst =
-              funSig.paramsWithoutThis.zip(callArgs.map(arg => proxyStore.developDeep(arg)))
-                .flatMap {
-                  case ((_, ClosureType(closureParams, closureResultType@NamedType(closureResultTypeId, Nil, Nil), _)), PureClosureValue(params, body, _))
-                    if composedTypeSubst.get(closureResultTypeId).exists(_.isInstanceOf[TypeVariable])
-                      && funSig.retType.mentionsType(closureResultType)
-                  =>
-                    val absIntAssumptions = params.zip(closureParams.map(_.substitute(composedTypeSubst, allArgsSubst))).toMap
-                    absInt.interpretUnderAssumptions(body, absIntAssumptions, None) match {
-                      case Some(absIntResult) if !Types.isExtreme(absIntResult) =>
-                        typeVarsCtx.forgetTypeVar(composedTypeSubst.apply(closureResultTypeId).asInstanceOf[TypeVariable])
-                        Some(closureResultTypeId -> discardPredicateIfOnlyEqualities(absIntResult))
-                      case _ => None
-                    }
-                  case _ => None
-                }.groupBy(_._1)
-                .mapVals(group => meetJoin.computeJoin(group.map(_._2)))
             val paramTypesInclThis = funSig.paramsInclThis.map { (paramVal, tpe) =>
               Some(paramVal) -> tpe.substitute(composedTypeSubst, Map.empty)
             }
@@ -1460,7 +1445,7 @@ final class Typer(
               }
               solver.assert(precondSubst)
             }
-            val instantiatedRetTypeBeforeSimplification = funSig.retType.withTypeVarsExpanded.substitute(combineSubstTakingMostNarrow(absIntSubst, composedTypeSubst), argsSubst).withDependenciesTransformed(proxyStore.developNearest(_))
+            val instantiatedRetTypeBeforeSimplification = funSig.retType.withTypeVarsExpanded.substitute(composedTypeSubst, argsSubst).withDependenciesTransformed(proxyStore.developNearest(_))
             val instantiatedRetTypeDealiased = dealiasingCtx.dealiasType(instantiatedRetTypeBeforeSimplification)
             val instantiatedRetTypeSimplified = typeSimplifier.simplifyType(instantiatedRetTypeDealiased match {
               case instantiatedRetTypeDealiased: TernaryType => instantiatedRetTypeDealiased
@@ -1478,17 +1463,6 @@ final class Typer(
       case _ => errorCase()
     }
   }
-
-  private def combineSubstTakingMostNarrow(prioritySubst: Map[TypeIdentifier, Type], otherSubst: Map[TypeIdentifier, Type])(using TypeParamsContext): Map[TypeIdentifier, Type] =
-    Map.from(for (tid <- prioritySubst.keys ++ otherSubst.keys) yield tid -> {
-      (prioritySubst.get(tid), otherSubst.get(tid)) match {
-        case (Some(pType), Some(oType)) if subtypingCtx.isSubtype(oType, pType)(using CheckOnly) => oType
-        case (Some(pType), _) => pType
-        case (None, Some(oType)) => oType
-        case (None, None) =>
-          throw AssertionError()
-      }
-    })
 
   extension (scope: Scope) private def computeCurrentType(formula: Formula, posOpt: Option[Position])
                                                          (using TypeSimplifier, TypeParamsContext): Type =
@@ -1688,17 +1662,38 @@ final class Typer(
     subst.clear()
     solver.onNewFrame {
       var argIdx = if argsIncludeReceiver then 0 else 1
-      for (((paramValOpt, paramTypeBeforeSubst), (argOpt, argType)) <- params.zip(args)) {
+      for (((paramValOpt, paramTypeBeforeSubst), (argValOpt, argType)) <- params.zip(args)) {
         val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-        subtypingCtx.enforceIsSubtypeExpAct(argOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
+        subtypingCtx.enforceIsSubtypeExpAct(argValOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
+        argValOpt match {
+          case Some(arg: IdValue) => typeIfClosure(arg)
+          case _ => ()
+        }
         paramValOpt.foreach { paramVal =>
-          addToSubstIfValid(paramVal, argOpt, subst)
+          addToSubstIfValid(paramVal, argValOpt, subst)
           solver.takeType(paramVal, argType)
         }
         argIdx += 1
       }
     }
     subst
+  }
+
+  private def typeIfClosure(idVal: IdValue): Unit = {
+    for {
+      closuresCollector <- closuresCollectorOpt
+      closureVal <- proxyStore.getIdValProxiesChain(idVal).find(p => closuresCollector.contains(p))
+    } {
+      val closureInfo@ClosureInfo(closureParams, closureBody, closureResultType, closureBranchingInfo, closureRequiresPurity, closureTypeParamsCtx) = closuresCollector.extract(closureVal).get
+      val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin,
+        proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValuesCtx, er, Some(closuresCollector))
+      solver.onNewFrame {
+        for ((paramVal, paramType) <- closureParams) {
+          solver.takeType(paramVal, dealiasingCtx.dealiasType(paramType.withTypeVarsExpanded))
+        }
+        closureTyper.typeScopeInstructions(closureBody, closureBranchingInfo, ScopeKind.ClosureBody(closureResultType))(using closureTypeParamsCtx)
+      }
+    }
   }
 
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula])

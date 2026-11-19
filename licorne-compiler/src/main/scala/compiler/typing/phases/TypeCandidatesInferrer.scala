@@ -52,7 +52,7 @@ final class TypeCandidatesInferrer(
     Reasoning.usingFreshReasoningToolkit(ihm, timeoutConfig, dealiasingCtx, resolCtx, proxyStore, program.globalValuesContext, counterExBoxOpt, er) { solver =>
       SubtypingContext(subtypingGraph, flattenedSupertypesSubstitutions, dealiasingCtx, resolCtx, solver, proxyStore, globalValsCtx, fakeEr, counterExBoxOpt)
     } { (solver, subtypingCtx, simplifier, meetJoin, absInt) =>
-      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false, closuresCollectorFuncOpt = None)
+      val typer = Typer(None, dealiasingCtx, resolCtx, tmpTypeVarsCtx, subtypingCtx, meetJoin, proxyStore, TypeCandidatesStore.newEmpty, HeapVarsTypeStore.newEmpty, solver, simplifier, absInt, globalValsCtx, fakeEr, allowWriteToIR = false, closuresCollectorOpt = None)
       fakeEr.withReportingSuspended {
         for {
           ((ownerId, funDescr), func) <- program.functions

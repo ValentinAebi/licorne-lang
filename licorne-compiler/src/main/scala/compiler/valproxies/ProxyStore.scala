@@ -56,6 +56,21 @@ final class ProxyStore {
     }
   }
   
+  def getIdValProxiesChain(root: IdValue): List[IdValue] = {
+    val chainB = List.newBuilder[IdValue]
+    var curr = root
+    while (true) {
+      chainB.addOne(curr)
+      proxies.get(curr) match {
+        case Some(next: IdValue) =>
+          curr = next
+        case _ =>
+          return chainB.result()
+      }
+    }
+    List.empty
+  }
+  
   def getClosureProxy(idVal: IdValue): Option[PureClosureValue] = closureProxies.get(idVal)
 
   def accessorProxyFor(fld: FieldResolutionTarget)(using resolCtx: ResolutionContext): Option[InvocationTarget] = Option.when(fld.isResolvedAndPure) {
