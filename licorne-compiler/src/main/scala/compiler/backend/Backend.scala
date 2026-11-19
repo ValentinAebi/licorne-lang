@@ -762,6 +762,7 @@ final class Backend(
           body.freeVals.toList.filterNot(paramsSet.contains)
             .filterNot(_.isInstanceOf[UninterpretedConstIdValue])
             .map(fv => fv -> getRuntimeType(dealiasedTypeOf(fv, currScope)))
+            .filter((idVal, tpe) => tpe != NothingType)
         )
         val closureClassDesc = generateClosureClass(closureTypeName, params, body, freeVals, funGenCtx.rootEnclosingTypeName)
         cb.new_(closureClassDesc)
