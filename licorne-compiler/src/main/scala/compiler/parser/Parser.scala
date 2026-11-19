@@ -574,17 +574,18 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
       }
     }
 
-    atomicExpr ::: (typeArgsListOpt ::: argumentsList OR repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: argumentsList))) ::: opt(colon ::: typeTree) map {
-      case atExpr ^: (selects: List[NormalFunOrVarId ^: Option[Option[List[TypeTree]] ^: List[Expr]]]) ^: typeAnnotOpt =>
+    atomicExpr ::: opt(typeArgsListOpt ::: argumentsList) ::: repeat(dot ::: funOrVarId ::: opt(typeArgsListOpt ::: argumentsList)) ::: opt(colon ::: typeTree) map {
+      case atExpr ^: directArgsOpt ^: (selects: List[NormalFunOrVarId ^: Option[Option[List[TypeTree]] ^: List[Expr]]]) ^: typeAnnotOpt =>
         maybeWithTypeAnnot(typeAnnotOpt) {
-          selects.foldLeft(atExpr) {
+          val beginning = directArgsOpt match {
+            case Some(typeArgsOpt ^: args) =>
+              Call(atExpr, typeArgsOpt.getOrElse(List.empty), args)
+            case None => atExpr
+          }
+          selects.foldLeft(beginning) {
             case (rec, id ^: None) => Select(rec, id)
             case (rec, id ^: Some(typeArgsOpt ^: args)) => Call(Select(rec, id), typeArgsOpt.getOrElse(List.empty), args)
           }
-        }
-      case atExpr ^: (typeArgsOpt ^: args) ^: typeAnnotOpt =>
-        maybeWithTypeAnnot(typeAnnotOpt) {
-          Call(atExpr, typeArgsOpt.getOrElse(List.empty), args)
         }
     }
   }
