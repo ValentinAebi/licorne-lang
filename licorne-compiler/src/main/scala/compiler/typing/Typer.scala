@@ -21,10 +21,11 @@ import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simpl
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{arrayLTypeId, arrayTypeId, sizeFunId, stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{arrayLTypeId, sizeFunId, stringLTypeId, stringType}
 import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
-import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult
+import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SubtypeCheckingMode}
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.util.{SeqSet, asIterableOfType, findInstance, findUnique, mapVals}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -177,7 +178,7 @@ final class Typer(
         for (varData@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- sortedLoopVars) {
           (for {
             varEvol <- varData.variableEvolutionOpt
-            if subtypingCtx.isSubtype(currScope.getCurrentTypeOf(beforeLoopVal), IntType)
+            if subtypingCtx.isSubtype(currScope.getCurrentTypeOf(beforeLoopVal), IntType)(using CheckOnly)
             (monotonicityLowerBounds, monotonicityUpperBounds) <- varEvol.computeMonotonicity(this.copyNotAllowedToWriteToIR, solver, bodyScope)
           } yield {
             val (smartcastLowerBounds, smartcastUpperBounds) = infoIfCondTrueFirstGuess.boundsFor(inCondVal, solver)
@@ -216,7 +217,7 @@ final class Typer(
                 .asInstanceOf[KnownAndInitialized]
                 .declarationTypeAnnotOpt
                 .orElse(typeCandidatesStore.getCandidates(inCondVal).find { candidate =>
-                  subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)
+                  subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), candidate)(using CheckOnly)
                 })
                 .filterNot(Types.isExtreme)
                 .getOrElse(discardPredicateIfOnlyEqualities(currScope.detectCurrentType(beforeLoopVal).baseType))
@@ -271,6 +272,8 @@ final class Typer(
             if elseBr.hasExited then afterThenValType
             else if thenBr.hasExited then afterElseValType
             else {
+              given SubtypeCheckingMode = CheckOnly
+              
               val candidates = typeCandidatesStore.getCandidates(joinedVal)
               candidates.find(_.isInstanceOf[TernaryType]) match {
                 case Some(ternaryType: TernaryType)
@@ -349,7 +352,7 @@ final class Typer(
             .flatMap(_.typeArgs.headOption)
         val elemType =
           if types.isEmpty then candidateElemTypeOpt.getOrElse(NothingType)
-          else if candidateElemTypeOpt.exists(cand => types.forall(subtypingCtx.isSubtype(_, cand))) then candidateElemTypeOpt.get
+          else if candidateElemTypeOpt.exists(cand => types.forall(subtypingCtx.isSubtype(_, cand)(using CheckOnly))) then candidateElemTypeOpt.get
           else types.reduceLeft(meetJoin.computeJoin(_, _))
         currScope.saveType(assigned, NamedType(arrayLTypeId, List(elemType), List(IntConst(elements.size))))
 
@@ -503,6 +506,8 @@ final class Typer(
         }
 
       case hybridCast@HybridCast(inValue) =>
+        given SubtypeCheckingMode = CheckOnly
+        
         val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, hybridCast.getPosition)).withTypeVarsExpanded
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
@@ -604,7 +609,7 @@ final class Typer(
 
   private def removeIrrelevantVarEvolutions(currScope: Scope, unsortedLoopVars: List[LoopVarData])(using TypeParamsContext): Unit = {
     for (lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- unsortedLoopVars) {
-      if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)) {
+      if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)(using CheckOnly)) {
         lvd.variableEvolutionOpt = None
       }
     }
@@ -663,7 +668,7 @@ final class Typer(
 
   private def applyCandidateIfTernary(assigned: IdValue, regularType: Type)(using TypeParamsContext): Type =
     typeCandidatesStore.getCandidates(assigned).find(_.isInstanceOf[TernaryType]) match {
-      case Some(tCand: TernaryType) if subtypingCtx.isSubtype(regularType, tCand) => tCand
+      case Some(tCand: TernaryType) if subtypingCtx.isSubtype(regularType, tCand)(using CheckOnly) => tCand
       case _ => regularType
     }
 
@@ -820,7 +825,7 @@ final class Typer(
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
     val isDivOperator = op == Operator.Div || op == Operator.Modulo
     val mayBeDivByZero =
-      isDivOperator && subtypingCtx.isSubtype(lhsType, IntType) && subtypingCtx.isSubtype(rhsType, IntType)
+      isDivOperator && subtypingCtx.isSubtype(lhsType, IntType)(using CheckOnly) && subtypingCtx.isSubtype(rhsType, IntType)(using CheckOnly)
         && !solver.canDisprove(Equality(rhs, IntConst(0)))
     if (mayBeDivByZero) {
       val rhsDescr = proxyStore.developNearest(rhs).toString
@@ -919,7 +924,7 @@ final class Typer(
       val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
       tmpPredScope.saveSmartcast(itValue, baseTypeRaw)
       val predicateType = typeFormula(predicate, tmpPredScope, posOpt)
-      if (!subtypingCtx.isSubtype(predicateType, BoolType)) {
+      if (!subtypingCtx.isSubtype(predicateType, BoolType)(using CheckOnly)) {
         er.reportError(s"predicate should have type $BoolType", posOpt)
       }
       enforcePurity(predicate, "predicate", posOpt)
@@ -939,6 +944,8 @@ final class Typer(
   }
 
   private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
+    given SubtypeCheckingMode = CheckOnly
+    
     val tpe = typeFormula(bound, currScope, posOpt)
     val boundOk = subtypingCtx.isSubtype(tpe, IntType)
     if (!boundOk) {
@@ -1077,25 +1084,28 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParamsRaw) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
     }
+    
+    given TypeParamsContext = fullTypeParamsCtx
+    
     val paramsInclThisInst = mutable.LinkedHashMap.empty[NamedIdValue, Type]
     var isReceiver = true
     for (paramId, paramTypeRaw) <- paramsInclThisRaw do {
-      val paramTypeInst = instantiateType(paramTypeRaw, if isReceiver then None else Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+      val paramTypeInst = instantiateType(paramTypeRaw, if isReceiver then None else Some(Contravariant), functionSignature.sigScope, functionSignature.declPosOpt)
       if (sigScope.valuesCtx.globalCtx.getNameOfObject(paramId).isEmpty) {
-        sigScope.saveType(paramId, paramTypeInst)(using fullTypeParamsCtx)
+        sigScope.saveType(paramId, paramTypeInst)
       }
       paramsInclThisInst.addOne(paramId -> paramTypeInst)
       isReceiver = false
     }
     precondOpt.foreach { precond =>
-      val precondType = typeFormula(precond, sigScope, declPosOpt)(using fullTypeParamsCtx)
-      if (!subtypingCtx.isSubtype(precondType, BoolType)(using fullTypeParamsCtx)) {
+      val precondType = typeFormula(precond, sigScope, declPosOpt)
+      if (!subtypingCtx.isSubtype(precondType, BoolType)(using CheckOnly)) {
         er.reportError(s"precondition must have type $BoolType", declPosOpt)
       }
       enforcePurity(precond, "precondition", declPosOpt)
       solver.assert(precond)
     }
-    val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)(using fullTypeParamsCtx)
+    val retTypeInst = instantiateType(retTypeRaw, Some(Covariant), functionSignature.sigScope, functionSignature.declPosOpt)
     val funSig = FunctionSignature(ownerName, functionName, typeParamsInst, SeqMap.from(paramsInclThisInst), precondOpt,
       retTypeInst, sigScope, visibility, overridability, purity, declPosOpt, isSynthetic)
     if isSynthetic then funSig else checkingAllTypeVarsResolved(funSig)
@@ -1472,7 +1482,7 @@ final class Typer(
   private def combineSubstTakingMostNarrow(prioritySubst: Map[TypeIdentifier, Type], otherSubst: Map[TypeIdentifier, Type])(using TypeParamsContext): Map[TypeIdentifier, Type] =
     Map.from(for (tid <- prioritySubst.keys ++ otherSubst.keys) yield tid -> {
       (prioritySubst.get(tid), otherSubst.get(tid)) match {
-        case (Some(pType), Some(oType)) if subtypingCtx.isSubtype(oType, pType) => oType
+        case (Some(pType), Some(oType)) if subtypingCtx.isSubtype(oType, pType)(using CheckOnly) => oType
         case (Some(pType), _) => pType
         case (None, Some(oType)) => oType
         case (None, None) =>
@@ -1731,7 +1741,7 @@ final class Typer(
       tryToResolveTypeVars(paramRes, argRes)
     case (tv: TypeVariable, argType) if !tv.isResolved =>
       tv.resolve(typeSimplifier.simplifyType(argType))
-    case (tv: TypeVariable, argType) if tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType) =>
+    case (tv: TypeVariable, argType) if tv.isResolved && subtypingCtx.isSubtype(tv.substitutedIfResolved, argType)(using CheckOnly) =>
       tv.remapIfNotLocked(argType)
     case (paramType, tv: TypeVariable) if tvResolMode == TypeVarsResolMode.ParamsAndArgs && !tv.isResolved =>
       tv.resolve(typeSimplifier.simplifyType(paramType))

@@ -8,6 +8,8 @@ import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.typing.contexts.ResolutionContext.*
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.smartcasting.TypesReasoningCache
 
 import scala.reflect.ClassTag
@@ -16,6 +18,8 @@ final case class ResolutionContext(
                                     program: Program,
                                     er: ErrorReporter
                                   )(using CompilationStep) {
+  
+  private given SubtypeCheckingMode = CheckOnly
 
   import program.*
 

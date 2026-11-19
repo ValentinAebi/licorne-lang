@@ -17,7 +17,8 @@ import compiler.reasoning.{CounterexampleBox, MeetJoinComputer, Solver}
 import compiler.stdlib.StdLib
 import compiler.typing.Typer
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.{CanDowncast, CannotDowncast}
-import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SupertypesSubst, logicalImplies}
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.{CheckOnly, ResolveTypeVars}
+import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SubtypeCheckingMode, SupertypesSubst, logicalImplies}
 import compiler.util.{SeqSet, mapVals}
 import compiler.valproxies.ProxyStore
 import compiler.valuesconversion.GlobalValuesContext
@@ -128,7 +129,7 @@ final class SubtypingContext(
   }
 
   // TODO memoize? But we need to take smartcasts into account
-  def isSubtype(subT: Type, superT: Type)(using typeParamsCtx: TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
+  def isSubtype(subT: Type, superT: Type)(using mode: SubtypeCheckingMode, typeParamsCtx: TypeParamsContext): Boolean = (dealiaseAndExpandNullables(subT), dealiaseAndExpandNullables(superT)) match {
     case (subT, superT) if subT == superT => true
     case (NothingType, _) => true
     case (_, UnionType(types)) if types.contains(AnyType) && types.contains(NullType) => true
@@ -136,20 +137,20 @@ final class SubtypingContext(
       if (tv.isResolved) {
         tv.lock()
         isSubtype(tv.substitutedIfResolved, superT)
-      } else {
+      } else if (mode == ResolveTypeVars) {
         tv.resolve(superT)
         tv.lock()
         true
-      }
+      } else false
     case (subT, tv: TypeVariable) =>
       if (tv.isResolved) {
         tv.lock()
         isSubtype(subT, tv.substitutedIfResolved)
-      } else {
+      } else if (mode == ResolveTypeVars) {
         tv.resolve(subT)
         // do NOT lock: it's OK if the type gets widened later
         true
-      }
+      } else false
     case (_, UnitType) => true
     case (IntersectionType(subtypes), superT) =>
       subtypes.exists(isSubtype(_, superT))
@@ -202,14 +203,19 @@ final class SubtypingContext(
     case tpe => tpe
   }
 
-  def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope)(using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
+  def isSubtype(subject: Formula, subT: Type, superT: Type, scope: Scope)(using mode: SubtypeCheckingMode, typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean =
     isSubtype(subT, superT) || canProveHasType(subject, subT, superT, scope)
 
-  def canProveEquivalence(type1: Type, type2: Type)(using TypeParamsContext): Boolean =
+  def canProveEquivalence(type1: Type, type2: Type)(using TypeParamsContext): Boolean = {
+    given SubtypeCheckingMode = CheckOnly
+
     isSubtype(type1, type2) && isSubtype(type2, type1)
+  }
 
   def canProveHasType(subject: Formula, knownTypeRaw: Type, targetTypeRaw: Type, scope: Scope)
                      (using typeParamsCtx: TypeParamsContext, typer: Typer, dealiasingCtx: DealiasingContext): Boolean = solver.onNewFrame {
+    given SubtypeCheckingMode = CheckOnly
+    
     val knownType = expandIfTypeParam(_.upperBoundOpt)(dealiaseAndExpandNullables(knownTypeRaw))
     val targetType = expandIfTypeParam(_.lowerBoundOpt)(dealiaseAndExpandNullables(targetTypeRaw))
     for (t <- knownType.breakdownIfIntersection) {
@@ -257,7 +263,7 @@ final class SubtypingContext(
     }
   }
 
-  private def isSubtype(subT: NamedType, superT: NamedType)(using typeParamsCtx: TypeParamsContext): Boolean = {
+  private def isSubtype(subT: NamedType, superT: NamedType)(using mode: SubtypeCheckingMode, typeParamsCtx: TypeParamsContext): Boolean = {
     val NamedType(subTId, subTTypeArgs, subTArgs) = subT
     val NamedType(superTId, superTTypeArgs, superTArgs) = superT
     subTArgs.isEmpty && superTArgs.isEmpty && (subToSuperSubst(subTId, superTId) match {
@@ -302,6 +308,8 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtype(subT: Type, superT: Type, msg: => String, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
+    given SubtypeCheckingMode = ResolveTypeVars
+    
     val isSubt = isSubtype(subT, superT)
     if (!isSubt) {
       er.reportError(msg, posOpt)
@@ -310,6 +318,8 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtype(subject: Formula, subT: Type, superT: Type, msg: => String, scope: Scope, posOpt: Option[Position])(using TypeParamsContext, Typer, DealiasingContext): Boolean = {
+    given SubtypeCheckingMode = ResolveTypeVars
+    
     val isSubT = isSubtype(subject, subT, superT, scope)
     if (!isSubT) {
       er.reportError(msg, posOpt)
@@ -318,6 +328,8 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtypeExpAct(subT: Type, superT: Type, posDescr: String, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
+    given SubtypeCheckingMode = ResolveTypeVars
+    
     counterExBoxOpt.foreach(_.reinitialize())
     val unstabilityCollector = mutable.LinkedHashSet.empty[Formula]
     lazy val subTDev = developTypeDepsForErrorMsg(subT.withTypeVarsExpanded, unstabilityCollector)
@@ -356,6 +368,8 @@ final class SubtypingContext(
   }
 
   def checkBounds(tParam: TypeParamInfo, tArg: Type)(using TypeParamsContext): Boolean = {
+    given SubtypeCheckingMode = CheckOnly
+    
     tParam.lowerBoundOpt.forall(lb => isSubtype(lb, tArg))
       && tParam.upperBoundOpt.forall(ub => isSubtype(tArg, ub))
   }
@@ -411,6 +425,10 @@ object SubtypingContext {
       case CannotDowncast(reason) => false
     }
 
+  }
+
+  enum SubtypeCheckingMode {
+    case CheckOnly, ResolveTypeVars
   }
 
   private def logicalImplies(p: Boolean, q: Boolean) = !p || q

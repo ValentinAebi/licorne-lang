@@ -9,6 +9,7 @@ import compiler.program.Program
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning}
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.ResolveTypeVars
 import compiler.typing.{ClosureInfo, HeapVarsTypeStore, SubtypingInfo, TypeCandidatesStore, Typer}
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext, TypeVariablesContext}
 import compiler.valproxies.{BranchingInfo, ProxyStore}
@@ -83,7 +84,7 @@ final class DeclarationsChecker(
         val isSubtype = subtypingCtx.enforceIsSubtype(fieldInitVal, initializerType, fieldType,
           s"initializer of field $fieldId has type $initializerType, which does not conform to its declared type $fieldType", tSig.sigScope, tSig.declPosOpt)(using summon[TypeParamsContext], typer)
         tSig.encapsulatedFields.get(fieldId).foreach { encapsulatedField =>
-          if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType) && encapsulatedField.isStable) {
+          if (!fieldType.isInstanceOf[TypeVariable] && isSubtype && !subtypingCtx.isSubtype(fieldType, initializerType)(using ResolveTypeVars) && encapsulatedField.isStable) {
             val fieldPos = fieldInitInstructions.headOption.flatMap(_.getPosition).orElse(tSig.declPosOpt)
             er.warn(s"type annotation $fieldType on field $fieldId hides its actual type $initializerType (inferred from the initializer), which might cause type checking errors at field use sites", fieldPos)
           }

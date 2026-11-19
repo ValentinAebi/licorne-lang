@@ -8,6 +8,8 @@ import compiler.reasoning.FormulasSimplification.*
 import compiler.reasoning.Solver
 import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.*
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.contexts.{DealiasingContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType, findUnique}
 import compiler.valuesconversion.GlobalValuesContext
@@ -22,6 +24,8 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
   private given GlobalValuesContext = globalValuesContext
   
   private given MeetJoinComputer = meetJoinComputer
+  
+  private given SubtypeCheckingMode = CheckOnly
 
   import globalValuesContext.{itValue, nullVal}
 

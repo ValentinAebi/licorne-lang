@@ -12,6 +12,7 @@ import compiler.program.Program
 import compiler.reasoning.Solver.TimeoutConfig
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reasoning.{CounterexampleBox, IntHandlingMode, Reasoning, Solver}
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.{OverridesStore, SubtypingInfo}
 import compiler.typing.contexts.SubtypingContext.SupertypesSubst
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
@@ -118,7 +119,7 @@ final class OverridesChecker(
                     if (subParamTypeErased != superParamTypeErased) {
                       er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funDescr: " +
                         s"erased type is $subParamTypeErased but should be $superParamTypeErased since the method overrides $funDescr in $superTSubst", subFunDeclPosOpt)
-                    } else if (!subtypingCtx.isSubtype(superParamTypeSubst, subParamType)(using fullTypeParamsCtx)) {
+                    } else if (!subtypingCtx.isSubtype(superParamTypeSubst, subParamType)(using CheckOnly, fullTypeParamsCtx)) {
                       er.reportError(s"type mismatch on parameter ${subParamVal.name} of method $funDescr: " +
                         s"declared type $subParamType is not a supertype of the type $superParamTypeSubst of the corresponding parameter in the overridden method $funDescr in $superT", subFunDeclPosOpt)
                     }

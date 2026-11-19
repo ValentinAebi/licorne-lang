@@ -7,7 +7,9 @@ import compiler.lang.Types.*
 import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
-import compiler.reasoning.{TypeSimplifier, Solver}
+import compiler.reasoning.{Solver, TypeSimplifier}
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.util.{SeqSet, asIterableOfType}
 import compiler.valproxies.ProxyStore
@@ -32,6 +34,8 @@ final class MeetJoinComputer(
   private given GlobalValuesContext = globalValuesContext
 
   private given ResolutionContext = resolutionCtx
+  
+  private given SubtypeCheckingMode = CheckOnly
 
   def computeJoinUsingVals(typedVals: (IdValue, Type)*)(using TypeParamsContext): Type =
     computeJoinUsingVals(Iterable.from(typedVals))
