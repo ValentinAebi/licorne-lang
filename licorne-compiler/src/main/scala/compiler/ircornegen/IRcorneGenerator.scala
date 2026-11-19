@@ -1,6 +1,7 @@
 package compiler.ircornegen
 
 import compiler.identifiers.*
+import compiler.ircornegen.FormulasCompilation.ResolTargetsHandlingMode
 import compiler.ircornegen.ImportsScanner.PackagesInfo
 import compiler.irs.asts.Asts
 import compiler.irs.asts.Asts.{Expr, UnitLit}
@@ -154,7 +155,7 @@ final class IRcorneGenerator(
               }
               classSigScope.getLocalValuesContextUnsafe.saveNewLocal(paramId, paramVal, classSigScope, ReassigPermission.Val, Some(paramType))
               initOpt.foreach { init =>
-                fieldInitializersB.addOne(paramId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, initTreeOpt)(_ => ()))
+                fieldInitializersB.addOne(paramId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, initTreeOpt, ResolTargetsHandlingMode.Keep)(_ => ()))
               }
               if (alreadySeenDefault && !alreadyReportedMissingDefault && initOpt.isEmpty) {
                 er.reportError(s"missing default value for parameter $paramId, as it is preceded with a parameter with a default value", paramTree.getPosition)
@@ -177,7 +178,7 @@ final class IRcorneGenerator(
                 else StableField(fieldId, fieldType, paramVal, isPublishedAsMethod = false, initOpt)
               )
               initOpt.foreach { init =>
-                fieldInitializersB.addOne(fieldId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, Some(fldDf.initValue))(_ => ()))
+                fieldInitializersB.addOne(fieldId, FormulasCompilation.convertFormulaToIR(init, classSigScope, proxyStore, Some(fldDf.initValue), ResolTargetsHandlingMode.Keep)(_ => ()))
               }
             }
             allFieldsInitB.addOne(typeId, fieldInitializersB.result())
@@ -229,7 +230,7 @@ final class IRcorneGenerator(
                 reportError(s"a field with name $paramId has already been declared in data class $typeId", param.getPosition)
               }
               initOpt.foreach { init =>
-                fieldInitializersB.addOne(paramId, FormulasCompilation.convertFormulaToIR(init, dataclassSigScope, proxyStore, initTreeOpt)(_ => ()))
+                fieldInitializersB.addOne(paramId, FormulasCompilation.convertFormulaToIR(init, dataclassSigScope, proxyStore, initTreeOpt, ResolTargetsHandlingMode.Keep)(_ => ()))
               }
             }
             allFieldsInitB.addOne(typeId, fieldInitializersB.result())

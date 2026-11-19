@@ -1,27 +1,27 @@
 package compiler.ircornegen
 
+import compiler.ircornegen.FormulasCompilation.ResolTargetsHandlingMode.Copy
 import compiler.irs.asts.Asts.Ast
 import compiler.irs.ircorne.Formulas.{Binop, Formula, IdValue, IntermediateIdValue}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.irs.ircorne.{Formulas, IRcorne}
-import compiler.reporting.Position
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
 
 object FormulasCompilation {
   
-  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast])
+  def convertFormulaToIR(formula: Formula, currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast], resolTargetsHandlingMode: ResolTargetsHandlingMode)
                         (typeInstr: RealInstr => Unit): (Iterable[IRcorne.RealInstr], IdValue) = {
     val instructions = mutable.ListBuffer.empty[IRcorne.RealInstr]
-    val resVal = compileFormula(formula)(using instructions, currScope, proxyStore, astOpt)
+    val resVal = compileFormula(formula)(using resolTargetsHandlingMode, instructions, currScope, proxyStore, astOpt)
     for (instr <- instructions) {
       typeInstr(instr)
     }
     (instructions.toList, resVal)
   }
 
-  private def compileFormula(formula: Formula)(using instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IdValue = {
+  private def compileFormula(formula: Formula)(using resolTargetsHandlingMode: ResolTargetsHandlingMode, instrOut: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IdValue = {
 
     def save(instr: IRcorne.AssigningInstr): Unit = {
       instrOut.addOne(instr)
@@ -53,19 +53,19 @@ object FormulasCompilation {
 
       case Formulas.Select(owner, field) => withIntermediateValue { res =>
         val ownerVal = compileFormula(owner)
-        save(FieldRead(res, ownerVal, field.copy))
+        save(FieldRead(res, ownerVal, if resolTargetsHandlingMode == Copy then field.copy else field))
       }
 
       case Formulas.FunCall(receiver, func, typeArgs, args) => withIntermediateValue { res =>
         val recVal = compileFormula(receiver)
         val argVals = args.map(compileFormula)
-        save(InvokeFunc(res, recVal, func.copy, typeArgs, argVals))
+        save(InvokeFunc(res, recVal, if resolTargetsHandlingMode == Copy then func.copy else func, typeArgs, argVals))
       }
 
       case Formulas.ClosureCall(callee, closureTypingTarget, args) => withIntermediateValue { res =>
         val calleeVal = compileFormula(callee)
         val argVals = args.map(compileFormula)
-        save(InvokeClosure(res, calleeVal, closureTypingTarget.copy, argVals))
+        save(InvokeClosure(res, calleeVal, if resolTargetsHandlingMode == Copy then closureTypingTarget.copy else closureTypingTarget, argVals))
       }
 
       case Formulas.PureClosureValue(params, body, closureVal) => closureVal
@@ -107,7 +107,7 @@ object FormulasCompilation {
   }
 
   private def genBinop(binop: Binop, mkInstr: (res: IntermediateIdValue, lhs: IdValue, rhs: IdValue) => AssigningInstr)
-                   (using instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IntermediateIdValue =
+                   (using resolTargetsHandlingMode: ResolTargetsHandlingMode, instructions: mutable.ListBuffer[IRcorne.RealInstr], currScope: Scope, proxyStore: ProxyStore, astOpt: Option[Ast]): IntermediateIdValue =
     withIntermediateValue { res =>
       val lhsVal = compileFormula(binop.lhs)
       val rhsVal = compileFormula(binop.rhs)
@@ -120,6 +120,10 @@ object FormulasCompilation {
     val interm = currScope.newIntermediate(idHint)
     action(interm)
     interm
+  }
+
+  enum ResolTargetsHandlingMode {
+    case Keep, Copy
   }
 
 }

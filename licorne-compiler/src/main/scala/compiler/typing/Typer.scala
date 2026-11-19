@@ -1,7 +1,7 @@
 package compiler.typing
 
 import compiler.datastructures.Graph
-import compiler.ircornegen.FormulasCompilation.convertFormulaToIR
+import compiler.ircornegen.FormulasCompilation.{ResolTargetsHandlingMode, convertFormulaToIR}
 import compiler.identifiers.*
 import compiler.irs.asts.Asts.MissingElse
 import compiler.irs.ircorne.*
@@ -533,7 +533,7 @@ final class Typer(
               if (solver.canDisprove(assertion)) {
                 er.warn(s"!! will always fail: it asserts ${SourceLevelFormulaPrinter.prettyprint(assertion)}, which is always false", hybridCast.getPosition)
               }
-              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore, hybridCast.getAstNodeOpt)(typeInstr(_, currScope, branchInfo))
+              val (irAssertion, resultVal) = convertFormulaToIR(assertion, currScope, proxyStore, hybridCast.getAstNodeOpt, ResolTargetsHandlingMode.Copy)(typeInstr(_, currScope, branchInfo))
               irAssertion.find {
                 case InvokeFunc(assigned, receiver, func, typeArgs, args) =>
                   func.getFunSigOpt.exists(StdLib.isFunc(StdLib.indexedTypeId, sizeFunId, 0))
