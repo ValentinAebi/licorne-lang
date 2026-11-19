@@ -1059,7 +1059,7 @@ final class IRcorneGenerator(
         currScope.saveInstr(InvokeFunc(resultVal, receiverVal, invkTarget, typeArgs, argVals), expr)
         Option.when(funId != ConstructorFunId)(FunCall(receiverVal, invkTarget, typeArgs, argVals))
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
-        if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
+        if !currScope.getLocalValuesContextUnsafe.knows(funId) && currImplicitFields.get(funId).forall(_.hasAutoAccessor) =>
         checkCallForbiddenMethods(funId, callTree)
         findImplicitReceiverInImports(funId, currScope) match {
           case Some(receiverVal, targetFunId) =>

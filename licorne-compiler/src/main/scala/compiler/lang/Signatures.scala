@@ -299,9 +299,13 @@ sealed trait ConstructorParam {
   def tpe: Type
 
   def defaultInitializerOpt: Option[Formula]
+  
+  def hasAutoAccessor: Boolean
 }
 
 final case class NonFieldConstructorParam(id: FunOrVarId, tpe: Type, value: NamedIdValue, defaultInitializerOpt: Option[Formula]) extends ConstructorParam {
+  override def hasAutoAccessor: Boolean = false
+
   override def toString: String = s"$id: $tpe"
 }
 
@@ -312,6 +316,11 @@ enum Field extends ConstructorParam {
   def isStable: Boolean = this match {
     case _: ReassignableField => false
     case _: StableField => true
+  }
+
+  override def hasAutoAccessor: Boolean = this match {
+    case Field.ReassignableField(id, tpe, value, defaultInitializerOpt) => false
+    case Field.StableField(id, tpe, value, isPublishedAsMethod, defaultInitializerOpt) => isPublishedAsMethod
   }
 
   override def toString: String = this match {
