@@ -105,7 +105,7 @@ object Asts {
    *   }
    * }}}
    */
-  final case class Block(stats: List[Statement]) extends Statement {
+  final case class Block(var stats: List[Statement]) extends Statement {
     override def children: List[Ast] = stats
   }
 

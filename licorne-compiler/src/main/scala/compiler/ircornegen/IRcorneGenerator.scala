@@ -898,14 +898,13 @@ final class IRcorneGenerator(
         ).withDesugaringSource(forLoop), currScope, newScopeIfBlock = true)
 
       case forLoop@Asts.ForeachLoop(elemVarTree@Asts.VariableRef(elemVarId), iteratedTree, bodyTree) =>
+        val elemVarDecl = Asts.LocalDef(elemVarId, None, Some(desugaredCall(Asts.VariableRef(ForeachIteratorVarId).withDesugaringSource(forLoop), StdLib.nextFunId, elemVarTree)), ReassigPermission.Val).withDesugaringSource(elemVarTree)
+        bodyTree.stats = elemVarDecl :: bodyTree.stats
         generateIR(Asts.Block(List(
           Asts.LocalDef(ForeachIteratorVarId, None, Some(desugaredCall(iteratedTree, StdLib.autoIteratorFunId, forLoop)), ReassigPermission.Val).withDesugaringSource(forLoop),
           Asts.WhileLoop(
             desugaredCall(Asts.VariableRef(ForeachIteratorVarId).withDesugaringSource(forLoop), StdLib.hasNextFunId, forLoop),
-            Asts.Block(List(
-              Asts.LocalDef(elemVarId, None, Some(desugaredCall(Asts.VariableRef(ForeachIteratorVarId).withDesugaringSource(forLoop), StdLib.nextFunId, elemVarTree)), ReassigPermission.Val).withDesugaringSource(elemVarTree),
-              bodyTree
-            ))
+            bodyTree
           ).withDesugaringSource(forLoop)
         )), currScope, newScopeIfBlock = true)
     }
