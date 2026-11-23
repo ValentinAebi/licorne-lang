@@ -21,7 +21,7 @@ import compiler.reasoning.VariableEvolution
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.equalsFunId
+import compiler.stdlib.StdLib.{anyObjTypeId, equalsFunId}
 import compiler.typing.TypeCandidatesStore
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
@@ -104,7 +104,9 @@ final class IRcorneGenerator(
             val objSigScope = Scope.nestedInside(globalScope, df)
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
-            val noFunctionsSig = ObjectSignature(typeId, Map.empty, directSupertypeTrees.map(mkNamedType(_, objSigScope)), visibility, objSigScope, df.getPosition)
+            val noFunctionsSig = ObjectSignature(typeId, Map.empty,
+              NamedType(anyObjTypeId, List.empty, List.empty) :: directSupertypeTrees.map(mkNamedType(_, objSigScope)),
+              visibility, objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
             val sig = noFunctionsSig.copy(functions = funcs)
@@ -187,7 +189,7 @@ final class IRcorneGenerator(
               SeqMap.from(constructorParams),
               SeqMap.from(encapsulatedFields),
               Map.empty,
-              directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty)),
+              NamedType(anyObjTypeId, List.empty, List.empty) :: directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty)),
               visibility, classSigScope, df.getPosition
             )
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using constructorParams.filter(_._2.isInstanceOf[Field]) ++ encapsulatedFields)
@@ -236,7 +238,8 @@ final class IRcorneGenerator(
             }
             allFieldsInitB.addOne(typeId, fieldInitializersB.result())
             val noFunctionsSig = DataclassSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty,
-              directSupertypeTrees.map(mkNamedType(_, dataclassSigScope)(using Map.empty)), visibility, dataclassSigScope, df.getPosition)
+              NamedType(anyObjTypeId, List.empty, List.empty) :: directSupertypeTrees.map(mkNamedType(_, dataclassSigScope)(using Map.empty)),
+              visibility, dataclassSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generateFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)

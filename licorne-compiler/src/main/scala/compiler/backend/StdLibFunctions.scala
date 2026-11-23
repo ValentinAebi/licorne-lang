@@ -13,7 +13,8 @@ object StdLibFunctions {
 
   private val intrinsics = Map(
     (consoleTypeId, consolePrintFunId) -> generateConsolePrint,
-    (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadLine
+    (consoleTypeId, consoleReadlineFunId) -> generateConsoleReadLine,
+    (anyObjTypeId, hashCodeFunId) -> generateAnyObjHashcode
   )
 
   private val staticRedirects = Map(
@@ -75,6 +76,13 @@ object StdLibFunctions {
     cb.invokestatic(systemDesc, "console", MethodTypeDesc.of(javaConsoleDesc))
     cb.invokevirtual(javaConsoleDesc, "readLine", MethodTypeDesc.of(CD_String))
     cb.areturn()
+  })
+
+  private def generateAnyObjHashcode(mb: MethodBuilder): Unit = mb.withCode(cb => {
+    val systemDesc = ClassDesc.of("java.lang.System")
+    cb.aload(0)
+    cb.invokestatic(systemDesc, "identityHashCode", MethodTypeDesc.of(CD_int, CD_Object))
+    cb.ireturn()
   })
 
 }

@@ -18,7 +18,7 @@ object Main {
 
 class Foo(val i: Int) {
 
-    fun equals(that: Any?): Bool =
+    pure fun equals(that: Any?): Bool =
         that is Foo && this.i == that.i()
 
 }

@@ -1,0 +1,11 @@
+package licorne.core
+
+interface AnyObj {
+
+    open pure fun equals(that: Any?): Bool = this === that
+
+    open pure fun hashCode(): Int {
+        panic "compiler stub"
+    }
+
+}

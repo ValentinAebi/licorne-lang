@@ -5,7 +5,7 @@ import compiler.irs.ircorne.Formulas.{FunCall, ParamIdValue}
 import compiler.irs.ircorne.IRcorne.{AssigningInstr, Scope}
 import compiler.irs.ircorne.{Formulas, IRcorne, InvocationTarget}
 import compiler.lang.Field.StableField
-import compiler.lang.Types.PrimitiveType.{NothingType, NullType, UnitType}
+import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, NothingType, NullType, UnitType}
 import compiler.lang.Types.*
 import compiler.lang.{FunctionDescriptor, FunctionSignature, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeChecking
@@ -56,12 +56,14 @@ final class TypeChecker(
         ((ownerId, funDescr), func) <- program.functions
       } {
         val funSig = resolCtx.forceGetFunction(ownerId, funDescr)
-        if (funSig.functionName == StdLib.autoIteratorFunId) {
-          funSig.retType.baseType match {
-            case NamedType(StdLib.iteratorTypeId, List(_), Nil) => ()
-            case _ =>
-              er.reportError(s"method ${StdLib.autoIteratorFunId} must have return type ${StdLib.iteratorTypeId}[?] where ? stands for a single type argument", funSig.declPosOpt)
-          }
+        funDescr match {
+          case FunctionDescriptor(StdLib.autoIteratorFunId, 0) =>
+            funSig.retType.baseType match {
+              case NamedType(StdLib.iteratorTypeId, List(_), Nil) => ()
+              case _ =>
+                er.reportError(s"method ${StdLib.autoIteratorFunId} must have return type ${StdLib.iteratorTypeId}[?] where ? stands for a single type argument", funSig.declPosOpt)
+            }
+          case _ => ()
         }
         if (!funSig.isSyntheticAccessor) {
           checkFunc(funSig, func, resolCtx, subtypingCtx, meetJoin, heapVarsTypeStore, solver, simplifier, absInt)

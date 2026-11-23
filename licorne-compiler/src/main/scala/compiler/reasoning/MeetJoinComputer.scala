@@ -8,6 +8,7 @@ import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullTyp
 import compiler.lang.Variance.*
 import compiler.lang.{RuntimeTypeSignature, Types}
 import compiler.reasoning.{Solver, TypeSimplifier}
+import compiler.stdlib.StdLib
 import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode
 import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode.CheckOnly
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
@@ -252,7 +253,9 @@ final class MeetJoinComputer(
         superTypeSigs.addOne(currSigOpt.get)
       } else currSigOpt.foreach { currSig =>
         for (superT <- currSig.directSupertypes) {
-          enqueue(superT.typeName)
+          if (superT.typeName != StdLib.anyObjTypeId) {
+            enqueue(superT.typeName)
+          }
         }
       }
     }

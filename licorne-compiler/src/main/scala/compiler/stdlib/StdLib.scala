@@ -41,6 +41,7 @@ object StdLib {
   val hasNextFunId: FunOrVarId = NormalFunOrVarId("hasNext")
   val nextFunId: FunOrVarId = NormalFunOrVarId("next")
   val autoIteratorFunId: FunOrVarId = NormalFunOrVarId("iterator___")
+  val anyObjTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "AnyObj")
 
   // licorne.core.String
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
@@ -90,7 +91,7 @@ object StdLib {
   val heapVarSetFunId: FunOrVarId = NormalFunOrVarId("set")
   
   val equalsFunId: FunOrVarId = NormalFunOrVarId("equals")
-  val hashcodeFunId: FunOrVarId = NormalFunOrVarId("hashcode")
+  val hashCodeFunId: FunOrVarId = NormalFunOrVarId("hashCode")
 
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),
