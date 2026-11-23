@@ -4,7 +4,7 @@ import compiler.identifiers.TypeIdentifier
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.NothingType
+import compiler.lang.Types.PrimitiveType.{AnyType, NothingType}
 import compiler.reasoning.{MeetJoinComputer, Solver}
 import compiler.typing.contexts.SubtypingContext.DowncastTargetCheckResult.*
 import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
@@ -135,7 +135,9 @@ object BranchingInfo {
           .flatMap(namedTypes => tryToSmartcast(namedTypes.map(_.typeName).toList))
 
       originalType match {
+        case AnyType => tryToSmartcastByInclusion
         case NamedType(typeName, typeArgs, Nil) => tryToSmartcast(List(typeName))
+        case NullableType(nullatedType) => this.tryToSmartcast(nullatedType, typesReasoningCache)
         case UnionType(types) => tryToSmartcastMultiple(types)
         case TernaryType(cond, left, right) => tryToSmartcastMultiple(List(left, right))
         case _ => None

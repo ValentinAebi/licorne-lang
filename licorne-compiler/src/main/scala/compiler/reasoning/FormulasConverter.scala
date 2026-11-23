@@ -102,6 +102,7 @@ final class FormulasConverter[IntSort <: KSort](
       case LessOrEq(lhs, rhs) => None
       case LessThan(lhs, rhs) => None
       case Equality(lhs, rhs) => None
+      case RefEquality(lhs, rhs) => None
       case TypePredicate(subject, tpe) => None
       case Phi(terms) if acceptPhisForInts && terms.nonEmpty =>
         terms.map(convertInt).reduce { (as, bs) =>
@@ -171,9 +172,15 @@ final class FormulasConverter[IntSort <: KSort](
           r <- convertInt(rhs)
         } yield ihm.lt(l, r)
       case Equality(lhs, rhs) =>
+        // FIXME check what happens when the operands are not numeric
         for {
           l <- convertInt(lhs)
           r <- convertInt(rhs)
+        } yield kCtx.mkEq(l, r)
+      case RefEquality(lhs, rhs) =>
+        for {
+          l <- convertObj(lhs)
+          r <- convertObj(rhs)
         } yield kCtx.mkEq(l, r)
       case TypePredicate(subject, tpe) => None
       case Phi(terms) => None

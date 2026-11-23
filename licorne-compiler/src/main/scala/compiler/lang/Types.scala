@@ -4,7 +4,7 @@ import compiler.identifiers.{FunOrVarId, Identifier, ItId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.*
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.PrimitiveType.*
-import compiler.reasoning.TypeSimplifier
+import compiler.reasoning.{Solver, TypeSimplifier}
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.{DealiasingContext, ResolutionContext, SubtypingContext, TypeParamsContext}
@@ -656,6 +656,26 @@ object Types {
   extension (tpe: Type) def flattenedPredIfGenRefined(using GlobalValuesContext): Type = tpe match {
     case refinedType: RefinedType => refinedType.flattenedRefinement
     case tpe => tpe
+  }
+  
+  extension (tpe: Type) def isProvablyNonNull(using globalValsCtx: GlobalValuesContext, solver: Solver): Boolean = {
+    val itVal = globalValsCtx.itValue
+    val nullVal = globalValsCtx.nullVal
+    tpe match {
+      case NullType => false
+      case _: PrimitiveType => true
+      case NamedType(typeName, typeArgs, args) => true
+      case ClosureType(params, result, enforcedPure) => true
+      case UnionType(types) => types.forall(_.isProvablyNonNull)
+      case IntersectionType(types) => types.exists(_.isProvablyNonNull)
+      case TernaryType(cond, left, right) =>
+        (solver.canDisprove(cond) || left.isProvablyNonNull) && (solver.canProve(cond) || right.isProvablyNonNull)
+      case refType@RefinedType(baseType, predicate) => baseType.isProvablyNonNull || solver.canProveImplication(predicate, LogicalNot(Equality(itVal, nullVal)))
+      case IntRangeType(lowerBoundOpt, upperBoundOpt) => true
+      case NullableType(nullatedType) => false
+      case tv: TypeVariable if tv.isResolved => tv.withTypeVarsSubstituted.get.isProvablyNonNull
+      case tv: TypeVariable => false
+    }
   }
 
   private def expandBound(boundOpt: Option[Formula], assignmentTarget: Formula, expansionFunc: IntRangeType => Option[Formula], currScopeAndProxyStoreOpt: Option[(Scope, ProxyStore)])

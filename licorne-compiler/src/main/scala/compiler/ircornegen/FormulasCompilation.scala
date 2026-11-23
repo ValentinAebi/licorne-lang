@@ -89,6 +89,7 @@ object FormulasCompilation {
       case or@Formulas.LogicalOr(lhs, rhs) => genBinop(or, Or(_, _, _))
 
       case eq@Formulas.Equality(lhs, rhs) => genBinop(eq, Equal(_, _, _))
+      case eq@Formulas.RefEquality(lhs, rhs) => genBinop(eq, RefEqual(_, _, _))
       case leq@Formulas.LessOrEq(lhs, rhs) => genBinop(leq, Leq(_, _, _))
       case lt@Formulas.LessThan(lhs, rhs) => genBinop(lt, Lt(_, _, _))
 

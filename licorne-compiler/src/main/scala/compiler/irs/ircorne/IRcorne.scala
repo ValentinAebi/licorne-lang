@@ -243,6 +243,8 @@ object IRcorne {
   final case class Or(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
 
   final case class Equal(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
+  
+  final case class RefEqual(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
 
   final case class Leq(assigned: IdValue, lhs: IdValue, rhs: IdValue) extends AssigningInstr, PureInstr, BinaryOp
 

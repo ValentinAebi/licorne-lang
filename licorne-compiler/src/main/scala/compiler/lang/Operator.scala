@@ -15,7 +15,9 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case Div extends Operator("/", Some(Precedence.Mul))
   case Modulo extends Operator("%", Some(Precedence.Mul))
   case Equality extends Operator("==", Some(Precedence.Comparison), isCommutative = true)
+  case RefEquality extends Operator("===", Some(Precedence.Comparison), isCommutative = true)
   case Inequality extends Operator("!=", Some(Precedence.Comparison), isCommutative = true)
+  case RefInequality extends Operator("!===", Some(Precedence.Comparison), isCommutative = true)
   case LessThan extends Operator("<", Some(Precedence.Comparison))
   case LessOrEq extends Operator("<=", Some(Precedence.Comparison))
   case GreaterThan extends Operator(">", Some(Precedence.Comparison))
@@ -63,7 +65,7 @@ object Operator {
     List(Times, Div, Modulo),
     List(Plus, Minus, PlusPlus),
     List(GreaterThan, LessThan, GreaterOrEq, LessOrEq),
-    List(Equality, Inequality),
+    List(Equality, Inequality, RefEquality, RefInequality),
     List(And),
     List(Or)
   )

@@ -2,7 +2,7 @@ package compiler.typing.smartcasting.egraphs
 
 import compiler.identifiers.NormalFunOrVarId
 import compiler.irs.ircorne.Formulas.*
-import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
+import compiler.lang.Operator.{And as OpAnd, Div as OpDiv, Equality as OpEq, RefEquality as OpRefEq, ExclamationMark as OpLogicNeg, LessOrEq as OpLeq, LessThan as OpLt, Minus as OpMinus, Modulo as OpModulo, Or as OpOr, Plus as OpPlus, Times as OpTimes}
 import compiler.lang.Types.Type
 import compiler.reasoning.TypeSimplifier
 import compiler.typing.contexts.{ResolutionContext, TypeParamsContext}
@@ -155,6 +155,8 @@ final class EGraph private[egraphs](startClId: Long) {
       BinaryOpNode(classOf(lhs), OpOr, classOf(rhs))
     case Equality(lhs, rhs) =>
       BinaryOpNode(classOf(lhs), OpEq, classOf(rhs))
+    case RefEquality(lhs, rhs) =>
+      BinaryOpNode(classOf(lhs), OpRefEq, classOf(rhs))
     case LessOrEq(lhs, rhs) =>
       BinaryOpNode(classOf(lhs), OpLeq, classOf(rhs))
     case LessThan(lhs, rhs) =>

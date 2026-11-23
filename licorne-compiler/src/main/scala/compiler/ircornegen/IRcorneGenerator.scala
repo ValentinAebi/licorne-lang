@@ -12,7 +12,7 @@ import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
+import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, UnitType}
 import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -21,6 +21,7 @@ import compiler.reasoning.VariableEvolution
 import compiler.reporting.Errors.{Err, ErrorReporter, Warning}
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
+import compiler.stdlib.StdLib.equalsFunId
 import compiler.typing.TypeCandidatesStore
 import compiler.typing.contexts.TypeParamsContext.processTypeParamsAccumulating
 import compiler.typing.contexts.{TypeParamsContext, TypeVariablesContext}
@@ -1108,11 +1109,16 @@ final class IRcorneGenerator(
       case binopTree@Asts.BinaryOp(lhsTree, Operator.GreaterOrEq, rhsTree) =>
         generateBinaryWithProxy(lhsTree, rhsTree, Leq(resultVal, _, _), LessOrEq(_, _), swapOperands = true)
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree) =>
-        // FIXME desugar to invocation of equals method when needed
         generateBinaryWithProxy(lhsTree, rhsTree, Equal(resultVal, _, _), Equality(_, _))
+      case binopTree@Asts.BinaryOp(lhsTree, Operator.RefEquality, rhsTree) =>
+        generateBinaryWithProxy(lhsTree, rhsTree, RefEqual(resultVal, _, _), RefEquality(_, _))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Inequality, rhsTree) =>
         recurseOnDesugared(Asts.UnaryOp(Operator.ExclamationMark,
           Asts.BinaryOp(lhsTree, Operator.Equality, rhsTree).withDesugaringSource(binopTree)
+        ).withDesugaringSource(binopTree))
+      case binopTree@Asts.BinaryOp(lhsTree, Operator.RefInequality, rhsTree) =>
+        recurseOnDesugared(Asts.UnaryOp(Operator.ExclamationMark,
+          Asts.BinaryOp(lhsTree, Operator.RefEquality, rhsTree).withDesugaringSource(binopTree)
         ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.And, rhsTree) =>
         recurseOnDesugaredToIfExpr(lhsTree,
@@ -1395,11 +1401,21 @@ final class IRcorneGenerator(
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
           } yield Equality(lhsFormula, rhsFormula)
+        case Asts.BinaryOp(lhs, Operator.RefEquality, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield RefEquality(lhsFormula, rhsFormula)
         case Asts.BinaryOp(lhs, Operator.Inequality, rhs) =>
           for {
             lhsFormula <- generateFormula(lhs, currScope)
             rhsFormula <- generateFormula(rhs, currScope)
           } yield LogicalNot(Equality(lhsFormula, rhsFormula))
+        case Asts.BinaryOp(lhs, Operator.RefInequality, rhs) =>
+          for {
+            lhsFormula <- generateFormula(lhs, currScope)
+            rhsFormula <- generateFormula(rhs, currScope)
+          } yield LogicalNot(RefEquality(lhsFormula, rhsFormula))
         case Asts.BinaryOp(lhs, Operator.LessOrEq, rhs) =>
           for {
             lhsFormula <- generateFormula(lhs, currScope)

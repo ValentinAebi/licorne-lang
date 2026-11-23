@@ -280,6 +280,8 @@ final class IRcornePrinter(
         pps.add(s"OR ${maybeTyped(assigned, scope)} := $lhs | $rhs")
       case Equal(assigned, lhs, rhs) =>
         pps.add(s"EQ ${maybeTyped(assigned, scope)} := $lhs == $rhs")
+      case RefEqual(assigned, lhs, rhs) =>
+        pps.add(s"REF-EQ ${maybeTyped(assigned, scope)} := $lhs === $rhs")
       case Leq(assigned, lhs, rhs) =>
         pps.add(s"LEQ ${maybeTyped(assigned, scope)} := $lhs <= $rhs")
       case Lt(assigned, lhs, rhs) =>

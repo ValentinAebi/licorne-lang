@@ -1,0 +1,24 @@
+
+object Main {
+
+    fun main() {
+        val f1 = Foo(42)
+        val f2 = Foo(42)
+        val f3 = f1
+        val f4 = Foo(0)
+        println(f1 == f2)   // true
+        println(f1 == f3)   // true
+        println(f1 == f4)   // false
+        println(f1 === f2)  // false
+        println(f1 === f3)  // true
+        println(f1 === f4)  // false
+    }
+
+}
+
+class Foo(val i: Int) {
+
+    fun equals(that: Any?): Bool =
+        that is Foo && this.i == that.i()
+
+}

@@ -129,6 +129,7 @@ final class TypeCandidatesInferrer(
     case And(assigned, lhs, rhs) => ()
     case Or(assigned, lhs, rhs) => ()
     case Equal(assigned, lhs, rhs) => ()
+    case RefEqual(assigned, lhs, rhs) => ()
     case Leq(assigned, lhs, rhs) => ()
     case Lt(assigned, lhs, rhs) => ()
     case invkFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>

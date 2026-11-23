@@ -184,6 +184,8 @@ object Formulas {
   final case class LogicalOr(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Or), LogicFormula
 
   final case class Equality(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.Equality), ComparisonFormula
+  
+  final case class RefEquality(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.RefEquality), ComparisonFormula
 
   final case class LessOrEq(lhs: Formula, rhs: Formula) extends Formula, Binop(Operator.LessOrEq), ComparisonFormula
 
@@ -238,6 +240,7 @@ object Formulas {
     case LogicalNot(operand) => LogicalNot(operand.applyRecursively(f))
     case LogicalOr(lhs, rhs) => LogicalOr(lhs.applyRecursively(f), rhs.applyRecursively(f))
     case Equality(lhs, rhs) => Equality(lhs.applyRecursively(f), rhs.applyRecursively(f))
+    case RefEquality(lhs, rhs) => RefEquality(lhs.applyRecursively(f), rhs.applyRecursively(f))
     case LessOrEq(lhs, rhs) => LessOrEq(lhs.applyRecursively(f), rhs.applyRecursively(f))
     case LessThan(lhs, rhs) => LessThan(lhs.applyRecursively(f), rhs.applyRecursively(f))
     case TypePredicate(subject, tpe) => TypePredicate(subject.applyRecursively(f), tpe)
@@ -279,6 +282,7 @@ object Formulas {
     case LogicalNot(operand) => typeCanMention(operand)
     case LogicalOr(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case Equality(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
+    case RefEquality(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case LessOrEq(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case LessThan(lhs, rhs) => typeCanMention(lhs) && typeCanMention(rhs)
     case TypePredicate(subject, tpe) => typeCanMention(subject)
@@ -306,6 +310,7 @@ object Formulas {
     case LogicalNot(operand) => operand.isPure
     case LogicalOr(lhs, rhs) => lhs.isPure && rhs.isPure
     case Equality(lhs, rhs) => lhs.isPure && rhs.isPure
+    case RefEquality(lhs, rhs) => lhs.isPure && rhs.isPure
     case LessOrEq(lhs, rhs) => lhs.isPure && rhs.isPure
     case LessThan(lhs, rhs) => lhs.isPure && rhs.isPure
     case TypePredicate(subject, tpe) => subject.isPure

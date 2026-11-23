@@ -170,6 +170,10 @@ final class ProxyStore {
         lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)
         rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)
       } yield Equality(lp, rp)
+      case RefEquality(lhs, rhs) => for {
+        lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)
+        rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)
+      } yield RefEquality(lp, rp)
       case LessOrEq(lhs, rhs) => for {
         lp <- dev(lhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)
         rp <- dev(rhs, developLocals, bypassPurityChecks, acceptPhis, termsOmissionMode)

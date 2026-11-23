@@ -14,7 +14,7 @@ import compiler.lang.TypeVisibility.{FilePrivate, PkgPrivate}
 import compiler.lang.Types.PrimitiveType.{AnyType, NothingType, NullType, UnitType}
 import compiler.lang.Types.{NamedType, NullableType, Type}
 import compiler.pipeline.CompilationStep.CodeGen
-import compiler.pipeline.CompilerStep
+import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
 import compiler.reporting.Errors.ErrorReporter
 import compiler.stdlib.StdLib
@@ -43,6 +43,8 @@ final class Backend(
                      overridesStore: OverridesStore,
                      er: ErrorReporter
                    ) extends CompilerStep[(Program, SubtypingInfo), List[String]] {
+
+  private given CompilationStep = CodeGen
 
   // TODO see if lower JVM versions can be supported
   private val javaVersionCode = (ClassFile.JAVA_25_VERSION, 0)
@@ -594,7 +596,6 @@ final class Backend(
       case IRcorne.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
       case IRcorne.Lt(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
 
-      // FIXME enforce a.equals(a) and purity of equals when redefining equals
       case IRcorne.Equal(assigned, lhs, rhs) =>
         genValueLoad(lhs, currScope, cb)
         ensureAssignable(AnyType, dealiasedTypeOf(lhs, currScope), cb)
@@ -602,6 +603,22 @@ final class Backend(
         ensureAssignable(AnyType, dealiasedTypeOf(rhs, currScope), cb)
         cb.invokestatic(ClassDesc.ofInternalName(objectsInternalName), "equals", MethodTypeDesc.of(CD_boolean, CD_Object, CD_Object))
         genValueStore(assigned, currScope, cb)
+
+      case IRcorne.RefEqual(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == TypeKind.REFERENCE && typeKindOf(rhs, currScope) == TypeKind.REFERENCE =>
+        genValueLoad(lhs, currScope, cb)
+        genValueLoad(rhs, currScope, cb)
+        val trueLabel = cb.newLabel()
+        val endLabel = cb.newLabel()
+        cb.if_acmpeq(trueLabel)
+        cb.iconst_0()
+        cb.goto_(endLabel)
+        cb.labelBinding(trueLabel)
+        cb.iconst_1()
+        cb.labelBinding(endLabel)
+        genValueStore(assigned, currScope, cb)
+
+      case refEq@IRcorne.RefEqual(assigned, lhs, rhs) =>
+        er.reportError(s"${Operator.RefEquality} can only be applied to reference types", refEq.getPosition)
 
       case IRcorne.Leq(assigned, lhs, rhs) =>
         throw AssertionError(s"unexpected Leq between ${dealiasedTypeOf(lhs, currScope)} and ${dealiasedTypeOf(rhs, currScope)}")

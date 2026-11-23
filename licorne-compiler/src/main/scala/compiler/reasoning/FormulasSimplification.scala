@@ -37,6 +37,11 @@ object FormulasSimplification {
         case (lhs, rhs) if lhs == rhs => BoolConst(true)
         case (lhs, rhs) => Equality(lhs, rhs)
       }
+    case RefEquality(lhs, rhs) =>
+      (simplifyFormula(lhs), simplifyFormula(rhs)) match {
+        case (lhs, rhs) if lhs == rhs => BoolConst(true)
+        case (lhs, rhs) => RefEquality(lhs, rhs)
+      }
     case LessOrEq(lhs, rhs) =>
       (simplifyNumeric(lhs), simplifyNumeric(rhs)) match {
         case (IntConst(l), IntConst(r)) => BoolConst(l <= r)
@@ -126,6 +131,7 @@ object FormulasSimplification {
       }
     case LogicalOr(lhs, rhs) => evalLogicalBinop(lhs, rhs, _ || _)
     case Equality(lhs, rhs) => evalComparisonBinop[ConstFormula](lhs, rhs, _.value == _.value)
+    case RefEquality(lhs, rhs) => None
     case LessOrEq(lhs, rhs) => evalComparisonBinop[IntConst](lhs, rhs, _.value <= _.value)
     case LessThan(lhs, rhs) => evalComparisonBinop[IntConst](lhs, rhs, _.value < _.value)
     case TypePredicate(subject, tpe) => None
@@ -164,6 +170,7 @@ object FormulasSimplification {
       }
     case Modulo(lhs, rhs) => Map(formula -> 1)
     case Equality(lhs, rhs) => Map.empty
+    case RefEquality(lhs, rhs) => Map.empty
     case LessOrEq(lhs, rhs) => Map.empty
     case LessThan(lhs, rhs) => Map.empty
     case LogicalNot(operand) => Map.empty

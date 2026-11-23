@@ -88,6 +88,9 @@ object StdLib {
   val heapVarTypeId: TypeIdentifier = TypeIdentifier(licorneClosuresPkgPrefix, "HeapVar")
   val heapVarGetFunId: FunOrVarId = NormalFunOrVarId("get")
   val heapVarSetFunId: FunOrVarId = NormalFunOrVarId("set")
+  
+  val equalsFunId: FunOrVarId = NormalFunOrVarId("equals")
+  val hashcodeFunId: FunOrVarId = NormalFunOrVarId("hashcode")
 
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),

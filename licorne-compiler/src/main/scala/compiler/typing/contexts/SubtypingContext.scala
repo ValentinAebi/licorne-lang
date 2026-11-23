@@ -80,6 +80,7 @@ final class SubtypingContext(
     if targetId == StdLib.arrayTypeId
     then CannotDowncast(s"implementation restriction: type tests against type ${StdLib.arrayTypeId} are not supported")
     else dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded match {
+      case NullableType(nullatedType) => checkDowncastTarget(nullatedType, targetId, acceptTypeParamTarget)
       case UnionType(types) => checkMultipleTypes(types)
       case IntersectionType(types) => checkMultipleTypes(types)
       case TernaryType(cond, left, right) => checkMultipleTypes(SeqSet(left, right))
@@ -90,6 +91,15 @@ final class SubtypingContext(
       case tpe if tpCtx.isTypeParam(tpe) =>
         if acceptTypeParamTarget then CanDowncast(tpe)
         else CannotDowncast("type tests against type parameters are not supported")
+      case AnyType =>
+        resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
+          case None =>
+            CannotDowncast(s"type $targetId not found")
+          case Some(tSig) if tSig.typeParams.isEmpty =>
+            CanDowncast(NamedType(targetId, List.empty, List.empty))
+          case Some(_) =>
+            CannotDowncast(s"downcasting $AnyType against a parametrized type is not supported")
+        }
       case NamedType(originId, originTypeArgs, Nil) =>
         resolutionCtx.resolveTypeSigAs[RuntimeTypeSignature](targetId) match {
           case None =>

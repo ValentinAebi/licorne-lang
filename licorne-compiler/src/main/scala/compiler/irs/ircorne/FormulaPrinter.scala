@@ -40,8 +40,10 @@ trait FormulaPrinter {
     case Formulas.LogicalAnd(lhs, rhs) => printBinop(lhs, Operator.And, rhs)
     case Formulas.LogicalOr(lhs, rhs) => printBinop(lhs, Operator.Or, rhs)
     case Formulas.LogicalNot(Formulas.Equality(lhs, rhs)) => printBinop(lhs, Operator.Inequality, rhs)
+    case Formulas.LogicalNot(Formulas.RefEquality(lhs, rhs)) => printBinop(lhs, Operator.RefInequality, rhs)
     case Formulas.LogicalNot(operand) => printUnop(Operator.ExclamationMark, operand)
     case Formulas.Equality(lhs, rhs) => printBinop(lhs, Operator.Equality, rhs)
+    case Formulas.RefEquality(lhs, rhs) => printBinop(lhs, Operator.RefEquality, rhs)
     case Formulas.LessOrEq(lhs, rhs) => printBinop(lhs, Operator.LessOrEq, rhs)
     case Formulas.LessThan(lhs, rhs) => printBinop(lhs, Operator.LessThan, rhs)
     case Formulas.TypePredicate(subject, tpe) => s"${ppMaybeParenth(subject, Precedence.TypeTest.bindsMoreThan(precedenceOf(subject)))} ${Keyword.Is} $tpe"
@@ -87,6 +89,7 @@ trait FormulaPrinter {
     case Formulas.LogicalNot(operand) => Precedence.Unary
     case Formulas.LogicalOr(lhs, rhs) => Precedence.Or
     case Formulas.Equality(lhs, rhs) => Precedence.Comparison
+    case Formulas.RefEquality(lhs, rhs) => Precedence.Comparison
     case Formulas.LessOrEq(lhs, rhs) => Precedence.Comparison
     case Formulas.LessThan(lhs, rhs) => Precedence.Comparison
     case Formulas.TypePredicate(subject, tpe) => Precedence.TypeTest

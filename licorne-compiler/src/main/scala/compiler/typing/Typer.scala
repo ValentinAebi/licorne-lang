@@ -400,6 +400,12 @@ final class Typer(
       case Equal(assigned, lhs, rhs) =>
         currScope.saveType(assigned, BoolType)
 
+      case RefEqual(assigned, lhs, rhs) =>
+        currScope.saveType(assigned, BoolType)
+        if (currScope.getCurrentTypeOf(lhs).baseType.isInstanceOf[PrimitiveType] || currScope.getCurrentTypeOf(rhs).baseType.isInstanceOf[PrimitiveType]) {
+          er.warn(s"comparing primitive types using ${Operator.RefEquality} or ${Operator.RefInequality} is discouraged and might cause verification failures, please use ${Operator.Equality} or ${Operator.RefInequality} unless you intend to check whether boxed types are equal by reference", instr.getPosition)
+        }
+
       case invk@InvokeFunc(assigned, receiver, func, typeArgsRaw, args) =>
         val instTypeArgs = typeArgsRaw.map(instantiateType(_, None, currScope, invk.getPosition))
         val (returnTypeRaw, instRecTypeArgs, instFunTypeArgs) = resolveFunSigAndCheckArgs(receiver, func, instTypeArgs, args, currScope, typeCandidatesStore.getCandidates(assigned), invk.getPosition)
@@ -751,6 +757,10 @@ final class Typer(
           typeFormula(lhs, currScope, posOpt)
           typeFormula(rhs, currScope, posOpt)
           BoolType
+        case RefEquality(lhs, rhs) =>
+          typeFormula(lhs, currScope, posOpt)
+          typeFormula(rhs, currScope, posOpt)
+          BoolType
         case TypePredicate(subject, tpe) =>
           checkDowncast(subject, tpe, currScope, posOpt)
           BoolType
@@ -891,7 +901,7 @@ final class Typer(
   private def checkDowncast(subject: Formula, tid: TypeIdentifier, currScope: Scope, posOpt: Option[Position])
                            (using TypeParamsContext): Option[Type] = {
     val subjectType = typeFormula(subject, currScope, posOpt).withTypeVarsExpanded
-    subtypingCtx.checkDowncastTarget(requireNonNullable(subjectType, "cast value", posOpt), tid, acceptTypeParamTarget = false) match {
+    subtypingCtx.checkDowncastTarget(subjectType, tid, acceptTypeParamTarget = false) match {
       case DowncastTargetCheckResult.CanDowncast(tpe) => Some(tpe)
       case DowncastTargetCheckResult.CannotDowncast(reason) =>
         er.reportError(s"$tid is not a valid downcast target for type $subjectType", posOpt)
@@ -1255,6 +1265,9 @@ final class Typer(
         smartcastTypeRaw <- smartcastData.tryToSmartcast(dealiasingCtx.dealiasType(originalType).withTypeVarsExpanded, resolutionCtx.typesReasoningCache)
       } {
         val smartcastType = typeSimplifier.simplifyType(smartcastTypeRaw)
+        if (smartcastType.isProvablyNonNull) {
+          scope.saveNonNull(subject)
+        }
         if (smartcastType == NothingType) {
           scope.markHasExited()
           scope.insertInstrDuringTraversal(Unreachable())
@@ -1269,6 +1282,8 @@ final class Typer(
     } {
       assumption match {
         case Equality(lhs, rhs) =>
+          scope.eMerge(lhs, rhs)
+        case RefEquality(lhs, rhs) =>
           scope.eMerge(lhs, rhs)
         case _ => ()
       }
@@ -1307,7 +1322,9 @@ final class Typer(
       val nullVal = scope.valuesCtx.globalCtx.nullVal
       // TODO code smell: effects in a method that looks functional
       assumption match {
-        case LogicalNot(Equality(lhs, rhs)) =>
+        case LogicalNot(eq@(Equality(_, _) | RefEquality(_, _))) =>
+          val lhs = eq.lhs
+          val rhs = eq.rhs
           if (lhs == nullVal) {
             scope.saveNonNull(rhs)
           } else if (rhs == nullVal) {
@@ -1417,15 +1434,15 @@ final class Typer(
     val typedCallArgs = callArgs.map(arg => Some(arg) -> typeFormula(arg, scope, posOpt))
     dealiasingCtx.dealiasType(receiverType.withTypeVarsExpanded).withTypeVarsExpanded.ignoreNullabilityShallow.asRefinedType.baseType match {
       case NothingType => (NothingType, List.empty, List.empty)
-      case NamedType(typeName, receiverTypeArgs, receiverArgs) =>
+      case NamedType(receiverTypeName, receiverTypeArgs, receiverArgs) =>
         val targetDesc = FunctionDescriptor(invkTarget.funId, typedCallArgs.size)
-        resolutionCtx.resolveFunSig(typeName, targetDesc, typedCallArgs.map(_._2)) match {
+        resolutionCtx.resolveFunSig(receiverTypeName, targetDesc, typedCallArgs.map(_._2)) match {
           case FuncResolResult.Success(ownerSig, funSig) =>
-            if (funSig.visibility == FuncVisibility.Private && !receiverIsThisPtr(scope, receiver)) {
+            if (funSig.visibility == FuncVisibility.Private && receiverTypeName != funSig.ownerName) {
               er.reportError(s"illegal access to ${FuncVisibility.Private} method ${funSig.functionName}", posOpt)
             }
             val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
-            val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $typeName"))
+            val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $receiverTypeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val allArgsSubst = funSig.paramsInclThis.keys.zip(receiver :: callArgs.map(proxyStore.developNearest(_))).toMap[IdValue, Formula]
             if (funSig.sigName == ConstructorFunId) {
@@ -1505,7 +1522,7 @@ final class Typer(
                                  isWrite: Boolean, posOpt: Option[Position])
                                 (using TypeParamsContext): Type = {
     def errorCase() = {
-      er.reportError(s"field ${fieldResolTarget.fieldId} not found in type $ownerType", posOpt)
+      er.reportError(s"field ${fieldResolTarget.fieldId} not found or not accessible in type $ownerType", posOpt)
       irModif {
         fieldResolTarget.markUnresolvable()
       }

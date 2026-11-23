@@ -13,8 +13,7 @@ object FormulasDsl {
     infix def *(r: Formula): Formula = Times(l, r)
     infix def /(r: Formula): Formula = DivBy(l, r)
     infix def %(r: Formula): Formula = Modulo(l, r)
-
-    infix def ===(r: Formula): Formula = Equality(l, r)
+    
     infix def <(r: Formula): Formula = LessThan(l, r)
     infix def <=(r: Formula): Formula = LessOrEq(l, r)
 
