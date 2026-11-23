@@ -42,6 +42,7 @@ object StdLib {
   val nextFunId: FunOrVarId = NormalFunOrVarId("next")
   val autoIteratorFunId: FunOrVarId = NormalFunOrVarId("iterator___")
   val anyObjTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "AnyObj")
+  val anyObjType = NamedType(anyObjTypeId, List.empty, List.empty)
 
   // licorne.core.String
   val stringTypeId: TypeIdentifier = TypeIdentifier(licorneCorePkgPrefix, "String")
