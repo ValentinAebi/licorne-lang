@@ -1,0 +1,34 @@
+
+object Main {
+
+    fun main() {
+
+        val n1 = Numbered(10, "car")
+        val n2 = Numbered(15, "truck")
+        val n3 = Numbered(10, "car")
+
+        val k1 = IntKeyed(10, "car")
+        val k2 = IntKeyed(15, "truck")
+        val k3 = IntKeyed(10, "car")
+
+        println(n1 == n2)   // false
+        println(n1 == n3)   // true
+
+        println(k1 == k2)   // false
+        println(k1 == k3)   // false
+
+        println(n1 == k1)   // false
+        println(k1 == n1)   // false
+
+        println(n1.hashCode() == n2.hashCode())   // false
+        println(n1.hashCode() == n3.hashCode())   // true
+
+        println(k1.hashCode() == k2.hashCode())   // false
+        println(k1.hashCode() == k3.hashCode())   // false
+    }
+
+}
+
+data class Numbered[T](val i: Int, val elem: T)
+
+class IntKeyed[T](val i: Int, val elem: T)

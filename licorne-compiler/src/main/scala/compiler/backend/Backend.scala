@@ -143,6 +143,16 @@ final class Backend(
         } else {
           generateFunctions(tSig, cb)(using program)
         }
+        tSig match {
+          case DataclassSignature(id, typeParams, constructorParams, functions, directSupertypes, visibility, sigScope, declPosOpt) =>
+            if (!functions.contains(FunctionDescriptor(equalsFunId, 1))) {
+              generateDefaultEquals(id, constructorParams, cb)
+            }
+            if (!functions.contains(FunctionDescriptor(hashCodeFunId, 0))) {
+              generateDefaultHashcode(id, constructorParams, cb)
+            }
+          case _ => ()
+        }
         generateInterfacesList(tSig.directSupertypes.map(_.typeName), cb)
       }
     )
@@ -391,6 +401,63 @@ final class Backend(
     }
   }
 
+  private def generateDefaultEquals(classId: TypeIdentifier, fields: SeqMap[FunOrVarId, Field.StableField], classBuilder: ClassBuilder)(using TypeParamsContext, DealiasingContext, SimplifiedSubtypingContext): Unit = {
+    classBuilder.withMethod(equalsFunId.stringId, MethodTypeDesc.of(CD_boolean, CD_Object), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val objectsClassDesc = ClassDesc.ofInternalName(objectsInternalName)
+      val dataclassDesc = tConv.descriptorFor(classId)
+      val correctTypeLabel = cb.newLabel()
+      cb.aload(1)
+      cb.instanceOf(dataclassDesc)
+      cb.ifne(correctTypeLabel)
+      cb.iconst_0()
+      cb.ireturn()
+      cb.labelBinding(correctTypeLabel)
+      cb.aload(1)
+      cb.checkcast(dataclassDesc)
+      cb.astore(1)
+      for ((_, fld) <- fields) {
+        val fldTypeDesc = tConv.descriptorFor(fld.tpe)
+        // TODO can be optimized for primitive types
+        cb.aload(0)
+        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        ensureAssignable(NullableType(AnyType), fld.tpe, cb)
+        cb.aload(1)
+        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        ensureAssignable(NullableType(AnyType), fld.tpe, cb)
+        cb.invokestatic(objectsClassDesc, equalsFunId.stringId, MethodTypeDesc.of(CD_boolean, CD_Object, CD_Object))
+        val continueLabel = cb.newLabel()
+        cb.ifne(continueLabel)
+        cb.iconst_0()
+        cb.ireturn()
+        cb.labelBinding(continueLabel)
+      }
+      cb.iconst_1()
+      cb.ireturn()
+    }))
+  }
+
+  private def generateDefaultHashcode(classId: TypeIdentifier, fields: SeqMap[FunOrVarId, Field.StableField], classBuilder: ClassBuilder)(using TypeParamsContext, DealiasingContext, SimplifiedSubtypingContext): Unit = {
+    classBuilder.withMethod(hashCodeFunId.stringId, MethodTypeDesc.of(CD_int), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val dataclassDesc = tConv.descriptorFor(classId)
+      cb.loadConstant(fields.size)
+      cb.anewarray(CD_Object)
+      var arrayIdx = 0
+      for ((_, fld) <- fields) {
+        val fldTypeDesc = tConv.descriptorFor(fld.tpe)
+        cb.dup()
+        cb.loadConstant(arrayIdx)
+        cb.aload(0)
+        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        ensureAssignable(NullableType(AnyType), fld.tpe, cb)
+        cb.aastore()
+        arrayIdx += 1
+      }
+      cb.invokestatic(ClassDesc.ofInternalName(objectsInternalName), "hash", MethodTypeDesc.of(CD_int, CD_Object.arrayType()))
+      cb.ireturn()
+    }))
+  }
 
   private def mkFunDesc(funSig: FunctionSignature, extractParams: FunctionSignature => Iterable[(NamedIdValue, Type)] = _.paramsWithoutThis)
                        (using tpCtx: TypeParamsContext, resolCtx: ResolutionContext, dealiasingCtx: DealiasingContext): MethodTypeDesc = {
