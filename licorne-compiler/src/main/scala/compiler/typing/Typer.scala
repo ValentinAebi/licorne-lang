@@ -622,14 +622,14 @@ final class Typer(
   private def removeIrrelevantVarEvolutions(currScope: Scope, unsortedLoopVars: List[LoopVarData])(using TypeParamsContext): Unit = {
     for (lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- unsortedLoopVars) {
       if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)(using CheckOnly) || lvd.variableEvolutionOpt.exists { evol =>
-        evol.bases.exists(dependsOnDoubleVals(_, currScope)) || dependsOnDoubleVals(evol.induct, currScope)
+        evol.bases.exists(dependsOnDoubleVal(_, currScope)) || dependsOnDoubleVal(evol.induct, currScope)
       }) {
         lvd.variableEvolutionOpt = None
       }
     }
   }
 
-  private def dependsOnDoubleVals(formula: Formula, currScope: Scope)(using TypeParamsContext): Boolean = boundary {
+  private def dependsOnDoubleVal(formula: Formula, currScope: Scope)(using TypeParamsContext): Boolean = boundary {
     formula.traversePreOrder {
       case DoubleConst(_) => boundary.break(true)
       case idVal: IdValue if currScope.getCurrentTypeOf(idVal).baseType == DoubleType => boundary.break(true)
@@ -1300,7 +1300,7 @@ final class Typer(
     }
     for {
       assumption <- branchInfo.assumptions
-      if assumption.isPure
+      if assumption.isPure && !dependsOnDoubleVal(assumption, scope)
     } {
       assumption match {
         case Equality(lhs, rhs) =>
@@ -1358,7 +1358,7 @@ final class Typer(
   }
 
   private def leqToSmartcasts(lhs: Formula, rhs: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = {
-    if (scope.getCurrentTypeOf(lhs).baseType == DoubleType || scope.getCurrentTypeOf(rhs).baseType == DoubleType) {
+    if (dependsOnDoubleVal(lhs, scope) || dependsOnDoubleVal(rhs, scope)) {
       return List.empty
     }
     val directlyInferredSmartcastOpt =

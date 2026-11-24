@@ -1,8 +1,18 @@
 
+// IMPORTANT NOTE:
+// Failures in this test (typically not crashing but outputting slightly incorrect values) can be due to the 
+// type-checker applying range refinements to Doubles because of excessive smartcasting and the backend inserting d2i 
+// instructions that round Doubles to Ints (believing the ranges are Ints).
+
 object Main {
 
     fun main() {
         foo(2.2)
+        println(bar(true, true, 15))    // 30.0
+        println(bar(true, false, 21))   // 30.0
+        println(bar(false, true, 2))    // 23.0
+        println(bar(false, false, 25))  // 45.5
+        println(bar(false, false, -25))  // 4.5
     }
 
     private fun foo(x: Double) {
@@ -19,6 +29,19 @@ object Main {
             i += 1
         }
         takeDouble(a)
+    }
+
+    private fun bar(cond1: Bool, cond2: Bool, x: Int): Double {
+        var t = 20
+        if (cond1) {
+            t += 10
+        } else {
+            t += x + (if (cond2) 1 else 0.5)
+            if (t < 0) {
+                t = -t
+            }
+        }
+        return t
     }
 
     private fun takePositiveInt(i: [0..]) {
