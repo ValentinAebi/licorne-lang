@@ -3,7 +3,7 @@ package compiler.reasoning
 import compiler.irs.ircorne.Formulas.*
 import compiler.lang.Types
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{AnyType, IntType, NothingType, NullType}
+import compiler.lang.Types.PrimitiveType.{AnyType, DoubleType, IntType, NothingType, NullType}
 import compiler.reasoning.FormulasSimplification.*
 import compiler.reasoning.Solver
 import compiler.stdlib.StdLib
@@ -35,6 +35,7 @@ final class TypeSimplifier(subtypingCtx: SubtypingContext, solver: Solver, deali
       NamedType(typeName, typeArgs.map(simplifyType), args.map(simplifyFormula))
     case ClosureType(params, result, enforcedPure) => ClosureType(params.map(simplifyType), simplifyType(result), enforcedPure)
     case variable: TypeVariable => variable
+    case st if dealiasingCtx.dealiasType(st).baseTypeAssumingNoAlias == DoubleType => DoubleType
 
     case UnionType(originalTypes) =>
       val simplifiedTypes = SeqSet(originalTypes).map(simplifyType(_).flattenedPredIfGenRefined).filter(_ != NothingType)

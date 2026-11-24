@@ -1,0 +1,32 @@
+
+object Main {
+
+    fun main() {
+        foo(2.2)
+    }
+
+    private fun foo(x: Double) {
+        var a = 0
+        var i = 1
+        takePositiveInt(a)
+        takePositiveInt(i)
+        while (a < x) {
+            val tmp = a
+            a = i
+            takePositiveInt(a)
+            a = tmp + 0.5
+            takeDouble(a)
+            i += 1
+        }
+        takeDouble(a)
+    }
+
+    private fun takePositiveInt(i: [0..]) {
+        println("i " ++ str(i))
+    }
+
+    private fun takeDouble(d: Double) {
+        println("d " ++ str(d))
+    }
+
+}

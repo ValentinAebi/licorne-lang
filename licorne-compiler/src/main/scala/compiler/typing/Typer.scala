@@ -270,7 +270,7 @@ final class Typer(
             else if thenBr.hasExited then afterElseValType
             else {
               given SubtypeCheckingMode = CheckOnly
-              
+
               val candidates = typeCandidatesStore.getCandidates(joinedVal)
               candidates.find(_.isInstanceOf[TernaryType]) match {
                 case Some(ternaryType: TernaryType)
@@ -519,7 +519,7 @@ final class Typer(
 
       case hybridCast@HybridCast(inValue) =>
         given SubtypeCheckingMode = CheckOnly
-        
+
         val preType = dealiasingCtx.dealiasType(currScope.computeCurrentType(inValue, hybridCast.getPosition)).withTypeVarsExpanded
         val targetTypeOpt = typeCandidatesStore.getCandidates(inValue).headOption.map(h => dealiasingCtx.dealiasType(h.withTypeVarsExpanded).withTypeVarsExpanded)
         (preType, targetTypeOpt) match {
@@ -621,10 +621,21 @@ final class Typer(
 
   private def removeIrrelevantVarEvolutions(currScope: Scope, unsortedLoopVars: List[LoopVarData])(using TypeParamsContext): Unit = {
     for (lvd@LoopVarData(varId, beforeLoopVal, inCondVal, bodyLastVal, varDefScope) <- unsortedLoopVars) {
-      if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)(using CheckOnly)) {
+      if (!subtypingCtx.isSubtype(currScope.detectCurrentType(beforeLoopVal), IntType)(using CheckOnly) || lvd.variableEvolutionOpt.exists { evol =>
+        evol.bases.exists(dependsOnDoubleVals(_, currScope)) || dependsOnDoubleVals(evol.induct, currScope)
+      }) {
         lvd.variableEvolutionOpt = None
       }
     }
+  }
+
+  private def dependsOnDoubleVals(formula: Formula, currScope: Scope)(using TypeParamsContext): Boolean = boundary {
+    formula.traversePreOrder {
+      case DoubleConst(_) => boundary.break(true)
+      case idVal: IdValue if currScope.getCurrentTypeOf(idVal).baseType == DoubleType => boundary.break(true)
+      case _ => ()
+    }
+    false
   }
 
   private def inferBoundsFromLoopClosedFormAnalysis(varEvol: VariableEvolution, iterCntOpt: Option[Formula], loopIdxVal: IdValue, mkRangeFromIterCnt: Formula => IntRangeType)
@@ -870,9 +881,9 @@ final class Typer(
     // TODO warning if result is known (true or false)?
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
-    
+
     given SubtypeCheckingMode = CheckOnly
-    
+
     if (!subtypingCtx.isSubtype(lhs, lhsType, DoubleType, currScope) || !subtypingCtx.isSubtype(rhs, rhsType, DoubleType, currScope)) {
       er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
     }
@@ -940,6 +951,9 @@ final class Typer(
       enforcePurity(cond, "ternary type condition", posOpt)
       TernaryType(cond, instantiateType(left, ambientVarianceOpt, currScope, posOpt), instantiateType(right, ambientVarianceOpt, currScope, posOpt))
     case tpe@RefinedType(baseTypeRaw, predicate) =>
+      if (baseTypeRaw == DoubleType) {
+        er.reportError(s"$DoubleType cannot be refined", posOpt)
+      }
       val baseTypeInst = instantiateType(baseTypeRaw, ambientVarianceOpt, currScope, posOpt)
       val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
       tmpPredScope.saveSmartcast(itValue, baseTypeRaw)
@@ -965,7 +979,7 @@ final class Typer(
 
   private def checkIntRangeBound(bound: Formula, upperOrLower: String, currScope: Scope, posOpt: Option[Position])(using TypeParamsContext): Boolean = {
     given SubtypeCheckingMode = CheckOnly
-    
+
     val tpe = typeFormula(bound, currScope, posOpt)
     val boundOk = subtypingCtx.isSubtype(tpe, IntType)
     if (!boundOk) {
@@ -1104,9 +1118,9 @@ final class Typer(
     val (typeParamsInst, fullTypeParamsCtx) = processTypeParamsAccumulating(ownerTypeParamsCtx, typeParamsRaw) {
       typeFunTypeParam(_, functionSignature.sigScope, functionSignature.declPosOpt)
     }
-    
+
     given TypeParamsContext = fullTypeParamsCtx
-    
+
     val paramsInclThisInst = mutable.LinkedHashMap.empty[NamedIdValue, Type]
     var isReceiver = true
     for (paramId, paramTypeRaw) <- paramsInclThisRaw do {
@@ -1319,11 +1333,11 @@ final class Typer(
         case LessOrEq(lhs, rhs) =>
           solver.takeType(lhs, scope.detectCurrentType(lhs))
           solver.takeType(rhs, scope.detectCurrentType(rhs))
-          leqToSmartcasts(lhs, rhs)
+          leqToSmartcasts(lhs, rhs, scope)
         case LessThan(lhs, rhs) =>
           solver.takeType(lhs, scope.detectCurrentType(lhs))
           solver.takeType(rhs, scope.detectCurrentType(rhs))
-          ltToSmartcasts(lhs, rhs)
+          ltToSmartcasts(lhs, rhs, scope)
         case developedAssumption =>
           extractPredicateIntoSmartcastType(developedAssumption, scope).mapVals(typeSimplifier.simplifyType)
       }
@@ -1343,7 +1357,10 @@ final class Typer(
       smartcasts
   }
 
-  private def leqToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {
+  private def leqToSmartcasts(lhs: Formula, rhs: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = {
+    if (scope.getCurrentTypeOf(lhs).baseType == DoubleType || scope.getCurrentTypeOf(rhs).baseType == DoubleType) {
+      return List.empty
+    }
     val directlyInferredSmartcastOpt =
       if (lhs.typeCanMention(rhs)) {
         Some(lhs -> IntRangeType.ofUpperBound(rhs))
@@ -1377,9 +1394,9 @@ final class Typer(
     directlyInferredSmartcastOpt.toList ++ linSmartcastOpt
   }
 
-  private def ltToSmartcasts(lhs: Formula, rhs: Formula)(using TypeParamsContext): List[(Formula, Type)] = {
+  private def ltToSmartcasts(lhs: Formula, rhs: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, Type)] = {
     import compiler.irs.ircorne.FormulasDsl.*
-    leqToSmartcasts(lhs + 1, rhs)
+    leqToSmartcasts(lhs + 1, rhs, scope)
   }
 
   private def extractPredicateIntoSmartcastType(condition: Formula, scope: Scope)(using TypeParamsContext): List[(Formula, RefinedType)] = {
@@ -1388,6 +1405,7 @@ final class Typer(
       for {
         itSubstTarget <- findFormulaWhoseTypeCanMentionAllOthers(holes).toList
         baseType <- detectTypeForSmartcast(itSubstTarget, scope)
+        if baseType.baseType != DoubleType
       } yield {
         val predicate = condition.substitute(itSubstTarget, itValue)
         itSubstTarget -> RefinedType(baseType, predicate)
