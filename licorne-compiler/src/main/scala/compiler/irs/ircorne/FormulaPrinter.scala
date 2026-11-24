@@ -16,6 +16,7 @@ trait FormulaPrinter {
       s"$nameHint${"$"}snap${"$"}$uid@${definingScope.scopeUid}i"
     case value: NamedIdValue => printIdVal(value)
     case Formulas.IntConst(value) => value.toString
+    case Formulas.DoubleConst(value) => value.toString
     case Formulas.BoolConst(value) => value.toString
     case Formulas.CharConst(value) => s"'$value'"
     case Formulas.StringConst(value) => s"\"$value\""

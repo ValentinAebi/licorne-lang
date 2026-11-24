@@ -988,7 +988,9 @@ final class IRcorneGenerator(
       case Asts.IntLit(value) =>
         currScope.saveInstr(AssignIntConst(resultVal, value), expr)
         Some(IntConst(value))
-      case Asts.DoubleLit(value) => ???
+      case Asts.DoubleLit(value) =>
+        currScope.saveInstr(AssignDoubleConst(resultVal, value), expr)
+        Some(DoubleConst(value))
       case Asts.CharLit(value) =>
         currScope.saveInstr(AssignCharConst(resultVal, value), expr)
         Some(CharConst(value))
@@ -1316,7 +1318,7 @@ final class IRcorneGenerator(
 
       expr match {
         case Asts.IntLit(value) => Some(IntConst(value))
-        case Asts.DoubleLit(value) => ???
+        case Asts.DoubleLit(value) => Some(DoubleConst(value))
         case Asts.UnitLit() => failIllegalConstruct("unit literal")
         case Asts.CharLit(value) => Some(CharConst(value))
         case Asts.BoolLit(value) => Some(BoolConst(value))

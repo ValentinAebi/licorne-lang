@@ -208,7 +208,7 @@ final class AbstractInterpreter(solver: Solver, typeSimplifier: TypeSimplifier, 
     case (l, r) =>
       (l.asRefinedType.baseType, r.asRefinedType.baseType) match {
         case (IntType | IntRangeType(_, _), IntType | IntRangeType(_, _)) => Some(IntType)
-        case (DoubleType, DoubleType) => Some(DoubleType)
+        case (DoubleType | IntType, DoubleType | IntType) => Some(DoubleType)
         case _ => None
       }
   }

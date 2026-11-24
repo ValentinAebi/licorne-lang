@@ -59,6 +59,7 @@ final class FormulasConverter[IntSort <: KSort](
           case _ => base
         }
       case IntConst(value) => Some(ihm.const(value))
+      case DoubleConst(value) => None
       case BoolConst(value) => None
       case CharConst(value) => Some(ihm.const(value.toInt))
       case StringConst(value) => None
@@ -129,6 +130,7 @@ final class FormulasConverter[IntSort <: KSort](
           case _ => base
         }
       case IntConst(value) => None
+      case DoubleConst(value) => None
       case BoolConst(value) => Some(kCtx.mkBool(value))
       case CharConst(value) => None
       case StringConst(value) => None

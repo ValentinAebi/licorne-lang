@@ -39,6 +39,10 @@ object FormulasCompilation {
         save(AssignIntConst(res, value))
       }
 
+      case Formulas.DoubleConst(value) => withIntermediateValue { res =>
+        save(AssignDoubleConst(res, value))
+      }
+
       case Formulas.BoolConst(value) => withIntermediateValue { res =>
         save(AssignBoolConst(res, value))
       }

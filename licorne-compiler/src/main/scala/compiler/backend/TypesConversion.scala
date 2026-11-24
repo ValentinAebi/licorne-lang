@@ -32,7 +32,7 @@ trait TypesConverter {
       case NamedType(StdLib.arrayTypeId, List(elemType), Nil) =>
         boxingConverter.descriptorFor(elemType).arrayType()
       case NamedType(typeName, typeArgs, args) => descriptorFor(typeName)
-      case ClosureType(params, result, enforcedPure) => ???
+      case ClosureType(params, result, enforcedPure) => descriptorFor(NamedType(StdLib.closureTypeId, List.empty, List.empty))
       case UnionType(types) =>
         val descriptors = types.map(descriptorFor)
         if descriptors.size == 1 then descriptors.head

@@ -328,6 +328,10 @@ final class Typer(
         currScope.saveType(assigned, applyCandidateIfTernary(assigned, IntRangeType.singleton(src)))
         saveEquality(assigned, IntConst(src))
 
+      case AssignDoubleConst(assigned, src) =>
+        currScope.saveType(assigned, applyCandidateIfTernary(assigned, DoubleType))
+        saveEquality(assigned, DoubleConst(src))
+
       case AssignBoolConst(assigned, src) =>
         currScope.saveType(assigned, BoolType)
         saveEquality(assigned, BoolConst(src))
@@ -698,6 +702,7 @@ final class Typer(
       val rawType = formula match {
         case value: IdValue => currScope.computeCurrentType(value, posOpt)
         case IntConst(value) => IntType
+        case DoubleConst(value) => DoubleType
         case BoolConst(value) => BoolType
         case CharConst(value) => StdLib.charType
         case StringConst(value) => mkTypeForStringLit(value)
@@ -864,10 +869,13 @@ final class Typer(
                                  (using TypeParamsContext): Type = {
     // TODO warning if result is known (true or false)?
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
-    val expectedOperandType = if dealiasingCtx.dealiasType(lhsType.withTypeVarsExpanded).baseType == DoubleType then DoubleType else IntType
-    subtypingCtx.enforceIsSubtypeExpAct(lhsType, expectedOperandType, s"operand of $op", posOpt)
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
-    subtypingCtx.enforceIsSubtypeExpAct(rhsType, expectedOperandType, s"operand of $op", posOpt)
+    
+    given SubtypeCheckingMode = CheckOnly
+    
+    if (!subtypingCtx.isSubtype(lhs, lhsType, DoubleType, currScope) || !subtypingCtx.isSubtype(rhs, rhsType, DoubleType, currScope)) {
+      er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
+    }
     BoolType
   }
 

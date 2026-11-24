@@ -109,6 +109,8 @@ object Formulas {
   }
 
   final case class IntConst(value: Int) extends ConstFormula, NumericFormula
+  
+  final case class DoubleConst(value: Double) extends ConstFormula, NumericFormula
 
   final case class BoolConst(value: Boolean) extends ConstFormula, LogicFormula
   

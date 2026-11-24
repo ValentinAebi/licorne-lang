@@ -252,6 +252,8 @@ final class IRcornePrinter(
         pps.add(s"ASSIG ${maybeTyped(assigned, scope)} := $src")
       case AssignIntConst(assigned, src) =>
         pps.add(s"INTC ${maybeTyped(assigned, scope)} := $src")
+      case AssignDoubleConst(assigned, src) =>
+        pps.add(s"DOUBLEC ${maybeTyped(assigned, scope)} := $src")
       case AssignBoolConst(assigned, src) =>
         pps.add(s"BOOLC ${maybeTyped(assigned, scope)} := $src")
       case AssignCharConst(assigned, src) =>

@@ -108,6 +108,7 @@ final class TypeCandidatesInferrer(
         typeCandidatesStore.offerCandidate(src, th)
       }
     case AssignIntConst(assigned, src) => ()
+    case AssignDoubleConst(assigned, src) => ()
     case AssignBoolConst(assigned, src) => ()
     case AssignCharConst(assigned, src) => ()
     case AssignStringConst(assigned, src) => ()

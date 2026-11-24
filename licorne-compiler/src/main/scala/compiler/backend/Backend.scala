@@ -378,11 +378,11 @@ final class Backend(
               for ((bridgeParamDesc, funParamDesc) <- bridgeDesc.parameterArray().zip(funDesc.parameterArray())) {
                 val paramKind = descToKind(bridgeParamDesc)
                 cb.loadLocal(paramKind, paramSlotIdx)
-                ensureAssignable(funParamDesc, bridgeParamDesc, cb)
+                handleBoxing(funParamDesc, bridgeParamDesc, cb)
                 paramSlotIdx += paramKind.slotSize()
               }
               cb.invokevirtual(tConv.descriptorFor(funSig.ownerName), funSig.functionName.stringId, funDesc)
-              ensureAssignable(bridgeDesc.returnType(), funDesc.returnType(), cb)
+              handleBoxing(bridgeDesc.returnType(), funDesc.returnType(), cb)
               cb.return_(descToKind(bridgeDesc.returnType()))
             })
           }
@@ -516,6 +516,10 @@ final class Backend(
         cb.loadConstant(src)
         genValueStore(assigned, currScope, cb)
 
+      case IRcorne.AssignDoubleConst(assigned, src) =>
+        cb.loadConstant(src)
+        genValueStore(assigned, currScope, cb)
+
       case IRcorne.AssignBoolConst(assigned, src) =>
         val srcAsInt = if src then 1 else 0
         cb.loadConstant(srcAsInt)
@@ -553,21 +557,21 @@ final class Backend(
 
       case IRcorne.NumNeg(assigned, operand) =>
         genValueLoad(operand, currScope, cb)
-        dispatchArithOnVal(operand, currScope, whenInt = {
-          cb.ineg()
-        }, whenDouble = {
+        if (typeKindOf(operand, currScope) == DOUBLE) {
           cb.dneg()
-        })
+        } else {
+          cb.ineg()
+        }
         genValueStore(assigned, currScope, cb)
 
       case IRcorne.Add(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iadd(), _.dadd())
       case IRcorne.Sub(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.isub(), _.dsub())
       case IRcorne.Mul(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.imul(), _.dmul())
       case IRcorne.Div(assigned, lhs, rhs) if disableOverflowChecks => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.idiv(), _.ddiv())
-      case IRcorne.Add(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "addExact")
-      case IRcorne.Sub(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "subtractExact")
-      case IRcorne.Mul(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "multiplyExact")
-      case IRcorne.Div(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "divideExact")
+      case IRcorne.Add(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "addExact", _.dadd())
+      case IRcorne.Sub(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "subtractExact", _.dsub())
+      case IRcorne.Mul(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "multiplyExact", _.dmul())
+      case IRcorne.Div(assigned, lhs, rhs) => genArithExactBinop(assigned, lhs, rhs, currScope, cb, "divideExact", _.ddiv())
       case IRcorne.Rem(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.irem(), _.drem())
 
       case IRcorne.LogicNeg(assigned, operand) =>
@@ -585,16 +589,20 @@ final class Backend(
       case And(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.iand(), _ => assert(false))
       case Or(assigned, lhs, rhs) => genArithKindBinop(assigned, lhs, rhs, currScope, cb, _.ior(), _ => assert(false))
 
-      case IRcorne.Equal(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
+      case IRcorne.Equal(assigned, lhs, rhs) if typeKindIsOneOf(INT, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, BOOLEAN)(rhs, currScope) =>
         genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmpeq(_))
-      case IRcorne.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT =>
+
+      case IRcorne.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
         genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmple(_))
-      case IRcorne.Lt(assigned, lhs, rhs) if typeKindOf(rhs, currScope) == INT =>
+      case IRcorne.Lt(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
         genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmplt(_))
 
-      case IRcorne.Equal(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
-      case IRcorne.Leq(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
-      case IRcorne.Lt(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == DOUBLE && typeKindOf(rhs, currScope) == DOUBLE => ???
+      case IRcorne.Equal(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+        genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.ifeq(_))
+      case IRcorne.Leq(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+        genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.ifle(_))
+      case IRcorne.Lt(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+        genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.iflt(_))
 
       case IRcorne.Equal(assigned, lhs, rhs) =>
         genValueLoad(lhs, currScope, cb)
@@ -1077,6 +1085,10 @@ final class Backend(
       cb.aconst_null()
     } else if (dstKind == TypeKind.VOID && srcKind != TypeKind.VOID) {
       cb.pop()
+    } else if (dstKind == TypeKind.DOUBLE && srcKind == TypeKind.INT) {
+      cb.i2d()
+    } else if (dstKind == TypeKind.INT && srcKind == TypeKind.DOUBLE) {
+      cb.d2i()
     } else if (srcDesc.isPrimitive && !dstDesc.isPrimitive) {
       val srcBoxedDesc = boxDesc(srcDesc)
       cb.invokestatic(srcBoxedDesc, "valueOf", MethodTypeDesc.of(srcBoxedDesc, srcDesc))
@@ -1096,7 +1108,7 @@ final class Backend(
     }
   }
 
-  private def ensureAssignable(dstDesc: ClassDesc, srcDesc: ClassDesc, cb: CodeBuilder): Unit = if (srcDesc != dstDesc) {
+  private def handleBoxing(dstDesc: ClassDesc, srcDesc: ClassDesc, cb: CodeBuilder): Unit = if (srcDesc != dstDesc) {
     if (srcDesc == CD_void) {
       cb.aconst_null()
     } else if (dstDesc == CD_void && descToKind(srcDesc).slotSize() == 2) {
@@ -1174,11 +1186,14 @@ final class Backend(
     }
   }
 
-  private def genArithExactBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder, jvmMethodName: String)
+  private def typeKindIsOneOf(kinds: TypeKind*)(idVal: IdValue, currScope: Scope)(using TypeParamsContext, DealiasingContext): Boolean =
+    kinds.contains(typeKindOf(idVal, currScope))
+
+  private def genArithExactBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder, jvmMethodName: String, mkDoubleInstr: CodeBuilder => Unit)
                                 (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
     genArithKindBinop(assigned, lhs, rhs, currScope, cb,
       _.invokestatic(javaLangMathDesc, jvmMethodName, MethodTypeDesc.of(CD_int, CD_int, CD_int)),
-      _ => ??? // TODO implement for Doubles
+      mkDoubleInstr
     )
   }
 
@@ -1187,13 +1202,21 @@ final class Backend(
                                (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
     given TypeParamsContext = summon[FunctionGenerationContext].typeParamsCtx
 
+    val lhsKind = typeKindOf(lhs, currScope)
+    val rhsKind = typeKindOf(rhs, currScope)
     genValueLoad(lhs, currScope, cb)
+    if (lhsKind != DOUBLE && rhsKind == DOUBLE) {
+      cb.i2d()
+    }
     genValueLoad(rhs, currScope, cb)
-    dispatchArithOnVal(lhs, currScope, whenInt = {
-      intOp(cb)
-    }, whenDouble = {
+    if (lhsKind == DOUBLE && rhsKind != DOUBLE) {
+      cb.i2d()
+    }
+    if (lhsKind == DOUBLE || rhsKind == DOUBLE) {
       doubleOp(cb)
-    })
+    } else {
+      intOp(cb)
+    }
     genValueStore(assigned, currScope, cb)
   }
 
@@ -1212,16 +1235,29 @@ final class Backend(
     genValueStore(assigned, currScope, cb)
   }
 
-  private def dispatchArithOnVal(idVal: IdValue, currScope: Scope, whenInt: => Unit, whenDouble: => Unit)(using TypeParamsContext, DealiasingContext): Unit =
-    dispatchArithOnKind(typeKindOf(idVal, currScope), whenInt, whenDouble)
+  private def genDoubleCompBinop(assigned: IdValue, lhs: IdValue, rhs: IdValue, currScope: Scope, cb: CodeBuilder,
+                                 mkBranchInstr: (ccb: CodeBuilder, trueLabel: Label) => Unit)
+                                (using FunctionGenerationContext, DealiasingContext, GlobalValuesContext): Unit = {
+    given TypeParamsContext = summon[FunctionGenerationContext].typeParamsCtx
 
-  private def dispatchArithOnKind(kind: TypeKind, whenInt: => Unit, whenDouble: => Unit): Unit = kind match {
-    case INT | BOOLEAN =>
-      val _ = whenInt
-    case DOUBLE =>
-      val _ = whenDouble
-    case _ =>
-      throw AssertionError(s"unexpected kind in arithmetic dispatcher: $kind")
+    genValueLoad(lhs, currScope, cb)
+    if (typeKindOf(lhs, currScope) != DOUBLE) {
+      cb.i2d()
+    }
+    genValueLoad(rhs, currScope, cb)
+    if (typeKindOf(rhs, currScope) != DOUBLE) {
+      cb.i2d()
+    }
+    cb.dcmpg()
+    val trueLabel = cb.newLabel()
+    val endLabel = cb.newLabel()
+    mkBranchInstr(cb, trueLabel)
+    cb.iconst_0()
+    cb.goto_(endLabel)
+    cb.labelBinding(trueLabel)
+    cb.iconst_1()
+    cb.labelBinding(endLabel)
+    genValueStore(assigned, currScope, cb)
   }
 
 }

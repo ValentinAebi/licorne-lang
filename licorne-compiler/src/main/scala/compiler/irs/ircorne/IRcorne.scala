@@ -213,6 +213,8 @@ object IRcorne {
   }
 
   final case class AssignIntConst(assigned: IdValue, src: Int) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
+  
+  final case class AssignDoubleConst(assigned: IdValue, src: Double) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
 
   final case class AssignBoolConst(assigned: IdValue, src: Boolean) extends AssigningInstr, PureInstr, ConsumesNoVal, NoChildren
   

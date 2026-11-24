@@ -1,0 +1,29 @@
+
+object Main {
+
+    fun main() {
+        var a = 0.0
+        println(relu(a))    // 0.0
+        foo(a)              // zero
+        a += 1
+        println(a)          // 1.0
+        println(relu(a))    // 1.0
+        foo(a)              // positive
+        foo(-5)             // negative
+        foo(-0.000001)      // negative
+    }
+
+    private fun relu(x: Double): Double =
+        if (x < 0) 0 else x
+
+    private fun foo(y: Double) {
+        if (y == 0) {
+            println("zero")
+        } else if (y > 0) {
+            println("positive")
+        } else {
+            println("negative")
+        }
+    }
+
+}

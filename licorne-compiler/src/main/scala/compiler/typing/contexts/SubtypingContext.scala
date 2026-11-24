@@ -191,7 +191,8 @@ final class SubtypingContext(
     case (subT: NamedType, superT: NamedType) if isSubtype(subT, superT) => true
     case (subT: RefinedType, superT) => isSubtype(subT, superT.asRefinedType)
     case (subT, superT: RefinedType) => isSubtype(subT.asRefinedType, superT)
-    case (IntRangeType(_, _), IntType) => true
+    case (IntType, DoubleType) => true
+    case (IntRangeType(_, _), IntType | DoubleType) => true
     case (IntRangeType(subLbOpt, subUbOpt), IntRangeType(superLbOpt, superUbOpt)) =>
       superLbOpt.forall(superLb => subLbOpt.exists(subLb => solver.canProveLeq(superLb, subLb)))
         && superUbOpt.forall(superUb => subUbOpt.exists(subUb => solver.canProveLeq(subUb, superUb)))
