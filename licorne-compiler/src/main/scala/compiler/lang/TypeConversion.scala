@@ -10,7 +10,7 @@ enum TypeConversion(val from: PrimitiveType, val to: Type) {
   case Double2Int extends TypeConversion(DoubleType, IntType)
 
   case IntToString extends TypeConversion(IntType, stringType)
-  case BoolToString extends TypeConversion(BoolType, stringType)
+  case BoolToString extends TypeConversion(BooleanType, stringType)
   case DoubleToString extends TypeConversion(DoubleType, stringType)
 }
 

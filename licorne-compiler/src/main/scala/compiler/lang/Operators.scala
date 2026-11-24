@@ -34,7 +34,7 @@ object Operators {
   val unaryOperators: List[UnaryOpSignature] = List(
     UnaryOpSignature(Minus, IntType, IntType),
     UnaryOpSignature(Minus, DoubleType, DoubleType),
-    UnaryOpSignature(ExclamationMark, BoolType, BoolType)
+    UnaryOpSignature(ExclamationMark, BooleanType, BooleanType)
   )
 
   //  ==  and  !=  are treated separately
@@ -50,17 +50,17 @@ object Operators {
     DoubleType $ Div $ DoubleType is DoubleType,
     IntType $ Modulo $ IntType is IntType,
 
-    IntType $ LessThan $ IntType is BoolType,
-    DoubleType $ LessThan $ DoubleType is BoolType,
-    IntType $ LessOrEq $ IntType is BoolType,
-    DoubleType $ LessOrEq $ DoubleType is BoolType,
-    IntType $ GreaterThan $ IntType is BoolType,
-    DoubleType $ GreaterThan $ DoubleType is BoolType,
-    IntType $ GreaterOrEq $ IntType is BoolType,
-    DoubleType $ GreaterOrEq $ DoubleType is BoolType,
+    IntType $ LessThan $ IntType is BooleanType,
+    DoubleType $ LessThan $ DoubleType is BooleanType,
+    IntType $ LessOrEq $ IntType is BooleanType,
+    DoubleType $ LessOrEq $ DoubleType is BooleanType,
+    IntType $ GreaterThan $ IntType is BooleanType,
+    DoubleType $ GreaterThan $ DoubleType is BooleanType,
+    IntType $ GreaterOrEq $ IntType is BooleanType,
+    DoubleType $ GreaterOrEq $ DoubleType is BooleanType,
 
-    BoolType $ And $ BoolType is BoolType,
-    BoolType $ Or $ BoolType is BoolType,
+    BooleanType $ And $ BooleanType is BooleanType,
+    BooleanType $ Or $ BooleanType is BooleanType,
 
     stringType $ Plus $ stringType is stringType
   )

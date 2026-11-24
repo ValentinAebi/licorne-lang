@@ -228,7 +228,7 @@ final class Typer(
           closedForm <- rec.asClosedForm(loopIdxVal)
         } yield Equality(inCondVal, closedForm)
         typeScopeInstructions(condScope, branchInfo ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
-        subtypingCtx.enforceIsSubtype(condScope.detectCurrentType(condVal), BoolType, s"loop condition must have type $BoolType", loop.getPosition)
+        subtypingCtx.enforceIsSubtype(condScope.detectCurrentType(condVal), BooleanType, s"loop condition must have type $BooleanType", loop.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(bodyScope, infoIfCondTrue ++ BranchingInfo.ofAssumptions(closedFormsAssumptions))
         deferredAfterLoopTypes.foreach(_.saveType(_, _))
@@ -258,7 +258,7 @@ final class Typer(
 
       case disjunction@Disjunction(condVal, thenBr, elseBr, variables) =>
         val condType = currScope.computeCurrentType(condVal, disjunction.getPosition)
-        subtypingCtx.enforceIsSubtype(condType, BoolType, s"condition must have type $BoolType", disjunction.getPosition)
+        subtypingCtx.enforceIsSubtype(condType, BooleanType, s"condition must have type $BooleanType", disjunction.getPosition)
         val (infoIfCondTrue, infoIfCondFalse) = proxyStore.extractRawBranchingInfos(condVal, branchInfo, currScope)
         typeScopeInstructions(thenBr, infoIfCondTrue)
         typeScopeInstructions(elseBr, infoIfCondFalse)
@@ -333,7 +333,7 @@ final class Typer(
         saveEquality(assigned, DoubleConst(src))
 
       case AssignBoolConst(assigned, src) =>
-        currScope.saveType(assigned, BoolType)
+        currScope.saveType(assigned, BooleanType)
         saveEquality(assigned, BoolConst(src))
 
       case AssignCharConst(assigned, src) =>
@@ -402,10 +402,10 @@ final class Typer(
       }
 
       case Equal(assigned, lhs, rhs) =>
-        currScope.saveType(assigned, BoolType)
+        currScope.saveType(assigned, BooleanType)
 
       case RefEqual(assigned, lhs, rhs) =>
-        currScope.saveType(assigned, BoolType)
+        currScope.saveType(assigned, BooleanType)
         if (currScope.getCurrentTypeOf(lhs).baseType.isInstanceOf[PrimitiveType] || currScope.getCurrentTypeOf(rhs).baseType.isInstanceOf[PrimitiveType]) {
           er.warn(s"comparing primitive types using ${Operator.RefEquality} or ${Operator.RefInequality} is discouraged and might cause verification failures, please use ${Operator.Equality} or ${Operator.RefInequality} unless you intend to check whether boxed types are equal by reference", instr.getPosition)
         }
@@ -507,7 +507,7 @@ final class Typer(
 
       case tt@TypeTest(assigned, testedValue, testedTypeId) =>
         checkDowncast(testedValue, testedTypeId, currScope, tt.getPosition)
-        currScope.saveType(assigned, BoolType)
+        currScope.saveType(assigned, BooleanType)
 
       case cast@Cast(inValue, target) =>
         checkDowncast(inValue, target, currScope, cast.getPosition).foreach { assertedType =>
@@ -714,7 +714,7 @@ final class Typer(
         case value: IdValue => currScope.computeCurrentType(value, posOpt)
         case IntConst(value) => IntType
         case DoubleConst(value) => DoubleType
-        case BoolConst(value) => BoolType
+        case BoolConst(value) => BooleanType
         case CharConst(value) => StdLib.charType
         case StringConst(value) => mkTypeForStringLit(value)
         case sel@Select(owner, field) if field.isResolved =>
@@ -772,14 +772,14 @@ final class Typer(
         case Equality(lhs, rhs) =>
           typeFormula(lhs, currScope, posOpt)
           typeFormula(rhs, currScope, posOpt)
-          BoolType
+          BooleanType
         case RefEquality(lhs, rhs) =>
           typeFormula(lhs, currScope, posOpt)
           typeFormula(rhs, currScope, posOpt)
-          BoolType
+          BooleanType
         case TypePredicate(subject, tpe) =>
           checkDowncast(subject, tpe, currScope, posOpt)
-          BoolType
+          BooleanType
         case Phi(terms) =>
           meetJoin.computeJoin(terms.map(typeFormula(_, currScope, posOpt, suspendReporting)))
         case WrappedScope(resVal, wrappedScope) =>
@@ -870,10 +870,10 @@ final class Typer(
   private def typeLogicalBinop(lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
                               (using TypeParamsContext): Type = {
     val lhsType = dealiasingCtx.dealiasType(typeFormula(lhs, currScope, posOpt)).withTypeVarsExpanded
-    subtypingCtx.enforceIsSubtypeExpAct(lhsType, BoolType, s"operand of $op", posOpt)
+    subtypingCtx.enforceIsSubtypeExpAct(lhsType, BooleanType, s"operand of $op", posOpt)
     val rhsType = dealiasingCtx.dealiasType(typeFormula(rhs, currScope, posOpt)).withTypeVarsExpanded
-    subtypingCtx.enforceIsSubtypeExpAct(rhsType, BoolType, s"operand of $op", posOpt)
-    BoolType
+    subtypingCtx.enforceIsSubtypeExpAct(rhsType, BooleanType, s"operand of $op", posOpt)
+    BooleanType
   }
 
   private def typeComparisonBinop(lhs: Formula, rhs: Formula, currScope: Scope, op: Operator, posOpt: Option[Position])
@@ -887,7 +887,7 @@ final class Typer(
     if (!subtypingCtx.isSubtype(lhs, lhsType, DoubleType, currScope) || !subtypingCtx.isSubtype(rhs, rhsType, DoubleType, currScope)) {
       er.reportError(s"no operator $op found for types $lhsType and $rhsType", posOpt)
     }
-    BoolType
+    BooleanType
   }
 
   private def typeNumericNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
@@ -905,8 +905,8 @@ final class Typer(
   private def typeLogicalNeg(operand: Formula, currScope: Scope, posOpt: Option[Position])
                             (using TypeParamsContext): Type = {
     val operandType = dealiasingCtx.dealiasType(typeFormula(operand, currScope, posOpt)).withTypeVarsExpanded
-    subtypingCtx.enforceIsSubtypeExpAct(operandType, BoolType, "negation operand", posOpt)
-    BoolType
+    subtypingCtx.enforceIsSubtypeExpAct(operandType, BooleanType, "negation operand", posOpt)
+    BooleanType
   }
 
   private def forceRange(tpe: Type)(using TypeParamsContext): Type = typeSimplifier.simplifyType(tpe) match {
@@ -958,8 +958,8 @@ final class Typer(
       val tmpPredScope = Scope.nestedInsideNodeOpt(currScope, None)
       tmpPredScope.saveSmartcast(itValue, baseTypeRaw)
       val predicateType = typeFormula(predicate, tmpPredScope, posOpt)
-      if (!subtypingCtx.isSubtype(predicateType, BoolType)(using CheckOnly)) {
-        er.reportError(s"predicate should have type $BoolType", posOpt)
+      if (!subtypingCtx.isSubtype(predicateType, BooleanType)(using CheckOnly)) {
+        er.reportError(s"predicate should have type $BooleanType", posOpt)
       }
       enforcePurity(predicate, "predicate", posOpt)
       RefinedType(baseTypeInst, predicate)
@@ -1133,8 +1133,8 @@ final class Typer(
     }
     precondOpt.foreach { precond =>
       val precondType = typeFormula(precond, sigScope, declPosOpt)
-      if (!subtypingCtx.isSubtype(precondType, BoolType)(using CheckOnly)) {
-        er.reportError(s"precondition must have type $BoolType", declPosOpt)
+      if (!subtypingCtx.isSubtype(precondType, BooleanType)(using CheckOnly)) {
+        er.reportError(s"precondition must have type $BooleanType", declPosOpt)
       }
       enforcePurity(precond, "precondition", declPosOpt)
       solver.assert(precond)

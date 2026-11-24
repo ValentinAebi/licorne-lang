@@ -29,13 +29,13 @@ object Main {
 }
 
 interface Animal {
-    fun isMarine(): Bool
+    fun isMarine(): Boolean
 }
 
 class Tiger : Animal {
-    fun isMarine(): Bool = false
+    fun isMarine(): Boolean = false
 }
 
 class Dolphin : Animal {
-    fun isMarine(): Bool = true
+    fun isMarine(): Boolean = true
 }

@@ -4,7 +4,7 @@ class StringIterator(val s: String) : Iterator[Char] {
     var idx: Idx(s) = 0
     var terminated = false
 
-    fun hasNext(): Bool = !terminated
+    fun hasNext(): Boolean = !terminated
 
     fun next(): Char {
         if (terminated) {

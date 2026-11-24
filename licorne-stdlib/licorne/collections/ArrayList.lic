@@ -99,7 +99,7 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         }
     }
 
-    fun filter(pred: pure (T) -> Bool): ArrayList[T with pred(it)] {
+    fun filter(pred: pure (T) -> Boolean): ArrayList[T with pred(it)] {
         val filtered = ArrayList(currSize)
         foreach {
             if (pred(it)) {

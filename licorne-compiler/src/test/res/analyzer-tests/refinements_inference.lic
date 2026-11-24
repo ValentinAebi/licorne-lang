@@ -1,11 +1,11 @@
 
 object Test {
 
-    pure fun foo1(x: Int): Bool {
+    pure fun foo1(x: Int): Boolean {
         panic "not implemented"
     }
 
-    pure fun foo2(x: Int): Bool {
+    pure fun foo2(x: Int): Boolean {
         panic "not implemented"
     }
 

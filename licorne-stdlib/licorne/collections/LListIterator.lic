@@ -3,7 +3,7 @@ package licorne.collections
 private(licorne.collections) class LListIterator[T](ls: LList[T]) : Iterator[T] {
     var rem = ls
 
-    fun hasNext(): Bool {
+    fun hasNext(): Boolean {
         return rem is Cons
     }
 

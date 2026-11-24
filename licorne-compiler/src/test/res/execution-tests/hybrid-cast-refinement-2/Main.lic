@@ -8,7 +8,7 @@ object Main {
         foo(s2, 10!!)                //>STACKTRACE
     }
 
-    private fun mkString(b: Bool): String? = "Hello"
+    private fun mkString(b: Boolean): String? = "Hello"
 
     private fun mkInt(): Int = 2
 

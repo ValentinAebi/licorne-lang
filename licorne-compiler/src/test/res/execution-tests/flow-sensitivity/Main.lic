@@ -1,7 +1,7 @@
 
 // IMPORTANT NOTE:
-// Failures in this test (typically not crashing but outputting slightly incorrect values) can be due to the 
-// type-checker applying range refinements to Doubles because of excessive smartcasting and the backend inserting d2i 
+// Failures in this test (typically not crashing but outputting slightly incorrect values) can be due to the
+// type-checker applying range refinements to Doubles because of excessive smartcasting and the backend inserting d2i
 // instructions that round Doubles to Ints (believing the ranges are Ints).
 
 object Main {
@@ -31,7 +31,7 @@ object Main {
         takeDouble(a)
     }
 
-    private fun bar(cond1: Bool, cond2: Bool, x: Int): Double {
+    private fun bar(cond1: Boolean, cond2: Boolean, x: Int): Double {
         var t = 20
         if (cond1) {
             t += 10

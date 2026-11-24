@@ -37,7 +37,7 @@ object Lists {
         return reverse(resultReversed)
     }
 
-    fun filter[T](ls: List[T], p: pure (T) -> Bool): List[T with p(it)] {
+    fun filter[T](ls: List[T], p: pure (T) -> Boolean): List[T with p(it)] {
         var filteredReversed = Nil()
         for (var rem = ls; rem is Cons; rem = rem.rest()) {
             if (p(rem.first())) {

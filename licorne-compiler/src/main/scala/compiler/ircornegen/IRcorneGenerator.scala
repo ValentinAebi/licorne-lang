@@ -12,7 +12,7 @@ import compiler.lang
 import compiler.lang.*
 import compiler.lang.Field.{ReassignableField, StableField}
 import compiler.lang.Types.*
-import compiler.lang.Types.PrimitiveType.{BoolType, UnitType}
+import compiler.lang.Types.PrimitiveType.{BooleanType, UnitType}
 import compiler.pipeline.CompilationStep.IRcorneGeneration
 import compiler.pipeline.{CompilationStep, CompilerStep}
 import compiler.program.Program
@@ -1130,14 +1130,14 @@ final class IRcorneGenerator(
         ).withDesugaringSource(binopTree))
       case binopTree@Asts.BinaryOp(lhsTree, Operator.And, rhsTree) =>
         recurseOnDesugaredToIfExpr(lhsTree,
-          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
+          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BooleanType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
           Asts.BoolLit(false).withDesugaringSource(binopTree),
           binopTree
         )
       case binopTree@Asts.BinaryOp(lhsTree, Operator.Or, rhsTree) =>
         recurseOnDesugaredToIfExpr(lhsTree,
           Asts.BoolLit(true).withDesugaringSource(binopTree),
-          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BoolType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
+          Asts.TypeAscription(rhsTree, Asts.PrimitiveTypeTree(BooleanType).withDesugaringSource(binopTree)).withDesugaringSource(binopTree),
           binopTree
         )
       case binopTree@Asts.BinaryOp(lhs, Operator.PlusPlus, rhs) =>

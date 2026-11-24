@@ -53,7 +53,7 @@ trait TypesConverter {
   def descriptorForPrimitive(tpe: PrimitiveType): ClassDesc = tpe match {
     case IntType => intDesc
     case DoubleType => doubleDesc
-    case BoolType => boolDesc
+    case BooleanType => boolDesc
     case NullType => CD_Object
     case AnyType => CD_Object
     case UnitType => CD_void
@@ -73,7 +73,7 @@ trait TypesConverter {
     case IntType => INT
     case DoubleType => DOUBLE
     case StdLib.charType => CHAR
-    case BoolType => BOOLEAN
+    case BooleanType => BOOLEAN
     case NullType => REFERENCE
     case AnyType => REFERENCE
     case UnitType => VOID

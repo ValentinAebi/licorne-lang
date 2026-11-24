@@ -4,7 +4,7 @@ typealias SameLength[T](arr: Array[T]) = Array[T] with it.length() == arr.length
 
 object Ex_11_5 {
 
-    fun lessThan_v1(arr1: Array[Int], arr2: SameLength(arr1)): Bool {
+    fun lessThan_v1(arr1: Array[Int], arr2: SameLength(arr1)): Boolean {
         for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
                 return true
@@ -15,7 +15,7 @@ object Ex_11_5 {
         return false
     }
 
-    fun lessThan_v2(arr1: Array[Int], arr2: Array[Int] with it.length() == arr1.length()): Bool {
+    fun lessThan_v2(arr1: Array[Int], arr2: Array[Int] with it.length() == arr1.length()): Boolean {
         for (var i = 0; i < arr1.length(); i += 1) {
             if (arr1.at(i) < arr2.at(i)) {
                 return true

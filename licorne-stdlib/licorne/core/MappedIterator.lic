@@ -2,7 +2,7 @@ package licorne.core
 
 private(licorne.core) class MappedIterator[T, U](val source: Iterator[T], val f: (T) -> U) : Iterator[U] {
 
-    fun hasNext(): Bool = source.hasNext()
+    fun hasNext(): Boolean = source.hasNext()
 
     fun next(): U = f(source.next())
 

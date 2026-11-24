@@ -1,6 +1,6 @@
 
 interface Seq[out T] {
-   fun filter(pred: pure (T) -> Bool): Seq[T with pred(it)]
+   fun filter(pred: pure (T) -> Boolean): Seq[T with pred(it)]
 }
 
 object Test {

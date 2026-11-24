@@ -16,7 +16,7 @@ class String : Indexable {
         panic "compiler stub"
     }
 
-    pure fun isEmpty(): Bool {
+    pure fun isEmpty(): Boolean {
         panic "compiler stub"
     }
 
@@ -24,11 +24,11 @@ class String : Indexable {
         panic "compiler stub"
     }
 
-    pure fun startsWith(s: String): Bool {
+    pure fun startsWith(s: String): Boolean {
         panic "compiler stub"
     }
 
-    pure fun endsWith(s: String): Bool {
+    pure fun endsWith(s: String): Boolean {
         panic "compiler stub"
     }
 
@@ -78,7 +78,7 @@ class String : Indexable {
         return cnt
     }
 
-    pure fun contains(substring: String): Bool {
+    pure fun contains(substring: String): Boolean {
         var i = 0
         var j = 0
         while (i < size() && j < substring.size()) {
@@ -120,7 +120,7 @@ class String : Indexable {
         return substring(startIdx, endIdx + 1)
     }
 
-    private fun isBlankChar(c: Char): Bool =
+    private fun isBlankChar(c: Char): Boolean =
         c == ' ' || c == '\t'
     
     private pure fun javaIndexOf(s: String): [-1 ..< size()] {

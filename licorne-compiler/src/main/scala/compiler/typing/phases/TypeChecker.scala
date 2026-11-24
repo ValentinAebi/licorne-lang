@@ -5,7 +5,7 @@ import compiler.irs.ircorne.Formulas.{FunCall, ParamIdValue}
 import compiler.irs.ircorne.IRcorne.{AssigningInstr, Scope}
 import compiler.irs.ircorne.{Formulas, IRcorne, InvocationTarget}
 import compiler.lang.Field.StableField
-import compiler.lang.Types.PrimitiveType.{AnyType, BoolType, NothingType, NullType, UnitType}
+import compiler.lang.Types.PrimitiveType.{AnyType, BooleanType, NothingType, NullType, UnitType}
 import compiler.lang.Types.*
 import compiler.lang.{FunctionDescriptor, FunctionSignature, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeChecking

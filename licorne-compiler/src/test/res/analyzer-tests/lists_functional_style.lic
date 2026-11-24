@@ -101,7 +101,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filter[T](var ls: List[T], p: pure (T) -> Bool): List[T with p(it)] {
+   fun filter[T](var ls: List[T], p: pure (T) -> Boolean): List[T with p(it)] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if (p(ls.head())) {
@@ -112,7 +112,7 @@ object Lists {
       return reverse(filteredReversed)
    }
 
-   fun filter_bad[T](var ls: List[T], p: pure (T) -> Bool): List[T with p(it)] {
+   fun filter_bad[T](var ls: List[T], p: pure (T) -> Boolean): List[T with p(it)] {
       var filteredReversed = Nil()
       while (ls is Cons) {
          if !(p(ls.head())) {
@@ -129,7 +129,7 @@ object Lists {
    fun filterLessThanSimpler_bad(a: Int, ls: List[Int]): List[[..a-1]] =
       filter(ls) { it <= a }  //> E : return value: expected lists.List[[..<a]], found lists.List[[..a]]
 
-   fun isSingletonList[T](ls: List[T]): Bool =
+   fun isSingletonList[T](ls: List[T]): Boolean =
       ls is Cons && ls.tail() is Nil
 
    fun zip[S, T](ls1: List[S], ls2: List[T] where length(ls1) == length(ls2)): List[Pair[S, T]] {

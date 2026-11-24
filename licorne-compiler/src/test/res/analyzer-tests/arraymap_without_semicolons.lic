@@ -30,7 +30,7 @@ class ArrayMap[K : Any, V : Any](
         }
     }
 
-    fun put(k: K, v: V): Bool {
+    fun put(k: K, v: V): Boolean {
         val preSize = currentSize()
         val canAdd = preSize < capacity()
         if canAdd {
@@ -48,7 +48,7 @@ class ArrayMap[K : Any, V : Any](
         return canAdd
     }
 
-    fun remove(k: K): Bool {
+    fun remove(k: K): Boolean {
         val preSize = currentSize()
         if (preSize > 0) {
             val idx = this.keys.indexOf(k)

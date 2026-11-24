@@ -6,7 +6,7 @@ object Test {
       ifDog[Unit](animal) { dog -> dog.woof() }
       ifDog[Unit](animal) { dog: Dog -> dog.woof() }
       ifDog[Unit](animal) { dog -> dog.eat(Kibbles()) } // OK, drop return value of eat
-      ifDog[Bool](animal) { dog -> dog.isHungry() }
+      ifDog[Boolean](animal) { dog -> dog.isHungry() }
       ifDogOrElse(animal, 0) { dog -> dog.woof() }         //> E : return value: expected Int, found Unit
       ifDogOrElse(animal, 0) { dog -> 42 }                 // OK
       ifDogOrElse(animal, 0) { 42 }                        // OK
@@ -49,12 +49,12 @@ class Dog : Animal {
 
    fun woof() {}
 
-   fun isHungry(): Bool {
+   fun isHungry(): Boolean {
       return true
    }
 
    // returns true iff not hungry anymore
-   fun eat(food: Food): Bool {
+   fun eat(food: Food): Boolean {
       // ...
       return false
    }

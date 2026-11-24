@@ -1,6 +1,6 @@
 package compiler.reasoning
 
-import compiler.lang.Types.PrimitiveType.{BoolType, IntType}
+import compiler.lang.Types.PrimitiveType.{BooleanType, IntType}
 import compiler.lang.Types.{IntRangeType, Type, asRefinedType}
 import compiler.typing.contexts.DealiasingContext
 import compiler.valuesconversion.GlobalValuesContext
@@ -18,7 +18,7 @@ object SimplifiedType {
     dealiasingCtx.dealiasType(tpe).withTypeVarsExpanded.asRefinedType.baseType match {
       case IntType => SimplifiedType.Integer[IntSort]()
       case _: IntRangeType => SimplifiedType.Integer[IntSort]()
-      case BoolType => SimplifiedType.Boolean
+      case BooleanType => SimplifiedType.Boolean
       case _ => SimplifiedType.Object
     }
 

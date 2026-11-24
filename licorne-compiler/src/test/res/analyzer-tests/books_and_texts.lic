@@ -40,7 +40,7 @@ class Book(
 
     fun currentPage(): PageNumber(this)? = currPage
 
-    fun isClosed(): Bool =
+    fun isClosed(): Boolean =
         currentPage() == null
 }
 
@@ -52,7 +52,7 @@ data class InternetPage(
 ) : Text
 
 object InternetPages {
-    pure fun isValidUrl(s: String): Bool {
+    pure fun isValidUrl(s: String): Boolean {
         panic "not implemented..."
     }
 }

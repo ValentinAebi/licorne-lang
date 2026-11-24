@@ -19,8 +19,8 @@ object Main {
       foo(42, "Hello")  //> E : second argument of call to foo: expected AtLeast(42), found "Hello" : licorne.core.StringL(5)
    }
 
-   fun abc(ls: List[Bool]) {
-      ls.indexOf(true) : String     //> E : type ascription: expected licorne.core.String, found ls.indexOf(true) : Idx[Bool](ls)
+   fun abc(ls: List[Boolean]) {
+      ls.indexOf(true) : String     //> E : type ascription: expected licorne.core.String, found ls.indexOf(true) : Idx[Boolean](ls)
    }
 
 }

@@ -6,7 +6,7 @@ typealias ArrayOfLen[T](len: Length) = Array[T] with it.length() == len
 
 object MergeSort {
 
-    fun sort[T](array: Array[T], lessThan: (T,T) -> Bool) {
+    fun sort[T](array: Array[T], lessThan: (T,T) -> Boolean) {
         if (array.length() == 0) {
             return
         }
@@ -15,7 +15,7 @@ object MergeSort {
     }
 
     private fun doSort[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
-                         lt: (T,T) -> Bool, left: Idx(array), right: Idx(array)) {
+                         lt: (T,T) -> Boolean, left: Idx(array), right: Idx(array)) {
         if (left < right) {
             val mid = (left + right) / 2
             doSort(array, tmpArray, lt, left, mid)
@@ -25,7 +25,7 @@ object MergeSort {
     }
 
     private fun merge[T](array: Array[T], tmpArray: ArrayOfLen[T](array.length()),
-                        lt: (T,T) -> Bool, left: Idx(array), mid: Idx(array), right: Idx(array) & [left..]) {
+                        lt: (T,T) -> Boolean, left: Idx(array), mid: Idx(array), right: Idx(array) & [left..]) {
         var i = left
         var j = mid + 1
         arrayCopy(array, left, tmpArray, left, right + 1 - left)

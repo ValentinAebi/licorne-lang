@@ -43,7 +43,7 @@ object Types {
   enum PrimitiveType(val str: String) extends NominalType {
     case IntType extends PrimitiveType("Int")
     case DoubleType extends PrimitiveType("Double")
-    case BoolType extends PrimitiveType("Bool")
+    case BooleanType extends PrimitiveType("Boolean")
 
     case NullType extends PrimitiveType("Null")
     case AnyType extends PrimitiveType("Any")

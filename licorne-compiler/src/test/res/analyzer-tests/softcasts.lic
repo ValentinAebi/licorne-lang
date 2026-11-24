@@ -31,9 +31,9 @@ object Test {
 }
 
 interface I {
-   pure fun m(): Bool
+   pure fun m(): Boolean
 }
 
 class A : I {
-   pure fun m(): Bool = false
+   pure fun m(): Boolean = false
 }

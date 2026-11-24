@@ -4,7 +4,7 @@ private(licorne) class ArrayIterator[T](val array: Array[T], val limit: Pos(arra
     var idx: Idx(array) = 0
     var terminated = false
 
-    fun hasNext(): Bool = !terminated
+    fun hasNext(): Boolean = !terminated
 
     fun next(): T {
         if (terminated) {

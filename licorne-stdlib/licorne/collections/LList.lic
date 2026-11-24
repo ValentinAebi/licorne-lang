@@ -25,7 +25,7 @@ sealed interface LList[out T] : ImmutSeq[T] {
         return rev.reversed()
     }
 
-    fun filter(pred: pure (T) -> Bool): LList[T with pred(it)] {
+    fun filter(pred: pure (T) -> Boolean): LList[T with pred(it)] {
         var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {
             if (pred(ls.head())) {
