@@ -50,11 +50,13 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
     }
 
     fun remove(idx: Int) {
-        val currSize = this.currSize
-        if !(0 <= idx && idx < currSize) {
+        val preSize = this.currSize
+        if !(0 <= idx && idx < preSize) {
             panic "removal index is out of bounds"
         }
+        this.currSize = preSize - 1
         val array = this.array
+        array.set(idx!!, NoElem)
         for (var i = idx; i + 1 < array.size(); i += 1) {
             val elem = array.get(i + 1)
             array.set(i + 1, NoElem)
@@ -63,7 +65,6 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
             }
             array.set(i, elem)
         }
-        this.currSize = currSize - 1
     }
 
     fun removeLast() {
