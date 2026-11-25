@@ -94,9 +94,7 @@ object Formulas {
     override def name: String = id.stringId
   }
 
-  final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long) extends NamedIdValue("c") {
-    override def posOpt: Option[Position] = None
-  }
+  final case class UninterpretedConstIdValue(name: String, definingScope: Scope, uid: Long, posOpt: Option[Position]) extends NamedIdValue("c")
 
   final case class IntermediateIdValue(definingScope: Scope, uid: Long, nameHint: String) extends IdValue
 

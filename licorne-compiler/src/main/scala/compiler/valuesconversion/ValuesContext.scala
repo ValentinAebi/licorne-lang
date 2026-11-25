@@ -12,7 +12,7 @@ trait ValuesContext {
 
   val globalCtx: GlobalValuesContext
 
-  def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue
+  def resolveObject(objectId: TypeIdentifier, posOpt: Option[Position]): UninterpretedConstIdValue
 
   def deepCopyWithSameGlobalCtx: ValuesContext
 

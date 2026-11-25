@@ -544,8 +544,8 @@ object IRcorne {
       IntermediateIdValue(this, _, nameHint)
     }
 
-    def newUninterpretedConst(name: String): UninterpretedConstIdValue = newValue {
-      UninterpretedConstIdValue(name, this, _)
+    def newUninterpretedConst(name: String, posOpt: Option[Position]): UninterpretedConstIdValue = newValue {
+      UninterpretedConstIdValue(name, this, _, posOpt)
     }
 
     private def newValue[T <: IdValue](creation: Long => T): T = {

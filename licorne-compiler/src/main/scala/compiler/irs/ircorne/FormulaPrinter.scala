@@ -119,7 +119,7 @@ object IRLevelFormulaPrinter extends FormulaPrinter {
           s"${value.name}#$uid@${definingScope.scopeUid}${value.valKindDescr}"
       }
     case Formulas.HeapVarIdValue(id, definingScope, uid, posOpt) => s"*name"
-    case Formulas.UninterpretedConstIdValue(name, definingScope, uid) => name
+    case Formulas.UninterpretedConstIdValue(name, definingScope, uid, posOpt) => name
   }
 
   override protected def inclAllocMode: Boolean = true

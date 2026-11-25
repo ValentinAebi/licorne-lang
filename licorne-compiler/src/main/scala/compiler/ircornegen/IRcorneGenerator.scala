@@ -314,6 +314,11 @@ final class IRcorneGenerator(
     for (tv <- globalScope.globalValuesCtx.getTypeVariables) {
       typeVarsCtx.saveTypeVariable(tv)
     }
+    for ((objId, objVal) <- program.globalValuesContext.allObjects) {
+      if (!program.objects.contains(objId)) {
+        er.reportError(s"object not found: $objId", objVal.posOpt)
+      }
+    }
     er.displayAndTerminateIfErrors()
     program
   }
@@ -324,11 +329,11 @@ final class IRcorneGenerator(
     for ((tid, tSig) <- programBuilder.currentSignaturesView) {
       tSig match {
         case tSig: ObjectSignature =>
-          val objVal = globalValsCtx.resolveObject(tid)
+          val objVal = globalValsCtx.resolveObject(tid, tSig.declPosOpt)
           globalScope.unsafeDirectSaveType(objVal, tSig.toType(Map.empty))
         case tSig: UserInstantiableTypeSig =>
           val companionId = tid.asCompanionId
-          val companionObjVal = globalValsCtx.resolveObject(companionId)
+          val companionObjVal = globalValsCtx.resolveObject(companionId, tSig.declPosOpt)
           val companionType = NamedType(companionId, List.empty, List.empty)
           globalScope.unsafeDirectSaveType(companionObjVal, companionType)
           val constructorParams = tSig.constructorParams.values.toList
@@ -614,8 +619,8 @@ final class IRcorneGenerator(
 
       val paramsInclThis = mutable.LinkedHashMap.empty[NamedIdValue, Type]
       val (thisVal, thisScope) = functionsProvider match {
-        case Asts.ObjectDef(_, functions, directSupertypes, _) =>
-          (funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id), globalScope)
+        case objDef@Asts.ObjectDef(_, functions, directSupertypes, _) =>
+          (funSigScope.valuesCtx.resolveObject(functionsProviderIncompleteSig.id, objDef.getPosition), globalScope)
         case _ =>
           (funSigScope.newParam(ThisId, functionsProvider.getPosition), funSigScope)
       }
@@ -1043,9 +1048,9 @@ final class IRcorneGenerator(
         Some(itVal)
       case Asts.ItRef() =>
         recurseOnDesugared(Asts.VariableRef(ItId))
-      case Asts.ObjectRef(objectNameRaw) =>
+      case objRef@Asts.ObjectRef(objectNameRaw) =>
         val objectName = importsCtx.applyImports(objectNameRaw)
-        val objIdVal = currScope.valuesCtx.resolveObject(objectName)
+        val objIdVal = currScope.valuesCtx.resolveObject(objectName, objRef.getPosition)
         currScope.saveInstr(AssignVal(resultVal, objIdVal), expr)
         proxyStore.saveProxy(resultVal, objIdVal)
         Some(objIdVal)
@@ -1069,7 +1074,7 @@ final class IRcorneGenerator(
       case callTree@Asts.Call(callee@Asts.VariableRef(funId), typeArgTrees, argTrees)
         if !currScope.getLocalValuesContextUnsafe.knows(funId) && currImplicitFields.get(funId).forall(_.hasAutoAccessor) =>
         checkCallForbiddenMethods(funId, callTree)
-        findImplicitReceiverInImports(funId, currScope) match {
+        findImplicitReceiverInImports(funId, currScope, callee.getPosition) match {
           case Some(receiverVal, targetFunId) =>
             val intermReceiverVal = currScope.newIntermediate("objalias")
             currScope.saveInstr(AssignVal(intermReceiverVal, receiverVal), expr)
@@ -1344,17 +1349,17 @@ final class IRcorneGenerator(
           }
         case Asts.ThisRef() => generateFormula(Asts.VariableRef(ThisId), currScope)
         case Asts.ItRef() => currItVal.orElse(generateFormula(Asts.VariableRef(ItId), currScope))
-        case Asts.ObjectRef(objectNameRaw) =>
+        case objRef@Asts.ObjectRef(objectNameRaw) =>
           val objectName = importsCtx.applyImports(objectNameRaw)
-          Some(currScope.valuesCtx.resolveObject(objectName))
+          Some(currScope.valuesCtx.resolveObject(objectName, objRef.getPosition))
         case Asts.TypeAscription(expr, tpe) => failIllegalConstruct("type ascription")
         case Asts.Call(callee, typeArgTrees, args) =>
           val receiverAndFunIdOpt = callee match {
-            case Asts.ObjectRef(objectNameRaw) =>
+            case objRef@Asts.ObjectRef(objectNameRaw) =>
               val objectName = importsCtx.applyImports(objectNameRaw)
-              Some(currScope.valuesCtx.resolveObject(objectName.asCompanionId), ConstructorFunId)
-            case Asts.VariableRef(funId) if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
-              findImplicitReceiverInImports(funId, currScope)
+              Some(currScope.valuesCtx.resolveObject(objectName.asCompanionId, objRef.getPosition), ConstructorFunId)
+            case varRef@Asts.VariableRef(funId) if !currScope.getLocalValuesContextUnsafe.knows(funId) =>
+              findImplicitReceiverInImports(funId, currScope, varRef.getPosition)
             case Asts.Select(lhs, funId) =>
               generateFormula(lhs, currScope).map(_ -> funId)
             case _ => None
@@ -1499,10 +1504,10 @@ final class IRcorneGenerator(
     }
   }
 
-  private def findImplicitReceiverInImports(rawFunId: FunOrVarId, currScope: Scope)(using importsCtx: ImportsContext): Option[(IdValue, FunOrVarId)] = {
+  private def findImplicitReceiverInImports(rawFunId: FunOrVarId, currScope: Scope, posOpt: Option[Position])(using importsCtx: ImportsContext): Option[(IdValue, FunOrVarId)] = {
     currScope.getLocalValuesContextOpt.flatMap { localValsCtx =>
       importsCtx.importedFuncFor(rawFunId).map { (objId, funId) =>
-        val objVal = localValsCtx.resolveObject(objId)
+        val objVal = localValsCtx.resolveObject(objId, posOpt)
         objVal -> funId
       } orElse {
         localValsCtx.getThisValue.map(_ -> rawFunId)

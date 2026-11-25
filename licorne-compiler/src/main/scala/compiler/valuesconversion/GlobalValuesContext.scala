@@ -4,6 +4,7 @@ import compiler.identifiers.{FunOrVarId, TypeIdentifier}
 import compiler.irs.ircorne.Formulas.{IdValue, NamedIdValue, UninterpretedConstIdValue}
 import compiler.irs.ircorne.IRcorne.Scope
 import compiler.lang.Types.TypeVariable
+import compiler.reporting.Position
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -17,17 +18,17 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
   
   val globalScope: Scope = Scope.root(this)
   
-  val unitVal: NamedIdValue = globalScope.newUninterpretedConst("unit")
-  val nullVal: NamedIdValue = globalScope.newUninterpretedConst("null")
+  val unitVal: NamedIdValue = globalScope.newUninterpretedConst("unit", None)
+  val nullVal: NamedIdValue = globalScope.newUninterpretedConst("null", None)
   
   def isPredefLiteralValue(idValue: IdValue): Boolean =
     idValue == unitVal || idValue == nullVal
   
-  val itValue: NamedIdValue = globalScope.newUninterpretedConst("it")
+  val itValue: NamedIdValue = globalScope.newUninterpretedConst("it", None)
 
-  def resolveObject(objectId: TypeIdentifier): UninterpretedConstIdValue = {
+  def resolveObject(objectId: TypeIdentifier, posOpt: Option[Position]): UninterpretedConstIdValue = {
     idToObjName.getOrElseUpdate(objectId, {
-      val value = globalScope.newUninterpretedConst(objectId.stringId)
+      val value = globalScope.newUninterpretedConst(objectId.stringId, posOpt)
       objNameToId(value) = objectId
       value
     })
@@ -38,6 +39,8 @@ final class GlobalValuesContext(val proxyStore: ProxyStore) extends ValuesContex
     
   def getNameOfObject(objectVal: IdValue): Option[TypeIdentifier] =
     objNameToId.get(objectVal)
+    
+  def allObjects: Iterable[(TypeIdentifier, UninterpretedConstIdValue)] = idToObjName
     
   def saveTypeVariable(tv: TypeVariable): Unit = {
     typeVariables.addOne(tv)
