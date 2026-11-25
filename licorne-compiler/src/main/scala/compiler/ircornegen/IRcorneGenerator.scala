@@ -88,7 +88,7 @@ final class IRcorneGenerator(
             given TypeParamsContext = fullTypeParamsCtx
 
             val supertypesRaw = directSupertypeTrees.map(mkNamedType(_, interfaceSigScope))
-            val allSupertypes = if typeId == StdLib.anyObjTypeId then supertypesRaw else anyObjType :: supertypesRaw
+            val allSupertypes = if typeId == StdLib.anyObjTypeId then supertypesRaw else extendWithAnyObj(supertypesRaw)
             val noFunctionsSig = InterfaceSignature(typeId, typeParams, Map.empty, allSupertypes, visibility, interfaceSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = true)
@@ -107,7 +107,7 @@ final class IRcorneGenerator(
             val thisValue = objSigScope.newParam(ThisId, df.getPosition)
             objSigScope.getLocalValuesContextUnsafe.saveNewLocal(ThisId, thisValue, objSigScope, ReassigPermission.Val, None)
             val noFunctionsSig = ObjectSignature(typeId, Map.empty,
-              anyObjType :: directSupertypeTrees.map(mkNamedType(_, objSigScope)),
+              extendWithAnyObj(directSupertypeTrees.map(mkNamedType(_, objSigScope))),
               visibility, objSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
             val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, typeId, ownerIsAbstractType = false)
@@ -191,7 +191,7 @@ final class IRcorneGenerator(
               SeqMap.from(constructorParams),
               SeqMap.from(encapsulatedFields),
               Map.empty,
-              anyObjType :: directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty)),
+              extendWithAnyObj(directSupertypeTrees.map(mkNamedType(_, classSigScope)(using Map.empty))),
               visibility, classSigScope, df.getPosition
             )
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using constructorParams.filter(_._2.isInstanceOf[Field]) ++ encapsulatedFields)
@@ -240,7 +240,7 @@ final class IRcorneGenerator(
             }
             allFieldsInitB.addOne(typeId, fieldInitializersB.result())
             val noFunctionsSig = DataclassSignature(typeId, typeParams, SeqMap.from(stableFields), Map.empty,
-              anyObjType :: directSupertypeTrees.map(mkNamedType(_, dataclassSigScope)(using Map.empty)),
+              extendWithAnyObj(directSupertypeTrees.map(mkNamedType(_, dataclassSigScope)(using Map.empty))),
               visibility, dataclassSigScope, df.getPosition)
             val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using stableFields)
             val targetsToResolve = generateFieldsAccessors(typeId, df, stableFields, functionsMap, globalScope, computeThisType(noFunctionsSig), allFunctionsB)
@@ -301,7 +301,7 @@ final class IRcorneGenerator(
 
         val subtypes = SeqSet(sealedInterfaceSubtypes.getOrElse(sealedInterfaceId, mutable.LinkedHashSet.empty))
         val noFunctionsSig = SealedInterfaceSignature(sealedInterfaceId, typeParams, Map.empty,
-          anyObjType :: directSupertypeTrees.map(mkNamedType(_, sealedInterfaceSigScope)),
+          extendWithAnyObj(directSupertypeTrees.map(mkNamedType(_, sealedInterfaceSigScope))),
           subtypes, visibility, sealedInterfaceSigScope, df.getPosition)
         val functionsMap = collectFunctions(df, noFunctionsSig, globalScope, allFunctionsB)(using Map.empty)
         val funcs = createIdToSigMapAndCheckBodyExists(functionsMap, sealedInterfaceId, ownerIsAbstractType = true)
@@ -1560,6 +1560,9 @@ final class IRcorneGenerator(
     case Asts.NamedTypeTree(name, typeParams, params) =>
       NamedType(name, typeParams.map(mkType(_, scope)), params.flatMap(generateFormula(_, scope, s"argument of $name")(using None)))
   }
+  
+  private def extendWithAnyObj(supertypes: List[NamedType]): List[NamedType] =
+    if supertypes.contains(anyObjType) then supertypes else (supertypes :+ anyObjType)
 
   private def externalVarsAssignedIn(ast: Asts.Ast): Set[FunOrVarId] = {
     val assigned = mutable.Set.empty[FunOrVarId]
