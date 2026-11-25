@@ -1,0 +1,9 @@
+package licorne.collections
+
+interface MutMap[K : Any, V : Any] : Map[K, V] {
+
+    fun put(k: K, v: V): V?
+
+    fun remove(k: K): V?
+
+}

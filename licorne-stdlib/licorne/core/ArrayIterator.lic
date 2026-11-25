@@ -2,7 +2,7 @@ package licorne.core
 
 private(licorne) class ArrayIterator[T](val array: Array[T], val limit: Pos(array) = array.size()) : Iterator[T] {
     var idx: Idx(array) = 0
-    var terminated = false
+    var terminated = limit == 0
 
     fun hasNext(): Boolean = !terminated
 

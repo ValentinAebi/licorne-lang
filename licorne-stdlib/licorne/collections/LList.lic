@@ -35,12 +35,6 @@ sealed interface LList[out T] : ImmutSeq[T] {
         return rev.reversed()
     }
 
-    fun foreach(action: (T) -> Unit) {
-        for (var ls = this; ls is Cons; ls = ls.tail()) {
-            action(ls.head())
-        }
-    }
-
     pure fun reversed(): LList[T] {
         var res = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {

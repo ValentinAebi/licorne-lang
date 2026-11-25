@@ -1,0 +1,5 @@
+package licorne.core
+
+data class Pair[out A, out B](val first: A, val second: B)
+
+data class Triple[out A, out B, out C](val first: A, val second: B, val third: C)

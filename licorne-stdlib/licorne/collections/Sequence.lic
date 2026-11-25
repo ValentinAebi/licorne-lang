@@ -1,0 +1,9 @@
+package licorne.collections
+
+interface Sequence[out T] : Collection[T] {
+
+    fun map[U](f: (T) -> U): Sequence[U]
+
+    fun filter(pred: pure (T) -> Boolean): Sequence[T with pred(it)]
+
+}

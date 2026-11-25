@@ -1,0 +1,28 @@
+import licorne.collections.LinearMap
+
+object Main {
+
+    fun main() {
+
+        val lm1 = LinearMap()
+        lm1.put(10, "ten")
+        lm1.put(15, "fifteen")
+        println(lm1.get(20))            // null
+        println(lm1.get(15))            // fifteen
+        lm1.remove(15)
+        println(lm1.get(15))            // null
+        println(lm1.get(10))            // ten
+        println(lm1.put(10, "dieci"))   // ten
+        println(lm1.get(10))            // dieci
+
+        val lm2 = LinearMap()
+        lm2.put("A", 'a')
+        lm2.put("B", 'b')
+        lm2.put("C", 'c')
+        lm2.put("D", 'd')
+        for (entry in lm2) {
+            println(entry)
+        }
+    }
+
+}

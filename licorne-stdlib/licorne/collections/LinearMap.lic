@@ -1,0 +1,52 @@
+package licorne.collections
+
+// TODO more efficient Map type
+class LinearMap[K : Any, V : Any] : MutMap[K, V] {
+    val entries = ArrayList[Pair[K, V]]()
+
+    fun size(): Cnt = entries.size()
+
+    fun iterator(): Iterator[Pair[K, V]] = entries.iterator()
+
+    fun contains(k: K): Boolean = getEntryIdx(k) != null
+
+    fun get(k: K): V? {
+        val idx = getEntryIdx(k)
+        return if (idx == null) null else entries.get(idx).second()
+    }
+    
+    fun put(k: K, v: V): V? {
+        val idx = getEntryIdx(k)
+        if (idx == null) {
+            entries.add(Pair(k, v))
+            return null
+        } else {
+            val retVal = entries.get(idx).second()
+            entries.set(idx, Pair(k, v))
+            return retVal
+        }
+    }
+
+    fun remove(k: K): V? {
+        val idx = getEntryIdx(k)
+        if (idx == null) {
+            return null
+        } else {
+            val retVal = entries.get(idx).second()
+            entries.remove(idx)
+            return retVal
+        }
+    }
+
+    private fun getEntryIdx(k: K): [0..]? {
+        var idx = 0
+        for (e in entries) {
+            if (e.first() == k) {
+                return idx
+            }
+            idx += 1
+        }
+        return null
+    }
+
+}

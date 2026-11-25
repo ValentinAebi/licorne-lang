@@ -49,6 +49,14 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         currSize = currSize + 1
     }
 
+    fun set(idx: Int, elem: T) {
+        val array = this.array
+        if !(0 <= idx && idx <= currSize) {
+            panic "set index out of bounds"
+        }
+        array.set(idx!!, elem)
+    }
+
     fun remove(idx: Int) {
         val preSize = this.currSize
         if !(0 <= idx && idx < preSize) {
@@ -117,17 +125,6 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
             swap(i, j)
             i += 1
             j -= 1
-        }
-    }
-
-    fun foreach(f: (T) -> Unit) {
-        val array = this.array
-        for (var i = 0; i < array.size(); i += 1) {
-            val elem = array.get(i)
-            if (elem is NoElem) {
-                return
-            }
-            f(elem)
         }
     }
 

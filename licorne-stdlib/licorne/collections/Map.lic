@@ -1,0 +1,9 @@
+package licorne.collections
+
+interface Map[K, out V] : Collection[Pair[K, V]] {
+
+    fun contains(k: K): Boolean
+
+    fun get(k: K): V?
+
+}
