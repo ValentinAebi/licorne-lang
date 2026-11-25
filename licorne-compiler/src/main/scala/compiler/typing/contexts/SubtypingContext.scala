@@ -291,7 +291,8 @@ final class SubtypingContext(
                       case Some(_, tArg) => tArg
                       case None => argInSuper
                     }
-                  case _ => argInSuper
+                  case argInSuper =>
+                    argInSuper.substitute(subTSubst.map((ttpi, tpe) => ttpi.tid -> tpe), Map.empty)
                 })
             )
             superTTypeArgs.zip(superTSig.typeParams).forall { (expTypeArg, tParam) =>
