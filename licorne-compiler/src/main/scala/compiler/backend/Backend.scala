@@ -60,6 +60,7 @@ final class Backend(
   private val nullUnboxingMessage = "tried to unbox null"
 
   private val objectsInternalName = "java/util/Objects"
+  private val stringBuilderInternalName = "java/lang/StringBuilder"
   private val assertionErrorInternalName = "java/lang/AssertionError"
   private val assertionErrorConstrDesc = MethodTypeDesc.of(CD_void, CD_Object)
   private val heapVarDesc = ClassDesc.of(heapVarTypeId.stringId)
@@ -150,6 +151,9 @@ final class Backend(
             }
             if (!functions.contains(FunctionDescriptor(hashCodeFunId, 0))) {
               generateDefaultHashcode(id, constructorParams, cb)
+            }
+            if (!functions.contains(FunctionDescriptor(toStringFunId, 0))) {
+              generateDefaultToString(id, constructorParams, cb)
             }
           case _ => ()
         }
@@ -405,25 +409,25 @@ final class Backend(
     classBuilder.withMethod(equalsFunId.stringId, MethodTypeDesc.of(CD_boolean, CD_Object), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
       val objectsClassDesc = ClassDesc.ofInternalName(objectsInternalName)
-      val dataclassDesc = tConv.descriptorFor(classId)
+      val ownerDesc = tConv.descriptorFor(classId)
       val correctTypeLabel = cb.newLabel()
       cb.aload(1)
-      cb.instanceOf(dataclassDesc)
+      cb.instanceOf(ownerDesc)
       cb.ifne(correctTypeLabel)
       cb.iconst_0()
       cb.ireturn()
       cb.labelBinding(correctTypeLabel)
       cb.aload(1)
-      cb.checkcast(dataclassDesc)
+      cb.checkcast(ownerDesc)
       cb.astore(1)
       for ((_, fld) <- fields) {
         val fldTypeDesc = tConv.descriptorFor(fld.tpe)
         // TODO can be optimized for primitive types
         cb.aload(0)
-        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        cb.getfield(ownerDesc, fld.id.stringId, fldTypeDesc)
         ensureAssignable(NullableType(AnyType), fld.tpe, cb)
         cb.aload(1)
-        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        cb.getfield(ownerDesc, fld.id.stringId, fldTypeDesc)
         ensureAssignable(NullableType(AnyType), fld.tpe, cb)
         cb.invokestatic(objectsClassDesc, equalsFunId.stringId, MethodTypeDesc.of(CD_boolean, CD_Object, CD_Object))
         val continueLabel = cb.newLabel()
@@ -440,7 +444,7 @@ final class Backend(
   private def generateDefaultHashcode(classId: TypeIdentifier, fields: SeqMap[FunOrVarId, Field.StableField], classBuilder: ClassBuilder)(using TypeParamsContext, DealiasingContext, SimplifiedSubtypingContext): Unit = {
     classBuilder.withMethod(hashCodeFunId.stringId, MethodTypeDesc.of(CD_int), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
       val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
-      val dataclassDesc = tConv.descriptorFor(classId)
+      val ownerDesc = tConv.descriptorFor(classId)
       cb.loadConstant(fields.size)
       cb.anewarray(CD_Object)
       var arrayIdx = 0
@@ -449,13 +453,56 @@ final class Backend(
         cb.dup()
         cb.loadConstant(arrayIdx)
         cb.aload(0)
-        cb.getfield(dataclassDesc, fld.id.stringId, fldTypeDesc)
+        cb.getfield(ownerDesc, fld.id.stringId, fldTypeDesc)
         ensureAssignable(NullableType(AnyType), fld.tpe, cb)
         cb.aastore()
         arrayIdx += 1
       }
       cb.invokestatic(ClassDesc.ofInternalName(objectsInternalName), "hash", MethodTypeDesc.of(CD_int, CD_Object.arrayType()))
       cb.ireturn()
+    }))
+  }
+
+  private def generateDefaultToString(classId: TypeIdentifier, fields: SeqMap[FunOrVarId, Field.StableField], classBuilder: ClassBuilder)(using TypeParamsContext, DealiasingContext, SimplifiedSubtypingContext): Unit = {
+    classBuilder.withMethod(toStringFunId.stringId, MethodTypeDesc.of(CD_String), ClassFile.ACC_PUBLIC, mb => mb.withCode(cb => {
+      val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+      val ownerDesc = tConv.descriptorFor(classId)
+      val stringBuilderDesc = ClassDesc.ofInternalName(stringBuilderInternalName)
+
+      def mkAddToStringBuilder(pushArg: => Unit): Unit = {
+        cb.aload(1)
+        pushArg
+        cb.invokevirtual(stringBuilderDesc, "append", MethodTypeDesc.of(stringBuilderDesc, CD_String))
+        cb.pop()
+      }
+
+      def mkPushConstant(str: String): Unit =
+        mkAddToStringBuilder {
+          cb.ldc(cb.constantPool().stringEntry(str))
+        }
+
+      cb.new_(stringBuilderDesc)
+      cb.dup()
+      cb.invokespecial(stringBuilderDesc, INIT_NAME, MethodTypeDesc.of(CD_void))
+      cb.astore(1)
+      mkPushConstant(s"${classId.nonPrefixedId}(")
+
+      var first = true
+      for ((_, fld) <- fields) {
+        mkPushConstant((if first then "" else ", ") ++ s"${fld.id}=")
+        mkAddToStringBuilder {
+          cb.aload(0)
+          val fldTypeDesc = tConv.descriptorFor(fld.tpe)
+          cb.getfield(ownerDesc, fld.id.stringId, fldTypeDesc)
+          handleBoxing(CD_Object, fldTypeDesc, cb)
+          cb.invokevirtual(CD_Object, toStringFunId.stringId, MethodTypeDesc.of(CD_String))
+        }
+        first = false
+      }
+      mkPushConstant(")")
+      cb.aload(1)
+      cb.invokevirtual(stringBuilderDesc, "toString", MethodTypeDesc.of(CD_String))
+      cb.areturn()
     }))
   }
 

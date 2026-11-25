@@ -93,6 +93,7 @@ object StdLib {
   
   val equalsFunId: FunOrVarId = NormalFunOrVarId("equals")
   val hashCodeFunId: FunOrVarId = NormalFunOrVarId("hashCode")
+  val toStringFunId: FunOrVarId = NormalFunOrVarId("toString")
 
   val automaticFuncImports: Iterable[(FunOrVarId, (TypeIdentifier, FunOrVarId))] = List(
     consolePrintFunId -> (consoleTypeId, consolePrintFunId),
