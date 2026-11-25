@@ -1061,6 +1061,10 @@ final class Backend(
       closureClassDesc,
       clb => {
 
+        body.getPosition.foreach { pos =>
+          clb.`with`(SourceFileAttribute.of(pos.srcCodeProviderName))
+        }
+
         clb.withInterfaceSymbols(ClassDesc.of(StdLib.closureTypeId.stringId))
 
         for ((fldId, (fv, tpe)) <- freeValFields) {
