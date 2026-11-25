@@ -308,6 +308,7 @@ final class Typer(
           staticTypeAssert.tpe = instantiatedType
         }
         subtypingCtx.enforceIsSubtypeExpAct(value, valueType, instantiatedType, "type ascription", currScope, staticTypeAssert.getPosition)
+        currScope.saveSmartcast(value, rawType)
 
       case assignVal@AssignVal(assigned, src) =>
         val srcType = tryToApplyCandidates(src, currScope.computeCurrentType(src, assignVal.getPosition), currScope, assignVal.getPosition)

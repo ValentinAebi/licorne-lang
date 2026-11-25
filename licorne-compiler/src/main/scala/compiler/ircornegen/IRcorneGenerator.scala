@@ -1213,6 +1213,11 @@ final class IRcorneGenerator(
           generateIR(stat, currScope, newScopeIfBlock = true)
         }
         generateIRExpr(resultVal, result, currScope)
+      case conversionTree@Asts.Cast(inExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) if importsCtx.applyImports(typeNameRaw) == StdLib.charTypeId =>
+        val inVal = currScope.newIntermediate("convertedval")
+        generateIRExpr(inVal, inExprTree, currScope)
+        currScope.saveInstr(Conversion(resultVal, inVal, StdLib.charType), conversionTree)
+        None
       case castTree@Asts.Cast(castExprTree, Asts.NamedTypeTree(typeNameRaw, Nil, Nil)) =>
         val typeName = importsCtx.applyImports(typeNameRaw)
         generateIRExpr(resultVal, castExprTree, currScope)

@@ -278,7 +278,7 @@ object IRcorne {
     override def consumedVals: List[IdValue] = List(testedValue)
   }
 
-  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: PrimitiveType) extends AssigningInstr, PureInstr, NoChildren {
+  final case class Conversion(assigned: IdValue, inValue: IdValue, targetType: Type) extends AssigningInstr, PureInstr, NoChildren {
     private var tConvOpt: Option[Option[TypeConversion]] = None
     
     def resolveTypeConversion(tcOpt: Option[TypeConversion]): Unit = {

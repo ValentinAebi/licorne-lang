@@ -2,16 +2,16 @@ package compiler.lang
 
 import compiler.lang.Types.PrimitiveType.*
 import compiler.lang.Types.{PrimitiveType, Type}
+import compiler.stdlib.StdLib
 import compiler.stdlib.StdLib.stringType
 
-enum TypeConversion(val from: PrimitiveType, val to: Type) {
+enum TypeConversion(val from: Type, val to: Type) {
 
   case Int2Double extends TypeConversion(IntType, DoubleType)
   case Double2Int extends TypeConversion(DoubleType, IntType)
 
-  case IntToString extends TypeConversion(IntType, stringType)
-  case BoolToString extends TypeConversion(BooleanType, stringType)
-  case DoubleToString extends TypeConversion(DoubleType, stringType)
+  case IntToChar extends TypeConversion(IntType, StdLib.charType)
+  case CharToInt extends TypeConversion(StdLib.charType, IntType)
 }
 
 object TypeConversion {

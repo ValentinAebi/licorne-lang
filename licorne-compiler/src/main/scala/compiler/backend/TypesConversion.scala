@@ -8,6 +8,7 @@ import compiler.lang.Types.PrimitiveType.*
 import compiler.stdlib.StdLib
 import compiler.typing.contexts.{DealiasingContext, TypeParamsContext}
 import compiler.backend.Erasure.getRuntimeType
+import compiler.irs.ircorne.Formulas.CharConst
 
 import java.lang.classfile.TypeKind
 import java.lang.classfile.TypeKind.*
@@ -45,7 +46,8 @@ trait TypesConverter {
         }
       case ternaryType: TernaryType => descriptorFor(ternaryType.toUnion)
       case RefinedType(baseType, predicate) => descriptorFor(baseType)
-      case IntRangeType(_, _) => CD_int
+      case intRangeType: IntRangeType if intRangeType.isCharRange => charDesc
+      case IntRangeType(_, _) => intDesc
       case NullableType(nullatedType) => boxDesc(descriptorFor(nullatedType))
       case tv: TypeVariable => descriptorFor(tv.upperBoundOpt.getOrElse(NullableType(AnyType)))
     }
@@ -90,6 +92,7 @@ trait TypesConverter {
     case ternaryType: TernaryType => kindFor(ternaryType.toUnion)
     case tpe: (NamedType | ClosureType) => REFERENCE
     case RefinedType(baseType, predicate) => kindFor(baseType)
+    case intRangeType: IntRangeType if intRangeType.isCharRange => CHAR
     case IntRangeType(_, _) => INT
     case NullableType(_) => REFERENCE
     case tv: TypeVariable => kindFor(tv.upperBoundOpt.getOrElse(NullableType(AnyType)))

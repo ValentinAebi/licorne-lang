@@ -664,11 +664,11 @@ final class Backend(
       case IRcorne.Lt(assigned, lhs, rhs) if typeKindOf(lhs, currScope) == INT && typeKindOf(rhs, currScope) == INT =>
         genIntCompBinop(assigned, lhs, rhs, currScope, cb, _.if_icmplt(_))
 
-      case IRcorne.Equal(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+      case IRcorne.Equal(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, CHAR)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, CHAR)(rhs, currScope) =>
         genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.ifeq(_))
-      case IRcorne.Leq(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+      case IRcorne.Leq(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, CHAR)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, CHAR)(rhs, currScope) =>
         genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.ifle(_))
-      case IRcorne.Lt(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, BOOLEAN)(rhs, currScope) =>
+      case IRcorne.Lt(assigned, lhs, rhs) if typeKindIsOneOf(INT, DOUBLE, CHAR)(lhs, currScope) && typeKindIsOneOf(INT, DOUBLE, CHAR)(rhs, currScope) =>
         genDoubleCompBinop(assigned, lhs, rhs, currScope, cb, _.iflt(_))
 
       case IRcorne.Equal(assigned, lhs, rhs) =>
@@ -921,9 +921,8 @@ final class Backend(
             conversion match {
               case Int2Double => cb.i2d()
               case Double2Int => cb.d2i()
-              case IntToString | BoolToString | DoubleToString =>
-                val fromDesc = tConv.descriptorFor(conversion.from)
-                cb.invokestatic(boxDesc(fromDesc), "toString", MethodTypeDesc.of(CD_String, fromDesc))
+              case IntToChar => cb.i2c()
+              case CharToInt => ()
             }
             genValueStore(assigned, currScope, cb)
         }

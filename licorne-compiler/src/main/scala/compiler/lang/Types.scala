@@ -202,8 +202,10 @@ object Types {
 
   final case class IntRangeType(lowerBoundOpt: Option[Formula], upperBoundOpt: Option[Formula]) extends Type {
     override def formulaDependencies: List[Formula] = lowerBoundOpt.toList ++ upperBoundOpt
+    
+    def isCharRange: Boolean = lowerBoundOpt.exists(_.isInstanceOf[CharConst]) || upperBoundOpt.exists(_.isInstanceOf[CharConst])
 
-    override def baseTypeAssumingNoAlias: Type = IntType
+    override def baseTypeAssumingNoAlias: Type = if isCharRange then StdLib.charType else IntType
 
     override def children: List[Type] = List.empty
 
