@@ -23,6 +23,17 @@ object Main {
         for (entry in lm2) {
             println(entry)
         }
+
+        val lm3 = LinearMap()
+        lm3.put("h2o", "water")
+        lm3.put("co2", "carbon dioxide")
+        lm3.put("ch3cooh", "acetic acid")
+        val lm4 =
+            lm3.map { formula, name -> Pair(formula.toUpperCase(), name) }
+               .filterByKey { it.size() == 3 }
+        for (entry in lm4) {
+            println(str(entry.first()) ++ " : " ++ str(entry.second()))
+        }
     }
 
 }

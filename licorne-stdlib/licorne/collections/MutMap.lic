@@ -6,4 +6,18 @@ interface MutMap[K : Any, V : Any] : Map[K, V] {
 
     fun remove(k: K): V?
 
+    fun map[L : Any, W : Any](f: (K, V) -> Pair[L, W]): MutMap[L, W]
+
+    fun filter(predicate: pure (K, V) -> Boolean): MutMap[K, V]
+
+    fun filterByKey(predicate: pure (K) -> Boolean): MutMap[K with predicate(it), V]
+
+    fun filterByValue(predicate: pure (V) -> Boolean): MutMap[K, V with predicate(it)]
+
+    open fun putAll(elems: Collection[Pair[K, V]]) {
+        for (p in elems) {
+            put(p.first(), p.second())
+        }
+    }
+
 }

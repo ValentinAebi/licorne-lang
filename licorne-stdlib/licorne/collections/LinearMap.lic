@@ -38,6 +38,42 @@ class LinearMap[K : Any, V : Any] : MutMap[K, V] {
         }
     }
 
+    fun map[L : Any, W : Any](f: (K, V) -> Pair[L, W]): LinearMap[L, W] {
+        val mapped = LinearMap()
+        mapped.putAll(entries.map { f(it.first(), it.second()) })
+        return mapped
+    }
+
+    fun filter(predicate: pure (K, V) -> Boolean): LinearMap[K, V] {
+        val filtered = LinearMap()
+        for (p in this) {
+            if (predicate(p.first(), p.second())) {
+                filtered.put(p.first(), p.second())
+            }
+        }
+        return filtered
+    }
+
+    fun filterByKey(predicate: pure (K) -> Boolean): LinearMap[K with predicate(it), V] {
+        val filtered = LinearMap()
+        for (p in this) {
+            if (predicate(p.first())) {
+                filtered.put(p.first(), p.second())
+            }
+        }
+        return filtered
+    }
+
+    fun filterByValue(predicate: pure (V) -> Boolean): LinearMap[K, V with predicate(it)] {
+        val filtered = LinearMap()
+        for (p in this) {
+            if (predicate(p.second())) {
+                filtered.put(p.first(), p.second())
+            }
+        }
+        return filtered
+    }
+
     private fun getEntryIdx(k: K): [0..]? {
         var idx = 0
         for (e in entries) {

@@ -6,4 +6,12 @@ interface Map[K, out V] : Collection[Pair[K, V]] {
 
     fun get(k: K): V?
 
+    fun map[L : Any, W : Any](f: (K, V) -> Pair[L, W]): Map[L, W]
+
+    fun filter(predicate: pure (K, V) -> Boolean): Map[K, V]
+
+    fun filterByKey(predicate: pure (K) -> Boolean): Map[K with predicate(it), V]
+
+    fun filterByValue(predicate: pure (V) -> Boolean): Map[K, V with predicate(it)]
+
 }
