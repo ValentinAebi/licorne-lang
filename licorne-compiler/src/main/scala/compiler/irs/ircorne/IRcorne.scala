@@ -427,6 +427,8 @@ object IRcorne {
       solver.takeType(idVal, tpe)
     }
     
+    def directGetType(idVal: IdValue): Option[Type] = types.get(idVal)
+    
     def unsafeDirectSaveType(idVal: IdValue, tpe: Type): Unit = {
       types.put(idVal, tpe)
     }

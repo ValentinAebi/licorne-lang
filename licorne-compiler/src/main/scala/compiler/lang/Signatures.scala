@@ -7,6 +7,8 @@ import compiler.lang.Field.StableField
 import compiler.lang.Keyword.Super
 import compiler.lang.Purity
 import compiler.lang.Types.{NamedType, Type, TypeVariable}
+import compiler.pipeline.CompilationStep
+import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.util.{SeqSet, mapVals}
 
@@ -56,7 +58,9 @@ final case class FunctionSignature(
 
   override def expectedResultType: Type = retType
 
-  override def requiresPurityInBody: Boolean = isPure
+  override def reportImpurity(msg: String, posOpt: Option[Position], er: ErrorReporter)(using CompilationStep): Unit = if (isPure) {
+    er.reportError(msg, posOpt)
+  }
 
   override def typeVarsWithDescr: SeqSet[(TypeVariable, String)] = SeqSet(
     typeParams.flatMap { tp =>

@@ -21,7 +21,7 @@ import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simpl
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{arrayLTypeId, sizeFunId, stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{arrayLTypeId, arrayTypeId, sizeFunId, stringLTypeId, stringType}
 import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SubtypeCheckingMode}
@@ -70,8 +70,6 @@ final class Typer(
   // @formatter:on
 
   import globalValuesCtx.itValue
-
-  private def isPurityRequired: Boolean = executionEnvirOpt.exists(_.requiresPurityInBody)
 
   def copyNotAllowedToWriteToIR: Typer = Typer(executionEnvirOpt, dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx,
     meetJoin, proxyStore, typeCandidatesStore, heapVarsTypeStore, solver, typeSimplifier, absInt, globalValuesCtx, er,
@@ -459,7 +457,7 @@ final class Typer(
       case heapVarRd@HeapVarRead(assigned, heapVar) =>
         val tpe = heapVarsTypeStore.getTypeUnsafe(heapVar)
         currScope.saveType(assigned, tpe)
-        forbiddenIfImpure(s"illegal read access to impure closure-captured variable $heapVar in a pure method or closure", heapVarRd.getPosition)
+        reportImpurity(s"illegal read access to impure closure-captured variable $heapVar in a pure method or closure", heapVarRd.getPosition)
 
       case heapVarWr@HeapVarWrite(heapVar, newValue) =>
         if (!heapVarsTypeStore.contains(heapVar)) {
@@ -474,7 +472,7 @@ final class Typer(
           case None =>
             heapVarsTypeStore.saveType(heapVar, discardPredicateIfOnlyEqualities(newValType))
         }
-        forbiddenIfImpure(s"illegal write access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
+        reportImpurity(s"illegal write access to impure closure-captured variable $heapVar in a pure method or closure", heapVarWr.getPosition)
 
       case mkHeapVar@MkHeapVar(assigned) =>
         // defer typing to first write
@@ -1435,10 +1433,8 @@ final class Typer(
   private def findFormulaWhoseTypeCanMentionAllOthers(formulas: Iterable[Formula]): Option[Formula] =
     formulas.findUnique(candidate => formulas.forall(otherFormula => otherFormula == candidate || candidate.typeCanMention(otherFormula)))
 
-  private def forbiddenIfImpure(msg: String, posOpt: Option[Position]): Unit = {
-    if (isPurityRequired) {
-      er.reportError(msg, posOpt)
-    }
+  private def reportImpurity(msg: String, posOpt: Option[Position]): Unit = executionEnvirOpt.foreach { execEnvir =>
+    execEnvir.reportImpurity(msg, posOpt, er)
   }
 
   private def resolveFunSigAndCheckArgs(receiver: Formula, invkTarget: InvocationTarget, callTypeArgs: List[Type],
@@ -1498,8 +1494,10 @@ final class Typer(
             irModif {
               invkTarget.resolve(ownerSig, funSig, instantiatedRetTypeSimplified)
             }
-            if (isPurityRequired && !funSig.isPure) {
-              er.reportError(s"illegal call to impure method ${funSig.functionName}", posOpt)
+            if (!funSig.isPure) {
+              executionEnvirOpt.foreach { execEnvir =>
+                execEnvir.reportImpurity(s"illegal call to impure method ${funSig.functionName}", posOpt, er)
+              }
             }
             (instantiatedRetTypeSimplified, instRecTypeArgs, instFunTypeArgs)
           case _ => errorCase()
@@ -1529,7 +1527,7 @@ final class Typer(
         }
         checkArgumentsList(paramTypes.map(None -> _), argsAndTypes, "closure invocation", currScope, posOpt)
         if (!enforcedPure) {
-          forbiddenIfImpure("illegal invocation of an impure closure in a pure method or closure", posOpt)
+          reportImpurity("illegal invocation of an impure closure in a pure method or closure", posOpt)
         }
         if (enforcedPure) {
           proxyStore.developDeep(callee) match {
@@ -1573,9 +1571,11 @@ final class Typer(
             if (isWrite && field.isStable) {
               er.reportError(s"illegal update of ${Keyword.Val}-field ${field.id}", posOpt)
             }
-            if (isPurityRequired && !field.isStable) {
-              val accessQualif = if isWrite then "write" else "read"
-              er.reportError(s"illegal $accessQualif access to impure field ${field.id}", posOpt)
+            if (!field.isStable) {
+              executionEnvirOpt.foreach { execEnvir =>
+                val accessQualif = if isWrite then "write" else "read"
+                execEnvir.reportImpurity(s"illegal $accessQualif access to impure field ${field.id}", posOpt, er)
+              }
             }
             val thisVal = currScope.getLocalValuesContextUnsafe.getThisValue.get
             instantiatedFieldType
@@ -1708,10 +1708,24 @@ final class Typer(
       var argIdx = if argsIncludeReceiver then 0 else 1
       for (((paramValOpt, paramTypeBeforeSubst), (argValOpt, argType)) <- params.zip(args)) {
         val paramType = paramTypeBeforeSubst.substitute(Map.empty, subst)
-        subtypingCtx.enforceIsSubtypeExpAct(argValOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
-        argValOpt match {
-          case Some(arg: IdValue) => typeIfClosure(arg)
-          case _ => ()
+        (argValOpt, argType, paramType) match {
+          case (Some(argVal: IdValue), argType: ClosureType, paramType: ClosureType) if closuresCollectorOpt.exists(_.contains(argVal)) =>
+            val isSubtypeIgnoringPurity = subtypingCtx.enforceIsSubtypeExpAct(argValOpt, argType, paramType.copy(enforcedPure = false), s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
+            val newArgClosureTypeOpt = typeClosureIfInWorklist(argVal)
+            val purityMismatch = paramType.enforcedPure && !(newArgClosureTypeOpt match {
+              case Some(newArgClosureType) => newArgClosureType.enforcedPure
+              case None => argType.enforcedPure
+            })
+            if (purityMismatch && isSubtypeIgnoringPurity) {
+              er.reportError(s"${nthArgument(argIdx)} of $ctxDescr: the closure should be pure but I cannot prove that it is", posOpt)
+            }
+          case _ =>
+            subtypingCtx.enforceIsSubtypeExpAct(argValOpt, argType, paramType, s"${nthArgument(argIdx)} of $ctxDescr", currScope, posOpt)
+            argValOpt match {
+              case Some(argVal: IdValue) =>
+                typeClosureIfInWorklist(argVal)
+              case _ => ()
+            }
         }
         paramValOpt.foreach { paramVal =>
           addToSubstIfValid(paramVal, argValOpt, subst)
@@ -1723,10 +1737,12 @@ final class Typer(
     subst
   }
 
-  private def typeIfClosure(idVal: IdValue): Unit = {
+  private def typeClosureIfInWorklist(idVal: IdValue): Option[ClosureType] = {
+    var typeToReturn = Option.empty[ClosureType]
     for {
       closuresCollector <- closuresCollectorOpt
-      closureVal <- proxyStore.getIdValProxiesChain(idVal).find(p => closuresCollector.contains(p))
+      proxiesChain = proxyStore.getIdValProxiesChain(idVal)
+      closureVal <- proxiesChain.find(p => closuresCollector.contains(p))
     } {
       val closureInfo@ClosureInfo(closureParams, closureBody, closureResultType, closureBranchingInfo, closureRequiresPurity, closureTypeParamsCtx) = closuresCollector.extract(closureVal).get
       val closureTyper = Typer(Some(closureInfo), dealiasingCtx, resolutionCtx, typeVarsCtx, subtypingCtx, meetJoin,
@@ -1737,7 +1753,24 @@ final class Typer(
         }
         closureTyper.typeScopeInstructions(closureBody, closureBranchingInfo, ScopeKind.ClosureBody(closureResultType))(using closureTypeParamsCtx)
       }
+      val collectedImpurities = closureInfo.getImpurities
+      val justDiscoveredPurity = !closureRequiresPurity && collectedImpurities.isEmpty
+      if (justDiscoveredPurity) {
+        for (idVal <- proxiesChain) {
+          val scope = idVal.definingScope
+          scope.directGetType(idVal) match {
+            case Some(closureType: ClosureType) =>
+              val pureClosureType = closureType.copy(enforcedPure = true)
+              scope.unsafeDirectSaveType(idVal, pureClosureType)
+              if (typeToReturn.isEmpty) {
+                typeToReturn = Some(pureClosureType)
+              }
+            case _ => ()
+          }
+        }
+      }
     }
+    typeToReturn
   }
 
   private def addToSubstIfValid(paramVal: IdValue, argOpt: Option[Formula], subst: mutable.Map[IdValue, Formula])

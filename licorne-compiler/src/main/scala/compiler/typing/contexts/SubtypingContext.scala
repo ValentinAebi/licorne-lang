@@ -374,7 +374,7 @@ final class SubtypingContext(
   }
 
   def enforceIsSubtypeExpAct(subjectOpt: Option[Formula], subT: Type, superT: Type, posDescr: String, scope: Scope, posOpt: Option[Position])
-                            (using TypeParamsContext, Typer, DealiasingContext): Unit = subjectOpt match {
+                            (using TypeParamsContext, Typer, DealiasingContext): Boolean = subjectOpt match {
     case Some(subject) => enforceIsSubtypeExpAct(subject, subT, superT, posDescr, scope, posOpt)
     case None => enforceIsSubtypeExpAct(subT, superT, posDescr, posOpt)
   }
