@@ -29,7 +29,7 @@ final class ParsingIterator private(initTokensList: List[PositionedToken]) {
           first.token match {
             case tok if tok.isStatementSep && prev.token.isStatementSep => ()
             case EndlToken if
-              prev.token.isClearlyNotStatementEnd || follow.headOption.exists(_.token.isBinop) || !follow.headOption.exists(_.token.isPossibleStatementStart)
+              prev.token.isClearlyNotStatementEnd || !follow.headOption.exists(_.token.isPossibleStatementStart)
             => ()
             case _ =>
               _curr = first
@@ -68,7 +68,7 @@ final class ParsingIterator private(initTokensList: List[PositionedToken]) {
       case FirstLowercaseIdentifierToken(_) => true
       case KeywordToken(It | This | Null | Return | Panic | If | While | For | Val | Var) => true
       case KeywordToken(_) => false
-      case OperatorToken(OpeningParenthesis | OpeningBrace) => true
+      case OperatorToken(OpeningParenthesis | OpeningBrace | ExclamationMark | Minus) => true
       case OperatorToken(_) => false
       case Tokens.UnitLitToken => true
       case IntLitToken(_) => true

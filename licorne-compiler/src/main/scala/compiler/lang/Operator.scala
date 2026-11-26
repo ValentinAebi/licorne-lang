@@ -46,6 +46,7 @@ enum Operator(val str: String, val precedenceLevelOpt: Option[Precedence], val i
   case Sharp extends Operator("#", None)
   case Ampersand extends Operator("&", None)
   case RightArrow extends Operator("->", None)
+  case DoubleExclamationMark extends Operator("!!", None)
   
   case PlusEq extends Operator("+=", None)
   case MinusEq extends Operator("-=", None)

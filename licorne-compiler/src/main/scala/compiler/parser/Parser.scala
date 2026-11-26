@@ -11,7 +11,7 @@ import compiler.reporting.Errors.{Err, ErrorReporter}
 import compiler.lang.{FuncVisibility, Keyword, Operator, Operators, Overridability, Purity, ReassigPermission, TypeVisibility, Types, Variance}
 import compiler.lang.Operator.*
 import compiler.lang.Keyword.*
-import compiler.lang.Types.{PrimitiveType, isExtreme}
+import compiler.lang.Types.PrimitiveType
 import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.parser.primitives.{BinaryOperatorsParser, ParsingIterator, ParsingMismatchSignal}
 
@@ -88,7 +88,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private val semicolon = op(Semicolon).ignored
   private val maybeSemicolon = opt(op(Semicolon)).ignored
   private val -> = op(RightArrow).ignored
-  private val doubleExclMark = op(ExclamationMark) ::: op(ExclamationMark)
+  private val doubleExclMark = op(DoubleExclamationMark)
   private val verticalBar = op(VerticalBar).ignored
   private val ampersand = op(Ampersand).ignored
 
@@ -502,7 +502,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
       case expression ^: None => expression
       case expression ^: Some(As ^: (tp: TypeTree)) => Cast(expression, tp)
       case expression ^: Some(Is ^: (tp: TypeTree)) => TypeTest(expression, tp)
-      case expression ^: Some((_: Operator) ^: (_: Operator)) => HybridCast(expression)
+      case expression ^: Some((_: Operator)) => HybridCast(expression)
       case _ => assert(false)
     }
   }
