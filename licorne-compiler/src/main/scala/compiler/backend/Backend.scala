@@ -1100,11 +1100,13 @@ final class Backend(
               cb.loadConstant(paramIdx)
               cb.aaload()
               val paramKind = tConv.kindFor(paramType)
-              if (paramKind != TypeKind.REFERENCE) {
-                val unboxedTypeDesc = tConv.descriptorFor(paramType)
-                val boxedTypeDesc = boxDesc(unboxedTypeDesc)
+              val paramDesc = tConv.descriptorFor(paramType)
+              if (paramKind == TypeKind.REFERENCE) {
+                cb.checkcast(paramDesc)
+              } else {
+                val boxedTypeDesc = boxDesc(paramDesc)
                 cb.checkcast(boxedTypeDesc)
-                cb.invokevirtual(boxedTypeDesc, unboxingFunc(boxedTypeDesc), MethodTypeDesc.of(unboxedTypeDesc))
+                cb.invokevirtual(boxedTypeDesc, unboxingFunc(boxedTypeDesc), MethodTypeDesc.of(paramDesc))
               }
               cb.storeLocal(paramKind, paramSlot)
             }
