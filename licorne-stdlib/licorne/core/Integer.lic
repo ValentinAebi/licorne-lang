@@ -1,0 +1,17 @@
+package licorne.core
+
+object Integer {
+
+    fun parseInt(s: NonEmptyString): Int? {
+        var result = 0
+        for (c in s) {
+            if !('0' <= c && c <= '9') {
+                return null
+            }
+            result *= 10
+            result += c - '0'
+        }
+        return result
+    }
+
+}
