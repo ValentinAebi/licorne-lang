@@ -913,6 +913,7 @@ final class Typer(
       forceRange(baseType)
     case intersection@IntersectionType(types) =>
       types.find(_.isInstanceOf[IntRangeType]).getOrElse(intersection)
+    case StdLib.charType => IntType
     case tpe => tpe
   }
 
