@@ -40,6 +40,7 @@ final class IRcorneGenerator(
                               typeCandidatesStore: TypeCandidatesStore,
                               closuresNamer: ClosuresNamer,
                               er: ErrorReporter,
+                              stdLibRootPath: Path,
                               srcRootForPkgMismatchCheckOpt: Option[Path]
                             ) extends CompilerStep[(List[Asts.Source], PackagesInfo), Program] {
 
@@ -530,27 +531,23 @@ final class IRcorneGenerator(
       case None =>
         warn(s"missing positioning information for source starting with definition of type ${source.defs.head.name}", None)
       case Some(pos) =>
-        val pathAsList = pathToPkgPrefix(Path.of(pos.srcCodeProviderName), pos.isStdLib)
-        if (pathAsList.isEmpty) {
-          warn("source file name is empty", Some(pos))
-        } else source.pkgDeclOpt match {
-          case Some(pkgDecl) =>
-            if (pathAsList.init != pkgDecl.nameParts) {
-              warn(s"file position ${pos.srcCodeProviderName} does not match its declared package ${pkgDecl.nameParts.mkString(".")}", Some(pos))
-            }
-          case None =>
-            if (pathAsList.size != 1) {
-              warn(s"no package declaration for a file that is not declared in the root directory", Some(pos))
-            }
+        val pkgAccordingToPos = pathToPkgPrefix(Path.of(pos.srcCodeProviderName), if pos.isStdLib then stdLibRootPath else srcRoot)
+        val declaredPkg = source.pkgDeclOpt match {
+          case Some(pkgDecl) => pkgDecl.nameParts
+          case None => List.empty
+        }
+        if (declaredPkg != pkgAccordingToPos) {
+          val maybeHintMsgPart = if (pkgAccordingToPos.contains("..")) "" else s" (it would match package ${pkgAccordingToPos.mkString(".")})"
+          warn(s"file position ${pos.srcCodeProviderName} does not match its declared package ${declaredPkg.mkString(".")}" ++ maybeHintMsgPart, Some(pos))
         }
     }
   }
 
-  private def pathToPkgPrefix(p: Path, isStdLib: Boolean): List[String] = {
+  private def pathToPkgPrefix(p: Path, root: Path): List[String] = {
     val lsb = List.newBuilder[String]
-    p.iterator().forEachRemaining(pp => lsb.addOne(pp.toString))
-    val pathLs = lsb.result()
-    if isStdLib then StdLib.stdLibPackageName :: pathLs.reverse.takeWhile(_ != StdLib.stdLibPackageName).reverse else pathLs
+    root.relativize(p).iterator().forEachRemaining(pp => lsb.addOne(pp.toString))
+    val ls = lsb.result()
+    if ls.isEmpty then ls else ls.init
   }
 
   private def generateFieldsAccessors(

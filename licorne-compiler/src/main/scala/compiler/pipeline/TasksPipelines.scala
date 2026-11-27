@@ -38,10 +38,10 @@ object TasksPipelines {
                 er: ErrorReporter = defaultErrorReporter
               ): CompilerStep[List[SourceCodeProvider], List[String]] = {
     given PhaseTimingMode = timingMode
-    
+
     val closuresNamer = new ClosuresNamer
     val overridesStore = new OverridesStore
-    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, overridesStore, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, closuresNamer, overridesStore, irDirectoryPathOpt, stdLibRootPath, srcRootForPkgMismatchCheckOpt)
       .andThen(Backend(outputDirectoryPath, disableOverflowChecks = ihm.isInstanceOf[BvInt32Mode.type], closuresNamer, overridesStore, er).maybeTimed("bytecode generation"))
       .andThen(CopyAdditionalClasses(outputDirectoryPath, stdLibRootPath).maybeTimed("classes insertion"))
   }
@@ -51,12 +51,13 @@ object TasksPipelines {
                    ihm: IntHandlingMode[?],
                    timeoutConfig: TimeoutConfig,
                    counterExBoxOpt: Option[CounterexampleBox],
+                   stdLibRootPath: Path,
                    srcRootForPkgMismatchCheckOpt: Option[Path],
                    timingMode: PhaseTimingMode,
                    er: ErrorReporter = defaultErrorReporter,
                    okReporter: String => Unit = println
                  ): CompilerStep[List[SourceCodeProvider], Unit] = {
-    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, new OverridesStore, irDirectoryPathOpt, srcRootForPkgMismatchCheckOpt)(using timingMode)
+    typeCheckerImpl(ihm, timeoutConfig, er, counterExBoxOpt, new ClosuresNamer, new OverridesStore, irDirectoryPathOpt, stdLibRootPath, srcRootForPkgMismatchCheckOpt)(using timingMode)
       .andThen(_ => ())
   }
 
@@ -74,6 +75,7 @@ object TasksPipelines {
                                closuresNamer: ClosuresNamer,
                                overridesStore: OverridesStore,
                                irDirPathOpt: Option[Path],
+                               stdLibRootPath: Path,
                                srcRootForPkgMismatchCheckOpt: Option[Path]
                              )(using PhaseTimingMode): CompilerStep[List[SourceCodeProvider], (Program, SubtypingInfo)] = {
     val typeVarsCtx = TypeVariablesContext()
@@ -82,7 +84,7 @@ object TasksPipelines {
     val heapVarsTypeStore = HeapVarsTypeStore()
     multiFrontEnd(er).maybeTimed("frontend")
       .andThen(ImportsScanner().maybeTimed("imports scanning"))
-      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, typeCandidatesStore, closuresNamer, er, srcRootForPkgMismatchCheckOpt).maybeTimed("ircorne generation"))
+      .andThen(IRcorneGenerator(typeVarsCtx, proxyStore, typeCandidatesStore, closuresNamer, er, stdLibRootPath, srcRootForPkgMismatchCheckOpt).maybeTimed("ircorne generation"))
       .andThen(MaybePrintIRcorne("ir1-after-ir-gen.ircorne", proxyStore, typeCandidatesStore, identity, er, irDirPathOpt))
       .andThen(SubtypingChecker(proxyStore, er).maybeTimed("subtyping analysis"))
       .andThen(MaybePrintIRcorne("ir2-after-subtyping-check.ircorne", proxyStore, typeCandidatesStore, (program, subtypingInfo) => program, er, irDirPathOpt))

@@ -14,6 +14,7 @@ import scala.collection.mutable
 
 object Main {
 
+  private val defaultSrcDir = "./src"
   private val defaultClassOutDir = "./classes"
   private val cmdLineExitCode = -22
 
@@ -83,9 +84,10 @@ object Main {
           System.exit(0)
           throw new AssertionError() // should never happen because exit occurred before
         }
-        val (args, files) = tail.span(_.startsWith("-"))
+        val (args, filesRaw) = tail.span(_.startsWith("-"))
+        val files = if filesRaw.isEmpty && Files.exists(currentWorkingDir().resolve(defaultSrcDir)) then List(defaultSrcDir) else filesRaw
         if (files.isEmpty) {
-          error("no input files")
+          error(s"no input files and no $defaultSrcDir found")
         }
         val argsMap = parseArgs(Nil, args.map(_.substring(1)))
         cmd match {
@@ -185,8 +187,8 @@ object Main {
   }
 
   private def getPkgCheckDir(argsMap: MutArgsMap): Option[Path] = {
-    val check = !getUnvalArg("dont-check-pkg", argsMap)
-    Option.when(check)(currentWorkingDir())
+    val arg = getValuedArg("project-src-root", argsMap, Some(defaultSrcDir))
+    Option.when(arg != "NONE")(Paths.get(arg))
   }
   
   private def getTimingModeArg(argsMap: MutArgsMap): PhaseTimingMode = {
@@ -288,7 +290,7 @@ object Main {
       val stdLibSources = collectStdLib(stdLibRoot)
       val pkgCheckRootDir = getPkgCheckDir(argsMap)
       val timingMode = getTimingModeArg(argsMap)
-      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, timeoutConfig, counterExBoxOpt, pkgCheckRootDir, timingMode)
+      val typeChecker = TasksPipelines.typeChecker(irDir, ihm, timeoutConfig, counterExBoxOpt, stdLibRoot, pkgCheckRootDir, timingMode)
       reportUnknownArgsIfAny(argsMap)
       typeChecker.apply(sources ++ stdLibSources)
       println("typecheck: done")
@@ -323,9 +325,10 @@ object Main {
       s"""
          |Command: <cmd> [<arg>*] <file>*
          |   e.g. run -out-dir=output examples/sorting.lic
+         |   If no file is specified, it will look for the $defaultSrcDir folder and compile its content.
          |
          |run: compile and run the program
-         | args: -out-dir=...: required, directory where to write the output file
+         | args: -out-dir=...: optional, directory where to write the compiled class files (default is $defaultClassOutDir)
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -timeout: SMT solver timeout, in seconds (default is 2)
@@ -333,24 +336,24 @@ object Main {
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
          |       -args=[...]: optional, arguments to be passed to the executed program (e.g. -args=[foo bar baz])
-         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -project-src-root=...|NONE: optional, source root directory for package name checks (default is $defaultSrcDir, NONE means no package name checks)
          |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |compile: compile the program
-         | args: -out-dir=...: required, directory where to write the output file
+         | args: -out-dir=...: optional, directory where to write the compiled class files (default is $defaultClassOutDir)
          |       -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -timeout: SMT solver timeout, in seconds (default is 2)
          |       -timeouts-count: number of tolerated SMT timeouts before aborting (default is 10)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
-         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -project-src-root=...|NONE: optional, source root directory for package name checks (default is $defaultSrcDir, NONE means no package name checks)
          |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |typecheck: parse and typecheck the program
          | args: -ir-dir=...: optional, directory where to write the IR representation of the program (not written by default)
          |       -smt-int=arith|bitvec: optional, integer handling mode by the SMT solver (default is arith)
          |       -counter-ex: displays the counter-examples found by the SMT solver
          |       -licorne-root: optional, root directory for Licorne standard library (default is ${EnvironmentVariables.licorneHome})
-         |       -dont-check-pkg: flag to omit checks that packages match files hierarchy
+         |       -project-src-root=...|NONE: optional, source root directory for package name checks (default is $defaultSrcDir, NONE means no package name checks)
          |       -timing=STDOUT|STDERR: time compiler phases and write output to stdout or stderr
          |help: displays help (this)
          |""".stripMargin)
