@@ -8,7 +8,9 @@ typealias NonEmptyString = StringLMin(1)
 
 class String : Indexable {
 
-    fun iterator___(): Iterator[Char] = StringIterator(this)
+    fun iterator___(): Iterator[Char] = iterator()
+    
+    fun iterator(): StringIterator = StringIterator(this)
 
     pure fun size(): Cnt = length()
 
