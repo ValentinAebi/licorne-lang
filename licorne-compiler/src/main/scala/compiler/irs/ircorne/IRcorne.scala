@@ -611,7 +611,7 @@ object IRcorne {
   final case class Unreachable() extends PseudoInstr, ScopeEndingInstr, ConsumesNoVal, ProducesNoVal, NoChildren
 
   enum HybridCastMode {
-    case AssertNonNull
+    case AssertNonNull(nonNullType: Type)
     case AssertPredicate(predicate: Formula, compiledPredicate: Iterable[RealInstr], resultValue: IdValue)
   }
 

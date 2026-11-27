@@ -975,9 +975,9 @@ final class Backend(
         }
 
       case hCast@IRcorne.HybridCast(inValue) =>
-        val skipThrowLabel = cb.newLabel()
         hCast.getModeUnsafe match {
           case HybridCastMode.AssertPredicate(predicate, compiledPredicate, resultValue) =>
+            val skipThrowLabel = cb.newLabel()
             for (instr <- compiledPredicate) {
               generateInstr(instr, cb, currScope)
             }
@@ -988,7 +988,10 @@ final class Backend(
             cb.ldc(s"assertion ${SourceLevelFormulaPrinter.prettyprint(predicate)} failed")
             cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
             cb.athrow()
-          case HybridCastMode.AssertNonNull =>
+            cb.labelBinding(skipThrowLabel)
+            cb.nop()
+          case HybridCastMode.AssertNonNull(nonNullType) =>
+            val skipThrowLabel = cb.newLabel()
             genValueLoad(inValue, currScope, cb)
             cb.ifnonnull(skipThrowLabel)
             cb.new_(assertionErrorDesc)
@@ -996,8 +999,22 @@ final class Backend(
             cb.ldc(s"non nullity assertion failed")
             cb.invokespecial(assertionErrorDesc, INIT_NAME, assertionErrorConstrDesc)
             cb.athrow()
+            cb.labelBinding(skipThrowLabel)
+            val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx
+            val nonNullTypeDesc = tConv.descriptorFor(nonNullType)
+            if (nonNullTypeDesc.isPrimitive) {
+              val boxedDesc = boxDesc(nonNullTypeDesc)
+              genValueLoad(inValue, currScope, cb)
+              cb.invokevirtual(boxedDesc, unboxingFunc(boxedDesc), MethodTypeDesc.of(nonNullTypeDesc))
+              if (descToKind(nonNullTypeDesc).slotSize() == 2) {
+                funGenCtx.allocateSlot(2, inValue, isOverwrite = true)
+              }
+              inValue.definingScope.unsafeDirectSaveType(inValue, nonNullType)
+              genValueStore(inValue, currScope, cb)
+            } else {
+              cb.nop()
+            }
         }
-        cb.labelBinding(skipThrowLabel)
 
       case ret@IRcorne.Return(retVal) =>
         val tConv = NonBoxingTypesConverter.fromAmbientDealiasingCtx

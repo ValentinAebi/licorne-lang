@@ -322,7 +322,7 @@ final class IRcornePrinter(
         pps.add(s"CAST ${maybeTyped(inValue, scope)} as $target")
       case hybridcast@IRcorne.HybridCast(inValue) =>
         val targetDescr = hybridcast.getModeOpt match {
-          case Some(HybridCastMode.AssertNonNull) => "non-null"
+          case Some(HybridCastMode.AssertNonNull(nonNullType)) => s"non-null ($nonNullType)"
           case Some(HybridCastMode.AssertPredicate(pred, _, _)) =>
             s"predicate ${IRLevelFormulaPrinter.prettyprint(pred)}"
           case None => "<unspecified>"

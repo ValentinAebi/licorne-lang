@@ -56,8 +56,8 @@ final class FunctionGenerationContext(
   def allocateSlot(kind: TypeKind, idVal: IdValue): Int =
     allocateSlot(kind.slotSize(), idVal)
 
-  def allocateSlot(slotSize: Int, idVal: IdValue): Int = {
-    require(!hasSlotFor(idVal))
+  def allocateSlot(slotSize: Int, idVal: IdValue, isOverwrite: Boolean = false): Int = {
+    require(hasSlotFor(idVal) == isOverwrite)
     val slot = allocateSlotOfSize(slotSize)
     slotsAssignment(idVal) = slot
     slot

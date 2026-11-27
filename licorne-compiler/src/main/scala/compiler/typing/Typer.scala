@@ -530,7 +530,7 @@ final class Typer(
               er.warn(s"!! will always fail: ${proxyStore.developNearest(inValue)} is null", hybridCast.getPosition)
             }
             irModif {
-              hybridCast.setMode(AssertNonNull)
+              hybridCast.setMode(AssertNonNull(nullatedType))
             }
             currScope.saveSmartcast(inValue, nullatedType)
           case (preType, Some(targetType)) if subtypingCtx.isSubtype(preType, targetType) =>
