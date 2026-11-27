@@ -344,14 +344,18 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private lazy val parenthesizedOrClosureTypeTree = parenthesizedOrImpureClosureTypeTree OR pureClosureTypeTree
 
   private lazy val parenthesizedOrImpureClosureTypeTree = recursive {
-    openParenth ::: typeTree ::: ((op(ClosingParenthesis) ::: opt(`->` ::: typeTree)).map {
-      Left(_)
-    } OR (comma ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: `->` ::: typeTree).map {
-      Right(_)
-    }) map {
-      case tpe ^: Left((closingParenth: Operator) ^: None) => tpe
-      case singleParamType ^: Left((closingParenth: Operator) ^: Some(resultType: TypeTree)) => ClosureTypeTree(List(singleParamType), resultType, enforcedPure = false)
-      case headParamType ^: Right((otherParamTypes: List[TypeTree]) ^: (resultType: TypeTree)) => ClosureTypeTree(headParamType :: otherParamTypes, resultType, enforcedPure = false)
+    openParenth ::: {
+      {
+        typeTree ::: ((op(ClosingParenthesis) ::: opt(`->` ::: typeTree)) or (comma ::: repeatWithSep(typeTree, comma) ::: closeParenth ::: `->` ::: typeTree)) map {
+          case tpe ^: Left((closingParenth: Operator) ^: None) => tpe
+          case singleParamType ^: Left((closingParenth: Operator) ^: Some(resultType: TypeTree)) => ClosureTypeTree(List(singleParamType), resultType, enforcedPure = false)
+          case headParamType ^: Right((otherParamTypes: List[TypeTree]) ^: (resultType: TypeTree)) => ClosureTypeTree(headParamType :: otherParamTypes, resultType, enforcedPure = false)
+        }
+      } OR {
+        closeParenth ::: `->` ::: typeTree map {
+          case retType => ClosureTypeTree(List.empty, retType, enforcedPure = false)
+        }
+      }
     }
   }
 
@@ -552,7 +556,7 @@ final class Parser(er: ErrorReporter) extends CompilerStep[(List[PositionedToken
   private lazy val objectRef = possiblyPrefixedTypeNameWithSharp map (ObjectRef(_))
 
   private lazy val varRef = funOrVarId map (name => VariableRef(name))
-  
+
   private def arrayLiteral(using ExprMode) = withDescription("an array literal") {
     recursive {
       openBracket ::: repeatWithSep(expr, comma) ::: closeBracket map { elems =>
