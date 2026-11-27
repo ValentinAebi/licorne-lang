@@ -1,0 +1,32 @@
+package licorne.collections
+
+// TODO more efficient Set implementation
+class LinearSet[T] : MutSet[T] {
+    val elements = ArrayList[T]()
+
+    fun size(): Cnt = elements.size()
+
+    fun iterator(): Iterator[T] = elements.iterator()
+
+    fun contains(t: T): Boolean = elements.contains(t)
+
+    fun add(t: T): Boolean {
+        if (contains(t)) {
+            return false
+        } else {
+            elements.add(t)
+            return true
+        }
+    }
+
+    fun remove(t: T): Boolean {
+        val idx = elements.indexOf(t)
+        if (idx == null) {
+            return false
+        } else {
+            elements.remove(idx)
+            return true
+        }
+    }
+
+}

@@ -14,4 +14,60 @@ interface Collection[out T] {
         }
     }
 
+    fun toLList(): LList[T] = mapToLList { it }
+
+    fun mapToLList[U](f: (T) -> U): LList[U] {
+        var rev = Nil()
+        for (e in this) {
+            rev = Cons(f(e), rev)
+        }
+        return rev.reversed()
+    }
+
+    fun filterToLList(predicate: pure (T) -> Boolean): LList[T with predicate(it)] {
+        var rev = Nil()
+        for (e in this) {
+            if (predicate(e)) {
+                rev = Cons(e, rev)
+            }
+        }
+        return rev.reversed()
+    }
+
+    fun mapToArrayList[U](f: (T) -> U): ArrayList[U] {
+        val al = ArrayList(size())
+        for (e in this) {
+            al.add(f(e))
+        }
+        return al
+    }
+
+    fun filterToArrayList[U super T](predicate: pure (U) -> Boolean): ArrayList[U with predicate(it)] {
+        val al = ArrayList()
+        for (e in this) {
+            if (predicate(e)) {
+                al.add(e)
+            }
+        }
+        return al
+    }
+
+    fun mapToSet[U](f: (T) -> U): Set[U] {
+        val s = LinearSet()
+        for (e in this) {
+            s.add(f(e))
+        }
+        return s
+    }
+
+    fun filterToSet[U super T](predicate: pure (U) -> Boolean): Set[U with predicate(it)] {
+        val s = LinearSet()
+        for (e in this) {
+            if (predicate(e)) {
+                s.add(e)
+            }
+        }
+        return s
+    }
+
 }

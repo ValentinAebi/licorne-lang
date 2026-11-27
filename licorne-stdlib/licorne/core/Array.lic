@@ -28,6 +28,15 @@ class Array[T](public size: Cnt, initializer: (Idx(this)) -> T) : Indexed {
         }
     }
 
+    fun indexOf[U super T](u: U): Idx(this)? {
+        for (var i = 0; i < size(); i += 1) {
+            if (get(i) == u) {
+                return i
+            }
+        }
+        return null
+    }
+
     fun swap(i: Idx(this), j: Idx(this)) {
         val tmp = get(i)
         set(i, get(j))

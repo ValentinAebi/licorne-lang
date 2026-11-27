@@ -2,6 +2,11 @@ package licorne.collections
 
 interface Sequence[out T] : Collection[T] {
 
+    fun indexOf[U super T](u: U): [0..]?
+
+    open fun contains[U super T](u: U): Boolean =
+        indexOf(u) != null
+
     fun map[U](f: (T) -> U): Sequence[U]
 
     fun filter(pred: pure (T) -> Boolean): Sequence[T with pred(it)]

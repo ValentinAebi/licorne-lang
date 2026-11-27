@@ -84,6 +84,8 @@ class ArrayList[T](initialCapacity: Cnt = 10) : MutSeq[T] {
         this.currSize = deletionIdx
     }
 
+    fun indexOf[U super T](u: U): [0..]? = array.indexOf(u)
+
     fun map[U](f: (T) -> U): ArrayList[U] {
         val mapped = ArrayList(currSize)
         val array = this.array

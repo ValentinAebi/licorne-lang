@@ -17,6 +17,17 @@ sealed interface LList[out T] : ImmutSeq[T] {
         panic "out of bounds"
     }
 
+    fun indexOf[U super T](u: U): [0..]? {
+        var idx = 0
+        for (var ls = this; ls is Cons; ls = ls.tail()) {
+            if (ls.head() == u) {
+                return idx
+            }
+            idx += 1
+        }
+        return null
+    }
+
     fun map[U](f: (T) -> U): LList[U] {
         var rev = Nil()
         for (var ls = this; ls is Cons; ls = ls.tail()) {

@@ -1,0 +1,30 @@
+import licorne.collections.LinearSet
+
+object Main {
+
+    fun main() {
+        val set = LinearSet()
+        println(set.add("Java"))            // true, size = 1
+        println(set.add("Kotlin"))          // true, size = 2
+        println(set.contains("Java"))       // true
+        println(set.add("Java"))            // false
+        println(set.size())                 // 2
+        println(set.add("Scala"))           // true, size = 3
+        println(set.remove("Licorne"))      // false
+        println(set.contains("Licorne"))    // false
+        println(set.add("Licorne"))         // true, size = 4
+        println(set.size())                 // 4
+        println(set.remove("Java"))         // true, size = 3
+        println(set.contains("Licorne"))    // true
+        println(set.contains("Scala"))      // true
+        println(set.remove("Scala"))        // true, size = 2
+        println(set.contains("Scala"))      // false
+        println(set.remove("Scala"))        // false
+        println(set.remove("Kotlin"))       // true, size = 1
+        for (e in set) {
+            println(e)                      // Licorne
+        }
+        println(set.size())                 // 1
+    }
+
+}

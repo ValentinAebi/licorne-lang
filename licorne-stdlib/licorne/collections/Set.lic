@@ -1,0 +1,13 @@
+package licorne.collections
+
+interface Set[T] : Collection[T] {
+
+    fun contains(t: T): Boolean
+
+    open fun map[U](f: (T) -> U): Set[U] =
+        mapToSet(f)
+
+    open fun filter(predicate: pure (T) -> Boolean): Set[T with predicate(it)] =
+        filterToSet(predicate)
+
+}

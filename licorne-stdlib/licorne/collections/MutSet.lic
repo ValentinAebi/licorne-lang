@@ -1,0 +1,9 @@
+package licorne.collections
+
+interface MutSet[T] : Set[T] {
+
+    fun add(t: T): Boolean
+
+    fun remove(t: T): Boolean
+
+}
