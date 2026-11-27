@@ -5,6 +5,7 @@ import compiler.irs.ircorne.Formulas.{Formula, IdValue}
 import compiler.irs.ircorne.{Formulas, IRcorne}
 import compiler.irs.ircorne.IRcorne.*
 import compiler.lang.Types.*
+import compiler.lang.Types.PrimitiveType.{DoubleType, IntType}
 import compiler.lang.{ExecutionEnvironment, FunctionDescriptor, RuntimeTypeSignature, TypeParamInfo, Types, UserInstantiableTypeSig}
 import compiler.pipeline.CompilationStep.TypeCandidatesInference
 import compiler.pipeline.{CompilationStep, CompilerStep}
@@ -120,19 +121,19 @@ final class TypeCandidatesInferrer(
           }
         case _ => ()
       }
-    case NumNeg(assigned, operand) => ()
-    case Add(assigned, lhs, rhs) => ()
-    case Sub(assigned, lhs, rhs) => ()
-    case Mul(assigned, lhs, rhs) => ()
-    case Div(assigned, lhs, rhs) => ()
-    case Rem(assigned, lhs, rhs) => ()
+    case NumNeg(assigned, operand) => setIntAndDoubleAsCandidates(operand)
+    case Add(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
+    case Sub(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
+    case Mul(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
+    case Div(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
+    case Rem(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
     case LogicNeg(assigned, operand) => ()
     case And(assigned, lhs, rhs) => ()
     case Or(assigned, lhs, rhs) => ()
     case Equal(assigned, lhs, rhs) => ()
     case RefEqual(assigned, lhs, rhs) => ()
-    case Leq(assigned, lhs, rhs) => ()
-    case Lt(assigned, lhs, rhs) => ()
+    case Leq(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
+    case Lt(assigned, lhs, rhs) => setIntAndDoubleAsCandidates(lhs, rhs)
     case invkFunc@InvokeFunc(assigned, receiver, func, typeArgs, args) =>
       for {
         (receiverTypeId, owTypesSubst, owValsSubst) <- resolveReceiver(receiver, currEnvir).orElse {
@@ -237,6 +238,11 @@ final class TypeCandidatesInferrer(
       substB.addOne(tParam.tid -> tArg)
     }
     substB.result()
+  }
+  
+  private def setIntAndDoubleAsCandidates(idValues: IdValue*)(using TypeParamsContext, ResolutionContext, SubtypingContext): Unit = for (idVal <- idValues) {
+    typeCandidatesStore.offerCandidate(idVal, IntType)
+    typeCandidatesStore.offerCandidate(idVal, DoubleType)
   }
 
   private class LightweightTyper(typer: Typer, dealiasingCtx: DealiasingContext, meetJoinComputer: MeetJoinComputer, resolCtx: ResolutionContext, funSigScope: Scope, typeParamsCtx: TypeParamsContext) {

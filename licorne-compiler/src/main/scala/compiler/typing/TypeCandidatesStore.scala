@@ -1,9 +1,10 @@
 package compiler.typing
 
-import compiler.irs.ircorne.Formulas.{Formula, IdValue}
+import compiler.irs.ircorne.Formulas.IdValue
 import compiler.lang.Types
 import compiler.lang.Types.Type
-import compiler.typing.contexts.ResolutionContext
+import compiler.typing.contexts.SubtypingContext.SubtypeCheckingMode
+import compiler.typing.contexts.{ResolutionContext, SubtypingContext, TypeParamsContext}
 import compiler.valproxies.ProxyStore
 
 import scala.collection.mutable
@@ -20,15 +21,22 @@ final class TypeCandidatesStore {
     }
   }
 
-  def offerCandidate(idVal: IdValue, tpe: Type)(using proxyStore: ProxyStore, resolCtx: ResolutionContext): Unit = {
+  def offerCandidate(idVal: IdValue, tpe: Type)(using tpCtx: TypeParamsContext, proxyStore: ProxyStore, resolCtx: ResolutionContext, subtypingCtx: SubtypingContext): Unit = {
     if (uniqueCandidates.contains(idVal)) {
       return
     }
     val devType = tpe.withDependenciesTransformed(proxyStore.developNearest(_))
-    candidates.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty).add(devType)
+    val candidatesList = candidates.getOrElseUpdate(idVal, mutable.LinkedHashSet.empty)
+    candidatesList.filterInPlace(!subtypingCtx.isSubtype(tpe, _)(using SubtypeCheckingMode.CheckOnly))
+    devType match {
+      case Types.NullableType(nullatedType) =>
+        candidatesList.add(nullatedType)
+      case _ => ()
+    }
+    candidatesList.add(devType)
     devType match {
       case Types.RefinedType(baseType, predicate) =>
-        candidates.apply(idVal).add(baseType)
+        candidatesList.add(baseType)
       case _ => ()
     }
   }

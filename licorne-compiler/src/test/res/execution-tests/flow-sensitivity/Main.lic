@@ -1,4 +1,8 @@
 
+// The main purpose of this test is to make sure that the bytecode generator correctly handles the case where
+// the same variable has assignments of type Int and others of type Double, which on the JVM do not take the same
+// number of variable slots.
+
 // IMPORTANT NOTE:
 // Failures in this test (typically not crashing but outputting slightly incorrect values) can be due to the
 // type-checker applying range refinements to Doubles because of excessive smartcasting and the backend inserting d2i
@@ -16,9 +20,8 @@ object Main {
     }
 
     private fun foo(x: Double) {
-        var a = 0
+        var a = 0.0
         var i = 1
-        takePositiveInt(a)
         takePositiveInt(i)
         while (a < x) {
             val tmp = a
