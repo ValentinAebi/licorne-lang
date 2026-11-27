@@ -21,7 +21,7 @@ import compiler.reasoning.FormulasSimplification.{linearize, simplifyBool, simpl
 import compiler.reporting.Errors.ErrorReporter
 import compiler.reporting.Position
 import compiler.stdlib.StdLib
-import compiler.stdlib.StdLib.{arrayLTypeId, arrayTypeId, sizeFunId, stringLTypeId, stringType}
+import compiler.stdlib.StdLib.{arrayLTypeId, sizeFunId, stringLTypeId, stringType}
 import compiler.typing.contexts.{ResolutionContext, *}
 import compiler.typing.contexts.ResolutionContext.{FieldResolResult, FuncResolResult}
 import compiler.typing.contexts.SubtypingContext.{DowncastTargetCheckResult, SubtypeCheckingMode}
@@ -1032,7 +1032,7 @@ final class Typer(
           if (subTIfInSuperTPos.isDefined && sig.typeParams.nonEmpty && typeArgs.isEmpty) {
             er.reportError(s"missing type arguments for $typeName", posOpt)
           }
-          val (typeArgsSubst, _) = instantiateTypes(sig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, Some(s"application of type $typeName"))
+          val (typeArgsSubst, _) = instantiateTypes(sig.typeParams, typeArgs, Map.empty, subtypingCtx, currScope, posOpt, Some(s"application of type $typeName"))
           val argsWithTypes = args.map(arg => Some(arg) -> typeFormula(arg, currScope, posOpt))
           for (arg <- args) {
             enforcePurity(arg, "type alias argument", posOpt)
@@ -1464,8 +1464,8 @@ final class Typer(
             if (funSig.visibility == FuncVisibility.Private && receiverTypeName != funSig.ownerName) {
               er.reportError(s"illegal access to ${FuncVisibility.Private} method ${funSig.functionName}", posOpt)
             }
-            val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, subtypingCtx, scope, posOpt, None)
-            val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, subtypingCtx, scope, posOpt, Some(s"type $receiverTypeName"))
+            val (receiverTypeSubst, instRecTypeArgs) = instantiateTypes(ownerSig.typeParams, receiverTypeArgs, Map.empty, subtypingCtx, scope, posOpt, None)
+            val (callTypeSubst, instFunTypeArgs) = instantiateTypes(funSig.typeParams, callTypeArgs, Map(funSig.receiverVal -> receiver), subtypingCtx, scope, posOpt, Some(s"type $receiverTypeName"))
             val composedTypeSubst = receiverTypeSubst ++ callTypeSubst
             val allArgsSubst = funSig.paramsInclThis.keys.zip(receiver :: callArgs.map(proxyStore.developNearest(_))).toMap[IdValue, Formula]
             if (funSig.sigName == ConstructorFunId) {
@@ -1560,7 +1560,7 @@ final class Typer(
       case NamedType(typeName, typeArgs, args) =>
         resolutionCtx.resolveFieldAccess(typeName, fieldResolTarget.fieldId) match {
           case FieldResolResult.Success(ownerSig, field) if receiverIsThisPtr(currScope, owner) =>
-            val (typeSubst, _) = instantiateTypes(ownerSig.typeParams, typeArgs, subtypingCtx, currScope, posOpt, None)
+            val (typeSubst, _) = instantiateTypes(ownerSig.typeParams, typeArgs, Map.empty, subtypingCtx, currScope, posOpt, None)
             val instantiatedFieldType =
               field.tpe.substitute(typeSubst, Map.empty)
                 .withDependenciesTransformed(_.transformParamValsIntoSelectOn(owner, ownerSig))
@@ -1598,22 +1598,26 @@ final class Typer(
                                (using TypeParamsContext, ResolutionContext, SubtypingContext): Boolean =
     currScope.getLocalValuesContextUnsafe.getThisValue.contains(proxyStore.developDeep(receiver))
 
-  private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], subtypingCtx: SubtypingContext, scope: Scope,
+  private def instantiateTypes(typeParams: List[TypeParamInfo], typeArgs: List[Type], boundsValsSust: Map[IdValue, Formula], subtypingCtx: SubtypingContext, scope: Scope,
                                posOpt: Option[Position], ctxDescrForReportingOpt: Option[String])
                               (using typeParamsCtx: TypeParamsContext): (Map[TypeIdentifier, Type], List[Type]) = {
-    val substBuilder = Map.newBuilder[TypeIdentifier, Type]
+    val boundsTypesSubst = mutable.Map.empty[TypeIdentifier, Type]
     val instTypesB = List.newBuilder[Type]
     for ((tParam, tArgRaw) <- typeParams.zip(typeArgs)) {
       val tArgInst = instantiateType(tArgRaw, tParam.varianceOpt, scope, posOpt)
       ctxDescrForReportingOpt.foreach { ctxDescr =>
-        checkTypeIsInBounds(tArgInst, tParam.upperBoundOpt, tParam.lowerBoundOpt, posOpt, tParam.tid)
+        val ub = tParam.upperBoundOpt.map(_.substitute(boundsTypesSubst, boundsValsSust))
+        val lb = tParam.lowerBoundOpt.map(_.substitute(boundsTypesSubst, boundsValsSust))
+        checkTypeIsInBounds(tArgInst, ub, lb, posOpt, tParam.tid)
       }
-      substBuilder.addOne(tParam.tid -> tArgInst)
+      boundsTypesSubst.put(tParam.tid, tArgInst)
       instTypesB.addOne(tArgInst)
     }
-    for (tp <- typeParams.drop(typeArgs.size)) {
-      val tv = typeVarsCtx.newTypeVariable(tp.tid, tp.upperBoundOpt, tp.lowerBoundOpt, typeParamsCtx, posOpt)
-      substBuilder.addOne(tp.tid -> tv)
+    for (tParam <- typeParams.drop(typeArgs.size)) {
+      val ub = tParam.upperBoundOpt.map(_.substitute(boundsTypesSubst, boundsValsSust))
+      val lb = tParam.lowerBoundOpt.map(_.substitute(boundsTypesSubst, boundsValsSust))
+      val tv = typeVarsCtx.newTypeVariable(tParam.tid, ub, lb, typeParamsCtx, posOpt)
+      boundsTypesSubst.put(tParam.tid, tv)
       instTypesB.addOne(tv)
     }
     if (typeArgs.size > typeParams.size) {
@@ -1623,7 +1627,7 @@ final class Typer(
         }
       }
     }
-    (substBuilder.result(), instTypesB.result())
+    (boundsTypesSubst.toMap, instTypesB.result())
   }
 
   def checkTypeIsInBounds(tpe: Type, upperBoundOpt: Option[Type], lowerBoundOpt: Option[Type], posOpt: Option[Position], typeVarId: Identifier)(using TypeParamsContext): Unit = {

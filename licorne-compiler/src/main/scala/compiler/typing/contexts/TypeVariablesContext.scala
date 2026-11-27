@@ -20,19 +20,10 @@ final class TypeVariablesContext {
   }
 
   def checkAllTypeVariablesHaveBeenResolved(typer: Typer, er: ErrorReporter)(using CompilationStep): Unit = {
-    val subst = mutable.Map.empty[TypeIdentifier, Type]
     for (tv <- allTypeVariables) {
       tv.actualTypeIfResolved match {
         case Some(tpe) =>
-          val ub = tv.upperBoundOpt.map(_.substitute(subst, Map.empty))
-          val lb = tv.lowerBoundOpt.map(_.substitute(subst, Map.empty))
-          typer.checkTypeIsInBounds(tpe, ub, lb, tv.instantiationPosOpt, tv.id)(using tv.typeParamsCtx)
-          tv.id match {
-            case tid: TypeIdentifier =>
-              subst.put(tid, tpe)
-            case _ => ()
-          }
-          
+          typer.checkTypeIsInBounds(tpe, tv.upperBoundOpt, tv.lowerBoundOpt, tv.instantiationPosOpt, tv.id)(using tv.typeParamsCtx)
         case None =>
           er.reportError(s"type variable $tv could not be resolved", tv.instantiationPosOpt)
       }
